@@ -142,6 +142,16 @@ export const en: Record<keyof typeof th, string> = {
   // changed, in git's format. diffMore is the cut being honest about itself —
   // a long diff is capped where it is built, and a capped diff that says
   // nothing reads as the whole change.
+  'workbench.gitTab': 'Git',
+  // The working tree panel (§161.4) — โค้ด desk only, and it says so itself
+  // rather than leaving a person to wonder where it went on the other desks.
+  'git.workingTree': 'working tree',
+  'git.codeDeskOnly': 'Shown on the Code desk only.',
+  'git.clean': 'Nothing changed. The working tree matches the branch.',
+  'git.loading': 'Reading the working tree...',
+  'git.noDiff': 'No line changes to show. It may be a binary file, or a rename with no edit.',
+  'git.openFile': 'Open the file',
+  'git.refresh': 'Read it again',
   'chat.diffToggle': 'See what changed',
   'chat.diffMore': '{n} more lines not shown',
   'chat.failedCount': '{n} failed',

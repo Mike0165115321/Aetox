@@ -44,6 +44,7 @@ func TestBindingsNeverReturnNilSlices(t *testing.T) {
 		"TerminalShells",
 		"CommandHistory",
 		"GitChangedFiles",
+		"GitWorkingTree",
 		"ProjectTree",
 		"WorkspaceFolders",
 	}

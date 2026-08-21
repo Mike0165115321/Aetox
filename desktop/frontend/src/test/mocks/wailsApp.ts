@@ -74,6 +74,8 @@ export const GuideTopics = arr()
 export const HasAPIKey = boolFn(false)
 // Sign-in: the default is "this provider offers none", so Settings renders the
 // API-key path unless a test opts a provider into a sign-in.
+export const GitFileDiff = str()
+export const GitWorkingTree = arr()
 export const SignInMethods = arr()
 export const SignInStatus = vi.fn(async (provider: string) => ({ provider, signed_in: false }))
 export const StartSignIn = vi.fn(async (provider: string) => ({ provider, kind: 'browser', url: '' }))

@@ -2249,6 +2249,61 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .file-line { display:flex; align-items:center; gap:9px; padding:7px 12px; border-top:1px solid var(--border-subtle); cursor:pointer; }
 .file-line:hover { background:var(--surface-row-hover); }
 .file-line .st { margin-left:auto; font-weight:700; color:var(--status-modified); }
+/* The working tree, as a room (GitPane.svelte, §161.4). It borrows the diff
+   language below rather than growing its own: a file's hunks look the same
+   whether you meet them under a chat row or under a row here. */
+.gitpane { display:flex; flex-direction:column; height:100%; overflow:hidden; }
+.gp-head {
+  display:flex; align-items:center; gap:8px; padding:9px 12px;
+  border-bottom:1px solid var(--border-subtle); font-size:var(--fs-sm);
+}
+.gp-where { display:flex; align-items:center; gap:7px; min-width:0; color:var(--text-secondary); }
+.gp-where b { color:var(--text-primary); font-family:var(--mono); font-weight:600; }
+.gp-arrow { color:var(--text-dim); }
+.gp-right { display:flex; align-items:center; gap:8px; margin-left:auto; }
+.gp-totals, .gp-stat { display:inline-flex; gap:6px; font-size:var(--fs-xs); font-variant-numeric:tabular-nums; }
+.gp-totals .add, .gp-stat .add { color:var(--status-success); }
+.gp-totals .del, .gp-stat .del { color:var(--status-danger); }
+/* Copy that cannot lie: the room is on one desk and the room says which. */
+.gp-note {
+  padding:6px 12px; font-size:var(--fs-2xs); color:var(--text-dim);
+  border-bottom:1px solid var(--border-subtle);
+}
+.gp-list { flex:1; min-height:0; overflow-y:auto; padding:4px 0 12px; }
+.gp-file { border-bottom:1px solid var(--border-subtle); }
+.gp-row {
+  display:flex; align-items:center; gap:8px; width:100%; text-align:left;
+  padding:7px 12px; font:inherit; color:inherit; background:none; border:0; cursor:pointer;
+}
+.gp-row:hover { background:var(--surface-row-hover); }
+.gp-caret { flex:0 0 auto; display:inline-flex; color:var(--text-dim); }
+.gp-name {
+  font-family:var(--mono); font-size:var(--fs-sm); color:var(--text-primary);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+/* The folder is context, not identity — dimmed, and the first thing to go when
+   the pane is narrow. */
+.gp-dir {
+  min-width:0; flex:1; font-size:var(--fs-2xs); color:var(--text-dim);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.gp-row .gp-stat { flex:0 0 auto; margin-left:auto; }
+.gp-badge {
+  flex:0 0 auto; width:16px; text-align:center; font-size:var(--fs-2xs);
+  font-weight:700; color:var(--status-modified);
+}
+.gp-badge.U { color:var(--status-success); }
+.gp-badge.D { color:var(--status-danger); }
+.gp-diff { padding:0 12px 10px 26px; }
+.gp-open {
+  margin-top:7px; display:inline-flex; align-items:center; gap:6px;
+  padding:4px 9px; border:1px solid var(--border-subtle); border-radius:var(--r-sm);
+  background:none; color:var(--text-muted); font:inherit; font-size:var(--fs-xs); cursor:pointer;
+}
+.gp-open:hover { border-color:var(--border-strong); color:var(--text-primary); }
+.gp-empty { padding:18px 12px; text-align:center; color:var(--text-muted); font-size:var(--fs-sm); }
+.gp-empty.small { padding:10px 0; text-align:left; font-size:var(--fs-xs); }
+
 /* What an edit actually changed, folded under the row that made it (CodeDiff.svelte).
    These rules and the --diff-* tokens were the Review panel's, which was removed
    on 2026-08-03 and left its visual language here with nothing drawing it. They

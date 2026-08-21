@@ -10,7 +10,7 @@ import {
 import type { main, ooxml } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
 
-export type WorkbenchTabKind = 'terminal' | 'browser' | 'files' | 'file' | 'decks'
+export type WorkbenchTabKind = 'terminal' | 'browser' | 'files' | 'file' | 'decks' | 'git'
 
 export type WorkbenchTab = {
   id: string
@@ -136,6 +136,19 @@ export function openDecksTab(): void {
     workbench.tabs.push({ id: 'decks', kind: 'decks', name: t('workbench.decksTab') })
   }
   workbench.activeId = 'decks'
+}
+
+/** Singleton tab: the working tree (DECISIONS §161.4).
+ *
+ * โค้ด desk only, and the menu entry is drawn only there — a repository is what
+ * that desk is held inside, and the storefront deliberately has no project to
+ * report on. The pane says so itself rather than leaving the absence to be
+ * discovered. */
+export function openGitTab(): void {
+  if (!workbench.tabs.some((t) => t.kind === 'git')) {
+    workbench.tabs.push({ id: 'git', kind: 'git', name: t('workbench.gitTab') })
+  }
+  workbench.activeId = 'git'
 }
 
 export function openBrowserTab(): string {

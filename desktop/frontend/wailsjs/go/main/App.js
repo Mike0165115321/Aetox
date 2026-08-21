@@ -126,6 +126,14 @@ export function CancelTurn() {
   return window['go']['main']['App']['CancelTurn']();
 }
 
+export function CapabilitiesInstalling() {
+  return window['go']['main']['App']['CapabilitiesInstalling']();
+}
+
+export function CapabilityStatuses() {
+  return window['go']['main']['App']['CapabilityStatuses']();
+}
+
 export function ChairStarters(arg1, arg2) {
   return window['go']['main']['App']['ChairStarters'](arg1, arg2);
 }
@@ -238,6 +246,10 @@ export function EnginesFor(arg1, arg2) {
   return window['go']['main']['App']['EnginesFor'](arg1, arg2);
 }
 
+export function ExportAgentPackage(arg1) {
+  return window['go']['main']['App']['ExportAgentPackage'](arg1);
+}
+
 export function ExportDeck(arg1, arg2) {
   return window['go']['main']['App']['ExportDeck'](arg1, arg2);
 }
@@ -274,8 +286,16 @@ export function GitCreateBranch(arg1) {
   return window['go']['main']['App']['GitCreateBranch'](arg1);
 }
 
+export function GitFileDiff(arg1) {
+  return window['go']['main']['App']['GitFileDiff'](arg1);
+}
+
 export function GitSwitchBranch(arg1) {
   return window['go']['main']['App']['GitSwitchBranch'](arg1);
+}
+
+export function GitWorkingTree() {
+  return window['go']['main']['App']['GitWorkingTree']();
 }
 
 export function GuideTopics() {
@@ -296,6 +316,10 @@ export function ImportSignIn(arg1) {
 
 export function ImportableSignIns() {
   return window['go']['main']['App']['ImportableSignIns']();
+}
+
+export function InstallCapabilities(arg1) {
+  return window['go']['main']['App']['InstallCapabilities'](arg1);
 }
 
 export function InstallSkillFromGitHub(arg1) {

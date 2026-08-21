@@ -11,11 +11,12 @@
   import PdfPane from './PdfPane.svelte'
   import SlidesPane from './SlidesPane.svelte'
   import DeckRoom from './DeckRoom.svelte'
+  import GitPane from './GitPane.svelte'
   import { fileURL } from '../fileUrl'
   import { cockpit } from '../stores/cockpit.svelte'
   import {
     workbench, activateTab, closeTab, removeTab,
-    openFilesTab, openBrowserTab, openTerminalTab, openDecksTab, openFileTab, closeAgentFileTab, reportDeskTabs,
+    openFilesTab, openBrowserTab, openTerminalTab, openDecksTab, openGitTab, openFileTab, closeAgentFileTab, reportDeskTabs,
     openUrlInWorkbench, saveWorkbenchSnapshot, resolveAddressBarInput, labelForUrl,
     setTabDragPayload, TAB_DRAG_MIME,
     type WorkbenchTab,
@@ -302,6 +303,11 @@
           <button class="plus-menu-item" onclick={() => pick(openBrowserTab)}><span class="ic"><Icon name="globe" size={14} /></span> {t('workbench.browserMenu')} <span class="kbd">{shortcutLabel('browserTab')}</span></button>
           <button class="plus-menu-item" onclick={() => pick(openFilesTab)}><span class="ic"><Icon name="copy" size={14} /></span> {t('workbench.filesTab')} <span class="kbd">{shortcutLabel('filesTab')}</span></button>
           <button class="plus-menu-item" onclick={() => pick(openDecksTab)}><span class="ic"><Icon name="layoutList" size={14} /></span> {t('workbench.decksTab')}</button>
+          <!-- โค้ด desk only: a working tree is what that desk is held inside,
+               and the storefront has no project to report on (§161.4). -->
+          {#if cockpit.desk === 'coding'}
+            <button class="plus-menu-item" onclick={() => pick(openGitTab)}><span class="ic"><Icon name="gitBranch" size={14} /></span> {t('workbench.gitTab')}</button>
+          {/if}
         </div>
       {/if}
     </div>
@@ -358,6 +364,9 @@
         <button class="plus-menu-item" onclick={() => openBrowserTab()}><span class="ic"><Icon name="globe" size={14} /></span> {t('workbench.browserMenu')} <span class="kbd">{shortcutLabel('browserTab')}</span></button>
         <button class="plus-menu-item" onclick={openFilesTab}><span class="ic"><Icon name="copy" size={14} /></span> {t('workbench.filesTab')} <span class="kbd">{shortcutLabel('filesTab')}</span></button>
         <button class="plus-menu-item" onclick={openDecksTab}><span class="ic"><Icon name="layoutList" size={14} /></span> {t('workbench.decksTab')}</button>
+        {#if cockpit.desk === 'coding'}
+          <button class="plus-menu-item" onclick={openGitTab}><span class="ic"><Icon name="gitBranch" size={14} /></span> {t('workbench.gitTab')}</button>
+        {/if}
       </div>
     {/if}
     {#each workbench.tabs as tab (tab.id)}
@@ -378,6 +387,8 @@
           <FilesPane />
         {:else if tab.kind === 'decks'}
           <DeckRoom />
+        {:else if tab.kind === 'git'}
+          <GitPane />
         {:else if tab.kind === 'file'}
           <!-- Keyed on rev so a re-read actually lands on screen: FileEditor
                copies `content` into its own state once and this pane never

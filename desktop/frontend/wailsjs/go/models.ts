@@ -1,3 +1,24 @@
+export namespace capability {
+	
+	export class Status {
+	    capability: string;
+	    installed: boolean;
+	    approx_bytes: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Status(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.capability = source["capability"];
+	        this.installed = source["installed"];
+	        this.approx_bytes = source["approx_bytes"];
+	    }
+	}
+
+}
+
 export namespace command {
 	
 	export class Preset {
@@ -38,6 +59,7 @@ export namespace config {
 	    disabled?: boolean;
 	    for: string[];
 	    tools?: string[];
+	    source?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new MCPServerConfig(source);
@@ -55,6 +77,7 @@ export namespace config {
 	        this.disabled = source["disabled"];
 	        this.for = source["for"];
 	        this.tools = source["tools"];
+	        this.source = source["source"];
 	    }
 	}
 
@@ -367,6 +390,7 @@ export namespace main {
 	    jobs: number;
 	    lastUsed?: string;
 	    icon: string;
+	    missing?: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Chair(source);
@@ -383,6 +407,7 @@ export namespace main {
 	        this.jobs = source["jobs"];
 	        this.lastUsed = source["lastUsed"];
 	        this.icon = source["icon"];
+	        this.missing = source["missing"];
 	    }
 	}
 	export class ChangedFile {
@@ -643,6 +668,24 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
 	        this.current = source["current"];
+	    }
+	}
+	export class GitFileChange {
+	    path: string;
+	    status: string;
+	    added: number;
+	    removed: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new GitFileChange(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.status = source["status"];
+	        this.added = source["added"];
+	        this.removed = source["removed"];
 	    }
 	}
 	export class IdentityFile {
@@ -1869,10 +1912,15 @@ export namespace subagent {
 	    desk?: string;
 	    icon?: string;
 	    needs?: string[];
+	    publisher?: string;
+	    package?: string;
+	    version?: string;
+	    requires_app?: string;
 	    prompt: string;
 	    path?: string;
 	    builtin: boolean;
 	    overrides?: boolean;
+	    notice?: string;
 	    invalid?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -1890,10 +1938,15 @@ export namespace subagent {
 	        this.desk = source["desk"];
 	        this.icon = source["icon"];
 	        this.needs = source["needs"];
+	        this.publisher = source["publisher"];
+	        this.package = source["package"];
+	        this.version = source["version"];
+	        this.requires_app = source["requires_app"];
 	        this.prompt = source["prompt"];
 	        this.path = source["path"];
 	        this.builtin = source["builtin"];
 	        this.overrides = source["overrides"];
+	        this.notice = source["notice"];
 	        this.invalid = source["invalid"];
 	    }
 	}
@@ -1997,6 +2050,7 @@ export namespace turn {
 	    secs?: number;
 	    added?: number;
 	    removed?: number;
+	    diff?: string;
 	    artifacts?: string[];
 	    proposalId?: number;
 	
@@ -2018,6 +2072,7 @@ export namespace turn {
 	        this.secs = source["secs"];
 	        this.added = source["added"];
 	        this.removed = source["removed"];
+	        this.diff = source["diff"];
 	        this.artifacts = source["artifacts"];
 	        this.proposalId = source["proposalId"];
 	    }
@@ -2032,7 +2087,6 @@ export namespace turn {
 	    static createFrom(source: any = {}) {
 	        return new TurnPart(source);
 	    }
-	    diff?: string;
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
@@ -2054,7 +2108,6 @@ export namespace turn {
 		            for (const key of Object.keys(a)) {
 		                a[key] = new classs(a[key]);
 		            }
-	        this.diff = source["diff"];
 		            return a;
 		        }
 		        return new classs(a);

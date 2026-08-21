@@ -141,6 +141,16 @@ export const th = {
   // กล่องที่กางใต้แถวแก้ไฟล์ในโต๊ะโค้ด บอกว่าแก้บรรทัดไหนไปเป็นอะไร ในรูปแบบเดียวกับ git
   // diffMore คือการบอกตรง ๆ ว่าตัดตรงไหน diff ยาว ๆ ถูกจำกัดตั้งแต่ตอนสร้าง
   // และ diff ที่ถูกตัดแล้วไม่บอก จะอ่านเหมือนว่านั่นคือทั้งหมด
+  'workbench.gitTab': 'Git',
+  // The working tree panel (§161.4) — โค้ด desk only, and it says so itself
+  // rather than leaving a person to wonder where it went on the other desks.
+  'git.workingTree': 'ไฟล์ที่แก้อยู่',
+  'git.codeDeskOnly': 'แผงนี้แสดงเฉพาะหน้าโค้ดเท่านั้น',
+  'git.clean': 'ยังไม่มีอะไรเปลี่ยน ไฟล์ตรงกับสาขาอยู่',
+  'git.loading': 'กำลังอ่านไฟล์ที่แก้...',
+  'git.noDiff': 'ไม่มีบรรทัดให้แสดง อาจเป็นไฟล์ไบนารี หรือเปลี่ยนชื่อเฉย ๆ',
+  'git.openFile': 'เปิดไฟล์',
+  'git.refresh': 'อ่านใหม่',
   'chat.diffToggle': 'ดูว่าแก้อะไรไป',
   'chat.diffMore': 'ยังมีอีก {n} บรรทัด ไม่ได้แสดง',
   'chat.failedCount': 'ล้มเหลว {n}',

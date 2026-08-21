@@ -5585,3 +5585,17 @@ The visual language is literally the removed panel's — `.diff`, `.dl`, `.hunk`
 
 **`git diff` is still the agent's own tool.** The read-only `git` skill keeps `diff` and `show`, and the prompt still tells an agent to check its own work with them. That is the agent reading; this is the user reading. Same format, two different readers, and neither is a copy of the other.
 
+### 161.4 The other question, which nothing in the window answered — the working tree as a room (2026-08-22)
+
+The fold-out above answers *"what did that call change"*. The owner, the same night, asked for the one it cannot: *"หน้าโต๊ะ เพิ่ม ไฟล์ Git ได้มั้ยครับที่แก้ไข"* — with a screenshot of a branch header, a file per row with its own `+N -M`, and a diff behind each row.
+
+**They are different questions and both are worth a surface.** A turn is not a session and a session is not an afternoon: by the third turn, "where does my repository stand right now" has no answer anywhere on screen. The chat's rows are per call and scroll away; the file tree's M/U badges say *which* files but never *how much* or *what*.
+
+**Decision: one panel in the workbench, `git` tab kind, โค้ด desk only, and it says so on its own face.**
+
+- **Only that desk, stated rather than implied.** The `+` menu draws the entry only when `cockpit.desk === 'coding'`, and the panel's second line reads *"แผงนี้แสดงเฉพาะหน้าโค้ดเท่านั้น"*. The owner asked for exactly this — *"อยากให้แสดงแค่หน้าโค้ด แล้วมีบอกว่า แสดงแค่หน้าโค้ดเท่านั้น"* — and it is the same rule §161.2 set for the fold-out, for the same reason: the storefront has no project to report on.
+- **Working tree, not this session's edits.** The owner offered both readings (*"เอาอิงตามตำแหน่งโปรเจค หรือไฟล์ที่แก้ไขดี"*). The session's own edits are already drawn, hunk by hunk, in the chat — a panel repeating them would be a second place answering a question that already has a home. The project's difference from HEAD is the fact nothing else holds.
+- **The hunks come from the same differ.** `GitFileDiff` reads HEAD's copy (`git show HEAD:<path>`) and the file on disk and hands both to `skill.FileDiff` — it does not parse `git diff` output. One extra process per expanded file buys the guarantee that a file's diff looks and truncates identically whether you meet it under a chat row or under a row here. Two renderers for one thing is how they drift.
+- **Counts come from git, content is fetched on expand.** `git diff --numstat HEAD` supplies `+N -M`, so the panel can never disagree with `git diff --stat` about the same file. Rows arrive collapsed and fetch nothing: a working tree of forty files is ordinary, and forty `git show` calls for a list nobody has opened is work done on the chance it is wanted.
+
+**Not decided, and deliberately left alone: the repo section in สรุปห้อง.** SessionStrip already lists changed files from `GitChangedFiles`. That is now a smaller, older reading of the same fact, and by the single-source rule one of the two should go — but which one is the owner's call about his own room, not a cleanup to slip into a feature. Flagged, not removed.
