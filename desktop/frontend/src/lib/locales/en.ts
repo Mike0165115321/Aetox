@@ -385,6 +385,9 @@ export const en: Record<keyof typeof th, string> = {
   'settings.groupPersonal': 'Personal',
   'settings.groupModels': 'AI models',
   'settings.groupTools': 'Tools',
+  'settings.community': 'Community',
+  'settings.communityDesc': 'A Facebook group for questions, ideas, and problems that are not yet shaped like a bug report.',
+  'settings.communityOpen': 'Open the group',
   'settings.groupAbout': 'About',
   'settings.about': 'About Aetox',
   'settings.aboutVersion': 'Installed version',
@@ -789,6 +792,9 @@ export const en: Record<keyof typeof th, string> = {
   'onboard.approvalUnsafeDesc': 'Reading and searching go ahead. Deletes, git and shell ask.',
   'onboard.approvalFullDesc': 'No questions, except shell-grade danger.',
   'onboard.readyTitle': 'Ready',
+  // Offered during setup because that is when somebody has a question and
+  // nowhere to ask it.
+  'onboard.community': 'Ask in the community group',
   'onboard.readyDesc': 'Type whatever you want done.',
   'onboard.next': 'Next',
   'onboard.start': 'Start using Aetox',

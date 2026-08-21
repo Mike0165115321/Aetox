@@ -26,6 +26,7 @@
   import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
   import { cockpit, switchProvider, submitAPIKey, switchApprovalMode, completeSignIn } from './stores/cockpit.svelte'
   import { DONE_KEY, takeFirstRunReplay } from './firstRun'
+  import { COMMUNITY_URL } from './links'
   import { durationMs } from './motion'
 
   // 0 language · 1 connect · 2 look · 3 approval · 4 done. Connecting comes
@@ -431,6 +432,16 @@
     <!-- Where you are, without a number: four steps is few enough to draw. -->
     <div class="ob-dots">
       {#each [0, 1, 2, 3] as i}<i class:on={step === i} class:past={step > i}></i>{/each}
+
+    <!-- The group, on every screen but the last. Setup is exactly when
+         somebody has a question and nowhere to ask it. Not on the ready
+         screen, which advances on its own after a moment and would flash the
+         link past rather than offer it. -->
+    {#if step < 5}
+      <div class="ob-community">
+        <button class="ob-link" onclick={() => BrowserOpenURL(COMMUNITY_URL)}>{t('onboard.community')}</button>
+      </div>
+    {/if}
     </div>
   </div>
 {/if}

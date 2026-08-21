@@ -105,7 +105,12 @@ describe('the connect step', () => {
 
   it('never offers a way out without connecting', async () => {
     await openConnect()
-    const links = [...document.querySelectorAll('.ob-link')].map((l) => l.textContent?.trim())
+    // Scoped to the screen's own links. The community link in the wizard's
+    // footer is chrome rather than an answer — it opens a browser and moves
+    // nobody past this step — and counting it here would make this assertion
+    // about the markup rather than about the escape hatches it exists to
+    // forbid.
+    const links = [...document.querySelectorAll('.ob-links .ob-link')].map((l) => l.textContent?.trim())
     // Back is the only link. No skip, and no "I have nothing" answer.
     expect(links).toEqual(['ย้อนกลับ'])
     expect(answers()).not.toContain('ยังไม่มีอะไรเลย')

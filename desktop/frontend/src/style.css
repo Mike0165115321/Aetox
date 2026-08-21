@@ -3808,6 +3808,9 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .ob-dots { position:absolute; bottom:26px; left:50%; transform:translateX(-50%); display:flex; gap:7px; }
 .ob-dots i { width:6px; height:6px; border-radius:50%; background:var(--border-default); transition:width .22s ease, background .22s ease; }
 .ob-dots i.past { background:var(--border-strong); }
+/* Above the step dots and quieter than everything on the screen: an offer on
+   the way past, never a step in the setup. */
+.ob-community { position:absolute; bottom:52px; left:50%; transform:translateX(-50%); }
 .ob-dots i.on { width:18px; border-radius:3px; background:var(--accent); }
 
 /* Motion here is feedback — a press that answers, a screen that arrives. Where

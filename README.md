@@ -18,6 +18,7 @@
 <p align="center">
   <a href="README.th.md">ภาษาไทย</a> ·
   <a href="https://mike0165115321.github.io/Aetox/">Website</a> ·
+  <a href="https://www.facebook.com/share/g/1BnXC5EiWg/">Community</a> ·
   <a href="https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe">Download</a> ·
   <a href="ARCHITECTURE.md">Architecture</a> ·
   <a href="docs/DECISIONS.md">Every decision, and why</a>
@@ -460,6 +461,12 @@ assistant door to the code door; a code-door team with defined roles.
 [Benchmark rules](BENCHMARK.md) ·
 [Platform support](PLATFORM-SUPPORT.md) · [Roadmap](ROADMAP.md) ·
 [Automation engines](docs/AUTOMATION-ENGINES.md)
+## Community
+
+There is a Facebook group for questions, ideas, and the kind of half-formed problem that does not
+fit in an issue yet: [the Aetox group](https://www.facebook.com/share/g/1BnXC5EiWg/). Bugs are
+still better filed as issues, because an issue carries the version and the log with it.
+
 
 ## Reporting bugs
 

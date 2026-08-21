@@ -18,6 +18,7 @@
 <p align="center">
   <a href="README.md">English</a> ·
   <a href="https://mike0165115321.github.io/Aetox/">เว็บไซต์</a> ·
+  <a href="https://www.facebook.com/share/g/1BnXC5EiWg/">ชุมชน</a> ·
   <a href="https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe">ดาวน์โหลด</a> ·
   <a href="ARCHITECTURE.md">สถาปัตยกรรม</a> ·
   <a href="docs/DECISIONS.md">ทุกการตัดสินใจ และเหตุผล</a>
@@ -448,6 +449,12 @@ Aetox ใช้ WebView2 ที่ Windows มีอยู่แล้ว — �
 [บริษัทนี้คืออะไร](COMPANY.md) · [กติกาการวัด](BENCHMARK.md) ·
 [แพลตฟอร์มที่รองรับ](PLATFORM-SUPPORT.md) · [แผนงาน](ROADMAP.md) ·
 [เครื่องยนต์ออโตเมชั่น](docs/AUTOMATION-ENGINES.md)
+## ชุมชน
+
+มีกลุ่มบน Facebook ไว้ถาม ไว้เสนอ และไว้เล่าปัญหาที่ยังไม่เป็นรูปพอจะเขียนเป็น issue:
+[กลุ่ม Aetox](https://www.facebook.com/share/g/1BnXC5EiWg/) ส่วนบั๊กแจ้งเป็น issue ดีกว่า
+เพราะ issue พาเวอร์ชันและ log ติดไปด้วย
+
 
 ## แจ้งบั๊ก
 

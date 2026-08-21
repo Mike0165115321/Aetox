@@ -44,6 +44,10 @@
     ApprovePendingChange, RejectPendingChange, LearnedEntries, LearnedScopes, SaveLearnedEntry, OpenMemoryFolder,
     ListSystemIssues, MarkIssueReported, ListDecidedIssues,
   } from '../../wailsjs/go/main/App'
+  // Deliberately alongside the issue button rather than instead of it: an issue
+  // carries the version and the log, the group carries the half-formed question
+  // that is not a bug report yet.
+  import { COMMUNITY_URL } from './links'
   import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
   import promptPayQR from '../assets/images/promptpay-qr.png'
   import { config, update, main, subagent } from '../../wailsjs/go/models'
@@ -4880,6 +4884,20 @@
       <p class="muted set-sub">{t('settings.issuesDesc')}</p>
 
       {#if issuesError}<div class="mset-error">{issuesError}</div>{/if}
+      <!-- On the page somebody opens when something is wrong. Not instead of
+           the issue button below: an issue carries the version and the log,
+           the group carries the thing you cannot describe well enough to file
+           yet. -->
+      <div class="settings-card">
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.community')}</div>
+            <div class="d">{t('settings.communityDesc')}</div>
+          </div>
+          <button class="ctrl" onclick={() => BrowserOpenURL(COMMUNITY_URL)}>{t('settings.communityOpen')}</button>
+        </div>
+      </div>
+
 
       <div class="settings-card">
         {#each systemIssues as c (c.id)}
@@ -5762,6 +5780,14 @@
           </div>
           <button class="ctrl" onclick={() => BrowserOpenURL(RELEASES_URL)}>{t('settings.aboutOpenRelease')}</button>
         </div>
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.community')}</div>
+            <div class="d">{t('settings.communityDesc')}</div>
+          </div>
+          <button class="ctrl" onclick={() => BrowserOpenURL(COMMUNITY_URL)}>{t('settings.communityOpen')}</button>
+        </div>
+
 
         <div class="set-row">
           <div class="set-txt">

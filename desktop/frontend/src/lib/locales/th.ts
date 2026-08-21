@@ -389,6 +389,9 @@ export const th = {
   'settings.groupPersonal': 'ส่วนบุคคล',
   'settings.groupModels': 'โมเดล AI',
   'settings.groupTools': 'เครื่องมือ',
+  'settings.community': 'ชุมชน',
+  'settings.communityDesc': 'กลุ่มบน Facebook ไว้ถาม ไว้เสนอ และไว้เล่าปัญหาที่ยังไม่เป็นรูปพอจะเขียนเป็นรายงานบั๊ก',
+  'settings.communityOpen': 'เปิดกลุ่ม',
   'settings.groupAbout': 'เกี่ยวกับ',
   'settings.about': 'เกี่ยวกับ Aetox',
   'settings.aboutVersion': 'เวอร์ชันที่ติดตั้ง',
@@ -793,6 +796,8 @@ export const th = {
   'onboard.approvalUnsafeDesc': 'อ่านและค้นได้เลย ลบไฟล์ git เชล ค่อยถาม',
   'onboard.approvalFullDesc': 'ไม่ถาม ยกเว้นคำสั่งอันตรายระดับเชล',
   'onboard.readyTitle': 'พร้อมแล้ว',
+  // มีให้ตอนตั้งค่าเพราะนั่นคือตอนที่คนมีคำถามและยังไม่รู้จะไปถามใคร
+  'onboard.community': 'ถามในกลุ่มชุมชน',
   'onboard.readyDesc': 'พิมพ์สิ่งที่อยากให้ทำได้เลย',
   'onboard.next': 'ถัดไป',
   'onboard.start': 'เริ่มใช้ Aetox',
