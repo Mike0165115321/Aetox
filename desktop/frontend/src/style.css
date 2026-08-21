@@ -3004,6 +3004,13 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    card's eyebrow and the rows under it visibly out of line. */
 .set-row { display:flex; align-items:center; gap:16px; padding:8px 16px; }
 .set-row + .set-row { border-top:1px solid var(--border-subtle); }
+/* The one row on an extension page that is an offer rather than a setting.
+   Not a fourth button weight (the hierarchy above says why there are three):
+   the emphasis is position, an icon, and two lines of copy. What is added here
+   is room, because a hero at .set-row's 8px reads as another list entry. */
+.set-hero { padding:16px; align-items:flex-start; }
+.set-hero-ic { color:var(--interactive-bright); display:flex; padding-top:1px; }
+
 .set-txt { flex:1; min-width:0; }
 /* Name and description used to sit at 15.5 and 14.5 — near enough that a long
    description read as a wall instead of as a subtitle. The gap is what makes a

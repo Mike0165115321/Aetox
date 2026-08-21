@@ -53,7 +53,7 @@
   import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
   import promptPayQR from '../assets/images/promptpay-qr.png'
   import { config, update, main, subagent } from '../../wailsjs/go/models'
-  import { cockpit, consultAboutIssue, setActiveView, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat, setProviderBaseURL, retryActiveProvider, completeSignIn, signOutProvider, importSignIn, SETTINGS_SECTION_KEY } from './stores/cockpit.svelte'
+  import { cockpit, startChatWith, setActiveView, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat, setProviderBaseURL, retryActiveProvider, completeSignIn, signOutProvider, importSignIn, SETTINGS_SECTION_KEY } from './stores/cockpit.svelte'
   import {
     identity, loadIdentityFiles, openIdentityFile, saveIdentityFile,
     createIdentityFile, deleteIdentityFile, identityTemplates,
@@ -2720,7 +2720,27 @@
 
   async function consultIssue(c: main.PendingChange) {
     onClose()
-    await consultAboutIssue(consultPrompt(c))
+    await startChatWith(consultPrompt(c))
+  }
+
+  // The three extension pages — skills, MCP, ชุดคำสั่ง — all ask the same thing
+  // of the user, and it is the thing a settings page cannot ask: *what do you
+  // do?* Every road they offer today (a GitHub URL, a .zip, a server address, an
+  // empty editor) requires the user to already know what exists, which is the
+  // real reason the shelf looks bare on a fresh install. A button that starts a
+  // conversation is the only door that does not go stale.
+  //
+  // One function, three prompts, and the prompts live in the locale file because
+  // what is about to be said on the user's behalf should be readable by somebody
+  // who is not reading the code. Their VALUES are English in every locale (see
+  // the note there): the label is for the user, the sentence is for the model.
+  //
+  // onClose() first, exactly as consultIssue does: the new chat is the answer, so
+  // leaving the user on the settings page to discover it would be the wrong
+  // ending.
+  async function askAssistant(promptKey: 'settings.aiFindSkillPrompt' | 'settings.aiFindMCPPrompt' | 'settings.aiFindPresetPrompt') {
+    onClose()
+    await startChatWith(t(promptKey))
   }
 
   // Reporting is the About page's door with this cluster written into the body:
@@ -3151,6 +3171,33 @@
      wrong for everyone it was not written for — and the precedent is an MCP
      stdio server, which has always been a command in a config file. -->
 {#snippet serverControls(row: ConnectionRow)}
+<!-- The offer that makes an extension page usable by somebody who does not
+     already know what exists.
+
+     Its own card at the top of the page rather than a third button in the row
+     with เปิดโฟลเดอร์ and รีเฟรช: those are janitorial, and no amount of colour
+     makes a hero out of the third item in a utility row. DESIGN.md §1 —
+     ยืมโครงได้ ห้ามยืมเครื่องประดับ — so this is the ordinary set-row shape and
+     the ordinary .ctrl-primary, with position and copy doing the work.
+
+     The button says what pressing it does (opens a chat), not what it hopes will
+     happen. Nothing is installed by pressing it. -->
+{#snippet aiFindCard(titleKey: TKey, descKey: TKey, promptKey: 'settings.aiFindSkillPrompt' | 'settings.aiFindMCPPrompt' | 'settings.aiFindPresetPrompt')}
+  <div class="settings-card">
+    <div class="set-row set-hero">
+      <span class="set-hero-ic"><Icon name="sparkles" size={18} /></span>
+      <div class="set-txt">
+        <div class="t">{t(titleKey)}</div>
+        <div class="d">{t(descKey)}</div>
+      </div>
+      <button class="ctrl ctrl-primary ctrl-icon" onclick={() => askAssistant(promptKey)}>
+        <Icon name="messageSquare" size={13} />
+        {t('settings.aiFind')}
+      </button>
+    </div>
+  </div>
+{/snippet}
+
   <!-- Its own bordered block, and the heading says which of the two questions
        this half answers. They were a run of fields under the address and the
        owner could not tell them apart from the credential check below — which
@@ -4592,6 +4639,8 @@
               {skillBusy === 'refresh' ? t('settings.refreshing') : t('settings.refresh')}
             </button>
           </div>
+      {@render aiFindCard('settings.aiFindSkillTitle', 'settings.aiFindSkillDesc', 'settings.aiFindSkillPrompt')}
+
           <!-- The real path, read from the engine. Two of the three places this
                page used to name one had it wrong (~/.agents/skills, which is
                opencode's and which Aetox never scans), so anyone who followed
@@ -4689,6 +4738,7 @@
           </button>
           {#each presets as p (p.name)}
             <button class="pp-card" onclick={() => openPreset(p)}>
+        {@render aiFindCard('settings.aiFindPresetTitle', 'settings.aiFindPresetDesc', 'settings.aiFindPresetPrompt')}
               <span class="pp-cover" style="--h:{coverHue(p.name)}">
                 {#if p.image}
                   <img src={p.image} alt="" />
@@ -5360,6 +5410,8 @@
                  the press looks like it did nothing. -->
             <button class="ctrl ctrl-icon" disabled={mcpBusy !== ''} onclick={openMCPForm}>
               <Icon name="plus" size={13} />
+      {@render aiFindCard('settings.aiFindMCPTitle', 'settings.aiFindMCPDesc', 'settings.aiFindMCPPrompt')}
+
               {t('settings.addServer')}
             </button>
             <button class="ctrl" disabled={mcpBusy !== ''} onclick={() => OpenMCPFolder()}>

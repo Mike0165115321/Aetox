@@ -1509,20 +1509,24 @@ export async function refreshPendingIssues(): Promise<void> {
   }
 }
 
-/** Take one repeated failure to the assistant instead of to the developer.
+/** Open a fresh chat carrying one prepared message from the user.
  *
- * The third door on the problems page, and the one the other two could not
- * open: a failure may be Aetox's fault, this machine's, or the agent's own way
- * of calling a tool, and the user is asked to judge that with nothing to go on.
- * The assistant can actually look.
+ * The door a settings page uses when the honest answer to what it is showing is
+ * a conversation rather than a form. Two of them use it today: the problems page
+ * (a failure may be Aetox's fault, this machine's, or the agent's own way of
+ * calling a tool, and the user is asked to judge that with nothing to go on —
+ * the assistant can actually look), and the three extension pages, where finding
+ * a skill, a server or a slash command means asking the user what they do before
+ * anything can be recommended.
  *
- * Sent with sendUserMessage, so the problem lands in the chat as the user's own
- * visible message rather than as a hidden instruction — owner's requirement,
- * and the honest shape anyway: a question you cannot see was never asked on
- * your behalf.
+ * Sent with sendUserMessage, so the request lands in the chat as the user's own
+ * visible message rather than as a hidden instruction — owner's requirement, and
+ * the honest shape anyway: a question you cannot see was never asked on your
+ * behalf. It is also why the caller supplies the whole sentence: what is about
+ * to be said on their behalf is a string somebody can read in the locale file.
  *
  * Same four steps as startTaskChip below, for the same reasons written there. */
-export async function consultAboutIssue(prompt: string): Promise<void> {
+export async function startChatWith(prompt: string): Promise<void> {
   await newSessionHere()
   await sendUserMessage(prompt)
 }

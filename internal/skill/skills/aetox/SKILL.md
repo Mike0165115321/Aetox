@@ -62,6 +62,28 @@ Skills are the deliberate exception and do **not** live here — see below.
 | `<DataRoot>/webview` | the in-app browser's profile |
 | `<DataRoot>/update-check.json` | update state |
 
+### What stays here, and what leaves
+
+Everything in the table above is a file on the user's own disk. Aetox does not
+upload any of it: there is no telemetry, no analytics, no account required to
+use it, and no copy of a conversation, a document or a key anywhere but here.
+This is the answer whenever somebody asks whether their work is private, and
+whenever you are about to ask them for something they would reasonably hesitate
+to hand over.
+
+Say it in your own words, and say the rest of it too, because a claim that is
+only three-quarters true is the kind that gets found out:
+
+- **The conversation goes to the model that is answering.** If that is a cloud
+  provider, everything in the turn reaches them, including anything the user
+  just typed. If it is Ollama or LM Studio, nothing leaves the machine at all.
+- **Requests the user asked for leave.** A web search, a page fetch, a repository
+  read, a connected MCP server.
+- **Two small checks of ours:** the update check and the model catalog. Version
+  numbers and prices, nothing about the user.
+
+That is the whole list. Answer from it rather than reassuring in general terms.
+
 ## Skills
 
 **The shared shelf is `~/.aetox/skills`, not under `<DataRoot>`.** One folder
@@ -77,9 +99,18 @@ kept in the worker's own folder instead. See "เอเจน" below.
 
 Two sources on the shelf, and the second wins:
 
-- **Bundled** — compiled into the binary. Two of them ship: this document, and
-  `aetox-slides`, which is the anatomy of a deck the slides room can actually
-  page through. Nothing to download, nothing on disk to delete.
+- **Bundled** — compiled into the binary. Nothing to download, nothing on disk
+  to delete. Five ship:
+  - `aetox` — this document.
+  - `aetox-slides` — the anatomy of a deck the slides room can actually page
+    through.
+  - `aetox-skills` — how to find the user a skill and install it. Read it when
+    they ask for one; the settings page has a button that starts exactly that
+    conversation.
+  - `aetox-mcp` — how to judge an MCP server before recommending one, and why
+    you cannot add it yourself.
+  - `aetox-prompts` — how to write a `/name` prompt preset, which is the one
+    extension point you can build end to end.
 - **User** — a folder in `~/.aetox/skills`. A folder whose skill name matches a
   bundled one replaces it entirely. Editing a shipped skill means copying it
   out under the same name, never fighting the app.

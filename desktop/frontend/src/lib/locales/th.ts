@@ -735,6 +735,20 @@ export const th = {
   'settings.skillInstall': 'ติดตั้งจาก GITHUB',
   'settings.skillInstallPlaceholder': 'URL ของ GitHub repo เช่น https://github.com/user/skill-repo',
   'settings.skillInstallHint': 'ใช้ได้กับ repo ที่มี SKILL.md อยู่ที่ราก (ทั้ง repo = สกิลเดียว) หรืออยู่ในโฟลเดอร์ชั้นเดียว (แต่ละโฟลเดอร์ = หนึ่งสกิล) ถ้ามี aetox-plugin.json ก็ใช้ตามนั้น · ติดตั้งแล้วใช้ได้ทันที',
+  // ค่าของสามคีย์ล่างนี้เป็นภาษาอังกฤษทุกภาษา ตั้งใจให้เป็นแบบนั้น
+  // มันไม่ใช่ข้อความที่ผู้ใช้อ่านก่อน แต่เป็นข้อความที่ส่งให้โมเดล และภาษาไทย
+  // กินโทเคนราวสามเท่าของภาษาอังกฤษที่ความหมายเท่ากัน · ป้ายปุ่มยังแปล
+  // เพราะนั่นคือส่วนที่คนอ่าน
+  'settings.aiFind': 'คุยกับผู้ช่วย',
+  'settings.aiFindSkillTitle': 'ให้ผู้ช่วยหาสกิลมาให้',
+  'settings.aiFindSkillDesc': 'เปิดแชทใหม่ ผู้ช่วยจะถามว่าคุณทำงานอะไรซ้ำ ๆ แล้วไปหาสกิลที่ตรงกับงานนั้นมาติดตั้งให้ ไม่ต้องรู้จักชื่อสกิลมาก่อน',
+  'settings.aiFindMCPTitle': 'ให้ผู้ช่วยหาเซิร์ฟเวอร์ MCP มาให้',
+  'settings.aiFindMCPDesc': 'เปิดแชทใหม่ ผู้ช่วยจะถามว่าคุณอยากให้ต่อกับอะไร แล้วบอกว่าตัวไหนคุ้มที่จะเพิ่ม และแต่ละตัวกินโทเคนเพิ่มทุกข้อความเท่าไร',
+  'settings.aiFindPresetTitle': 'ให้ผู้ช่วยเขียนชุดคำสั่งให้',
+  'settings.aiFindPresetDesc': 'เปิดแชทใหม่ ผู้ช่วยจะถามว่าคุณพิมพ์คำขอแบบไหนซ้ำบ่อยที่สุด แล้วเขียนเป็นชุดคำสั่งที่เรียกด้วย /ชื่อ ให้',
+  'settings.aiFindSkillPrompt': 'Find me a skill to add. Read the `aetox-skills` skill first, then ask me what work I do over and over. Do not install anything until I have said which one I want.',
+  'settings.aiFindMCPPrompt': 'Find me an MCP server to connect. Read the `aetox-mcp` skill first, then ask me what I want you connected to. Tell me how many tools each one adds to every request.',
+  'settings.aiFindPresetPrompt': 'Make me a slash command. Read the `aetox-prompts` skill first, then ask me which request I end up typing most often.',
   'settings.speechModel': 'โมเดลถอดเสียง',
   'settings.speechModelDesc': 'โมเดลที่ audio_transcribe ใช้ ตัวใหญ่แม่นกว่าแต่กินพื้นที่และช้ากว่า Aetox อ่านโมเดลจากโฟลเดอร์ของ Ollama และ LM Studio ให้ด้วย ไม่ต้องโหลดซ้ำ',
   'settings.speechNoModels': 'ยังไม่พบไฟล์โมเดลในเครื่อง',

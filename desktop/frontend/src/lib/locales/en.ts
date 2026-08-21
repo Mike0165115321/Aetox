@@ -732,6 +732,20 @@ export const en: Record<keyof typeof th, string> = {
   'settings.skillInstall': 'INSTALL FROM GITHUB',
   'settings.skillInstallPlaceholder': 'GitHub repo URL, e.g. https://github.com/user/skill-repo',
   'settings.skillInstallHint': 'Works with a repo that has SKILL.md at its root (the repo is one skill) or one folder deep (each folder is a skill). An aetox-plugin.json manifest is used if present. Loads immediately.',
+  // The three prompt strings below are English in EVERY locale, deliberately.
+  // They are not read by the user first — they are sent to the model, and Thai
+  // costs roughly three times the tokens of English for the same sentence. The
+  // button LABEL is translated, because that is the part somebody reads.
+  'settings.aiFind': 'Open a chat',
+  'settings.aiFindSkillTitle': 'Let the assistant find you a skill',
+  'settings.aiFindSkillDesc': 'It opens a new chat, asks what work you do over and over, then goes and finds a skill for that work and installs it. You do not need to know any skill by name first.',
+  'settings.aiFindMCPTitle': 'Let the assistant find you an MCP server',
+  'settings.aiFindMCPDesc': 'It opens a new chat, asks what you want it connected to, then tells you which server is worth adding and how many tools each one adds to every request.',
+  'settings.aiFindPresetTitle': 'Let the assistant write you a slash command',
+  'settings.aiFindPresetDesc': 'It opens a new chat, asks which request you end up typing most often, then turns it into a command you run with /name.',
+  'settings.aiFindSkillPrompt': 'Find me a skill to add. Read the `aetox-skills` skill first, then ask me what work I do over and over. Do not install anything until I have said which one I want.',
+  'settings.aiFindMCPPrompt': 'Find me an MCP server to connect. Read the `aetox-mcp` skill first, then ask me what I want you connected to. Tell me how many tools each one adds to every request.',
+  'settings.aiFindPresetPrompt': 'Make me a slash command. Read the `aetox-prompts` skill first, then ask me which request I end up typing most often.',
   'settings.speechModel': 'Speech model',
   'settings.speechModelDesc': 'The model audio_transcribe runs on. Bigger is more accurate but slower and larger on disk. Aetox also reads models already in your Ollama and LM Studio folders, so nothing is downloaded twice.',
   'settings.speechNoModels': 'No model files found on this machine yet',
