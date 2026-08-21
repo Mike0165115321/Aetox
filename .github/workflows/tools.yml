@@ -31,6 +31,12 @@ on:
       tesseract_sha256:
         description: SHA256 of that release's w64 setup exe
         default: C885FFF6998E0608BA4BB8AB51436E1C6775C2BAFC2559A19B423E18678B60C9
+      ffmpeg_tag:
+        description: BtbN FFmpeg-Builds autobuild tag to mirror
+        default: autobuild-2026-08-20-13-45
+      ffmpeg_asset:
+        description: the win64 LGPL shared zip in that release
+        default: ffmpeg-n9.0.1-6-g9d4ca21220-win64-lgpl-shared-9.0.zip
       tessdata_commit:
         # A commit, not "main". project.nsi fetches tha.traineddata from
         # tessdata's main branch against a fixed SHA256 — so the day upstream
@@ -126,3 +132,65 @@ jobs:
 
             Not an Aetox release. Built by `.github/workflows/tools.yml`.
           files: tesseract-win64.zip
+
+  # ffmpeg is mirrored for a different reason than Tesseract, and a sharper one.
+  #
+  # BtbN publishes exactly the LGPL shared build this app wants, and
+  # project.nsi pinned one of their dated autobuild tags on the reasoning that
+  # "the dated tag is immutable". True about its bytes, false about its
+  # existence: BtbN prunes autobuilds after a few days, so on 2026-08-21 the
+  # tag pinned three weeks earlier answered 404 and every fresh install of
+  # v1.4.0 had been silently skipping ffmpeg — the installer's own error path
+  # prints a line and carries on, so video_ocr and audio_transcribe simply were
+  # not there.
+  #
+  # A pin can only be as durable as the thing it points at. Mirroring the zip
+  # onto a release we own is what makes "immutable" true rather than hoped for.
+  ffmpeg:
+    runs-on: windows-latest
+    steps:
+      - name: Take the LGPL shared build, keep only bin/
+        shell: pwsh
+        run: |
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/${{ inputs.ffmpeg_tag }}/${{ inputs.ffmpeg_asset }}"
+          Write-Host "fetching $url"
+          curl.exe -L --fail --max-time 600 -o ffmpeg.zip $url
+          Expand-Archive ffmpeg.zip -DestinationPath raw
+          $bin = Get-ChildItem raw -Directory | ForEach-Object { Join-Path $_.FullName 'bin' } | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $bin) { throw 'no bin/ directory inside the archive — its layout changed' }
+          if (-not (Test-Path (Join-Path $bin 'ffmpeg.exe'))) { throw 'bin/ has no ffmpeg.exe' }
+          New-Item -ItemType Directory out | Out-Null
+          Copy-Item "$bin/*" out/ -Recurse
+          "{0:N1} MB kept" -f ((Get-ChildItem out -Recurse | Measure-Object Length -Sum).Sum / 1MB)
+
+      - name: Zip it and say what to pin
+        id: pack
+        shell: pwsh
+        run: |
+          Compress-Archive -Path out/* -DestinationPath ffmpeg-win64-lgpl.zip
+          $sha = (Get-FileHash ffmpeg-win64-lgpl.zip -Algorithm SHA256).Hash.ToLower()
+          $ver = ([regex]::Match('${{ inputs.ffmpeg_asset }}', 'ffmpeg-(n[0-9][^-]*)')).Groups[1].Value
+          if (-not $ver) { throw 'could not read a version out of the asset name' }
+          $tag = "tools-ffmpeg-$ver"
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          @"
+
+          Paste into Manifest() in internal/capability/capability.go:
+
+            URL:    "https://github.com/${{ github.repository }}/releases/download/$tag/ffmpeg-win64-lgpl.zip",
+            SHA256: "$sha",
+
+          "@ | Write-Host
+
+      - name: Publish it as its own release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.pack.outputs.tag }}
+          name: ${{ steps.pack.outputs.tag }}
+          body: |
+            ffmpeg, LGPL shared build, mirrored from BtbN/FFmpeg-Builds
+            `${{ inputs.ffmpeg_tag }}` with only `bin/` kept.
+
+            Mirrored because BtbN prunes its autobuild tags after a few days,
+            so a pin against one stops resolving. Not an Aetox release.
+          files: ffmpeg-win64-lgpl.zip
