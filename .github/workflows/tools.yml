@@ -1,0 +1,128 @@
+# Repackage Tesseract into a plain zip that Aetox can install without an
+# administrator.
+#
+# Why this exists: Tesseract's only official Windows channel is the UB-Mannheim
+# NSIS installer, which elevates. tesseract's own docs say there is no official
+# installer for current versions and point at that build
+# (https://tesseract-ocr.github.io/tessdoc/Downloads.html); the plain zips that
+# turn up in a search are 3.02-era or of unclear provenance, and fixing a
+# trust problem by trusting someone less is not a fix.
+#
+# So the bytes still come from UB-Mannheim, pinned and checksummed exactly as
+# desktop/build/windows/installer/project.nsi pinned them. What changes is that
+# the extraction happens once, here, in a script anyone can read, instead of by
+# running a third-party installer on a stranger's machine.
+#
+# The output is its own release, tagged tools-tesseract-<version>, deliberately
+# separate from the app's releases: the archive is immutable and changes only
+# when Tesseract does, so tying it to a version number that moves every week
+# would mean re-uploading identical bytes and re-pinning them for nothing.
+#
+# Run it from the Actions tab. It prints the manifest snippet to paste into
+# internal/capability/capability.go at the end.
+name: tools
+
+on:
+  workflow_dispatch:
+    inputs:
+      tesseract_tag:
+        description: UB-Mannheim release tag
+        default: v5.4.0.20240606
+      tesseract_sha256:
+        description: SHA256 of that release's w64 setup exe
+        default: C885FFF6998E0608BA4BB8AB51436E1C6775C2BAFC2559A19B423E18678B60C9
+      tessdata_commit:
+        # A commit, not "main". project.nsi fetches tha.traineddata from
+        # tessdata's main branch against a fixed SHA256 — so the day upstream
+        # rebuilds that file, the checksum stops matching, and the installer's
+        # own error path quietly skips Thai rather than failing. A pinned URL
+        # cannot drift out from under its pin.
+        description: tesseract-ocr/tessdata commit to take tha.traineddata from
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  tesseract:
+    runs-on: windows-latest
+    steps:
+      - name: Download the official installer and prove it is the pinned one
+        shell: pwsh
+        run: |
+          $tag = "${{ inputs.tesseract_tag }}"
+          $url = "https://github.com/UB-Mannheim/tesseract/releases/download/$tag/tesseract-ocr-w64-setup-$($tag.TrimStart('v')).exe"
+          Write-Host "fetching $url"
+          curl.exe -L --fail --max-time 300 -o setup.exe $url
+          $got = (Get-FileHash setup.exe -Algorithm SHA256).Hash
+          if ($got -ne "${{ inputs.tesseract_sha256 }}") {
+            throw "installer checksum is $got, not the pinned ${{ inputs.tesseract_sha256 }} — refusing to repackage bytes nobody reviewed"
+          }
+          Write-Host "checksum matches the pin"
+
+      # 7-Zip reads NSIS archives, and it ships on the windows runner image.
+      # Checked here rather than assumed: an extract that produces nothing would
+      # otherwise surface three steps later as an empty zip.
+      - name: Extract without running it
+        shell: pwsh
+        run: |
+          & 7z x setup.exe -oraw -y | Out-Null
+          if (-not (Test-Path raw/tesseract.exe)) {
+            throw "7z did not produce tesseract.exe — the installer's layout changed"
+          }
+          Get-ChildItem raw | Select-Object Name, Length | Format-Table -AutoSize
+
+      - name: Add Thai, which the official build does not carry
+        shell: pwsh
+        run: |
+          $url = "https://raw.githubusercontent.com/tesseract-ocr/tessdata/${{ inputs.tessdata_commit }}/tha.traineddata"
+          curl.exe -L --fail --max-time 120 -o raw/tessdata/tha.traineddata $url
+          if (-not (Test-Path raw/tessdata/tha.traineddata)) { throw "tha.traineddata did not download" }
+
+      # Everything image_ocr actually reaches for, and nothing else. The
+      # installer carries training tools, docs and a uninstaller that would
+      # otherwise ride along into every user's data directory.
+      - name: Keep only what the agent runs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory out | Out-Null
+          Copy-Item raw/tesseract.exe out/
+          Copy-Item raw/*.dll out/
+          New-Item -ItemType Directory out/tessdata | Out-Null
+          foreach ($f in @("eng.traineddata", "osd.traineddata", "tha.traineddata")) {
+            $src = "raw/tessdata/$f"
+            if (-not (Test-Path $src)) { throw "$f is missing from the extracted tree" }
+            Copy-Item $src out/tessdata/
+          }
+          "{0:N1} MB unpacked" -f ((Get-ChildItem out -Recurse | Measure-Object Length -Sum).Sum / 1MB)
+
+      - name: Zip it and say what to pin
+        id: pack
+        shell: pwsh
+        run: |
+          Compress-Archive -Path out/* -DestinationPath tesseract-win64.zip
+          $sha = (Get-FileHash tesseract-win64.zip -Algorithm SHA256).Hash.ToLower()
+          $tag = "tools-tesseract-${{ inputs.tesseract_tag }}".Replace('tools-tesseract-v', 'tools-tesseract-')
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          @"
+
+          Paste into Manifest() in internal/capability/capability.go:
+
+            URL:    "https://github.com/${{ github.repository }}/releases/download/$tag/tesseract-win64.zip",
+            SHA256: "$sha",
+
+          "@ | Write-Host
+
+      - name: Publish it as its own release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.pack.outputs.tag }}
+          name: ${{ steps.pack.outputs.tag }}
+          body: |
+            Tesseract ${{ inputs.tesseract_tag }}, repackaged from the official
+            UB-Mannheim installer as a plain zip so Aetox can install it without
+            an administrator. Thai language data added from tessdata
+            `${{ inputs.tessdata_commit }}`.
+
+            Not an Aetox release. Built by `.github/workflows/tools.yml`.
+          files: tesseract-win64.zip
