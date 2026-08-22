@@ -490,6 +490,12 @@ func (h *win32Host) openTab(id, url string, x, y, w, hgt int, cb tabCallbacks) t
 	// confirm() would otherwise get the real blocking dialog and stop the tab
 	// dead with nobody able to answer it. See dialogScript.
 	chromium.Init(dialogScript())
+	// Second Init rather than one concatenated script: AddScriptToExecuteOnDocumentCreated
+	// is additive, and two scripts that answer two unrelated questions should
+	// be readable as two. Same timing argument as the dialog's — a page whose
+	// first statement throws is exactly the error worth recording, and a
+	// recorder installed a line later would miss it. See browser_log.go.
+	chromium.Init(logScript())
 
 	if url != "" {
 		chromium.Navigate(url)

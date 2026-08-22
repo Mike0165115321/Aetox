@@ -87,7 +87,7 @@ func TestCaptureRefusesWithNoPageOpen(t *testing.T) {
 	a := seed(&App{cfg: config.Config{SandboxRoot: t.TempDir()}}, &conversation{id: "s1"})
 	a.browsers = &browserHost{app: a, tabs: map[string]*browserTab{}}
 
-	out, err := (&browserCaptureSkill{app: a}).capture(t.Context())
+	out, err := (&browserCaptureSkill{app: a}).capture(t.Context(), false)
 	if err == nil {
 		t.Fatal("capture answered without a page open")
 	}

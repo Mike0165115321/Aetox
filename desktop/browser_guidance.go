@@ -45,7 +45,8 @@ var browserGuidance = map[string]string{
 	// Says when, and names the shape of page that qualifies rather than listing
 	// cases: a model holding a camera and no rule for it photographs everything.
 	"capture": "Use this only when `read` cannot answer, because the answer was never in the text: a chart, a canvas, a map, a rendered document, or a layout you suspect is wrong. Read first, photograph second — a picture costs far more than the read it would have duplicated.\n" +
-		"It sees what is on screen, not the whole page. The file is kept under output/<session> so the user can open it too.",
+		"By default it sees what is on screen. `full=true` photographs the whole document instead, which is what you want for a long form or a report and is wasted on a page that already fits — it is the same answer in several times the bytes. If a page is too long even for that, the result says where it was cut; nothing else about the picture will tell you.\n" +
+		"The file is kept under output/<session> so the user can open it too.",
 
 	"back": "Returns to the previous page in this tab with what you had typed and scrolled still there. Re-opening its URL is a different thing and loses all of it, and a page that came from a POST cannot be re-opened at all.\n" +
 		"A tab with nothing behind it does not fail — it says there is nowhere back to.",
@@ -72,7 +73,23 @@ var browserGuidance = map[string]string{
 	// already knew. The trigger has to ride on an action that gets used
 	// constantly, and reading an empty page is exactly the moment it matters.
 	"read": "The [n] refs this hands back belong to THIS page as it is now. They go stale the moment it changes or you select another tab, so the loop is read, act, read again — never read once and work from the list.\n" +
-		"If a page comes back with less on it than you expected — no results, an empty list, a shell with nothing in it — that is usually not the answer. Most pages fetch their real content after loading, and this read SUCCEEDED on a page that is not finished. Use `wait` for the text you expect, then read again, before you report that something is not there.",
+		"If a page comes back with less on it than you expected — no results, an empty list, a shell with nothing in it — that is usually not the answer. Most pages fetch their real content after loading, and this read SUCCEEDED on a page that is not finished. Use `wait` for the text you expect, then read again, before you report that something is not there.\n" +
+		// The counterweight to the paragraph above, and it has to travel with
+		// it. That one teaches "less than you expected means wait", which is
+		// right for a page still loading and wrong for the two cases below —
+		// and a model holding only the first rule waits out a limit that
+		// waiting cannot move.
+		"Two things a read says about itself, and both mean something other than \"wait\". The element list stops at 150 and then tells you how many more there were: reach those with `filter`, which lists only the elements whose text contains what you name — re-reading returns the same first 150. And a frame from another site cannot be read from here at all, ever; when the read says so, what is inside it is not coming, and the way to it is `open` on its own URL if you have one.",
+
+	// Both of these say what they CANNOT see, and say it first. A tool that
+	// reports on absence has to, because "nothing here" is its most common
+	// answer and its most misreadable one: an empty console is evidence only if
+	// the reader knows what the recorder was listening to.
+	"console": "Reach for this when a page does not do what it should and `read` cannot say why: a blank screen, a button that does nothing, a form that will not submit. It carries console.log/warn/error, uncaught exceptions, unhandled promise rejections, and resources the page's own CSP blocked — the last three of which a page never logs for itself.\n" +
+		"It starts when the document is created, so it covers a page you opened, and a page that was already open before this build has no recorder at all. When the answer says the recorder is not running, that is NOT a report that nothing went wrong: reload the page and ask again.",
+
+	"network": "The fetch and XMLHttpRequest calls the page's own code made, oldest first, with status and duration. Use it when a page renders but its data does not: this is what tells a 401 from a 500 from a request that was never made at all.\n" +
+		"Three limits worth knowing before you draw a conclusion. Images, scripts and stylesheets are NOT here — those are the browser's own fetches, not the page's, so their absence from this list says nothing about whether they loaded. A status shown as `-` means the request never came back. And anything in a query string that looks like a credential arrives as <redacted>, which is the tool hiding it and not the page sending it that way.",
 
 	"click": "A ref belongs to the page it was read from and goes stale the moment that page changes, which a click often does. Read, act, read again.\n" +
 		"A click can navigate, raise a dialog, or do nothing visible; read afterwards rather than assuming which.",

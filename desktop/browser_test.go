@@ -110,10 +110,15 @@ func TestOnMessageAcceptsTextWithMatchingToken(t *testing.T) {
 	}
 }
 
+// The ref reaches the script. Spelled aetoxFind since 2026-08-22: the search
+// runs over every root the page has rather than `document` alone, because
+// textScript now hands out refs for nodes inside shadow roots and same-origin
+// frames. What is asserted is unchanged — this call acts on that ref and no
+// other.
 func TestClickScriptEmbedsRef(t *testing.T) {
-	js := clickScript(42)
-	if !strings.Contains(js, `[data-aetox-ref="42"]`) {
-		t.Errorf("clickScript(42) = %q, want it to target [data-aetox-ref=\"42\"]", js)
+	js := clickScript("tok", 42)
+	if !strings.Contains(js, `aetoxFind(42)`) {
+		t.Errorf("clickScript(42) = %q, want it to target ref 42", js)
 	}
 }
 
@@ -131,7 +136,7 @@ func TestTypeScriptEscapesTextSafely(t *testing.T) {
 		``,
 	}
 	for _, text := range cases {
-		js := typeScript(7, text, false)
+		js := typeScript("tok", 7, text, false)
 		wantEncoded, err := json.Marshal(text)
 		if err != nil {
 			t.Fatalf("json.Marshal(%q): %v", text, err)
@@ -139,14 +144,14 @@ func TestTypeScriptEscapesTextSafely(t *testing.T) {
 		if !strings.Contains(js, string(wantEncoded)) {
 			t.Errorf("typeScript(7, %q) does not contain the expected JSON-escaped literal %s\ngot: %s", text, wantEncoded, js)
 		}
-		if !strings.Contains(js, `[data-aetox-ref="7"]`) {
-			t.Errorf("typeScript(7, %q) = %q, want it to target [data-aetox-ref=\"7\"]", text, js)
+		if !strings.Contains(js, `aetoxFind(7)`) {
+			t.Errorf("typeScript(7, %q) = %q, want it to target ref 7", text, js)
 		}
 	}
 }
 
 func TestTypeScriptSelectAndEnterVariants(t *testing.T) {
-	js := typeScript(3, "Thailand", false)
+	js := typeScript("tok", 3, "Thailand", false)
 	if !strings.Contains(js, `el.tagName==="SELECT"`) || !strings.Contains(js, "HTMLSelectElement") {
 		t.Errorf("typeScript must handle select elements via the native value setter, got: %s", js)
 	}
@@ -154,7 +159,7 @@ func TestTypeScriptSelectAndEnterVariants(t *testing.T) {
 		t.Errorf("enter=false must not emit the Enter/submit snippet, got: %s", js)
 	}
 
-	js = typeScript(3, "query", true)
+	js = typeScript("tok", 3, "query", true)
 	for _, want := range []string{`new KeyboardEvent("keydown"`, "requestSubmit", "notHandled"} {
 		if !strings.Contains(js, want) {
 			t.Errorf("typeScript enter=true missing %q, got: %s", want, js)
@@ -163,7 +168,7 @@ func TestTypeScriptSelectAndEnterVariants(t *testing.T) {
 }
 
 func TestTextScriptListsSelectOptions(t *testing.T) {
-	js := textScript("tok")
+	js := textScript("tok", "")
 	if !strings.Contains(js, "[options: ") {
 		t.Errorf("textScript should surface select options so the model knows what browser_type can choose, got: %s", js)
 	}

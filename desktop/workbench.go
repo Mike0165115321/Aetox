@@ -291,7 +291,7 @@ func (a *App) browserWhere(id AgentTabID) string {
 
 // workbenchReadBrowser reads the page the agent has open in the workbench
 // browser — not whichever tab is showing. See agentTab.
-func (a *App) workbenchReadBrowser() (title, url string, snap browserSnapshot, err error) {
+func (a *App) workbenchReadBrowser(filter string) (title, url string, snap browserSnapshot, err error) {
 	id, err := a.agentTab()
 	if err != nil {
 		return "", "", browserSnapshot{}, err
@@ -299,7 +299,7 @@ func (a *App) workbenchReadBrowser() (title, url string, snap browserSnapshot, e
 	// string(id) here and at every other plumbing call below: the conversion is
 	// deliberate and greppable, and it sits one line under the only function
 	// that can produce an AgentTabID — which is the point. See AgentTabID.
-	snap, err = a.browserSnapshot(string(id))
+	snap, err = a.browserSnapshot(string(id), filter)
 	if err != nil {
 		return "", "", browserSnapshot{}, err
 	}
@@ -567,16 +567,21 @@ func (*browserReadSkill) Description() string {
 func (*browserReadSkill) ToolDefinition() model.ToolDefinition {
 	return toolDef("browser_read",
 		"Read the visible text of the page currently open in the workbench browser, plus a numbered list of clickable/typeable elements. Use after browser_open, or when the user asks about the page they have open. Use the [ref] numbers with browser_click/browser_type.",
-		map[string]any{"type": "object", "properties": map[string]any{}})
+		map[string]any{"type": "object", "properties": map[string]any{
+			"filter": map[string]any{"type": "string", "description": "List only elements whose text contains this"},
+		}})
 }
 
-func (s *browserReadSkill) ExecuteTool(ctx context.Context, _ map[string]any) (skill.Output, error) {
-	return s.Execute(ctx, skill.Input{})
+func (s *browserReadSkill) ExecuteTool(ctx context.Context, args map[string]any) (skill.Output, error) {
+	f, _ := args["filter"].(string)
+	return s.Execute(ctx, skill.Input{"filter": f})
 }
 
-func (s *browserReadSkill) Execute(_ context.Context, _ skill.Input) (skill.Output, error) {
+func (s *browserReadSkill) Execute(_ context.Context, input skill.Input) (skill.Output, error) {
 	start := time.Now()
-	title, url, snap, err := s.app.workbenchReadBrowser()
+	filter, _ := input["filter"].(string)
+	filter = strings.TrimSpace(filter)
+	title, url, snap, err := s.app.workbenchReadBrowser(filter)
 	out := skill.Output{
 		Name:       "browser_read",
 		Command:    "browser_read",
@@ -595,10 +600,50 @@ func (s *browserReadSkill) Execute(_ context.Context, _ skill.Input) (skill.Outp
 		text = text[:maxChars] + "\n... (truncated)"
 		truncated = true
 	}
+	out.Content = formatBrowserRead(title, url, filter, text, snap)
+	out.RawOutput = out.Content
+	// A cut element list is a truncated result exactly as a cut page text is.
+	// It was not marked as one until 2026-08-22, so every surface that shows
+	// the user "this was shortened" showed nothing for the commonest case.
+	out.Truncated = truncated || snap.ElementsTotal > len(snap.Elements) || snap.ImagesTotal > len(snap.Images)
+	return out, nil
+}
+
+// formatBrowserRead is everything the model is told about the page, built from
+// one snapshot and nothing else.
+//
+// Pure, and separate from Execute, because what it writes is the whole point of
+// a read and none of it could be tested before: Execute needs a live app window
+// and a real webview, so tool_coverage_test marks browser_read "never"
+// available. The formatting is the part that has to keep its promises about
+// what was left out, and a promise no test can reach is one that quietly stops
+// being kept.
+func formatBrowserRead(title, url, filter, text string, snap browserSnapshot) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\nURL: %s\n", title, url)
 	if len(snap.Elements) > 0 {
-		b.WriteString("\nClickable/typeable elements (use browser_click/browser_type with ref):\n")
+		// The count goes in the HEADER, not only in the line under the list.
+		//
+		// It was only under the list until 2026-08-22, and two full test passes
+		// on two different days read a 150-item list, missed the line below it,
+		// and each invented the same explanation — that the output had been cut
+		// off. It had not: the whole result was 5,797 bytes and the line sat at
+		// character 5,208, well inside everything. A fact placed after 150 lines
+		// of "[73] button ..." is a fact nobody reaches, and being right about
+		// where it was does not make it read.
+		//
+		// The line below the list stays, because it is the one that names
+		// `filter` — the way past the cap. This one is the number, said before
+		// the wall rather than after it.
+		count := ""
+		if snap.ElementsTotal > len(snap.Elements) {
+			count = fmt.Sprintf(" — %d of %d listed", len(snap.Elements), snap.ElementsTotal)
+		}
+		if filter != "" {
+			fmt.Fprintf(&b, "\nClickable/typeable elements whose text contains %q%s (use browser_click/browser_type with ref):\n", filter, count)
+		} else {
+			fmt.Fprintf(&b, "\nClickable/typeable elements%s (use browser_click/browser_type with ref):\n", count)
+		}
 		for _, el := range snap.Elements {
 			role := el.Role
 			if role == "" {
@@ -606,9 +651,24 @@ func (s *browserReadSkill) Execute(_ context.Context, _ skill.Input) (skill.Outp
 			}
 			fmt.Fprintf(&b, "[%d] %s: %q\n", el.Ref, role, el.Text)
 		}
+		// The line this list did not have until 2026-08-22. A cut list and a
+		// short page were the same output, so a model that could not find its
+		// button had no way to tell "not on this page" from "past number 150" —
+		// and every re-read handed back the same first 150 in the same DOM
+		// order. Saying the number is half of it; naming the way past it is the
+		// other half, because a limit with no door is only a slower no.
+		if extra := snap.ElementsTotal - len(snap.Elements); extra > 0 {
+			fmt.Fprintf(&b, "... and %d more not listed. Read again with filter=\"<text>\" to reach them: it lists only the elements whose text contains that.\n", extra)
+		}
+	} else if filter != "" {
+		fmt.Fprintf(&b, "\nNo interactive element on this page has text containing %q. That is an answer about the filter, not about the page: read again without one to see what is here.\n", filter)
 	}
 	if len(snap.Images) > 0 {
-		b.WriteString("\nImages on the page (show one to the user with markdown: ![alt](url)):\n")
+		imgCount := ""
+		if snap.ImagesTotal > len(snap.Images) {
+			imgCount = fmt.Sprintf(" — %d of %d listed", len(snap.Images), snap.ImagesTotal)
+		}
+		fmt.Fprintf(&b, "\nImages on the page%s (show one to the user with markdown: ![alt](url)):\n", imgCount)
 		for _, im := range snap.Images {
 			alt := im.Alt
 			if alt == "" {
@@ -616,12 +676,22 @@ func (s *browserReadSkill) Execute(_ context.Context, _ skill.Input) (skill.Outp
 			}
 			fmt.Fprintf(&b, "- %s — %s\n", im.Src, alt)
 		}
+		if extra := snap.ImagesTotal - len(snap.Images); extra > 0 {
+			fmt.Fprintf(&b, "... and %d more images not listed.\n", extra)
+		}
+	}
+	// Reported rather than omitted, for the same reason the counts above are.
+	// A cross-origin frame cannot be entered from JS by any technique, so this
+	// is a permanent limit of reading a page rather than something to retry —
+	// and without the line, a checkout form or an embedded editor simply is not
+	// in the text, which reads exactly like a page that has not finished
+	// loading. That is the one wrong conclusion read's own guidance pushes the
+	// model toward, so the fact has to arrive with the read that lacks it.
+	if snap.BlockedFrames > 0 {
+		fmt.Fprintf(&b, "\n%d frame(s) on this page come from another site and cannot be read from here. Anything inside them is missing from the text below, and waiting will not bring it.\n", snap.BlockedFrames)
 	}
 	fmt.Fprintf(&b, "\n%s", text)
-	out.Content = b.String()
-	out.RawOutput = out.Content
-	out.Truncated = truncated
-	return out, nil
+	return b.String()
 }
 
 type browserClickSkill struct{ app *App }
@@ -658,19 +728,50 @@ func (s *browserClickSkill) click(ref int) (skill.Output, error) {
 	start := time.Now()
 	out := skill.Output{Name: "browser_click", Command: fmt.Sprintf("browser_click %d", ref)}
 	id, err := s.app.agentTab()
+	var res browserActResult
+	var answered bool
 	if err == nil {
-		err = s.app.BrowserClickRef(string(id), ref)
+		res, answered, err = s.app.browserClickRef(string(id), ref)
 	}
 	out.DurationMs = time.Since(start).Milliseconds()
 	if err != nil {
-		out.Content, out.Stderr = "คลิกไม่สำเร็จ: "+err.Error(), err.Error()
+		out.Content, out.Stderr = "คลิกไม่สำเร็จ: " + err.Error(), err.Error()
 		return out, err
+	}
+	// The answer this tool did not have until 2026-08-22, and the one that
+	// turned a small bug upstream into a six-round loop: a ref matching nothing
+	// used to report a successful click. See aetoxActJS for the turn.
+	if answered && !res.Found {
+		msg := fmt.Sprintf("ไม่มี element ref %d บนหน้านี้ ยังไม่ได้คลิกอะไรเลย%s ref มาจาก browser_read ครั้งล่าสุด และหมดอายุทันทีที่หน้าเปลี่ยน อ่านหน้าใหม่แล้วใช้ ref จากรอบนั้น",
+			ref, s.app.browserWhere(id))
+		out.Content, out.Stderr = msg, msg
+		return out, errors.New(msg)
 	}
 	time.Sleep(300 * time.Millisecond) // let click-driven navigation/DOM update settle before the next browser_read
 	out.Success = true
-	out.Content = fmt.Sprintf("คลิก ref %d แล้ว%s ใช้ browser_read เพื่อดูผลลัพธ์", ref, s.app.browserWhere(id))
+	// Naming what was clicked, not just that something was. "คลิก ref 2 แล้ว"
+	// is unfalsifiable from the outside; the tag and label are what let a caller
+	// see it hit the element it meant.
+	out.Content = fmt.Sprintf("คลิก %s แล้ว%s ใช้ browser_read เพื่อดูผลลัพธ์", browserActLabel(ref, res, answered), s.app.browserWhere(id))
 	out.RawOutput = out.Content
 	return out, nil
+}
+
+// browserActLabel names the element an action landed on, falling back to the
+// bare ref when the page never reported one. The fallback says so out loud
+// rather than reading like a confirmed hit.
+func browserActLabel(ref int, res browserActResult, answered bool) string {
+	if !answered {
+		return fmt.Sprintf("ref %d (หน้าไม่ได้ยืนยันกลับมาว่าตรงกับ element ไหน)", ref)
+	}
+	tag := res.Tag
+	if tag == "" {
+		tag = "element"
+	}
+	if res.Label == "" {
+		return fmt.Sprintf("%s ref %d", tag, ref)
+	}
+	return fmt.Sprintf("%s %q (ref %d)", tag, res.Label, ref)
 }
 
 type browserTypeSkill struct{ app *App }
@@ -713,21 +814,33 @@ func (s *browserTypeSkill) typeText(ref int, text string, enter bool) (skill.Out
 	start := time.Now()
 	out := skill.Output{Name: "browser_type", Command: fmt.Sprintf("browser_type %d", ref)}
 	id, err := s.app.agentTab()
+	var res browserActResult
+	var answered bool
 	if err == nil {
-		err = s.app.BrowserTypeRef(string(id), ref, text, enter)
+		res, answered, err = s.app.browserTypeRef(string(id), ref, text, enter)
 	}
 	out.DurationMs = time.Since(start).Milliseconds()
 	if err != nil {
-		out.Content, out.Stderr = "พิมพ์ไม่สำเร็จ: "+err.Error(), err.Error()
+		out.Content, out.Stderr = "พิมพ์ไม่สำเร็จ: " + err.Error(), err.Error()
 		return out, err
+	}
+	// Same rule as click's, and it matters more here: text typed into nothing
+	// is invisible on the next read, so a false success sends the model looking
+	// for a form it never filled.
+	if answered && !res.Found {
+		msg := fmt.Sprintf("ไม่มี element ref %d บนหน้านี้ ยังไม่ได้พิมพ์อะไรลงไปเลย%s ref มาจาก browser_read ครั้งล่าสุด และหมดอายุทันทีที่หน้าเปลี่ยน อ่านหน้าใหม่แล้วใช้ ref จากรอบนั้น",
+			ref, s.app.browserWhere(id))
+		out.Content, out.Stderr = msg, msg
+		return out, errors.New(msg)
 	}
 	if enter {
 		time.Sleep(300 * time.Millisecond) // let Enter-driven navigation settle before the next browser_read
 	}
 	out.Success = true
-	out.Content = fmt.Sprintf("พิมพ์ลง ref %d แล้ว%s", ref, s.app.browserWhere(id))
+	where := browserActLabel(ref, res, answered)
+	out.Content = fmt.Sprintf("พิมพ์ลง %s แล้ว%s", where, s.app.browserWhere(id))
 	if enter {
-		out.Content = fmt.Sprintf("พิมพ์ลง ref %d และกด Enter แล้ว%s ใช้ browser_read เพื่อดูผลลัพธ์", ref, s.app.browserWhere(id))
+		out.Content = fmt.Sprintf("พิมพ์ลง %s และกด Enter แล้ว%s ใช้ browser_read เพื่อดูผลลัพธ์", where, s.app.browserWhere(id))
 	}
 	out.RawOutput = out.Content
 	return out, nil

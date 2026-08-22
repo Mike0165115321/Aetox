@@ -109,14 +109,16 @@ func (s *browserSkill) ToolDefinition() model.ToolDefinition {
 	// told the same things at a different time.
 	lines := map[string]string{
 		"open":    "`open` (url, newTab?) — go to a page and wait for it to load.",
-		"read":    "`read` — the page's text, plus its interactive elements each tagged [n].",
+		"read":    "`read` (filter?) — the page's text, plus its interactive elements each tagged [n]; filter lists only the elements whose text contains it.",
 		"click":   "`click` (ref) — press the element with that ref.",
 		"type":    "`type` (ref, text, enter?) — fill an input/textarea/select/contenteditable.",
 		"wait":    "`wait` (text, seconds?) — wait until that text appears.",
 		"back":    "`back` — return to the previous page in this tab.",
-		"capture": "`capture` — a picture of the page.",
+		"capture": "`capture` (full?) — a picture of the page; full=true photographs the whole document instead of the visible part.",
 		"tabs":    "`tabs` (act: list|select|close, id) — your own tabs.",
 		"dialog":  "`dialog` (accept, text?) — answer this page's next alert/confirm/prompt.",
+		"console": "`console` — what this page logged, threw, or had blocked since it loaded.",
+		"network": "`network` — the fetch/XHR calls this page's own code made since it loaded.",
 	}
 	var b strings.Builder
 	b.WriteString("Work a web page in the workbench browser, where the user can watch. Actions:\n")
@@ -151,6 +153,7 @@ func (s *browserSkill) ToolDefinition() model.ToolDefinition {
 			"action":  map[string]any{"type": "string", "enum": allowed},
 			"url":     map[string]any{"type": "string"},
 			"ref":     map[string]any{"type": "integer"},
+			"filter":  map[string]any{"type": "string"},
 			"text":    map[string]any{"type": "string"},
 			"enter":   map[string]any{"type": "boolean"},
 			"newTab":  map[string]any{"type": "boolean"},
@@ -158,6 +161,7 @@ func (s *browserSkill) ToolDefinition() model.ToolDefinition {
 			"id":      map[string]any{"type": "string"},
 			"seconds": map[string]any{"type": "integer"},
 			"accept":  map[string]any{"type": "boolean"},
+			"full":    map[string]any{"type": "boolean"},
 		},
 		"required": []string{"action"},
 	})
@@ -187,13 +191,13 @@ func (s *browserSkill) run(ctx context.Context, args map[string]any) (skill.Outp
 	case "open":
 		return (&browserOpenSkill{app: s.app}).open(ctx, str(args["url"]), boolArg(args["newTab"]))
 	case "read":
-		return (&browserReadSkill{app: s.app}).Execute(ctx, skill.Input{})
+		return (&browserReadSkill{app: s.app}).Execute(ctx, skill.Input{"filter": str(args["filter"])})
 	case "click":
 		return (&browserClickSkill{app: s.app}).click(intArg(args["ref"]))
 	case "type":
 		return (&browserTypeSkill{app: s.app}).typeText(intArg(args["ref"]), str(args["text"]), boolArg(args["enter"]))
 	case "capture":
-		return (&browserCaptureSkill{app: s.app}).capture(ctx)
+		return (&browserCaptureSkill{app: s.app}).capture(ctx, boolArg(args["full"]))
 	case "tabs":
 		return (&browserTabsSkill{app: s.app}).run(str(args["act"]), str(args["id"]))
 	case "wait":
@@ -202,6 +206,8 @@ func (s *browserSkill) run(ctx context.Context, args map[string]any) (skill.Outp
 		return (&browserBackSkill{app: s.app}).back(ctx)
 	case "dialog":
 		return (&browserDialogSkill{app: s.app}).dialog(boolArg(args["accept"]), str(args["text"]))
+	case "console", "network":
+		return (&browserLogSkill{app: s.app, kind: action}).run(ctx)
 	}
 	return skill.Output{Name: "browser"}, fmt.Errorf("unknown browser action %q", action)
 }
@@ -211,17 +217,11 @@ func str(v any) string {
 	return s
 }
 
-func intArg(v any) int {
-	switch n := v.(type) {
-	case float64:
-		return int(n)
-	case int:
-		return n
-	}
-	return 0
-}
-
-func boolArg(v any) bool {
-	b, _ := v.(bool)
-	return b
-}
+// Both of these used to be written out here, and both were a shape short: an
+// int and a float64 but not a quoted number, a bool but not a quoted bool.
+// Models send the quoted forms — `{"action":"click","ref":"1"}` is in this
+// machine's tool_runs twelve times — and each one arrived as a zero-value that
+// no longer resembled what was asked for. internal/skill has had the right rule
+// since `read` needed it; this defers to it rather than agreeing with it.
+func intArg(v any) int   { return skill.IntArg(v) }
+func boolArg(v any) bool { return skill.BoolArg(v) }

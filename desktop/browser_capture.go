@@ -43,7 +43,14 @@ type browserCaptureSkill struct{ app *App }
 // in one turn from being one file — the session folder already separates chats.
 var browserShotSeq int64
 
-func (s *browserCaptureSkill) capture(ctx context.Context) (skill.Output, error) {
+// full asks for the whole document rather than the visible part of it.
+//
+// Off by default, and that is the right default rather than a timid one: most
+// pages fit, a full-page picture of a long one is far more bytes for the same
+// answer, and the visible area is what the user is looking at while the agent
+// works. It earns its keep on the page that does not fit — a long form, a
+// report, a layout whose problem is below the fold.
+func (s *browserCaptureSkill) capture(ctx context.Context, full bool) (skill.Output, error) {
 	start := time.Now()
 	out := skill.Output{Name: "browser_capture", Command: "browser capture"}
 	a := s.app
@@ -79,7 +86,30 @@ func (s *browserCaptureSkill) capture(ctx context.Context) (skill.Output, error)
 	case <-time.After(400 * time.Millisecond): // the raise has to reach the native view and it has to draw
 	}
 
-	dataURL, err := a.BrowserCapturePNG(string(id))
+	// note is whatever this picture is not. It is built here and spent at the
+	// bottom, because both things it can say are things a caller would
+	// otherwise have to infer from a picture that looks perfectly fine: a page
+	// cut off at a height it cannot see, and a full-page request quietly served
+	// by the viewport path.
+	var note string
+	var dataURL string
+	if full {
+		var cutAt int
+		dataURL, cutAt, err = a.BrowserCaptureFullPNG(ctx, string(id))
+		switch {
+		case err != nil:
+			// Falling back rather than failing, because the visible area is
+			// still an answer to most questions. Saying so is not optional: a
+			// caller that asked for the whole page and was handed the top of it
+			// without being told would report on a page it never saw.
+			note = "ถ่ายทั้งหน้าไม่สำเร็จ (" + err.Error() + ") ภาพนี้จึงเป็นเฉพาะส่วนที่เห็นบนจอ"
+			dataURL, err = a.BrowserCapturePNG(string(id))
+		case cutAt > 0:
+			note = fmt.Sprintf("หน้านี้ยาวกว่าที่ตัวเรนเดอร์วาดได้ ภาพนี้คือ %d พิกเซลแรกจากบนสุด ส่วนที่เหลือไม่ได้อยู่ในภาพ", cutAt)
+		}
+	} else {
+		dataURL, err = a.BrowserCapturePNG(string(id))
+	}
 	if err != nil {
 		out.Content, out.Stderr = "แคปหน้าเว็บไม่สำเร็จ: "+err.Error(), err.Error()
 		out.DurationMs = time.Since(start).Milliseconds()
@@ -118,6 +148,9 @@ func (s *browserCaptureSkill) capture(ctx context.Context) (skill.Output, error)
 		out.Content = fmt.Sprintf("ภาพของ %s อยู่ด้านล่าง และเก็บไว้ที่ %s", where, rel)
 	} else {
 		out.Content = fmt.Sprintf("เก็บภาพของ %s ไว้ที่ %s แล้ว ใช้ image_ocr กับไฟล์นี้เพื่ออ่านข้อความในภาพ", where, rel)
+	}
+	if note != "" {
+		out.Content += "\n" + note
 	}
 	out.RawOutput = out.Content
 	return out, nil

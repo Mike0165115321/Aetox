@@ -566,7 +566,7 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 		// These reach a real webview or nothing. Headless they must fail
 		// cleanly and immediately, which is what assertReachable checks: the
 		// regression worth catching is a browser tool that hangs the turn.
-		// One tool, five actions (desktop/browser_tool.go). Driven at `open`
+		// One tool, eleven actions (desktop/browser_tool.go). Driven at `open`
 		// because that is the action a session starts with and the one whose
 		// argument handling is worth reaching; the rest refuse for the
 		// same reason on the same path — there is no window here.
@@ -594,6 +594,11 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 		"browser_wait":   {args: map[string]any{"text": "hello"}, available: never, why: "needs the app window"},
 		"browser_back":   {args: map[string]any{}, available: never, why: "needs the app window"},
 		"browser_dialog": {args: map[string]any{"accept": true}, available: never, why: "needs the app window"},
+		// Both read a buffer that lives in a live document, so they need a page
+		// the same way the rest do. What they format out of that buffer is
+		// covered without one, in browser_log_test.go.
+		"browser_console": {args: map[string]any{}, available: never, why: "needs the app window"},
+		"browser_network": {args: map[string]any{}, available: never, why: "needs the app window"},
 
 		// The agent's reach onto the desk (workbench_desk.go). desk_open and
 		// desk_terminal both end in an event the frontend answers, so there is

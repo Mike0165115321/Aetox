@@ -74,7 +74,7 @@ var packs = map[string]*pack{
 	// use, which is what retired its private profile-reading gate on 2026-08-10.
 	"browser": {
 		tool:    "browser",
-		actions: []string{"open", "read", "click", "type", "wait", "back", "capture", "tabs", "dialog"},
+		actions: []string{"open", "read", "click", "type", "wait", "back", "capture", "tabs", "dialog", "console", "network"},
 		names: map[string]string{
 			"open":  "browser_open",
 			"read":  "browser_read",
@@ -104,6 +104,15 @@ var packs = map[string]*pack{
 			"wait":   "browser_wait",
 			"back":   "browser_back",
 			"dialog": "browser_dialog",
+			// Two more added 2026-08-22, and two rights rather than one for the
+			// reason the rest of this table keeps repeating: they are different
+			// acts. The console is what the page said about itself; the network
+			// list is every address it called, which is a map of the services
+			// behind a page and can carry a credential in a query string. A
+			// profile granted "may see this page's errors" is not thereby
+			// granted the second.
+			"console": "browser_console",
+			"network": "browser_network",
 		},
 	},
 	"shell": {

@@ -152,6 +152,13 @@ type aetoxMsg struct {
 	Token    string           `json:"token,omitempty"`
 	Elements []browserElement `json:"elements,omitempty"`
 	Images   []browserImage   `json:"images,omitempty"`
+	// "text": how many there really were, and how much of the page could not
+	// be entered at all. The lists above stop at a cap; these do not, so the
+	// read can say what it left out instead of presenting a truncated list as
+	// the whole page. See textScript.
+	ElementsTotal int `json:"elementsTotal,omitempty"`
+	ImagesTotal   int `json:"imagesTotal,omitempty"`
+	Frames        int `json:"frames,omitempty"`
 	// "pick" only: what the user pointed at, whether they left the mode without
 	// pointing at anything, and whether they drew — in which case the marks are
 	// still on the page waiting to be photographed. See browser_pick.go.
@@ -159,7 +166,22 @@ type aetoxMsg struct {
 	Cancelled bool          `json:"cancelled,omitempty"`
 	Drawn     bool          `json:"drawn,omitempty"`
 	// "wait": whether what was waited for turned up before the deadline.
-	Found bool `json:"found,omitempty"`
+	// "act": whether the ref a click or a type was aimed at matched anything,
+	// and what it turned out to be. Sent BEFORE the action runs, so a click
+	// that navigates cannot destroy the document before its own report gets
+	// out. See aetoxActJS.
+	Found bool   `json:"found,omitempty"`
+	Ref   int    `json:"ref,omitempty"`
+	Tag   string `json:"tag,omitempty"`
+	Label string `json:"label,omitempty"`
+	// "log": one of the page's own recorders, read on demand. Armed travels
+	// with the entries deliberately — an empty buffer and a page the recorder
+	// never reached are the same list, and only one of them is evidence. See
+	// browser_log.go.
+	Kind    string            `json:"kind,omitempty"`
+	Log     []browserLogEntry `json:"log,omitempty"`
+	Dropped int               `json:"dropped,omitempty"`
+	Armed   bool              `json:"armed,omitempty"`
 	// "dialog": which of alert/confirm/prompt the page called, what it said, and
 	// what we answered on its behalf. See dialogScript.
 	Dialog  string `json:"dialog,omitempty"`
@@ -190,6 +212,17 @@ type browserSnapshot struct {
 	Text     string
 	Elements []browserElement
 	Images   []browserImage
+	// ElementsTotal and ImagesTotal are how many the page really had. They are
+	// counted past the caps the lists above stop at, which is the whole point:
+	// a list of 150 and a page of 150 look identical otherwise, and the reader
+	// of a silently-cut list has no way to know it is missing the button it is
+	// looking for.
+	ElementsTotal int
+	ImagesTotal   int
+	// BlockedFrames is how many cross-origin frames this page has. Their
+	// contents cannot be reached from JS by any means, so they are counted and
+	// reported rather than quietly omitted.
+	BlockedFrames int
 }
 
 // metaScript reports the page's real title and URL back over the bridge. The
@@ -201,52 +234,226 @@ func metaScript() string {
 	return bridgePost + `(JSON.stringify({__aetox:"meta",title:document.title,url:location.href}))`
 }
 
+// aetoxScanJS is the walker every page script shares: the document roots this
+// page really has, and the way to find a tagged element inside any of them.
+//
+// `document` alone was the whole search until 2026-08-22, and `document` is not
+// the page. An element inside a shadow root is invisible to
+// document.querySelectorAll, and so is one inside an iframe — which is where
+// checkout forms, embedded editors and most component-library controls live.
+//
+// The failure was silent and, worse, disguised as a different one: `read` came
+// back with no elements, and read's own guidance teaches the model that an
+// empty page means "not finished loading, use wait". So the honest response to
+// a page we could not see was to wait for it, and then wait again.
+//
+// A cross-origin frame cannot be entered from JS by any technique. Those are
+// counted rather than opened, so a read can report how much of the page it was
+// unable to reach instead of implying there was nothing there.
+//
+// The node budget is what keeps this inside browserSnapshot's five-second
+// deadline on a page with a very large DOM. It bounds the walk rather than the
+// collecting, because the walk is the part whose cost the caller cannot
+// predict — and `cut` is reported for the same reason every other cap here is.
+const aetoxScanJS = `
+  var AETOX_BUDGET=20000;
+  function aetoxScan(){
+    var roots=[document],blocked=0,seen=0;
+    for(var i=0;i<roots.length;i++){
+      var all;
+      try{all=roots[i].querySelectorAll('*');}catch(e){continue;}
+      for(var j=0;j<all.length;j++){
+        if(++seen>AETOX_BUDGET)return{roots:roots,blocked:blocked,cut:true};
+        var el=all[j];
+        if(el.shadowRoot)roots.push(el.shadowRoot);
+        if(el.tagName==='IFRAME'){
+          var d=null;
+          try{d=el.contentDocument;}catch(e){d=null;}
+          if(d&&d.body)roots.push(d);else blocked++;
+        }
+      }
+    }
+    return{roots:roots,blocked:blocked,cut:false};
+  }
+  function aetoxFind(ref){
+    var s=aetoxScan();
+    for(var i=0;i<s.roots.length;i++){
+      var el;
+      try{el=s.roots[i].querySelector('[data-aetox-ref="'+ref+'"]');}catch(e){el=null;}
+      if(el)return el;
+    }
+    return null;
+  }
+`
+
+// aetoxTextJS is what "the text of this page" means, in one place.
+//
+// document.body.innerText is not it, and it is short in two different ways.
+// An iframe's document is a separate one and its text is in none of its
+// parent's. A shadow root's text is in none of its host's either: innerText is
+// built from an element's light-DOM descendants, and shadow content is not
+// among them however plainly it is on screen. Measured on a fixture page
+// 2026-08-22 — a host whose shadow root renders a paragraph reports
+// host.innerText === "" and document.body.innerText does not contain a word of
+// it, while the shadow root's own children report it normally. That last part
+// is what this function is built on.
+//
+// One definition because `read` and `wait` both need the same answer or they
+// contradict each other: a `wait` for a word `read` can see would poll until
+// its deadline and then report the word absent, which is the worst kind of
+// wrong here because an absent word reads as a page still loading, and the
+// response to that is to wait again.
+//
+// The cost is the whole walk, on every poll, and it was measured before being
+// accepted rather than argued about. On en.wikipedia.org/wiki/World_War_II
+// (16,844 nodes): aetoxScan 3.755 ms, document.body.innerText 7.08 ms. The
+// scan is cheaper than the innerText call `wait` was already paying five times
+// a second, so this is not a new order of cost — and AETOX_BUDGET still bounds
+// the pathological page.
+const aetoxTextJS = `
+  function aetoxText(){
+    var roots=aetoxScan().roots;
+    var t=document.body?(document.body.innerText||""):"";
+    for(var i=1;i<roots.length;i++){
+      var r=roots[i];
+      /* A document root (a same-origin frame) has a body; a shadow root does
+         not, and is read through its own children — each of which reports
+         rendered text normally even though its host reports none. */
+      if(r.body){if(r.body.innerText)t+='\n'+r.body.innerText;continue;}
+      for(var j=0;j<r.children.length;j++){
+        var c=r.children[j];
+        if(c.innerText)t+='\n'+c.innerText;
+      }
+    }
+    return t;
+  }
+`
+
 // textScript reads page text and, in the same pass, tags every visible
 // interactive element with a data-aetox-ref so browser_click/browser_type can
 // target it later. Refs are reassigned fresh each call.
-func textScript(token string) string {
-	return fmt.Sprintf(`(function(){
-  var out=[];
+//
+// filter, when non-empty, tags only the elements whose text contains it,
+// case-insensitively. It exists because the cap below is a real ceiling on a
+// real page and not a theoretical one: 150 refs are assigned in DOM order, and
+// on most sites the first 150 elements are the nav and the sidebar, so the
+// control the model is actually looking for can sit past the cap on every read
+// no matter how many times it reads. Raising the cap would buy that with
+// context on every read; a filter is paid only by the read that needs it.
+//
+// Both caps now count past themselves. What stopped is said out loud in the
+// tool output rather than left for the model to discover by finding nothing —
+// the same rule skill_view's end marker was written for
+// (internal/skill/progressive.go), applied to the tool that was breaking it.
+func textScript(token, filter string) string {
+	return fmt.Sprintf(`(function(){%s%s
+  var want=%s.trim().toLowerCase();
+  var scan=aetoxScan();
+  var roots=scan.roots;
   var sel='a[href],button,input,select,textarea,[role="button"],[role="link"],[contenteditable="true"]';
-  var els=document.querySelectorAll(sel);
-  for(var i=0;i<els.length&&out.length<150;i++){
-    var el=els[i];
-    var r=el.getBoundingClientRect();
-    if(r.width<=0||r.height<=0)continue;
-    var ref=out.length+1;
-    el.setAttribute('data-aetox-ref',String(ref));
-    var txt=(el.innerText||el.value||el.getAttribute('aria-label')||el.getAttribute('placeholder')||'').trim().replace(/\s+/g,' ').slice(0,80);
-    if(el.tagName==='SELECT'){
-      var op=[];
-      for(var k=0;k<el.options.length&&k<8;k++)op.push(el.options[k].text.trim());
-      txt=((txt?txt+' ':'')+'[options: '+op.join(' | ')+']').slice(0,200);
+  /* Stale refs from the previous read are cleared first, in every root. A
+     filtered read tags far fewer nodes than an unfiltered one, so without this
+     a ref could resolve to a node the last read tagged and this one did not. */
+  for(var r=0;r<roots.length;r++){
+    var stale;
+    try{stale=roots[r].querySelectorAll('[data-aetox-ref]');}catch(e){continue;}
+    for(var q=0;q<stale.length;q++)stale[q].removeAttribute('data-aetox-ref');
+  }
+  var out=[],elTotal=0;
+  for(var r2=0;r2<roots.length;r2++){
+    var els;
+    try{els=roots[r2].querySelectorAll(sel);}catch(e){continue;}
+    for(var i=0;i<els.length;i++){
+      var el=els[i];
+      var rect=el.getBoundingClientRect();
+      if(rect.width<=0||rect.height<=0)continue;
+      var txt=(el.innerText||el.value||el.getAttribute('aria-label')||el.getAttribute('placeholder')||'').trim().replace(/\s+/g,' ').slice(0,80);
+      if(el.tagName==='SELECT'){
+        var op=[];
+        for(var k=0;k<el.options.length&&k<8;k++)op.push(el.options[k].text.trim());
+        txt=((txt?txt+' ':'')+'[options: '+op.join(' | ')+']').slice(0,200);
+      }
+      if(want&&txt.toLowerCase().indexOf(want)<0)continue;
+      elTotal++;
+      if(out.length>=150)continue;
+      var ref=out.length+1;
+      el.setAttribute('data-aetox-ref',String(ref));
+      out.push({ref:ref,tag:el.tagName.toLowerCase(),role:el.getAttribute('role')||'',text:txt});
     }
-    out.push({ref:ref,tag:el.tagName.toLowerCase(),role:el.getAttribute('role')||'',text:txt});
   }
-  var imgs=[];
-  var seen={};
-  var imels=document.querySelectorAll('img[src]');
-  for(var j=0;j<imels.length&&imgs.length<20;j++){
-    var im=imels[j];
-    var ir=im.getBoundingClientRect();
-    if(ir.width<64||ir.height<64)continue; /* skip icons/trackers */
-    var src=im.currentSrc||im.src||'';
-    if(!src||src.indexOf('data:')===0||seen[src])continue;
-    seen[src]=1;
-    imgs.push({src:src.slice(0,600),alt:(im.alt||'').trim().replace(/\s+/g,' ').slice(0,120)});
+  var imgs=[],seenSrc={},imgTotal=0;
+  for(var r3=0;r3<roots.length;r3++){
+    var imels;
+    try{imels=roots[r3].querySelectorAll('img[src]');}catch(e){continue;}
+    for(var j=0;j<imels.length;j++){
+      var im=imels[j];
+      var ir=im.getBoundingClientRect();
+      if(ir.width<64||ir.height<64)continue; /* skip icons/trackers */
+      var src=im.currentSrc||im.src||'';
+      if(!src||src.indexOf('data:')===0||seenSrc[src])continue;
+      seenSrc[src]=1;
+      imgTotal++;
+      if(imgs.length>=20)continue;
+      imgs.push({src:src.slice(0,600),alt:(im.alt||'').trim().replace(/\s+/g,' ').slice(0,120)});
+    }
   }
-  %s(JSON.stringify({__aetox:"text",token:%q,title:document.title,url:location.href,text:(document.body&&document.body.innerText||"").slice(0,200000),elements:out,images:imgs}));
-})()`, bridgePost, token)
+  var text=aetoxText();
+  %s(JSON.stringify({__aetox:"text",token:%q,title:document.title,url:location.href,text:text.slice(0,200000),elements:out,images:imgs,elementsTotal:elTotal,imagesTotal:imgTotal,frames:scan.blocked}));
+})()`, aetoxScanJS, aetoxTextJS, mustJSONString(filter), bridgePost, token)
+}
+
+// browserActResult is what a click or a type says about the element it was
+// aimed at. Reported before the action, never after: see aetoxActJS.
+type browserActResult struct {
+	Found bool
+	Ref   int
+	Tag   string
+	Label string
+}
+
+// aetoxActJS is the one sentence a click and a type both have to say: whether
+// the ref they were given matched anything on this page.
+//
+// It exists because of a real turn, on 2026-08-22, recorded in tool_runs. The
+// model sent {"action":"click","ref":"1"}, the quoted number came through the
+// desktop's own intArg as 0, and clickScript's `if(!el)return` swallowed the
+// miss without a sound — so the tool answered "คลิก ref 0 แล้ว", ok=1, and the
+// page had not been touched. The model read the page, saw nothing had changed,
+// clicked again, reopened the page, clicked again: six rounds of a loop whose
+// exit was a sentence nobody was saying. The type coercion is fixed too, and it
+// is the smaller half. A tool that reports success for work it did not do turns
+// every bug upstream of it into a loop.
+//
+// **Reported before the click, not after.** A click can navigate, and a
+// navigation tears down the document that would have sent the message. Sending
+// first means the report is about what was aimed at rather than about what
+// happened, which is the half that was missing — whether the action landed at
+// all is what `read` is for, and the guidance already says to read afterwards.
+func aetoxActJS() string {
+	return `
+  function aetoxReport(token,ref,el){
+    ` + bridgePost + `(JSON.stringify({__aetox:"act",token:token,url:location.href,ref:ref,
+      found:!!el,
+      tag:el?el.tagName.toLowerCase():"",
+      label:el?String(el.innerText||el.value||el.getAttribute('aria-label')||'').trim().replace(/\s+/g,' ').slice(0,80):""}));
+  }
+`
 }
 
 // clickScript clicks the element tagged with the given ref (see textScript).
-func clickScript(ref int) string {
-	return fmt.Sprintf(`(function(){
-  var el=document.querySelector('[data-aetox-ref="%d"]');
+//
+// aetoxFind rather than document.querySelector, because textScript now tags
+// nodes inside shadow roots and same-origin frames as well. A ref handed out by
+// a read this tool could not then act on would be worse than not handing it out.
+func clickScript(token string, ref int) string {
+	tok, _ := json.Marshal(token)
+	return fmt.Sprintf(`(function(){%s%s
+  var el=aetoxFind(%d);
+  aetoxReport(%s,%d,el);
   if(!el)return;
   el.scrollIntoView({block:"center"});
   el.click();
-})()`, ref)
+})()`, aetoxScanJS, aetoxActJS(), ref, string(tok), ref)
 }
 
 // typeScript sets an input/textarea/select/contenteditable's value via the
@@ -256,7 +463,7 @@ func clickScript(ref int) string {
 // keydown first (skipped requestSubmit if the page preventDefault'ed it), then
 // the form's requestSubmit, because untrusted KeyboardEvents never trigger the
 // browser's own implicit submission.
-func typeScript(ref int, text string, enter bool) string {
+func typeScript(token string, ref int, text string, enter bool) string {
 	encoded, _ := json.Marshal(text)
 	enterJS := ""
 	if enter {
@@ -266,8 +473,10 @@ func typeScript(ref int, text string, enter bool) string {
   el.dispatchEvent(new KeyboardEvent("keyup",ke));
   if(notHandled&&el.form&&typeof el.form.requestSubmit==="function"){el.form.requestSubmit();}`
 	}
-	return fmt.Sprintf(`(function(){
-  var el=document.querySelector('[data-aetox-ref="%d"]');
+	tok, _ := json.Marshal(token)
+	return fmt.Sprintf(`(function(){%s%s
+  var el=aetoxFind(%d);
+  aetoxReport(%s,%d,el);
   if(!el)return;
   el.focus();
   var val=%s;
@@ -288,7 +497,7 @@ func typeScript(ref int, text string, enter bool) string {
   }
   el.dispatchEvent(new Event("input",{bubbles:true}));
   el.dispatchEvent(new Event("change",{bubbles:true}));%s
-})()`, ref, encoded, enterJS)
+})()`, aetoxScanJS, aetoxActJS(), ref, string(tok), ref, encoded, enterJS)
 }
 
 // sameOrigin reports whether a and b share a scheme+host — used to check a
@@ -364,6 +573,14 @@ type browserTab struct {
 	waitMu    sync.Mutex
 	waitCh    chan bool
 	waitToken string
+
+	logMu    sync.Mutex
+	logCh    chan browserLogReport
+	logToken string // token browserLog is waiting on; empty = none pending
+
+	actMu    sync.Mutex
+	actCh    chan browserActResult
+	actToken string // token a click/type is waiting on; empty = none pending
 
 	// dlgMu guards what the page's dialogs said since anyone last looked. A
 	// dialog cannot block here — see dialogScript — so the only way the agent
@@ -705,7 +922,35 @@ func (h *browserHost) onMessage(id string, tab *browserTab, raw string, source s
 		if ch == nil || m.Token == "" || m.Token != expectedToken || !sameOrigin(source, m.URL) {
 			return
 		}
-		ch <- browserSnapshot{Text: m.Text, Elements: m.Elements, Images: m.Images}
+		ch <- browserSnapshot{
+			Text: m.Text, Elements: m.Elements, Images: m.Images,
+			ElementsTotal: m.ElementsTotal, ImagesTotal: m.ImagesTotal, BlockedFrames: m.Frames,
+		}
+	case "act":
+		tab.actMu.Lock()
+		ch := tab.actCh
+		expectedToken := tab.actToken
+		tab.actCh = nil
+		tab.actToken = ""
+		tab.actMu.Unlock()
+		if ch == nil || m.Token == "" || m.Token != expectedToken || !sameOrigin(source, m.URL) {
+			return
+		}
+		ch <- browserActResult{Found: m.Found, Ref: m.Ref, Tag: m.Tag, Label: m.Label}
+	case "log":
+		tab.logMu.Lock()
+		ch := tab.logCh
+		expectedToken := tab.logToken
+		tab.logCh = nil
+		tab.logToken = ""
+		tab.logMu.Unlock()
+		// Same three gates as "text", for the same three reasons: nothing
+		// waiting, a token that is not the one this call minted, or a page
+		// claiming to be somewhere it is not.
+		if ch == nil || m.Token == "" || m.Token != expectedToken || !sameOrigin(source, m.URL) {
+			return
+		}
+		ch <- browserLogReport{Kind: m.Kind, Entries: m.Log, Dropped: m.Dropped, Armed: m.Armed}
 	case "wait":
 		tab.waitMu.Lock()
 		ch, want := tab.waitCh, tab.waitToken
@@ -930,7 +1175,9 @@ func (a *App) BrowserClose(id string) {
 // BrowserGetText returns the visible text content of a tab's current page —
 // this is the read-path the AI agent uses to work with the browser.
 func (a *App) BrowserGetText(id string) (string, error) {
-	snap, err := a.browserSnapshot(id)
+	// No filter: this is the frontend's own read of the whole page, not the
+	// agent's search for one control on it.
+	snap, err := a.browserSnapshot(id, "")
 	if err != nil {
 		return "", err
 	}
@@ -939,7 +1186,7 @@ func (a *App) BrowserGetText(id string) (string, error) {
 
 // browserSnapshot reads page text plus the interactive elements tagged by
 // textScript, in one round trip. Used by BrowserGetText and browser_read.
-func (a *App) browserSnapshot(id string) (browserSnapshot, error) {
+func (a *App) browserSnapshot(id, filter string) (browserSnapshot, error) {
 	host, err := a.browserHostLazy()
 	if err != nil {
 		return browserSnapshot{}, err
@@ -957,7 +1204,7 @@ func (a *App) browserSnapshot(id string) (browserSnapshot, error) {
 	t.textMu.Unlock()
 
 	// This blocks below, so do() must not: see hostBackend.do.
-	host.onTab(id, func(v tabView, _ *browserTab) { v.eval(textScript(token)) })
+	host.onTab(id, func(v tabView, _ *browserTab) { v.eval(textScript(token, filter)) })
 
 	select {
 	case snap := <-ch:
@@ -971,33 +1218,68 @@ func (a *App) browserSnapshot(id string) (browserSnapshot, error) {
 	}
 }
 
-// BrowserClickRef clicks the element tagged with ref by the most recent
-// browser_read snapshot (see textScript).
-func (a *App) BrowserClickRef(id string, ref int) error {
+// browserActOn runs one ref-aimed script and collects the report it sends
+// before acting. answered is false when the page never said anything, which is
+// a third outcome and not a failure: the report is a courtesy the page performs
+// and a page can be busy, gone, or refusing to run scripts at all.
+func (a *App) browserActOn(id string, build func(token string) string) (res browserActResult, answered bool, err error) {
 	host, err := a.browserHostLazy()
 	if err != nil {
-		return err
+		return browserActResult{}, false, err
 	}
 	t := host.tab(id)
 	if t == nil {
-		return fmt.Errorf("no browser tab %q", id)
+		return browserActResult{}, false, fmt.Errorf("no browser tab %q", id)
 	}
-	host.onTab(id, func(v tabView, _ *browserTab) { v.eval(clickScript(ref)) })
-	return nil
+
+	token := newMessageToken()
+	ch := make(chan browserActResult, 1)
+	t.actMu.Lock()
+	t.actCh = ch
+	t.actToken = token
+	t.actMu.Unlock()
+
+	host.onTab(id, func(v tabView, _ *browserTab) { v.eval(build(token)) })
+
+	select {
+	case r := <-ch:
+		return r, true, nil
+	// Short, because the report is sent before the click rather than after it:
+	// nothing here is waiting on a page to finish loading or a handler to run.
+	case <-time.After(2 * time.Second):
+		t.actMu.Lock()
+		t.actCh = nil
+		t.actToken = ""
+		t.actMu.Unlock()
+		return browserActResult{}, false, nil
+	}
 }
 
-// BrowserTypeRef sets an input/textarea/select/contenteditable's value,
-// tagged with ref by the most recent browser_read snapshot (see textScript).
-// enter presses Enter afterwards (for forms with no submit button).
+// browserClickRef clicks the element tagged with ref by the most recent
+// browser_read snapshot (see textScript), and reports what it was aimed at.
+func (a *App) browserClickRef(id string, ref int) (browserActResult, bool, error) {
+	return a.browserActOn(id, func(token string) string { return clickScript(token, ref) })
+}
+
+// BrowserClickRef is the binding the frontend was generated against. It keeps
+// its signature because the frontend has no use for the report; the tool, which
+// has to tell the model whether the ref matched anything, calls the one above.
+func (a *App) BrowserClickRef(id string, ref int) error {
+	_, _, err := a.browserClickRef(id, ref)
+	return err
+}
+
+// browserTypeRef sets an input/textarea/select/contenteditable's value, tagged
+// with ref by the most recent browser_read snapshot (see textScript), and
+// reports what it was aimed at. enter presses Enter afterwards (for forms with
+// no submit button).
+func (a *App) browserTypeRef(id string, ref int, text string, enter bool) (browserActResult, bool, error) {
+	return a.browserActOn(id, func(token string) string { return typeScript(token, ref, text, enter) })
+}
+
+// BrowserTypeRef is the binding the frontend was generated against; see
+// BrowserClickRef for why it keeps its shape.
 func (a *App) BrowserTypeRef(id string, ref int, text string, enter bool) error {
-	host, err := a.browserHostLazy()
-	if err != nil {
-		return err
-	}
-	t := host.tab(id)
-	if t == nil {
-		return fmt.Errorf("no browser tab %q", id)
-	}
-	host.onTab(id, func(v tabView, _ *browserTab) { v.eval(typeScript(ref, text, enter)) })
-	return nil
+	_, _, err := a.browserTypeRef(id, ref, text, enter)
+	return err
 }

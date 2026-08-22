@@ -1,0 +1,92 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Aetox browser fixture</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; }
+  .buttons button { margin: 1px; }
+  .tall { height: 2400px; background: linear-gradient(#eef, #fee); margin: 16px 0; padding: 8px; }
+  iframe { border: 1px solid #ccc; }
+</style>
+<body>
+
+<h1>หน้าทดสอบเบราว์เซอร์ของ Aetox</h1>
+<p>main-body-marker</p>
+
+<!-- 200 controls, so `read` has to hit its 150 cap and report the rest.
+     "ส่งข้อความ" sits at position 180 on purpose: it is past the cap, so an
+     unfiltered read can never reach it however many times it is called, and
+     the only way to it is read(filter). -->
+<div class="buttons" id="buttons"></div>
+
+<!-- A control inside a shadow root. document.querySelectorAll cannot see it,
+     and neither can innerText. -->
+<div id="host"></div>
+
+<img src="pic.svg" alt="รูปทดสอบ" width="120" height="120">
+
+<!-- Same origin: readable, and its text belongs in the page's text. -->
+<iframe src="child.html" width="320" height="120" title="same-origin"></iframe>
+
+<!-- Different port, therefore a different origin: unreadable by any technique,
+     and must be COUNTED and reported rather than quietly skipped. Requires the
+     second server (see README.md). -->
+<iframe src="http://127.0.0.1:8802/child.html" width="320" height="120" title="cross-origin"></iframe>
+
+<!-- Long enough that a viewport capture and a full-page capture cannot be
+     confused for each other. -->
+<div class="tall">bottom-of-page-marker is at the very end of this block</div>
+<p>bottom-of-page-marker</p>
+
+<script>
+  var box = document.getElementById('buttons');
+  for (var i = 1; i <= 200; i++) {
+    var b = document.createElement('button');
+    b.textContent = (i === 180) ? 'ส่งข้อความ' : ('ปุ่มที่ ' + i);
+    box.appendChild(b);
+  }
+
+  var sr = document.getElementById('host').attachShadow({ mode: 'open' });
+  sr.innerHTML = '<button>ปุ่มในเงา</button><p>shadow-text-marker</p>';
+
+  // Three handlers, so "did the click land" is answerable by reading the page
+  // instead of by trusting the tool that reported it. One per root, because a
+  // click that resolves in the document and a click that resolves inside a
+  // shadow root or a frame are different journeys.
+  box.querySelectorAll('button').forEach(function (b) {
+    if (b.textContent !== 'ส่งข้อความ') return;
+    b.addEventListener('click', function () {
+      var p = document.createElement('p');
+      p.textContent = 'CLICK-LANDED-MAIN';
+      document.body.appendChild(p);
+    });
+  });
+  sr.querySelector('button').addEventListener('click', function () {
+    var p = document.createElement('p');
+    p.textContent = 'CLICK-LANDED-SHADOW';
+    sr.appendChild(p);
+  });
+
+  // Everything below feeds the console and network recorders. It runs on load
+  // so a `console` or `network` read straight after `open` has something real
+  // to find.
+  console.log('fixture: hello from console.log');
+  console.warn('fixture: this is a warning');
+  console.error('fixture: this is an error');
+
+  // Not logged by the page — the recorder has to catch these itself.
+  setTimeout(function () { throw new Error('fixture: uncaught on purpose'); }, 0);
+  Promise.reject(new Error('fixture: unhandled rejection on purpose'));
+
+  // A request that fails, so status is a real 404 rather than a success.
+  fetch('missing.json').catch(function () {});
+
+  // A token in the query string. The recorder must report this URL with the
+  // value replaced, never the value itself.
+  fetch('api?token=SECRET-SHOULD-NOT-APPEAR&page=2').catch(function () {});
+
+  // The other half of the network recorder.
+  var x = new XMLHttpRequest();
+  x.open('GET', 'child.html');
+  x.send();
+</script>
+</body>

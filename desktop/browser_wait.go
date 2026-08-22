@@ -62,20 +62,20 @@ import (
 func waitScript(token, needle string, ms int) string {
 	tok, _ := json.Marshal(token)
 	want, _ := json.Marshal(needle)
-	return fmt.Sprintf(`(function(){
+	return fmt.Sprintf(`(function(){%s%s
   var fired=false,iv=null,deadline=Date.now()+%d;
   function done(ok){
     if(fired)return; fired=true; if(iv)clearInterval(iv);
     %s(JSON.stringify({__aetox:"wait",token:%s,url:location.href,found:ok}));
   }
   function check(){
-    var body=document.body?(document.body.innerText||""):"";
+    var body=aetoxText();
     if(body.indexOf(%s)>=0){done(true);return}
     if(Date.now()>deadline)done(false);
   }
   check();
   if(!fired)iv=setInterval(check,200);
-})()`, ms, bridgePost, tok, want)
+})()`, aetoxScanJS, aetoxTextJS, ms, bridgePost, tok, want)
 }
 
 // dialogScript replaces the three blocking dialogs. Installed at document

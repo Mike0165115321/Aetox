@@ -299,8 +299,30 @@ func looksBinary(f *os.File) (bool, error) {
 	return bytes.IndexByte(head[:n], 0) >= 0, nil
 }
 
-// intArg accepts the shapes a tool argument arrives in: an int from Go
+// IntArg accepts the shapes a tool argument arrives in: an int from Go
 // callers, a float64 from JSON, a string from a model that quoted the number.
+//
+// Exported on 2026-08-22, when the desktop's own copy of this — which handled
+// the first two shapes and not the third — was found returning 0 for every
+// `{"ref": "1"}` the model sent. Twelve calls in this machine's tool_runs had
+// gone that way. A second place answering the same question is the debt this
+// project has a name for, and the fix is one answer rather than two that agree
+// for a while.
+func IntArg(value any) int { return intArg(value) }
+
+// BoolArg is the same rule for a boolean: a model that quotes "true" means
+// true, and a tool that reads that as false refuses an option it was given.
+func BoolArg(value any) bool {
+	switch b := value.(type) {
+	case bool:
+		return b
+	case string:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(b))
+		return err == nil && parsed
+	}
+	return false
+}
+
 func intArg(value any) int {
 	switch n := value.(type) {
 	case int:
