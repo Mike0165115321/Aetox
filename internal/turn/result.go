@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Mike0165115321/Aetox/internal/skill"
 )
@@ -85,10 +86,7 @@ func (e *Executor) summarizeToolExecution(
 	if summary == "" {
 		return "", errors.New("empty summary response")
 	}
-	if len(summary) > e.summaryLimit {
-		summary = summary[:e.summaryLimit] + "\n...(output truncated)"
-	}
-	return summary, nil
+	return trimToBackstop(summary, e.summaryLimit), nil
 }
 
 func (e *Executor) fallbackToolSummary(result skill.Output, status TurnStatus, execErr error) string {
@@ -175,10 +173,34 @@ func (e *Executor) sanitizeAndTrimOutput(output string) string {
 		output = re.ReplaceAllString(output, "$1[REDACTED]")
 	}
 
-	if len(output) > e.summaryLimit {
-		output = output[:e.summaryLimit] + "\n...(output truncated)"
+	return trimToBackstop(output, e.summaryLimit)
+}
+
+// trimToBackstop cuts an over-long tool result and says what it did.
+//
+// Two things were wrong with the line this replaces, and the first is the one
+// that cost real turns. "...(output truncated)" states that something was
+// removed and nothing about how much, so a reader cannot tell a result that
+// lost its last sentence from one that lost 85% of itself. Worse, the tools
+// underneath here publish continuation contracts that only work if you know:
+// `read` ends with "continue with offset=N", and this cut ate that line — so
+// the model was told to use an offset it could no longer see.
+//
+// The second is that the cut was made in bytes on a UTF-8 string, so it could
+// land inside a Thai character and hand the model a broken rune. The same
+// walk-back already exists in skill.readSkillFile; this is that rule applied at
+// the other end of the same pipe.
+func trimToBackstop(output string, limit int) string {
+	if limit <= 0 || len(output) <= limit {
+		return output
 	}
-	return output
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(output[cut]) {
+		cut--
+	}
+	return output[:cut] + fmt.Sprintf(
+		"\n...(output truncated — showed the first %d of %d characters; anything the tool said about how to ask for the rest was cut off with them)",
+		cut, len(output))
 }
 
 func (e *Executor) normalizeToolResult(result skill.Output) skill.Output {

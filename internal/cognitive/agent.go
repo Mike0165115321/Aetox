@@ -1116,3 +1116,20 @@ func (a *Agent) buildRequest(messages []model.Message, maxTokens int, temperatur
 	}
 	return req
 }
+
+// HistoryChars is the conversation budget this agent measures itself against —
+// the same number compactIfNeeded takes its 80% of.
+//
+// Exported so the turn executor can size its output backstop from it. Asking
+// the agent is the point: the budget is one fact with one owner, and the two
+// previous attempts to carry it somewhere else both went wrong the same way —
+// desktop/app.go's contextWindowTokens has a comment counting three shipped
+// bugs from "two facts with one name", and sizing the backstop off
+// config.ModelContextTokens (an optional override, usually zero) made it four.
+func (a *Agent) HistoryChars() int {
+	if a == nil || a.context == nil {
+		return 0
+	}
+	_, _, maxChars := a.context.UsageStats()
+	return maxChars
+}

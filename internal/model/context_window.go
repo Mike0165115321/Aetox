@@ -185,3 +185,23 @@ func zaiContextWindow(modelID string) int {
 	}
 	return 128_000
 }
+
+// HistoryChars turns a model's context window in tokens into the character
+// budget a conversation is measured against.
+//
+// Four characters a token, and the estimate is deliberately pessimistic for the
+// same reason cognitive.clampToWindow says it is: Thai runs closer to one token
+// per two characters than the one-per-four an English-shaped guess assumes, and
+// these rows exist to serve Thai. Guessing high costs a shorter reply; guessing
+// low costs the whole request.
+//
+// It lives here rather than in bootstrap, which used to own it, because three
+// packages need the same answer and one of them (internal/app) cannot import
+// bootstrap — bootstrap imports app. A second copy of a constant is how two
+// callers start disagreeing about the same fact.
+func HistoryChars(contextTokens int) int {
+	if contextTokens <= 0 {
+		return 0
+	}
+	return contextTokens * 4
+}

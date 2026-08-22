@@ -1302,3 +1302,9 @@ func TestRespondWithToolsReportsEachRound(t *testing.T) {
 		t.Errorf("round 2 = %+v, want the reply marked Final", rounds[1])
 	}
 }
+
+// The link the turn executor reaches this agent through. It is a type
+// assertion on the far side (turn cannot import cognitive — cognitive imports
+// turn), so nothing else would notice if this method were renamed away, and
+// every tool result would quietly go back to being cut at the floor.
+var _ interface{ HistoryChars() int } = (*Agent)(nil)

@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -30,8 +32,24 @@ const (
 	TurnStatusError   TurnStatus = "error"
 	TurnStatusBlocked TurnStatus = "blocked"
 
-	defaultToolSummaryTimeout      = 30 * time.Second
-	defaultToolSummaryPromptMaxLen = 4096
+	defaultToolSummaryTimeout = 30 * time.Second
+
+	// The floor under OutputBackstop, and the whole of it when nothing knows
+	// this model's context window.
+	//
+	// It is 4096 because that is what this cap has always been, and that number
+	// was not arbitrary: memory.defaultMaxChars is 128000, and 128000/32 is
+	// 4000. It was one thirty-second of the history budget, correctly, back when
+	// the budget was one fixed number. Then the budget started scaling with the
+	// model (bootstrap.ContextChars) and this did not, so on a 1M-token model it
+	// had quietly become one *thousandth* of the room available — and 14.2% of
+	// 3,335 recorded tool runs on the owner's machine were arriving at the model
+	// cut in half with no way to ask for the rest.
+	defaultOutputBackstop = 4096
+
+	// outputBackstopFraction keeps the original relationship: a single tool
+	// result may take at most this fraction of the history it has to share.
+	outputBackstopFraction = 32
 )
 
 // A single tool call that runs longer than this hands the turn back to the
@@ -265,7 +283,13 @@ func NewExecutor(opts ExecutorOptions) *Executor {
 	}
 	limit := opts.SummaryLimit
 	if limit <= 0 {
-		limit = defaultToolSummaryPromptMaxLen
+		// Asked of the agent rather than passed in by each caller. There are
+		// four places that build an executor, and a number that has to be
+		// remembered at four call sites is a number that will be forgotten at
+		// one — it was, within an hour of this being written, and the result
+		// was every tool result still cut at the floor while the code that was
+		// supposed to raise it sat there looking correct.
+		limit = OutputBackstop(historyCharsOf(opts.Agent))
 	}
 	mode := opts.ApprovalMode
 	if mode == "" {
@@ -1639,4 +1663,87 @@ func asStreamHandler(callback func(string)) func(string) error {
 		callback(chunk)
 		return nil
 	}
+}
+
+// OutputBackstop is the largest a single tool result may be before the executor
+// cuts it, derived from the history budget that result has to share.
+//
+// **A backstop, not a working limit.** Every tool that can produce a lot of
+// output already bounds itself, at a size chosen for what that tool's job needs:
+// `read` stops at 256KB or 2000 lines and hands back an offset to continue,
+// `shell` stops at 220 lines, the browser's `read` at 60,000 characters,
+// `skill_view` at 32KB with the byte count said out loud. Those are considered
+// decisions. This number exists for the results that had no such thought behind
+// them — a third-party MCP server that answers a scrape with 147KB, measured, on
+// the owner's machine, 50 times in 54 calls.
+//
+// The reason it may not simply be removed is written in cognitive/agent.go's own
+// comment about maxOverflowCompactions: compaction summarizes an *accumulated*
+// history, and "summarizing cannot fix" a single oversized message. So the job
+// here is precisely to keep any one result below the size at which it becomes
+// the thing compaction cannot rescue.
+//
+// One thirty-second of the budget, which is the ratio the old fixed 4096 already
+// was against the old fixed budget. Nothing about the shape changed; it only
+// started scaling with the thing it was always a fraction of.
+func OutputBackstop(historyChars int) int {
+	if override := backstopOverride(); override > 0 {
+		return override
+	}
+	if historyChars <= 0 {
+		return defaultOutputBackstop
+	}
+	if limit := historyChars / outputBackstopFraction; limit > defaultOutputBackstop {
+		return limit
+	}
+	return defaultOutputBackstop
+}
+
+// backstopOverride is AETOX_MAX_TOOL_OUTPUT, in characters, read once.
+//
+// An escape hatch for whoever is debugging, not the dial an ordinary user is
+// meant to reach for — the same standing as AETOX_DATA_ROOT and
+// AETOX_DISABLE_UPDATE_CHECK, which is why it is an environment variable at all.
+// This is a desktop app; the day a real user needs to move this number, it
+// belongs in Settings, and copying Claude Code's BASH_MAX_OUTPUT_LENGTH into a
+// window nobody launches from a shell would be taking the shape of somebody
+// else's answer without their question.
+//
+// Both of the implementations worth comparing against are asked for a knob like
+// this because their limits are fixed constants. Aetox's scales with the model's
+// window, so the reason people ask has mostly been removed — which is why this
+// stays an escape hatch rather than growing a settings page nobody has asked for.
+//
+// Read once: it sits on the path of every tool result, and an environment
+// variable that changes mid-process is not a thing worth supporting.
+var backstopOverride = sync.OnceValue(readBackstopOverride)
+
+func readBackstopOverride() int {
+	raw := strings.TrimSpace(os.Getenv("AETOX_MAX_TOOL_OUTPUT"))
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		// A misspelled number is ignored rather than obeyed. Obeying a zero
+		// would silently empty every tool result in the session, which is a
+		// worse answer to a typo than carrying on with the default.
+		debuglog.Msg("AETOX_MAX_TOOL_OUTPUT=%q is not a positive number; ignoring it", raw)
+		return 0
+	}
+	return n
+}
+
+// historyCharsOf asks an agent for the budget its results have to share.
+//
+// A type assertion rather than a method on the Agent interface: every fake in
+// every test implements that interface, and widening it would make them all
+// fail to compile over a number none of them care about. An agent that cannot
+// answer returns zero, which is the floor, which is what it had before.
+func historyCharsOf(a Agent) int {
+	budget, ok := a.(interface{ HistoryChars() int })
+	if !ok {
+		return 0
+	}
+	return budget.HistoryChars()
 }

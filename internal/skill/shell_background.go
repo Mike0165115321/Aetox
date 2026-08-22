@@ -358,7 +358,7 @@ func (s *shellOutputSkill) ExecuteTool(ctx context.Context, args map[string]any)
 	if body == "" {
 		body = "(nothing new since the last read)"
 	}
-	body, truncated := limitLines(body, defaultToolOutputLineLimit)
+	body, truncated := limitLinesKeepingEnds(body, shellOutputLineLimit)
 	// Not an error even when the command failed: shell_output succeeded at its
 	// own job, which is reporting. The header carries the command's fate.
 	return newToolOutput("shell_output", command, header+"\n\n"+body, start, truncated, nil), nil

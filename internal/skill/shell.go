@@ -362,7 +362,9 @@ func (s *shellSkill) Execute(ctx context.Context, input Input) (Output, error) {
 	err = cmd.Run()
 	// rtk advertises itself on every invocation; the model has no use for it.
 	out := rtk.StripBanner(strings.TrimSpace(buffer.buf.String()))
-	truncatedOutput, truncated := limitLines(out, defaultToolOutputLineLimit)
+	// Keeping both ends, because a command that failed says so in its last few
+	// lines and a head-only cut throws exactly that away. See limitLinesKeepingEnds.
+	truncatedOutput, truncated := limitLinesKeepingEnds(out, shellOutputLineLimit)
 	truncated = truncated || buffer.dropped
 	command := "shell " + commandLine
 	result := newToolOutput("shell", command, truncatedOutput, start, truncated, err)

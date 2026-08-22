@@ -26,7 +26,7 @@ func ContextChars(cfg config.Config) int {
 	if tokens <= 0 {
 		tokens = model.ContextWindowTokens(cfg.ModelProvider, cfg.ModelName)
 	}
-	return tokens * 4
+	return model.HistoryChars(tokens)
 }
 
 // MCPServers translates the persisted config DTOs into mcp.Server values.
