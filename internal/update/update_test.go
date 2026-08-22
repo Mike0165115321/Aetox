@@ -157,7 +157,7 @@ func TestCheckFindsANewerRelease(t *testing.T) {
 			t.Error("no User-Agent — GitHub rejects unauthenticated calls without one")
 		}
 		w.Header().Set("ETag", `W/"abc123"`)
-		_, _ = w.Write([]byte(`{"tag_name":"v0.9.0","html_url":"https://example.invalid/r/v0.9.0"}`))
+		_, _ = w.Write([]byte(`[{"tag_name":"v0.9.0","html_url":"https://example.invalid/r/v0.9.0"}]`))
 	})
 
 	st, err := Check(context.Background(), "0.8.4")
@@ -180,7 +180,7 @@ func TestCheckFindsANewerRelease(t *testing.T) {
 
 func TestCheckIsQuietWhenUpToDate(t *testing.T) {
 	serve(t, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"tag_name":"v0.8.4"}`))
+		_, _ = w.Write([]byte(`[{"tag_name":"v0.8.4"}]`))
 	})
 
 	st, err := Check(context.Background(), "0.8.4")
@@ -211,8 +211,8 @@ func TestSecondCheckReusesTheETag(t *testing.T) {
 		// Assets ride along, as every real release's do — a cached answer
 		// without them is treated as unable to answer a 304 (see the
 		// If-None-Match condition in checkWithAssets).
-		_, _ = w.Write([]byte(`{"tag_name":"v0.9.0","html_url":"https://example.invalid/r",
-			"assets":[{"name":"checksums.txt","browser_download_url":"https://example.invalid/c","size":1}]}`))
+		_, _ = w.Write([]byte(`[{"tag_name":"v0.9.0","html_url":"https://example.invalid/r",
+			"assets":[{"name":"checksums.txt","browser_download_url":"https://example.invalid/c","size":1}]}]`))
 	})
 
 	if _, err := Check(context.Background(), "0.8.4"); err != nil {
@@ -249,11 +249,11 @@ func TestOldCacheWithoutAssetsRepairsItself(t *testing.T) {
 		}
 		full++
 		w.Header().Set("ETag", `W/"e1"`)
-		body := `{"tag_name":"v0.9.0","html_url":"https://example.invalid/r"}`
+		body := `[{"tag_name":"v0.9.0","html_url":"https://example.invalid/r"}]`
 		if withAssets {
-			body = `{"tag_name":"v0.9.0","html_url":"https://example.invalid/r",
+			body = `[{"tag_name":"v0.9.0","html_url":"https://example.invalid/r",
 				"assets":[{"name":"checksums.txt","browser_download_url":"https://example.invalid/c","size":1},
-				          {"name":"aetox-windows-amd64-portable.zip","browser_download_url":"https://example.invalid/z","size":9}]}`
+				          {"name":"aetox-windows-amd64-portable.zip","browser_download_url":"https://example.invalid/z","size":9}]}]`
 		}
 		_, _ = w.Write([]byte(body))
 	})
@@ -358,8 +358,8 @@ func TestCheckRefusesToUseTheRealAPIFromATest(t *testing.T) {
 // tell users to install something that is not there.
 func TestAnUnpublishedReleaseNeverNotifiesAnyone(t *testing.T) {
 	for _, body := range []string{
-		`{"tag_name":"v0.9.0","draft":true}`,
-		`{"tag_name":"v0.9.0","prerelease":true}`,
+		`[{"tag_name":"v0.9.0","draft":true}]`,
+		`[{"tag_name":"v0.9.0","prerelease":true}]`,
 	} {
 		t.Run(body, func(t *testing.T) {
 			serve(t, func(w http.ResponseWriter, r *http.Request) {
@@ -373,6 +373,63 @@ func TestAnUnpublishedReleaseNeverNotifiesAnyone(t *testing.T) {
 				t.Errorf("an unpublished release leaked into the status: %+v", st)
 			}
 		})
+	}
+}
+
+// The bug this endpoint changed for, in the shape it actually shipped in.
+//
+// internal/capability publishes its pinned ffmpeg and Tesseract archives as
+// releases of this same repository, so from 2026-08-21 GitHub's answer to
+// "latest release" was tools-ffmpeg-n9.0.1. Its tag parses as no version,
+// Newer() answered false the way it must for anything unreadable, and every
+// Aetox on every version was told it was up to date — measured on a v0.9.6
+// install with v1.0.0 through v1.4.0 published above it.
+//
+// The list below is that repository, in GitHub's own order.
+func TestAToolArchiveIsNotAVersionOfThisApp(t *testing.T) {
+	serve(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[
+			{"tag_name":"v1.5.0","draft":true},
+			{"tag_name":"tools-ffmpeg-n9.0.1","html_url":"https://example.invalid/ff"},
+			{"tag_name":"tools-tesseract-5.4.0.20240606","html_url":"https://example.invalid/ts"},
+			{"tag_name":"v1.4.0","html_url":"https://example.invalid/r/v1.4.0"},
+			{"tag_name":"v1.2.4","html_url":"https://example.invalid/r/v1.2.4"}
+		]`))
+	})
+
+	st, err := Check(context.Background(), "0.9.6")
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if !st.Available {
+		t.Fatal("v1.4.0 is published and newer than 0.9.6 — the check must say so")
+	}
+	if st.Latest != "1.4.0" {
+		t.Errorf("Latest = %q, want 1.4.0: a tool archive outranked the app, or a draft did", st.Latest)
+	}
+	if st.URL != "https://example.invalid/r/v1.4.0" {
+		t.Errorf("URL = %q — the download link points at the wrong release", st.URL)
+	}
+}
+
+// Position in the list is creation order, and a patch cut after a minor is an
+// ordinary thing this project has already done: v1.2.4 was published after
+// v1.2.0. Picking the first match rather than the highest version would pin
+// the whole install base to whichever release happened to be typed last.
+func TestTheNewestVersionWinsNotTheNewestEntry(t *testing.T) {
+	serve(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[
+			{"tag_name":"v1.2.4","html_url":"https://example.invalid/r/v1.2.4"},
+			{"tag_name":"v1.4.0","html_url":"https://example.invalid/r/v1.4.0"}
+		]`))
+	})
+
+	st, err := Check(context.Background(), "1.0.0")
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if st.Latest != "1.4.0" {
+		t.Errorf("Latest = %q, want 1.4.0", st.Latest)
 	}
 }
 
@@ -408,7 +465,7 @@ func TestACorruptCacheIsRewrittenRatherThanFatal(t *testing.T) {
 	serve(t, func(w http.ResponseWriter, r *http.Request) {
 		sentETag = r.Header.Get("If-None-Match")
 		w.Header().Set("ETag", `W/"fresh"`)
-		_, _ = w.Write([]byte(`{"tag_name":"v0.9.0"}`))
+		_, _ = w.Write([]byte(`[{"tag_name":"v0.9.0"}]`))
 	})
 	path := filepath.Join(os.Getenv("AETOX_DATA_ROOT"), "update-check.json")
 	if err := os.WriteFile(path, []byte("{ this is not json"), 0o600); err != nil {
@@ -441,7 +498,7 @@ func TestAFailedCheckKeepsTheLastGoodAnswer(t *testing.T) {
 			return
 		}
 		w.Header().Set("ETag", `W/"keep-me"`)
-		_, _ = w.Write([]byte(`{"tag_name":"v0.9.0"}`))
+		_, _ = w.Write([]byte(`[{"tag_name":"v0.9.0"}]`))
 	})
 
 	if _, err := Check(context.Background(), "0.8.4"); err != nil {

@@ -45,10 +45,30 @@ const (
 	defaultTimeout = 10 * time.Second
 )
 
-// defaultAPIURL is the release GitHub itself considers current — which
-// excludes drafts and prereleases, so an unpublished draft release (release.yml
-// creates every release as a draft) can never notify anybody by accident.
-const defaultAPIURL = "https://api.github.com/repos/" + repoOwner + "/" + repoName + "/releases/latest"
+// defaultAPIURL is the release LIST, newest first, and it used to be
+// /releases/latest — which broke every install in the world on 2026-08-21.
+//
+// /releases/latest answers "the newest published release in this repository",
+// and this app is not the only thing this repository releases: the ffmpeg and
+// Tesseract archives internal/capability downloads are published here too, as
+// tools-ffmpeg-n9.0.1 and tools-tesseract-5.4.0.20240606. From the moment the
+// first of those went out, GitHub's answer to "latest" was a tool archive, its
+// tag parsed as no version at all, Newer() answered false the way it is
+// supposed to for anything it cannot read — and every Aetox on earth, on every
+// version, said "นี่คือเวอร์ชันล่าสุดแล้ว". Measured on the owner's v0.9.6
+// install with four app releases published above it.
+//
+// So the question is asked properly now: give me the releases, and I will pick
+// the newest one that is an Aetox. GitHub omits drafts for an unauthenticated
+// caller, so release.yml's draft-first flow still cannot notify anybody early,
+// and appTagIsNewer refuses anything that is not a v-prefixed version, so a
+// repository can publish whatever else it likes without ever being mistaken
+// for the app again.
+//
+// per_page=30 is GitHub's default and roughly a year of releases at this
+// project's pace; the tools archives are counted in it, which is the reason to
+// state the number rather than leave it implied.
+const defaultAPIURL = "https://api.github.com/repos/" + repoOwner + "/" + repoName + "/releases?per_page=30"
 
 // apiURL is a var so this package's own tests can point it at an httptest
 // server. Nothing else should assign to it.
@@ -170,7 +190,7 @@ func checkWithAssets(ctx context.Context, current string) (Status, []Asset, erro
 			return st, nil, fmt.Errorf("github returned 304 with no cached release")
 		}
 	case http.StatusOK:
-		var rel struct {
+		type ghRelease struct {
 			TagName     string `json:"tag_name"`
 			HTMLURL     string `json:"html_url"`
 			PublishedAt string `json:"published_at"`
@@ -182,13 +202,30 @@ func checkWithAssets(ctx context.Context, current string) (Status, []Asset, erro
 				Size int64  `json:"size"`
 			} `json:"assets"`
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-			return st, nil, fmt.Errorf("decode release: %w", err)
+		var rels []ghRelease
+		if err := json.NewDecoder(resp.Body).Decode(&rels); err != nil {
+			return st, nil, fmt.Errorf("decode releases: %w", err)
 		}
-		if rel.Draft || rel.Pre {
-			// /releases/latest should never return these, but if the API ever
-			// does, a draft is by definition not something to notify about.
-			return st, nil, fmt.Errorf("latest release is not published")
+		// Newest Aetox in the list, by version rather than by position: GitHub
+		// orders by creation date, and a patch cut after a minor — v1.2.4 was —
+		// would otherwise outrank it forever.
+		var rel ghRelease
+		found := false
+		for _, r := range rels {
+			// A draft is not something to notify about, and a prerelease is not
+			// something to notify about by default. Neither should reach an
+			// unauthenticated caller; both are refused here anyway, because the
+			// cost of the check is nothing and the cost of being wrong is the
+			// whole install base being told to upgrade to a draft.
+			if r.Draft || r.Pre || !isAppTag(r.TagName) {
+				continue
+			}
+			if !found || Newer(r.TagName, rel.TagName) {
+				rel, found = r, true
+			}
+		}
+		if !found {
+			return st, nil, fmt.Errorf("no published Aetox release among the newest %d", len(rels))
 		}
 		next.ETag = resp.Header.Get("ETag")
 		next.Latest = strings.TrimPrefix(strings.TrimSpace(rel.TagName), "v")
@@ -219,6 +256,24 @@ func checkWithAssets(ctx context.Context, current string) (Status, []Asset, erro
 	st.Available = Newer(next.Latest, current)
 	st.CanAuto = st.Available && canAuto(Channel(st.Channel), next.Assets)
 	return st, next.Assets, nil
+}
+
+// isAppTag reports whether a release tag names a version of this application.
+//
+// Two conditions, and both are load-bearing. The "v" prefix is what
+// release.yml is triggered by and therefore the only mark an Aetox release
+// carries that nothing else in the repository does; parsing is what keeps a
+// hand-made "vNext" or "v2-beta" out. tools-ffmpeg-n9.0.1 fails the first
+// test, and would fail the second too — that it fails both is the point, since
+// the next thing published here will not be an ffmpeg archive and the rule has
+// to hold for whatever it turns out to be.
+func isAppTag(tag string) bool {
+	tag = strings.TrimSpace(tag)
+	if !strings.HasPrefix(tag, "v") {
+		return false
+	}
+	_, ok := parse(tag)
+	return ok
 }
 
 // Newer reports whether latest is a strictly newer release than current.
