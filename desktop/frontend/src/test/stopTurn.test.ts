@@ -4,7 +4,7 @@
 // Worse, whatever the model had already streamed vanished with the live panel.
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { cockpit, sendUserMessage } from '../lib/stores/cockpit.svelte'
-import { SendMessage } from './mocks/wailsApp'
+import { SendMessage, SessionTranscript } from './mocks/wailsApp'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -78,5 +78,81 @@ describe('pressing Stop mid-turn', () => {
     const last = cockpit.chat.at(-1)
     expect(last?.text).toContain('เกิดข้อผิดพลาด')
     expect(last?.text).toContain('connection refused')
+  })
+})
+
+// The work a stopped turn had already done, which the window kept throwing away.
+//
+// `App.runTurn` builds the agent message once for BOTH endings — same reply,
+// same reasoning, same parts — and `appendFailedTurn` stores it, so a turn
+// stopped after sixteen rounds has sixteen parts in the database. None of it
+// reached the bubble: Wails discards a return value when the error is non-nil,
+// so the window fell back to `streamingText`, which holds only the round being
+// written now and which the engine erases at the end of every round that ends
+// in a tool call. That is exactly when somebody presses Stop.
+//
+// Owner, 22 ส.ค., watching it happen: "แชทมันจะหายไปเลย ทั้งที่เมื่อกี้มันคิดมายาวมาก".
+describe('what a stopped turn leaves behind', () => {
+  // A chat that exists, which is what the store is read by. Without one the
+  // lookup has no session to ask about and falls straight through to the live
+  // snapshot, which is the path these two tests exist to get past.
+  beforeEach(() => { cockpit.openSession = 'sess_1' })
+
+  const storedRow = (over: Record<string, unknown> = {}) => ({
+    role: 'agent', text: 'PowerShell ไม่มี `pwd`/`ls` แบบนั้น', time: '05:53',
+    errorText: 'context canceled',
+    parts: [
+      { kind: 'text', text: 'ผมจะช่วยทำสไลด์เรื่องกาแฟสามคลื่นให้ครับ' },
+      { kind: 'tool', tool: { ref: 'call_1', name: 'skills_list', ok: true } },
+      { kind: 'text', text: 'มี python-pptx พร้อมใช้งาน' },
+      { kind: 'tool', tool: { ref: 'call_2', name: 'shell', subject: 'ตรวจโฟลเดอร์', ok: true } },
+    ],
+    ...over,
+  })
+
+  it('reads the turn back from the store instead of from an erased preview', async () => {
+    vi.mocked(SessionTranscript).mockResolvedValue([
+      { role: 'user', text: 'ทำสไลด์กาแฟสามคลื่น', time: '05:50' },
+      storedRow(),
+    ] as any)
+    vi.mocked(SendMessage).mockImplementation(async () => {
+      // Empty, because the engine discarded the preview at the end of the round
+      // that called a tool. This is the real state at the moment of a Stop.
+      cockpit.streamingText = ''
+      throw new Error('context canceled')
+    })
+
+    await sendUserMessage('ทำสไลด์กาแฟสามคลื่น')
+
+    const last = cockpit.chat.at(-1)
+    // What he was reading when he pressed the button, still there.
+    expect(last?.text).toContain('PowerShell')
+    expect(last?.text).toContain('หยุดการทำงานแล้ว')
+    // And the rounds behind it: the narration and the tool calls both.
+    expect(last?.steps?.length).toBeGreaterThan(0)
+    expect(JSON.stringify(last?.steps)).toContain('skills_list')
+    // Still retryable — a stopped question is one the user may want re-run.
+    expect(last?.failed).toBe(true)
+    expect(last?.failedText).toBe('ทำสไลด์กาแฟสามคลื่น')
+  })
+
+  it('will not answer this question with an older turn`s wreckage', async () => {
+    // The rejection never reached appendFailedTurn (engine gone, Wails itself),
+    // so the newest failed row belongs to a turn nobody asked about now.
+    vi.mocked(SessionTranscript).mockResolvedValue([
+      { role: 'user', text: 'คำถามเมื่อวาน', time: '09:00' },
+      storedRow({ text: 'งานของเมื่อวาน' }),
+    ] as any)
+    vi.mocked(SendMessage).mockImplementation(async () => {
+      cockpit.streamingText = 'กำลังอ่านไฟล์'
+      throw new Error('context canceled')
+    })
+
+    await sendUserMessage('คำถามวันนี้')
+
+    const last = cockpit.chat.at(-1)
+    expect(last?.text).not.toContain('งานของเมื่อวาน')
+    expect(last?.text).toContain('กำลังอ่านไฟล์')
+    expect(last?.failedText).toBe('คำถามวันนี้')
   })
 })

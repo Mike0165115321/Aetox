@@ -9,6 +9,7 @@
 // its own record carries the flag. The ring has to find it in both.
 import { describe, it, expect, beforeEach } from 'vitest'
 import { cockpit, sessionWorking } from '../lib/stores/cockpit.svelte'
+import { emptyTurnSpend } from '../lib/types'
 import type { Session, ParkedTurn } from '../lib/types'
 
 const row = (over: Partial<Session> = {}): Session =>
@@ -17,7 +18,7 @@ const row = (over: Partial<Session> = {}): Session =>
 const parked = (over: Partial<ParkedTurn> = {}): ParkedTurn => ({
   chat: [], awaitingReply: true, agentStatus: '', toolSteps: [],
   turnFiles: [], turnProposals: [], streamingText: '', reasoningText: '',
-  ask: null, todos: [], ...over,
+  ask: null, todos: [], turnSpend: emptyTurnSpend(), ...over,
 })
 
 beforeEach(() => {

@@ -402,11 +402,29 @@ func (a *Agent) RespondWithTools(
 					"this conversation no longer fits %s's context window, and there is nothing older left to summarize: %w",
 					a.model, err)
 			}
-			if i == 0 {
+			// The second failure with a mechanical fix, and it is a much
+			// narrower one than it used to be. Asking again without tools helps
+			// exactly when the tools were the problem; on a quota wall, a
+			// rejected sign-in or a dropped connection it is a second full-context
+			// call that fails the same way, spends the same money and leaves no
+			// trace — the turn simply took twice as long for no stated reason
+			// (see model.IsToolBlockRejection for what that measured).
+			//
+			// Worse than the cost: when the retry ANSWERED, it answered without
+			// tools and the turn was recorded as a success. A dropped connection
+			// came back as "เกินขีดจำกัดของโมเดลปัจจุบัน ... ลองเปลี่ยนโมเดล" —
+			// blaming the user's model, with no error and no ลองใหม่ button, for
+			// a Wi-Fi blip. An error the user can see and retry beats an answer
+			// that cannot do the work and does not say so.
+			if i == 0 && model.IsToolBlockRejection(err) {
+				// Logged, because this is a second call to the provider and
+				// every other one in this loop announces itself. The gap it used
+				// to leave in the debug log is what made it so hard to find.
+				debuglog.Msg("provider refused the tool block, asking once more as plain chat: %v", err)
 				// The user message is already in context — respond over it
 				// rather than via Respond(msg), which would add it a second time.
-				reply, err := a.respondFromContext(ctx, opts)
-				return reply, false, err
+				reply, retryErr := a.respondFromContext(ctx, opts)
+				return reply, false, retryErr
 			}
 			return "", false, err
 		}

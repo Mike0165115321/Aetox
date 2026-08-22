@@ -13,6 +13,7 @@
 // Opening another chat no longer does: it opens for reading, the working chat
 // is held, and the answer lands where it was asked.
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { emptyTurnSpend } from '../lib/types'
 import {
   cockpit, loadRealState, applyAgentDone, selectGlobalSession, newSession,
   deleteSession, sendUserMessage,
@@ -156,7 +157,7 @@ describe('working in one chat while another one runs', () => {
       chat: [{ role: 'user', text: 'งานที่กำลังทำ', time: '10:00' }],
       awaitingReply: true, agentStatus: 'กำลังรันเครื่องมือ', toolSteps: [],
       turnFiles: [], turnProposals: [], streamingText: 'ครึ่งประโยค',
-      reasoningText: '', ask: null, todos: [],
+      reasoningText: '', ask: null, todos: [], turnSpend: emptyTurnSpend(),
     }
     vi.mocked(LoadSessionAnyProject).mockResolvedValue([question] as never)
 

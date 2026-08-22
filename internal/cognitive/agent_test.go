@@ -713,8 +713,15 @@ func TestRespondEphemeralDoesNotTouchContext(t *testing.T) {
 	}
 }
 
-// failFirstProvider errors on the first Complete and answers normally after —
-// the tool loop's first-call failure path falls back to a plain response.
+// failFirstProvider refuses the tool block on the first Complete and answers
+// normally after — the tool loop's first-call failure path falls back to a
+// plain response.
+//
+// The refusal has to be a real one. The fallback is no longer reached by any
+// first-round error, only by one that names the tools as the problem
+// (model.IsToolBlockRejection), so an error that says "boom" now ends the turn
+// here instead of falling through — which is the point of this test's own
+// subject: what the fallback does to context WHEN it runs.
 type failFirstProvider struct {
 	calls    int
 	requests []model.Request
@@ -726,7 +733,7 @@ func (p *failFirstProvider) Complete(_ context.Context, req model.Request) (mode
 	p.calls++
 	p.requests = append(p.requests, req)
 	if p.calls == 1 {
-		return model.Response{}, fmt.Errorf("boom")
+		return model.Response{}, fmt.Errorf("registry.ollama.ai/library/gemma3: does not support tools")
 	}
 	return model.Response{Text: "fallback answer"}, nil
 }
@@ -773,6 +780,101 @@ func TestToolLoopFirstCallFailureDoesNotDuplicateUserMessage(t *testing.T) {
 	}
 	if reqCount != 1 {
 		t.Fatalf("fallback request must carry the user message exactly once, found %d", reqCount)
+	}
+}
+
+// alwaysFailsProvider is the provider on an account that has run out: every
+// call is the same wall, because the wall is the answer.
+type alwaysFailsProvider struct {
+	calls int
+	err   error
+}
+
+func (p *alwaysFailsProvider) Name() string              { return "codex" }
+func (p *alwaysFailsProvider) SupportsToolCalling() bool { return true }
+func (p *alwaysFailsProvider) Complete(_ context.Context, _ model.Request) (model.Response, error) {
+	p.calls++
+	return model.Response{}, p.err
+}
+
+// A provider that has stated its final answer is asked once, not twice.
+//
+// The measured case (2026-08-22): "codex: the free plan's limit is used up. It
+// resets in 19 days." One question cost two full-context calls here, and the
+// transport under each spends three attempts on a 429 — six requests to a
+// backend that had already said no, plus six seconds of backoff the user waited
+// through with "กำลังคิดคำตอบ..." on screen and nothing in the log to explain it.
+func TestAWallIsNotAskedTwice(t *testing.T) {
+	for _, wall := range []string{
+		"codex: the free plan's limit is used up. It resets in 19 days.",
+		"deepseek rejected the sign-in. Sign in again. (401: invalid api key)",
+		"z.ai says this account is out of credits, so waiting will not help. (429: insufficient balance)",
+		"Post \"https://api.openai.com/v1/responses\": dial tcp: lookup api.openai.com: no such host",
+	} {
+		provider := &alwaysFailsProvider{err: errors.New(wall)}
+		agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model"})
+
+		reply, _, err := agent.RespondWithTools(
+			context.Background(),
+			[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
+			"เช็คโค้ดให้ที",
+			func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) { return "", nil, nil },
+			nil,
+			turn.TurnOptions{},
+		)
+		if err == nil {
+			t.Errorf("%.40s...: turn succeeded against a wall, replying %q", wall, reply)
+		}
+		if provider.calls != 1 {
+			t.Errorf("%.40s...: asked %d times; the first answer was the whole answer", wall, provider.calls)
+		}
+	}
+}
+
+// blipThenSilence is the failure this cost the most on: nothing is wrong with
+// the account or the request, the connection was gone for a moment, and the
+// model has nothing to say when asked again.
+type blipThenSilence struct {
+	calls int
+}
+
+func (p *blipThenSilence) Name() string              { return "deepseek" }
+func (p *blipThenSilence) SupportsToolCalling() bool { return true }
+func (p *blipThenSilence) Complete(_ context.Context, _ model.Request) (model.Response, error) {
+	p.calls++
+	if p.calls == 1 {
+		return model.Response{}, errors.New("context deadline exceeded (Client.Timeout exceeded while awaiting headers)")
+	}
+	return model.Response{Text: ""}, nil
+}
+
+// A dropped connection is never reported as the model not being good enough.
+//
+// This is what the old blanket fallback did with a blip: it asked again without
+// tools, got silence, asked a THIRD time, and returned emptyReplyFallback with a
+// nil error — so the turn was stored as a success carrying "ลองแบ่งงานให้เล็กลง
+// หรือเปลี่ยนโมเดล". No red bubble, no ลองใหม่ button, and the user's next move
+// was to go pay for a bigger model to fix their Wi-Fi.
+func TestABlipIsNotReportedAsTheModelsFault(t *testing.T) {
+	provider := &blipThenSilence{}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "deepseek-v4-flash"})
+
+	reply, _, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
+		"อ่านไฟล์ app.go ให้ที",
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) { return "", nil, nil },
+		nil,
+		turn.TurnOptions{},
+	)
+	if err == nil {
+		t.Fatalf("a timeout came back as a successful turn, replying %q", reply)
+	}
+	if reply == emptyReplyFallback {
+		t.Error("a network failure was dressed up as the model running out of room")
+	}
+	if provider.calls != 1 {
+		t.Errorf("one timeout cost %d calls; the answer to a blip is a ลองใหม่ button, not a second bill", provider.calls)
 	}
 }
 
