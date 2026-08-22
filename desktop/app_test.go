@@ -607,10 +607,22 @@ func TestProviderWireFormatsListsAltForDeepSeek(t *testing.T) {
 	}
 }
 
+// openai grew a second format on 2026-08-22: /responses became the default
+// because the current models are served nowhere else, and /chat/completions
+// stayed as the alt for third-party endpoints pointed at this row.
+func TestProviderWireFormatsListsAltForOpenAI(t *testing.T) {
+	a := &App{}
+	got := a.ProviderWireFormats("openai")
+	want := []string{"responses", "openai-compatible"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("ProviderWireFormats(openai) = %v, want %v", got, want)
+	}
+}
+
 func TestProviderWireFormatsEmptyForSingleFormatProvider(t *testing.T) {
 	a := &App{}
-	if got := a.ProviderWireFormats("openai"); len(got) != 0 {
-		t.Fatalf("ProviderWireFormats(openai) = %v, want empty (openai has only one wire format)", got)
+	if got := a.ProviderWireFormats("groq"); len(got) != 0 {
+		t.Fatalf("ProviderWireFormats(groq) = %v, want empty (groq has only one wire format)", got)
 	}
 }
 

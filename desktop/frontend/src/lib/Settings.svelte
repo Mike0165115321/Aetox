@@ -961,6 +961,7 @@
     switch (format) {
       case 'anthropic': return 'Anthropic'
       case 'openai-compatible': return 'OpenAI'
+      case 'responses': return 'Responses'
       default: return format
     }
   }

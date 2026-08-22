@@ -241,8 +241,21 @@ var catalog = map[string]*entry{
 		quotaSource:    QuotaOpenAIStd,
 		aliases:        []string{"openai", "chatgpt", "gpt", "openai-compatible", "compatible"},
 		requiresAPIKey: true,
-		runtime:        RuntimeOpenAICompatible,
+		// Default to /responses, keep /chat/completions as the alt — the same
+		// call DeepSeek's row makes below, for the same reason: the default has
+		// to be the format that actually carries the models people came for.
+		//
+		// Measured 2026-08-22 on the owner's key: every current model (5.6 sol
+		// at xhigh/high/medium, 5.5) answers /chat/completions with a 400 that
+		// says the model is not supported on that endpoint. Reasoning models
+		// are Responses-only on api.openai.com, so the old default was dead for
+		// everything except the leftovers — including this row's own fallback
+		// model. A user pointing this row at a third-party OpenAI-compatible
+		// endpoint switches back in Settings, which is what the alt is for.
+		runtime:        RuntimeResponses,
 		baseURL:        "https://api.openai.com/v1",
+		altRuntime:     RuntimeOpenAICompatible,
+		altBaseURL:     "https://api.openai.com/v1",
 		envKeys:        []string{"OPENAI_API_KEY", "OPENAI_TOKEN"},
 		apiKeyURL:      "https://platform.openai.com/api-keys",
 		modelDefaults:  ModelDefaults{FallbackModel: "gpt-4o-mini"},
