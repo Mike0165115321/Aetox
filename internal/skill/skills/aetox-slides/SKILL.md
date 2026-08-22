@@ -71,7 +71,8 @@ than flat fills, three weights of light instead of white-on-black, and the same
 furniture on every slide so it reads as a deck and not as a long page.
 
 A deck with no pictures in it is the one thing here that reads as unfinished.
-Go and get them before laying anything out.
+Go and get them before laying anything out — `aetox-design` says how, and this
+app finds real ones rather than generating any.
 
 ```css
 :root{
@@ -160,7 +161,9 @@ shape that tends to come with navigation attached.
 
 ## Making one
 
-1. Find and download the pictures first.
+1. Find and download the pictures first — `aetox-design` has the recipe
+   (search the page, not the file; `web_fetch` lists the image URLs it found;
+   `shell` downloads the bytes) and the rule about licences.
 2. `write` the `.html`; the receipt says where it landed. Reference the pictures
    relatively.
 3. `desk open` that path, so the user sees it in the room.

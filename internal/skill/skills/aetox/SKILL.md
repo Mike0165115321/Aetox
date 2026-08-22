@@ -100,7 +100,7 @@ kept in the worker's own folder instead. See "เอเจน" below.
 Two sources on the shelf, and the second wins:
 
 - **Bundled** — compiled into the binary. Nothing to download, nothing on disk
-  to delete. Five ship:
+  to delete. About Aetox itself:
   - `aetox` — this document.
   - `aetox-slides` — the anatomy of a deck the slides room can actually page
     through.
@@ -112,6 +112,17 @@ Two sources on the shelf, and the second wins:
   - `aetox-prompts` — how to write a `/name` prompt preset, which is the one
     extension point you can build end to end.
 
+  About the work:
+  - `aetox-architect` — reading a system that already exists and writing it up:
+    inspect, map the modules and the data flow, assess the debt and the risk,
+    then produce the documents from templates rather than from memory.
+  - `aetox-design` — logos, icons, banners, social images and identity work.
+    Read it before taking any picture job: this app generates no images, it
+    finds real ones or draws them in SVG, and that changes the answer.
+  - `aetox-design-system` — three-layer design tokens, component specs, and the
+    tables that decide a deck's structure, layout, typography and charts.
+  - `aetox-brand` — voice, messaging, logo and typography rules, and the
+    checklists a piece of work passes before it goes out.
 - **User** — a folder in `~/.aetox/skills`. A folder whose skill name matches a
   bundled one replaces it entirely. Editing a shipped skill means copying it
   out under the same name, never fighting the app.

@@ -105,6 +105,32 @@ OFL and not be sold on their own, neither of which Aetox does.
 
 ---
 
+## Bundled skills
+
+Skill documents compiled into the binary (`internal/skill/skills/`). These are
+prose and data — instructions the assistant reads, not code that runs — and
+each was written by someone else under a permissive licence. They were adapted
+for Aetox: renamed to the `aetox-` prefix, given Thai descriptions, and had the
+parts that depend on Python or Node scripts rewritten, because Aetox does not
+ship either runtime. The originals are unmodified in their own repositories.
+
+| Skill | Adapted from | Author | Licence |
+|:---|:---|:---|:---|
+| `aetox-architect` | senior-architect-agent | Aetox Skills | MIT |
+| `aetox-brand` | brand | claudekit | MIT |
+| `aetox-design` | design | claudekit | MIT |
+| `aetox-design-system` | design-system | claudekit | MIT |
+
+The `aetox`, `aetox-mcp`, `aetox-prompts`, `aetox-skills` and `aetox-slides`
+skills are Aetox's own and are covered by [LICENSE](LICENSE), not by this
+section.
+
+Each adapted skill also carries its own `source`, `license` and `copyright`
+lines in its `SKILL.md` frontmatter, so the notice travels inside the file
+itself rather than only in this list.
+
+---
+
 ## External programs Aetox can use but does not ship
 
 These are separate programs on your machine. Aetox runs them if they are
