@@ -1,7 +1,6 @@
 package model
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -341,7 +340,7 @@ func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChun
 		return Response{}, fmt.Errorf("ollama request failed with status %d: %s", httpResp.StatusCode, strings.TrimSpace(string(responseBody)))
 	}
 
-	scanner := bufio.NewScanner(httpResp.Body)
+	scanner := newStreamScanner(httpResp.Body)
 	var builder strings.Builder
 	var reasonBuilder strings.Builder
 	var toolCallBuilders []*streamToolCallBuilder

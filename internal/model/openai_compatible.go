@@ -1,7 +1,6 @@
 package model
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -580,7 +579,7 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		return Response{}, p.statusError(httpResp, responseBody)
 	}
 
-	scanner := bufio.NewScanner(httpResp.Body)
+	scanner := newStreamScanner(httpResp.Body)
 	var builder strings.Builder
 	var reasoningBuilder strings.Builder
 	var lastUsage *Usage

@@ -6,15 +6,26 @@ import (
 	"strings"
 )
 
-// sseMaxEventBytes bounds one SSE `data:` payload.
+// sseMaxEventBytes bounds one line of a streamed response.
 //
-// bufio.Scanner's default is 64 KB per line, which is fine for the two older
-// wire formats — both stream text in small deltas. It is not fine for the
-// Responses API, where the final `response.completed` event carries the entire
-// output (every message, every tool call and its arguments) on a single line:
-// a turn that wrote a large file overruns 64 KB and the stream dies with
-// "token too long" *after* the model has already done the work.
+// bufio.Scanner's default is 64 KB per line, and every wire format Aetox
+// speaks has a case that goes past it: the Responses API puts the entire
+// output (every message, every tool call and its arguments) on the single
+// `response.completed` line, Ollama sends a tool call's whole arguments object
+// in one message, and any gateway that buffers upstream forwards a finished
+// turn as one delta. Past the bound the stream dies with "token too long"
+// *after* the model has already done the work, so the answer is paid for and
+// thrown away.
 const sseMaxEventBytes = 8 << 20 // 8 MiB
+
+// newStreamScanner reads a streamed body line by line with that bound in
+// place. Every provider's stream goes through it; none may take the 64 KB
+// default.
+func newStreamScanner(body io.Reader) *bufio.Scanner {
+	scanner := bufio.NewScanner(body)
+	scanner.Buffer(make([]byte, 0, 64*1024), sseMaxEventBytes)
+	return scanner
+}
 
 // scanSSE walks an event stream and hands each `data:` payload to onData.
 //
@@ -24,8 +35,7 @@ const sseMaxEventBytes = 8 << 20 // 8 MiB
 // inside the JSON as well, so the framing carries no information the payload
 // does not already have.
 func scanSSE(body io.Reader, onData func(data string) (stop bool, err error)) error {
-	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 0, 64*1024), sseMaxEventBytes)
+	scanner := newStreamScanner(body)
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())

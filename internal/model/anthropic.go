@@ -1,7 +1,6 @@
 package model
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -690,7 +689,7 @@ func (p *AnthropicProvider) StreamComplete(ctx context.Context, req Request, onC
 		return Response{}, p.statusError(httpResp, responseBody)
 	}
 
-	scanner := bufio.NewScanner(httpResp.Body)
+	scanner := newStreamScanner(httpResp.Body)
 	var text, reasoning strings.Builder
 	toolBuilders := map[int]*anthropicStreamToolBuilder{}
 	var toolOrder []int
