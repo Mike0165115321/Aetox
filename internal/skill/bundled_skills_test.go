@@ -83,15 +83,24 @@ func TestAUserSkillOverridesTheBundledOneOfTheSameName(t *testing.T) {
 	}
 }
 
-// skill_view's `path` argument is a string the model wrote, joined onto a
-// directory. A bundled skill's directory is the empty string, and filepath.Abs
-// turns that into the process's working directory — so without the guard the
-// containment check would be measuring cwd and every file under it would pass.
+// skill_view's `path` argument is a string the model wrote, and a bundled skill
+// is read out of an FS rooted at itself — so `go.mod` is a file that exists,
+// sits one directory above the root, and must not be served.
+//
+// The second half is the older guard, still load-bearing for a skill with
+// neither a folder on disk nor one in the binary: its Dir is the empty string,
+// and filepath.Abs turns that into the process's working directory, so without
+// the check the containment test would be measuring cwd and every file under it
+// would pass.
 func TestBundledSkillRefusesAFileRead(t *testing.T) {
 	view := &skillViewSkill{paths: []string{filepath.Join(t.TempDir(), "nothing-here")}}
 	out, err := view.ExecuteTool(context.Background(), map[string]any{"name": "aetox", "path": "go.mod"})
 	if err == nil {
 		t.Fatalf("reading a file out of a bundled skill succeeded: %q", out.Content)
+	}
+
+	if _, err := readSkillFile(DiscoveredSkill{Name: "rootless", Bundled: true}, "go.mod"); err == nil {
+		t.Fatal("a skill with no folder anywhere read a file from the working directory")
 	}
 }
 

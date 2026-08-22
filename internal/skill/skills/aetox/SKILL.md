@@ -111,6 +111,7 @@ Two sources on the shelf, and the second wins:
     you cannot add it yourself.
   - `aetox-prompts` — how to write a `/name` prompt preset, which is the one
     extension point you can build end to end.
+
 - **User** — a folder in `~/.aetox/skills`. A folder whose skill name matches a
   bundled one replaces it entirely. Editing a shipped skill means copying it
   out under the same name, never fighting the app.
@@ -120,8 +121,10 @@ You reach skills only through `skills_list` (one line per skill) and
 bodies are never in your context until you ask — which is why a skill is the
 right home for knowledge like this, and a prompt layer is not.
 
-**A bundled skill has no folder**, so `skill_view` with a `path` will refuse it,
-and it cannot be deleted from Settings.
+**A bundled skill has no folder on disk**, so it cannot be revealed or deleted
+from Settings, and `glob` and `shell` will never find it — but its own files do
+ship with it, and `skill_view` with a `path` serves them. The body lists what it
+carries at the end; anything not on that list is not there.
 
 ### Installing one
 

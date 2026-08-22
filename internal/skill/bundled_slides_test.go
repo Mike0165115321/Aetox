@@ -48,12 +48,8 @@ func TestTheSlidesSkillKeepsSayingWhatTheCodeDoes(t *testing.T) {
 		t.Error("the skill no longer says the room's controls are already there")
 	}
 
-	// A bundled skill has no folder on disk (discovery.go), so `skill_view` can
-	// serve its body and nothing else. A reference file named here would be a
-	// door the model is invited through and then refused at.
-	if strings.Contains(body, "references/") {
-		t.Error("the skill points at a references/ file it cannot serve — a bundled skill is one document")
-	}
+	// A skill that names a file it does not ship is checked for every bundled
+	// skill at once, in TestNoBundledSkillNamesAFileItDoesNotShip.
 }
 
 // The house look is a reference the owner chose, so its one durable artefact —

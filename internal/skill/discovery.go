@@ -86,12 +86,25 @@ type DiscoveredSkill struct {
 	Description string `json:"description"`
 	Dir         string `json:"dir"`
 	// Bundled marks a skill that ships inside the binary (bundled_skills.go).
-	// It has no Dir, so it cannot be revealed, deleted, or read a second file
-	// out of — the surfaces that offer those ask this rather than testing Dir
-	// for emptiness, so "no folder" has one meaning in one place.
+	// It has no Dir, so it cannot be revealed or deleted — the surfaces that
+	// offer those ask this rather than testing Dir for emptiness, so "no
+	// folder" has one meaning in one place.
 	Bundled bool `json:"bundled,omitempty"`
 
 	body string
+	// files is the skill's own folder when that folder is not on this disk:
+	// the embedded filesystem it was read out of, rooted at the skill itself.
+	//
+	// Dir and this are deliberately not the same field. Dir means "a directory
+	// on the user's machine" and is what reveal, delete and every disk read act
+	// on; an embed.FS path handed to those would resolve against the process's
+	// working directory. Keeping them apart is what lets a shipped skill carry
+	// references/ and templates/ — which every published skill does — while
+	// staying a thing with no folder to open in Explorer.
+	//
+	// nil for a skill that ships as one document, which is the older shape and
+	// still a valid one.
+	files fs.FS
 }
 
 // scanSkills is the one scan loop every public view shares: the bundled skills,
@@ -193,12 +206,22 @@ func EmbeddedSkills(fsys fs.FS, dir string) ([]DiscoveredSkill, []error) {
 			name = entry.Name()
 		}
 		// Bundled, and with no Dir: the folder this came out of is a path inside
-		// an embed.FS, and the only thing that reads Dir is skill_view's `path`,
-		// which opens it on the disk. Handing it an FS path would resolve it
-		// against the process's working directory — a shipped skill's name
-		// turning into a read of ./profiles/agents/... on somebody's machine.
-		// "No folder" is the honest answer and is already the one Bundled means.
-		found = append(found, DiscoveredSkill{Name: name, Description: description, Bundled: true, body: body})
+		// an embed.FS, and Dir is opened on the disk. Handing it an FS path
+		// would resolve it against the process's working directory — a shipped
+		// skill's name turning into a read of ./profiles/agents/... on
+		// somebody's machine. "No folder" is the honest answer and is already
+		// the one Bundled means.
+		//
+		// What the folder *does* carry travels in files instead: a sub-FS
+		// rooted at this skill, so skill_view can serve references/x.md without
+		// any path of its own to get wrong. A shipped skill that splits itself
+		// across files is the normal shape — every published one does — and
+		// before this the second file was simply unreachable.
+		sub, subErr := fs.Sub(fsys, path.Join(dir, entry.Name()))
+		if subErr != nil {
+			sub = nil // one document, then; the body still works
+		}
+		found = append(found, DiscoveredSkill{Name: name, Description: description, Bundled: true, body: body, files: sub})
 	}
 	return found, errs
 }

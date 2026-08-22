@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -161,13 +162,21 @@ func (s *skillsListSkill) ExecuteTool(_ context.Context, _ map[string]any) (Outp
 // Saying so where the search would start is cheaper than the error it would
 // otherwise arrive at.
 //
+// "with glob or shell" and not "at all": since 2026-08-22 the folder travels
+// inside the binary too, so those files do exist — they are reached through
+// skill_view and nowhere else. carries is how many were listed just above, so
+// the second sentence is only added when there is something to reach.
+//
 // Counted in characters rather than tokens because characters are what this
 // package can count honestly — the number is there to be compared against what
 // arrived, not to be budgeted with.
-func endMarker(d DiscoveredSkill) string {
+func endMarker(d DiscoveredSkill, carries int) string {
 	m := fmt.Sprintf("\n\n[end of %s — this is the whole document, %d characters]", d.Name, len(d.body))
 	if d.Dir == "" {
 		m += "\n[it ships inside Aetox and has no folder on disk, so there is nothing further to find with glob or shell]"
+		if carries > 0 {
+			m += "\n[its own files are listed just above; skill_view with a path is the only door to them]"
+		}
 	}
 	return m
 }
@@ -185,12 +194,21 @@ func endMarker(d DiscoveredSkill) string {
 // ~/.aetox/skills, outside the workspace, so the sandbox would refuse every
 // read here. This is the same rule applied to a different root, and it is the
 // only place that root is readable from.
-func readSkillFile(dir, sub string) (string, error) {
-	// A bundled skill has no folder. Without this, filepath.Abs("") returns the
-	// process's working directory and the containment check below would then be
-	// measuring the wrong root entirely — every path under cwd would pass.
+func readSkillFile(d DiscoveredSkill, sub string) (string, error) {
+	// A skill that ships inside the binary is read out of the binary. Its
+	// folder is an FS rooted at the skill, so "outside the skill" is not a
+	// judgement this has to make: fs.Sub already refused to hand out a root
+	// above it, and cleanPath below refuses a name that climbs.
+	if d.files != nil {
+		return readEmbeddedSkillFile(d.files, sub)
+	}
+	dir := d.Dir
+	// No folder and nothing embedded. Without this, filepath.Abs("") returns
+	// the process's working directory and the containment check below would
+	// then be measuring the wrong root entirely — every path under cwd would
+	// pass.
 	if strings.TrimSpace(dir) == "" {
-		return "", fmt.Errorf("this skill ships inside Aetox and has no files beside it")
+		return "", fmt.Errorf("this skill ships inside Aetox as one document and has no files beside it")
 	}
 	base, err := filepath.Abs(dir)
 	if err != nil {
@@ -212,6 +230,40 @@ func readSkillFile(dir, sub string) (string, error) {
 		return "", fmt.Errorf("%q is a folder; name a file inside it", sub)
 	}
 	data, err := os.ReadFile(full)
+	if err != nil {
+		return "", fmt.Errorf("could not read %q: %w", sub, err)
+	}
+	if len(data) > maxSkillFileBytes {
+		cut := maxSkillFileBytes
+		for cut > 0 && !utf8.RuneStart(data[cut]) {
+			cut--
+		}
+		return string(data[:cut]) + fmt.Sprintf("\n\n[cut — file is %d bytes, showed the first %d]", len(data), cut), nil
+	}
+	return string(data), nil
+}
+
+// readEmbeddedSkillFile is readSkillFile's other half: the same read against a
+// skill that lives inside the binary.
+//
+// Shorter than the disk one, and the difference is not carelessness. fsys is
+// rooted at the skill by fs.Sub, so there is no parent to reach — an fs.FS
+// cannot express one. What is left is the spelling: `path.Clean` folds a "../"
+// into a name that leaves the root, and fs.ValidPath is what rejects it, which
+// is why the clean happens before the check rather than after.
+func readEmbeddedSkillFile(fsys fs.FS, sub string) (string, error) {
+	name := path.Clean(strings.TrimPrefix(filepath.ToSlash(sub), "./"))
+	if name == "" || name == "." || !fs.ValidPath(name) {
+		return "", fmt.Errorf("%q is outside the skill's own folder", sub)
+	}
+	info, err := fs.Stat(fsys, name)
+	if err != nil {
+		return "", fmt.Errorf("%q is not in this skill — the skill body lists what it has", sub)
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("%q is a folder; name a file inside it", sub)
+	}
+	data, err := fs.ReadFile(fsys, name)
 	if err != nil {
 		return "", fmt.Errorf("could not read %q: %w", sub, err)
 	}
@@ -264,7 +316,11 @@ const maxSkillFileBytes = 32 << 10
 // it grew past one) would be unreachable past its first page. Directories are
 // walked, so references/a.md shows as references/a.md rather than as a folder
 // the model has to guess the contents of.
-func supportingFiles(dir string) []string {
+func supportingFiles(d DiscoveredSkill) []string {
+	if d.files != nil {
+		return trimListing(embeddedSupportingFiles(d.files))
+	}
+	dir := d.Dir
 	// Same reason as readSkillFile: filepath.Clean("") is ".", and walking that
 	// would list the working directory as if it were a bundled skill's contents.
 	if strings.TrimSpace(dir) == "" {
@@ -286,6 +342,27 @@ func supportingFiles(dir string) []string {
 		out = append(out, filepath.ToSlash(rel))
 		return nil
 	})
+	return trimListing(out)
+}
+
+// embeddedSupportingFiles is the same walk over a skill that ships inside the
+// binary. fs.WalkDir names everything relative to the root already, so the
+// paths it produces are the ones `path` takes, with no conversion to get wrong.
+func embeddedSupportingFiles(fsys fs.FS) []string {
+	var out []string
+	_ = fs.WalkDir(fsys, ".", func(name string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || name == skillFileName {
+			return nil
+		}
+		out = append(out, name)
+		return nil
+	})
+	return out
+}
+
+// trimListing sorts a file listing and caps it, so both walks answer with the
+// same shape and the cap is stated once.
+func trimListing(out []string) []string {
 	sort.Strings(out)
 	if len(out) > 40 {
 		out = out[:40]
@@ -358,18 +435,19 @@ func (s *skillViewSkill) ExecuteTool(_ context.Context, args map[string]any) (Ou
 			continue
 		}
 		if sub != "" {
-			content, err := readSkillFile(d.Dir, sub)
+			content, err := readSkillFile(d, sub)
 			if err != nil {
 				return newToolOutput(s.Name(), s.Name()+" "+d.Name, err.Error(), start, false, err), err
 			}
 			return newToolOutput(s.Name(), s.Name()+" "+d.Name+"/"+sub, content, start, false, nil), nil
 		}
 		body := d.body
-		if files := supportingFiles(d.Dir); len(files) > 0 {
+		files := supportingFiles(d)
+		if len(files) > 0 {
 			body += "\n\nFiles in this skill — read one with skill_view {\"name\": \"" + d.Name +
 				"\", \"path\": \"…\"}:\n- " + strings.Join(files, "\n- ") + "\n"
 		}
-		body += endMarker(d)
+		body += endMarker(d, len(files))
 		return newToolOutput(s.Name(), s.Name()+" "+d.Name, body, start, false, nil), nil
 	}
 

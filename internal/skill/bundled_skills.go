@@ -2,6 +2,7 @@ package skill
 
 import (
 	"embed"
+	"io/fs"
 	"path"
 	"sort"
 	"strings"
@@ -25,7 +26,15 @@ import (
 // the model to go and look before saying no — and what was missing was the
 // file.
 //
-//go:embed skills/*/SKILL.md
+// The whole folder, not skills/*/SKILL.md as it was until 2026-08-22.
+//
+// A published skill is a SKILL.md that routes to references/, templates/ and
+// rules/ beside it — the owner's nine installed skills point at a sibling file
+// between 10 and 64 times each. Embedding only the router shipped the sentence
+// "read references/logo-design.md" to every machine and the file to none of
+// them, so anything imported here would have been a document full of doors that
+// open onto nothing.
+//go:embed skills
 var bundledSkillFS embed.FS
 
 // bundledSkillRoot is the embedded directory; one folder per skill, mirroring
@@ -57,10 +66,16 @@ func bundledSkills() []DiscoveredSkill {
 			name = entry.Name()
 		}
 		// Dir stays empty, and that is the fact everything else keys on: there
-		// is no folder, so there is nothing to reveal, nothing to delete, and
-		// no file to read beside the document. Bundled says so out loud rather
-		// than making each caller infer it from an empty string.
-		out = append(out, DiscoveredSkill{Name: name, Description: description, Bundled: true, body: body})
+		// is no folder, so there is nothing to reveal and nothing to delete.
+		// Bundled says so out loud rather than making each caller infer it from
+		// an empty string. The supporting files are reachable all the same —
+		// through files, which is an FS rooted here and not a path anyone can
+		// mistake for one on the disk.
+		sub, subErr := fs.Sub(bundledSkillFS, path.Join(bundledSkillRoot, entry.Name()))
+		if subErr != nil {
+			sub = nil
+		}
+		out = append(out, DiscoveredSkill{Name: name, Description: description, Bundled: true, body: body, files: sub})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
