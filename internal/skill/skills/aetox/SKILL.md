@@ -193,6 +193,12 @@ kind** — nothing inside the file decides which it is.
   last few tool calls, what it has read and written in tokens, and — for one
   parked on a question — the question with a box to answer it.
 
+  A card the engine can no longer vouch for reads **"เทิร์นจบก่อน งานนี้เลย
+  ไม่ได้รายงานผล"** rather than spinning. That is a turn that died mid-flight, or
+  an app closed and reopened, taking with it the only channel the delegate had to
+  report back — so it is not a delegate that failed at its job, and if the user
+  asks, say that rather than guessing at what the work found.
+
   Nobody has to press anything to get a result. The moment a delegation
   finishes, a `[ระบบ]` message arrives saying so; collect it with
   `task action=collect` and report what it found.
@@ -220,6 +226,16 @@ kind** — nothing inside the file decides which it is.
 - **Desks (modes)** — what is on the desk, never who is sitting at it. Bundled
   manifests are compiled in; a file in `<DataRoot>/modes` with the same name
   overrides one, and a new file is a new desk.
+
+  **Writing one: the body names acts, never tool ids.** The frontmatter is
+  configuration and may name anything (`tools:`, `deny:`, `chairs:` are read by
+  the engine and shown to nobody). The body is prose *you* paraphrase to the
+  user, so a tool id written into it becomes a code word handed to somebody who
+  has never seen it and cannot type it. Say "put it on the desk", not the name
+  of the call that does it. It happened: `desk_open` sat in two bundled bodies,
+  and in คู่คิด — where no tool definitions are sent and the body is the whole
+  inventory — it was one of three things the assistant could name when the owner
+  asked what it could do, beside a panel showing four labelled buttons (22 ส.ค.).
 
   **On the โค้ด desk the user can see your edits, line by line** (DECISIONS
   §161). Every `edit`, `write`, `apply_patch` and `notebook_edit` sends its own
