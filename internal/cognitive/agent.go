@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/memory"
@@ -56,6 +57,16 @@ const (
 	// Summarizing cannot fix that one, and spinning on it turns a clear failure
 	// into a slow one.
 	maxOverflowCompactions = 2
+
+	// maxDroppedConnectionRetries caps how many times one round may be asked
+	// again after the connection died under it.
+	//
+	// Two, matching the transport's own budget (model.retryTransport), because
+	// this is the same retry: the transport covers a socket that dies before
+	// the headers, this covers one that dies after them, and a user who has
+	// lost three connections in a row has a network problem that a fourth
+	// attempt will not out-wait.
+	maxDroppedConnectionRetries = 2
 )
 
 // Small local models (Ollama-scale) sometimes reply with nothing at all,
@@ -343,6 +354,7 @@ func (a *Agent) RespondWithTools(
 	nudgedEmpty := false
 	dsmlNudges := 0
 	overflowCompactions := 0
+	droppedConnections := 0
 	var lastCallKey string
 	repeatedCalls := 0
 	for i := 0; maxToolCalls <= 0 || i < maxToolCalls; i++ {
@@ -375,6 +387,28 @@ func (a *Agent) RespondWithTools(
 			// A half-written answer must not survive the failure that
 			// interrupted it — whatever replaces it says something different.
 			discardPreview(opts)
+			// The connection went away, and this is judged before anything that
+			// reads the error's words because there are no words to read: the
+			// provider never answered, so nothing it says can be quoted back at
+			// the user and nothing about the request was wrong.
+			//
+			// Safe to replay from here, and the two lines above are why: the
+			// failed round was never added to the context, and discardPreview
+			// has taken back whatever streamed. So a second attempt sends the
+			// same bytes to the same endpoint and its answer replaces rather
+			// than doubles.
+			//
+			// i-- so a network blip does not spend one of MaxToolCalls, the same
+			// bookkeeping the overflow path below uses for the same reason.
+			again, endWith := askAgainAfterDrop(ctx, err, droppedConnections)
+			if endWith != nil {
+				return "", anyToolUsed, endWith
+			}
+			if again {
+				droppedConnections++
+				i--
+				continue
+			}
 			// The one failure in here with a mechanical fix. Everything else is
 			// the model, the network or the account; this one is just too many
 			// bytes, and the provider has told us so with more authority than
@@ -757,7 +791,7 @@ func (a *Agent) compact(ctx context.Context) bool {
 		return false
 	}
 	defer debuglog.Block(fmt.Sprintf("Agent.compact (%d msgs)", len(old)))()
-	response, err := a.provider.Complete(ctx, model.Request{
+	response, err := a.completeWithReconnect(ctx, model.Request{
 		Model: a.model,
 		Messages: []model.Message{
 			{Role: model.RoleSystem, Content: compactionPrompt},
@@ -873,7 +907,7 @@ func (a *Agent) executeToolCall(ctx context.Context, toolCall model.ToolCall, ex
 // ephemeral — never stored in context — so history stays clean either way.
 func (a *Agent) recoverEmptyReply(ctx context.Context, opts turn.TurnOptions) string {
 	msgs := append(a.context.Messages(), model.Message{Role: model.RoleUser, Content: emptyReplyNudge})
-	response, err := a.provider.Complete(ctx, a.buildRequest(msgs, 768, 0.2, nil, "", opts))
+	response, err := a.completeWithReconnect(ctx, a.buildRequest(msgs, 768, 0.2, nil, "", opts))
 	if err != nil {
 		debuglog.Msg("empty-reply nudge failed: %v", err)
 		return emptyReplyFallback
@@ -918,11 +952,90 @@ func (a *Agent) addUserTurn(msg string, opts turn.TurnOptions) {
 	})
 }
 
+// askAgainAfterDrop decides what a failed model call means when the failure was
+// the connection rather than the provider.
+//
+// Three answers, because there are three things that can be true.
+//
+//   - (true, nil) — a blip worth replaying, and the pause has already been
+//     waited out by the time this returns.
+//   - (false, nil) — not this kind of failure. The caller carries on with its
+//     own handling, which is where a context-length rejection or a refused tool
+//     block gets read.
+//   - (false, err) — done with it, and err is what the turn ends with.
+//
+// That last one carries two different endings and both have to be exact. Stop
+// pressed during the pause must be reported as Stop, because the desktop tells
+// a cancelled turn from a failed one by the words in the error and would
+// otherwise draw a red retry box over a button the user chose to press. A
+// connection that never came back is labelled as one (model.AsDroppedConnection)
+// so the window can say what happened in the user's own language instead of
+// showing them "wsarecv".
+//
+// Returning early on the give-up is deliberate rather than incidental: a
+// dropped connection is not a context-length rejection and not a tool-block
+// refusal, so there is nothing below for the caller to fall through to. The
+// provider never answered, and every one of those checks reads an answer.
+//
+// One function, every caller, because a dropped socket is not a property of
+// which route was taken to the provider.
+func askAgainAfterDrop(ctx context.Context, err error, spent int) (bool, error) {
+	if !model.IsDroppedConnection(ctx, err) {
+		return false, nil
+	}
+	if spent >= maxDroppedConnectionRetries {
+		return false, model.AsDroppedConnection(err)
+	}
+	// A pause, and a short one. The socket was cut a moment ago, so asking
+	// again in the same millisecond usually finds whatever cut it still there;
+	// much longer and the wait itself reads as the app having hung, which is
+	// the complaint this whole path came from.
+	wait := time.Duration(spent+1) * time.Second
+	debuglog.Msg("the connection dropped mid-answer, asking again in %s (%d/%d): %v",
+		wait, spent+1, maxDroppedConnectionRetries, err)
+	select {
+	case <-ctx.Done():
+		return false, ctx.Err()
+	case <-time.After(wait):
+		return true, nil
+	}
+}
+
+// completeWithReconnect is provider.Complete with the rule above applied, and
+// it is what every completion in this file goes through bar one.
+//
+// The exception is completeToolLoop's, and it is an exception because the tool
+// loop has to do two things around its own retry that nothing here can do for
+// it: take back the half-answer that streamed (discardPreview) and un-spend the
+// round (i--). Everywhere else there is no preview and no round to account for,
+// so the rule is the whole of the handling and belongs in one place rather than
+// copied into five.
+//
+// Those five are not incidental. The compaction call is the one that decides
+// whether the turn even fits, and losing it to a blip is how a network failure
+// comes back to the user as "this conversation no longer fits the context
+// window" — the model blamed for the wifi, which §166 is the long version of.
+func (a *Agent) completeWithReconnect(ctx context.Context, req model.Request) (model.Response, error) {
+	for dropped := 0; ; dropped++ {
+		response, err := a.provider.Complete(ctx, req)
+		if err == nil {
+			return response, nil
+		}
+		again, endWith := askAgainAfterDrop(ctx, err, dropped)
+		if endWith != nil {
+			return model.Response{}, endWith
+		}
+		if !again {
+			return model.Response{}, err
+		}
+	}
+}
+
 // respondFromContext completes over the context as-is — the user message must
 // already be in history. Shared by Respond and the tool-loop fallback so the
 // fallback can't add the user message a second time.
 func (a *Agent) respondFromContext(ctx context.Context, opts turn.TurnOptions) (string, error) {
-	response, err := a.provider.Complete(ctx, a.buildRequest(a.context.Messages(), a.toolLoopMaxTokens(), 0.2, nil, "", opts))
+	response, err := a.completeWithReconnect(ctx, a.buildRequest(a.context.Messages(), a.toolLoopMaxTokens(), 0.2, nil, "", opts))
 	if err != nil {
 		return "", err
 	}
@@ -955,7 +1068,7 @@ func (a *Agent) RespondEphemeral(ctx context.Context, prompt string, opts turn.T
 		return "", errors.New("input is empty")
 	}
 	msgs := append(a.context.Messages(), model.Message{Role: model.RoleUser, Content: prompt})
-	response, err := a.provider.Complete(ctx, a.buildRequest(msgs, 768, 0.2, nil, "", opts))
+	response, err := a.completeWithReconnect(ctx, a.buildRequest(msgs, 768, 0.2, nil, "", opts))
 	if err != nil {
 		return "", err
 	}
@@ -1006,7 +1119,7 @@ func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk f
 		// fallback to non-streaming when streaming path fails
 	}
 
-	response, err := a.provider.Complete(ctx, req)
+	response, err := a.completeWithReconnect(ctx, req)
 	if err != nil {
 		return "", false, err
 	}

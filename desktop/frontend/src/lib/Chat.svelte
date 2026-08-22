@@ -177,16 +177,40 @@
   const registerTask = (node: TimelineNode): BackgroundTask | undefined =>
     node.step.task ? cockpit.backgroundTasks.find((b) => b.id === node.step.task) : undefined
   const stillWorking = (b?: BackgroundTask) => b?.state === 'running' || b?.state === 'waiting'
+  // A card whose ✗ this window inferred rather than was told. Worth telling
+  // apart from a delegate that reported failure: the mark is the same and the
+  // reason is not, and a card that says only ✗ over work nobody ever heard back
+  // from is the kind of copy that lies by omission.
+  const stranded = (node: TimelineNode, live: boolean) =>
+    !live && !registerTask(node) && node.step.state === 'run'
   // A delegation the register has never heard of falls back to its row: a turn
   // read back from the database has no register entry, and the row is all there
   // is to draw from.
-  function cardState(node: TimelineNode): ToolStep['state'] {
+  //
+  // With one thing the row must not be believed about, and it is the thing it
+  // says most often once something has gone wrong. `run` on a row means "this
+  // was running the last time anybody looked", and nothing ever writes over it:
+  // the result event that would have closed it is precisely what a turn killed
+  // mid-flight, or an app closed and reopened, never sent. Off a live turn,
+  // with no register entry to ask, that spinner is not evidence the work is
+  // alive. It is the absence of anyone left who could say it stopped, and it
+  // spun until the session was switched — owner, 22 ส.ค., over a card still
+  // turning under a turn that had died of a dropped connection: "ทำไมมันค้าง
+  // แบบนี้".
+  //
+  // `live` is the exception that keeps this honest. A `task` call that just
+  // landed has a row a poll or two before the register has been fetched, and
+  // for that one window the row IS the better answer.
+  function cardState(node: TimelineNode, live = false): ToolStep['state'] {
     const task = registerTask(node)
-    if (!task) return node.step.state
+    if (!task) return stranded(node, live) ? 'err' : node.step.state
     if (stillWorking(task)) return 'run'
     return task.state === 'failed' ? 'err' : 'done'
   }
-  const isRunningNode = (n: TimelineNode) => cardState(n) === 'run'
+  // Only ever asked of the live list (toolSteps), so it asks the live question:
+  // a delegation whose register entry has not arrived yet is this turn's work,
+  // not a stranded row.
+  const isRunningNode = (n: TimelineNode) => cardState(n, true) === 'run'
   // One delegation, one card. The tray was the answer to a card in the
   // transcript that could not say "alive" — now that it can, a tray row beside
   // it is the same worker and the same clock drawn twice.
@@ -1854,7 +1878,7 @@
              Which it is comes from the register (cardState), for the same
              reason the tray reads it: the `task` row says "finished" from the
              second the worker started. -->
-        {@const state = cardState(node)}
+        {@const state = cardState(node, live)}
         {@const secs = cardSecs(node, live)}
         <!-- Folds shut rather than vanishing. A delegate that finishes leaves
              the live area for the collapsed count above, and in one frame the
@@ -1910,7 +1934,12 @@
               </div>
             {/if}
           {/if}
-          {#if node.step.error}<div class="tool-err">{node.step.error}</div>{/if}
+          {#if node.step.error}<div class="tool-err">{node.step.error}</div>
+          {:else if stranded(node, live)}
+            <!-- Says what actually happened. The delegate did not fail at its
+                 job; the turn holding it ended and took the only channel that
+                 could have reported back. -->
+            <div class="tool-err">{t('bgw.noResult')}</div>{/if}
         </div>
     {/each}
   </div>

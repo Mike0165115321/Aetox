@@ -659,6 +659,47 @@ describe('sub-agent tool events', () => {
       expect(card?.querySelector('.bgw-meta')?.textContent?.trim()).toBe('8s')
     })
 
+    // The other half of that fallback, and the half that was wrong. A row left
+    // saying "run" is what a turn killed mid-flight leaves behind, and off a
+    // live turn there is nobody left who could ever close it: the spinner ran
+    // until the session was switched. Owner, 22 ส.ค., under a turn that had
+    // just died of a dropped DeepSeek connection: "ทำไมมันค้างแบบนี้".
+    it('stops spinning a row the register cannot vouch for, and says why', async () => {
+      cockpit.backgroundTasks = []
+      const { container } = render(Chat, {
+        ...baseProps,
+        awaitingReply: false,
+        messages: [{
+          role: 'agent', text: 'เทิร์นตายกลางคัน', time: '10:54',
+          steps: [{ ...spawnedRow, state: 'run', secs: undefined }],
+        }] as any,
+      })
+      const card = await openFinished(container)
+      expect(card?.className).not.toContain('run')
+      expect(card?.querySelector('.bgw-badge.run')).toBeNull()
+      // No frozen clock either: the spawn's number was never the job's.
+      expect(card?.querySelector('.bgw-meta')?.textContent?.trim()).toBe('')
+      // And the ✗ explains itself, rather than blaming a delegate that never
+      // got the chance to fail.
+      expect(card?.querySelector('.tool-err')?.textContent).toContain('turn ended')
+    })
+
+    // The exception that keeps the rule honest: inside a live turn the register
+    // is a poll behind the row, and for that window the row is the better
+    // answer. Closing the card there would blink a ✗ over work that is fine.
+    it('still trusts a running row while its own turn is live', () => {
+      cockpit.backgroundTasks = []
+      const { container } = render(Chat, {
+        ...baseProps,
+        awaitingReply: true,
+        toolSteps: [{ ...spawnedRow, state: 'run', secs: undefined }] as any,
+        messages: [{ role: 'agent', text: 'done', time: '10:54' }] as any,
+      })
+      const card = container.querySelector('.bgw-card')
+      expect(card?.className).toContain('run')
+      expect(card?.querySelector('.bgw-badge.run')).toBeTruthy()
+    })
+
     // The id is only ever on the events from *inside* the delegate: the `task`
     // call completes before the register has a handle to give.
     it('takes the delegation id off the first step its worker runs', () => {

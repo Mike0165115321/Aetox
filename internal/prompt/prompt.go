@@ -135,6 +135,22 @@ type Desk struct {
 	// is rendered, not how a tool is called, and a diagram is very much
 	// something a conversation produces.
 	ToolLess bool
+	// Holds is what the DESK carries, before any stance narrowed it — a
+	// different question from Carries, and the difference is the point.
+	//
+	// Carries answers "may this turn call it", which is the desk AND the dial
+	// (bootstrap.withStance wraps one around the other). Under คู่คิด that is
+	// false for every name there is, correctly: the turn carries nothing.
+	//
+	// But "what is this desk for" does not stop being true because the user
+	// turned a dial, and it is exactly what they ask about when they turn one.
+	// Asked "what can you do" in คู่คิด, a session reading Carries would answer
+	// "nothing", which is a true sentence about this turn and a false one about
+	// the desk. So the workbench layer reads this instead.
+	//
+	// Nil means the same thing it means for Carries: nobody described this
+	// desk, so it holds everything.
+	Holds func(string) bool
 	// Planning says this session's whole answer is a plan — the วางแผน stance,
 	// and anything later built the same way.
 	//
@@ -160,6 +176,17 @@ func (d Desk) carries(name string) bool {
 		return true
 	}
 	return d.Carries(name)
+}
+
+// holds is carries' stance-free twin, with the same zero-value reading and one
+// extra fallback: a Desk built before Holds existed, or by a caller that only
+// filled in Carries, answers from Carries rather than from nothing. A desk that
+// suddenly held no tools would be a worse answer than a slightly narrow one.
+func (d Desk) holds(name string) bool {
+	if d.Holds != nil {
+		return d.Holds(name)
+	}
+	return d.carries(name)
 }
 
 // delegates is carries' counterpart, and leans on the same sentinel. A nil
@@ -319,6 +346,10 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 	// written, not only the ones with a picture in them, and the terminal half
 	// has no drawing() to sit beside.
 	b.WriteString(surfaceLayer(surface))
+	// Beside surfaceLayer and above the tool block on purpose: this says what is
+	// on screen, which is true of the session rather than of the turn, so a
+	// stance carrying no tools still gets it. See workbench.
+	b.WriteString(workbench(surface, desk))
 	b.WriteString(environment(scope))
 	// Directly after environment, which is where the session's reach is
 	// described: the project is the one nearby fact that does *not* change that
@@ -527,6 +558,67 @@ func surfaceLayer(s Surface) string {
 	}
 	return "Your answer goes to a terminal as plain text. Markdown is not rendered, SVG is not drawn and " +
 		"LaTeX is not typeset — write for someone reading it as characters.\n"
+}
+
+// workbench names the panes beside the chat, in the words that are printed on
+// them.
+//
+// The owner asked why the assistant, asked what it could do, answered
+// "ไฟล์ เชลล์ desk_open" while the window beside it was showing four buttons
+// reading เทอร์มินัล, เบราว์เซอร์, ไฟล์ and สไลด์ (22 ส.ค.): *"มันควรจะพูดถึง
+// พวกนี้ได้นะ ไม่ใช่พูด desk_open ชื่อแบบนี้ตรงๆ"*.
+//
+// It answered with the only names in its context. Under คู่คิด no tool
+// definitions are sent, so the desk manifest's body is the whole inventory, and
+// the one tool it named was `desk_open` — an identifier, handed to a user who
+// has never seen it and cannot type it. That is the §116 line from the wrong
+// side: the main agent is supposed to know what it can DO and never how it is
+// wired, and a manifest that spells a tool id in prose teaches it the wiring.
+//
+// So the panes are described here rather than in any manifest, and described as
+// surfaces rather than as calls. Nothing in this string is a tool name, which
+// is what makes it safe to repeat to the user verbatim — and repeating it is
+// the point.
+//
+// Read off Holds, not Carries, so a turn carrying nothing still knows what the
+// desk is for; that is the whole reason Holds exists. Desktop only: these are
+// panes in a window, and the CLI has none of them.
+//
+// Derived rather than written down, because the accurate list already exists —
+// it is the desk's own `categories:` line, which AllowsTool answers from. A
+// second list here would be right today and wrong the week a desk changes.
+func workbench(s Surface, d Desk) string {
+	if s != SurfaceDesktop {
+		return ""
+	}
+	// One per line rather than a comma-joined sentence: every gloss below has a
+	// comma of its own, so a list punctuated the same way as its items reads as
+	// eight things instead of four.
+	//
+	// Ordered as the window stacks them, so a user reading an answer and looking
+	// at the panel are reading the same list in the same order.
+	panes := []struct{ tool, said string }{
+		{"desk_terminal", "a terminal, where you run something and the user watches it run"},
+		{"browser", "a browser you drive yourself, rather than a link handed to the user"},
+		{"desk_open", "a file view, for putting a file in front of them"},
+		// The slide view is the file view doing something particular with one
+		// kind of file, which is also how the window treats it — so it hangs off
+		// the same tool rather than being a pane of its own.
+		{"desk_open", "a slide view, which pages through an HTML deck and exports it"},
+	}
+	var b strings.Builder
+	for _, p := range panes {
+		if d.holds(p.tool) {
+			b.WriteString("- " + p.said + "\n")
+		}
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return "The window beside this chat has panels of its own:\n" + b.String() +
+		"They are how work becomes something the user can see, so say what you put in one and where. " +
+		"Talk about them the way they are labelled on screen, never by the name of whatever tool opens " +
+		"one — the user has never seen that name and cannot act on it.\n"
 }
 
 // capability tells the model that the tools listed for it are not the whole

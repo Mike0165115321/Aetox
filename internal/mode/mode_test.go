@@ -542,3 +542,42 @@ func TestNoManifestNamesATooltheUserCanSwitchOff(t *testing.T) {
 		}
 	}
 }
+
+// A desk manifest briefs the model in prose, and the model paraphrases prose to
+// the user. So a tool id written into one is an identifier handed to somebody
+// who has never seen it and cannot type it — which is the §116 line crossed
+// from the inside.
+//
+// It happened: `desk_open` sat in two manifest bodies, and under คู่คิด — where
+// no tool definitions are sent and the body is the whole inventory — it was one
+// of exactly three things the assistant could name when the owner asked what it
+// could do, next to a window showing four labelled buttons (22 ส.ค.).
+//
+// Frontmatter is exempt and has to be: `tools:`, `deny:` and `chairs:` are
+// configuration, read by AllowsTool and never shown to anybody. This guards the
+// body, which is the half that gets repeated.
+func TestNoDeskManifestSpellsAToolIdInItsBody(t *testing.T) {
+	// Ids a body has reached for, or would plausibly reach for next. Not the
+	// whole registry: a list that had to be complete would be a list that goes
+	// stale, and what this is really holding is the habit.
+	ids := []string{
+		"desk_open", "desk_list", "desk_close", "desk_terminal",
+		"apply_patch", "web_fetch", "web_search", "image_ocr", "video_ocr",
+		"audio_transcribe", "pdf_read", "todo_write", "session_search",
+	}
+	// Bundled only. A desk the user wrote is theirs, and failing this repo's
+	// tests over the wording in someone's own file would be this rule enforcing
+	// itself somewhere it has no standing.
+	for _, m := range List() {
+		if !m.Builtin {
+			continue
+		}
+		body := m.Direction()
+		for _, id := range ids {
+			if strings.Contains(body, id) {
+				t.Errorf("desk %q names the tool %q in its body — say the act instead, "+
+					"the user never sees a tool id", m.Name, id)
+			}
+		}
+	}
+}

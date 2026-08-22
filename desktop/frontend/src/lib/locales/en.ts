@@ -254,6 +254,7 @@ export const en: Record<keyof typeof th, string> = {
   'bgw.finished': 'finished, reading the result…',
   'bgw.failed': 'could not finish',
   'bgw.stopped': 'you stopped this',
+  'bgw.noResult': 'the turn ended before this reported back',
   'bgw.stop': 'Stop',
   'bgw.stopTask': 'Stop {agent}',
   'bgw.stopRun': 'Stop every worker on this job',
@@ -370,6 +371,7 @@ export const en: Record<keyof typeof th, string> = {
   // and the running turn is using it.
   'cockpit.turnBusy': 'The agent is still working. Wait for it to finish, or press stop.',
   'cockpit.turnStopped': 'Stopped',
+  'cockpit.connectionLost': 'The connection to the provider dropped while the model was answering, and reconnecting did not get it back. Try again, and if it keeps happening check your network or switch provider.',
   // Reading another chat mid-turn is allowed; typing in it is not, because the
   // engine is still sitting in the conversation the turn belongs to.
   // Reading outlives the turn, so the line above turns into a lie the second

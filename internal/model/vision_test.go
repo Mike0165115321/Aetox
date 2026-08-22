@@ -24,10 +24,22 @@ func TestResolveVision(t *testing.T) {
 		// image part nothing else in this file exercises.
 		{"codex", "gpt-5.5", true},
 		{"codex", "gpt-5.1-codex", true},
-		// The family has no vision member; matching "deepseek" must lose to the
-		// text-only list rather than being read as unknown-and-therefore-maybe.
+		// A family name is not evidence either way. These two carry no vision
+		// marker of their own and fall through to the blind default, which is
+		// the same answer the old "deepseek" family marker gave and the reason
+		// that marker was never doing any work.
 		{"deepseek", "deepseek-v4", false},
 		{"deepseek", "deepseek-v4-flash", false},
+		// The regression. The family marker used to win, so the model the owner
+		// had actually selected in the composer was called blind and his
+		// screenshot went to image_ocr (22 ส.ค.). The member's own name is the
+		// more specific evidence and has to beat the family it belongs to.
+		{"deepseek", "deepseek-v4-flash-vision-exp", true},
+		{"deepseek", "deepseek-vl", true},
+		// Role markers still win over an explicit vision marker, which is the
+		// half of the old rule worth keeping: this one really does take images
+		// and is still not something to hold a turn with.
+		{"ollama", "nomic-embed-vision", false},
 		{"ollama", "nomic-embed-text", false},
 		{"openai", "whisper-1", false},
 		// Unknown is blind on purpose: OCR still works, a silently dropped

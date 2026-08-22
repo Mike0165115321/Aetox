@@ -34,11 +34,28 @@ var visionModelMarkers = []string{
 	"kimi-k3",
 }
 
-// textOnlyMarkers win over the list above. Some families ship a vision member
-// and a text-only member whose names differ by one word, and matching the
-// family name alone would call the text-only one sighted.
-var textOnlyMarkers = []string{
-	"deepseek", // no vision model in the family as of 2026-07
+// textOnlyRoleMarkers win over the list above, and every one of them names a
+// ROLE rather than a family. An embedder, a reranker, a transcriber and a
+// speech synthesizer are not chat models at all, so no marker in their name can
+// make one sighted: nomic-embed-vision really does take images, and handing a
+// turn to it is still a mistake.
+//
+// A family name must never be added here, and that is the rule this list was
+// missing. "deepseek" sat in it from the start, on the note "no vision model in
+// the family as of 2026-07" — a fact with a date in it, filed in a place that
+// has no way to notice the date passing. DeepSeek shipped one, the owner picked
+// deepseek-v4-flash-vision-exp in the composer, and the family name beat the
+// word "vision" in the model's own id: Aetox called a vision model blind and
+// sent the screenshot to image_ocr instead of to the eyes that were right there
+// (22 ส.ค.). It was dead weight besides — an unknown model already resolves to
+// blind, so a family listed as text-only changed nothing except the one case
+// where the member's own name disagreed with it.
+//
+// So the split is the point. A role marker is a fact about what the model IS
+// and never expires; a family marker is a fact about what a company had SHIPPED
+// on the day someone typed it, and the fallback below already covers that case
+// without going stale.
+var textOnlyRoleMarkers = []string{
 	"embed", "rerank", "whisper", "tts",
 }
 
@@ -52,7 +69,7 @@ func ResolveVision(provider, modelName string) bool {
 	if name == "" {
 		return false
 	}
-	for _, marker := range textOnlyMarkers {
+	for _, marker := range textOnlyRoleMarkers {
 		if strings.Contains(name, marker) {
 			return false
 		}

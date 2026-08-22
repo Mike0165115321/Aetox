@@ -241,9 +241,14 @@ var ErrNoApprover = errors.New("bootstrap: Options.Approve is required (a nil ap
 // only half the answer — see canDelegate.
 func deskFor(m *mode.Mode, direction string, r reach) prompt.Desk {
 	return prompt.Desk{
-		Name:          m.DeskName(),
-		Direction:     direction,
-		Carries:       m.AllowsTool,
+		Name:      m.DeskName(),
+		Direction: direction,
+		Carries:   m.AllowsTool,
+		// The same answer as Carries at this point, and deliberately a second
+		// field rather than a second read of the first: withStance narrows
+		// Carries and leaves this one alone, which is the only place the
+		// desk's own inventory survives a dial that took every tool away.
+		Holds:         m.AllowsTool,
 		Delegates:     r.delegates,
 		DelegationOff: r.switchedOff,
 	}
@@ -315,6 +320,10 @@ func withStance(d prompt.Desk, s mode.Stance) prompt.Desk {
 		}
 		return s.AllowsTool(name)
 	}
+	// d.Holds is deliberately not touched. A stance says what this turn may
+	// call; it does not change what the desk is for, and under คู่คิด — where
+	// Carries is false for every name there is — it is the only thing left that
+	// can answer "what do you do here" with something other than "nothing".
 	d.StanceDirection = s.Direction()
 	// Asked of the stance, never probed out of AllowsTool. This line read
 	// `!s.AllowsTool("")` for exactly as long as คู่คิด was the only narrowing

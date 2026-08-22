@@ -54,6 +54,60 @@ describe('an answer cut off mid-sentence', () => {
   })
 })
 
+// The owner pasted this at 10:54 on 22 ส.ค. and asked what it was:
+//
+//   เกิดข้อผิดพลาด: read tcp 192.168.1.40:47800->3.173.21.63:443: wsarecv: An
+//   existing connection was forcibly closed by the remote host.
+//
+// Which is the transport talking to itself. The engine retries this twice now
+// and labels what it gives up on, so the window has something to key on that is
+// not the wording of a syscall — the same failure reads "connection reset by
+// peer" on Linux.
+describe('a connection that dropped mid-answer', () => {
+  const dropped = 'aetox: connection dropped: read tcp 192.168.1.40:47800->3.173.21.63:443: '
+    + 'wsarecv: An existing connection was forcibly closed by the remote host.'
+
+  it('is a sentence, not the transport talking to itself', async () => {
+    vi.mocked(SendMessage).mockImplementation(async () => { throw new Error(dropped) })
+
+    await sendUserMessage('อะไรก็ได้เทส')
+
+    const last = cockpit.chat.at(-1)
+    expect(last?.failed).toBe(true)
+    expect(last?.text).toContain('การเชื่อมต่อ')
+    expect(last?.text).not.toContain('wsarecv')
+    expect(last?.text).not.toContain('192.168.1.40')
+  })
+
+  // The half that made unifying the two copies worth doing. Worded one way on
+  // screen and another way after a reload is the app disagreeing with itself
+  // about what happened to the same turn.
+  it('reads the same after a reload as it did on screen', () => {
+    const chat = restoreTranscript([
+      row({ role: 'user', text: 'อะไรก็ได้เทส' }),
+      row({ role: 'agent', text: '', errorText: dropped }),
+    ])
+
+    expect(chat[1].failed).toBe(true)
+    expect(chat[1].text).toContain('การเชื่อมต่อ')
+    expect(chat[1].text).not.toContain('wsarecv')
+    expect(chat[1].failedText).toBe('อะไรก็ได้เทส')
+  })
+
+  // Only the labelled one. An error this window has no sentence for is an error
+  // the user is better off being able to paste somewhere, so the verbatim path
+  // has to survive the change that added a friendlier one beside it.
+  it('leaves an unlabelled failure verbatim', () => {
+    const chat = restoreTranscript([
+      row({ role: 'user', text: 'เทสๆ' }),
+      row({ role: 'agent', text: '', errorText: 'deepseek request failed with status 402: no balance' }),
+    ])
+
+    expect(chat[1].text).toContain('status 402')
+    expect(chat[1].text).toContain('no balance')
+  })
+})
+
 describe('a failed turn read back from the store', () => {
   it('comes back as a retryable bubble, not a question with no answer', () => {
     const chat = restoreTranscript([

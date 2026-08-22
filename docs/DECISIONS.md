@@ -5828,3 +5828,95 @@ The fix is the swap: end the turn, then let go of it. §144 built the stamp so t
 ### 166.4 Still open
 
 One finding from the first log is not addressed here: `outOfCreditsMarkers` ([httpclient.go](../internal/model/httpclient.go)) has no entry for `usage_limit_reached`, which is the word Codex uses. `insufficientQuota` therefore reads a nineteen-day wall as "going too fast" and spends the full retry budget on it — 3 requests and 3.00s of sleep, measured.
+
+---
+
+## 167. Decision — Three Ways to Lose a Turn to One Dropped Socket (2026-08-22)
+
+Owner, pasting a raw Go error out of the app: *"เกิดข้อผิดพลาด: read tcp 192.168.1.40:47800->3.173.21.63:443: wsarecv: An existing connection was forcibly closed by the remote host. เช็คด่วน"*, then *"ทำไมมันค้างแบบนี้"*, then, over a screenshot of the composer: *"โมเดลตัวนี้มันอ่านภาพได้ทำไมระบบเราเป็นแบบนั้น"*.
+
+`3.173.21.63` is `api.deepseek.com`. One question, three separate defects, and they are unrelated to each other except in having been visible in the same screenshot.
+
+```
+[10:54:16.171]     tool loop iteration 1 (max=0)
+[10:54:19.186]     Complete() error: read tcp 192.168.1.40:47800->3.173.21.63:443: wsarecv: ...
+[10:54:19.186] --- Turn: อะไรก็ได้เทส (3021.5ms) ---
+```
+
+Three seconds, one attempt, no backoff between those two lines, and the turn is over.
+
+### 167.1 The retry could not see the failure it was built for
+
+`retryTransport` ([httpclient.go](../internal/model/httpclient.go)) already counts `*net.OpError` as retryable — a reset socket is one of the cases it was extended for. It never ran, and could not have: it wraps `RoundTrip`, and `RoundTrip` returns the moment the response **headers** land. The body of a plain answer and every SSE frame of a streamed one are read by the caller, above the transport, where nothing was watching.
+
+Which makes the covered case the rarer one. A provider that is going to fall over does it while it is generating, not while it is deciding, so "the socket died mid-answer" is the ordinary shape of this failure and it was the one shape the retry could not reach.
+
+The retry moves up to where the replay is possible: `askAgainAfterDrop` in [agent.go](../internal/cognitive/agent.go), two extra attempts to match the transport's own budget, a 1s then 2s pause, and `i--` so a network blip does not spend one of `MaxToolCalls`. It is safe there and nowhere lower because two things are true at that point and only that point: the failed round was never added to the context, and `discardPreview` has already taken back whatever streamed — so the second answer replaces the first rather than doubling it.
+
+One function, every route. `completeWithReconnect` wraps `provider.Complete` and the five remaining call sites in [agent.go](../internal/cognitive/agent.go) go through it: `respondFromContext` (a provider with no tool calling, and §166's narrowed tool-block fallback), `RespondStream`, `RespondEphemeral`, `recoverEmptyReply`, and `compact`. The last one matters most and is the least obvious: the compaction call is what decides whether a turn fits at all, so losing it to a blip is how a network failure comes back to the user as *"this conversation no longer fits the context window"* — the model blamed for the wifi, which §166 is the long version of. Only `completeToolLoop`'s own call stays outside, because the loop must take back the streamed preview and un-spend the round around its retry, and nothing below it can do either.
+
+Stop keeps precedence throughout, and specifically **inside** the pause: `askAgainAfterDrop` returns `ctx.Err()` rather than the network's error there, because the desktop tells a cancelled turn from a failed one by the words in the error and would otherwise draw a red retry box over a button the user chose to press.
+
+`TestAProviderThatAnsweredAndRefusedIsNotRetried` is the other half. A 401 is an answer; asking again spends the same money on the same refusal and buries what the user was told. This is §166's lesson, and it is why the classifier reads the error's **type** and not its words.
+
+### 167.2 A card nobody was left to close
+
+The second screenshot: a sub-agent card still spinning "กำลังทำงาน" under the failed turn. Nothing in the engine log was running — every delegation that day started later and finished.
+
+`cardState` ([Chat.svelte](../desktop/frontend/src/lib/Chat.svelte)) asks the register whether a delegation is alive and falls back to the row when the register has never heard of it, which is right for a turn read back from the database. The fallback trusted the row about the one thing the row cannot know. `run` on a row means "this was running the last time anybody looked", and nothing ever writes over it: the result event that would have closed it is exactly what a turn killed mid-flight, or an app closed and reopened, never sent. So off a live turn, with no register entry to ask, the spinner was not evidence of life. It was the absence of anyone left who could say it had stopped, and it turned until the session was switched.
+
+The rule now: no register entry, not live, row says `run` → the work ended without reporting, drawn as ended. `live` stays the exception, because a `task` call that just landed has a row a poll or two before the register has been fetched.
+
+And the card says which it is. A bare ✗ would blame a delegate that never got the chance to fail, so a stranded card carries `bgw.noResult` — *"เทิร์นจบก่อน งานนี้เลยไม่ได้รายงานผล"* — instead of a reason it does not have.
+
+### 167.3 A fact with a date in it, filed where dates do not expire
+
+The owner had `deepseek-v4-flash-vision-exp` selected in the composer, sent a screenshot, and got back an honest report that the assistant cannot see and had used `image_ocr`. It was honest and it was wrong.
+
+`textOnlyMarkers` ([vision_capabilities.go](../internal/model/vision_capabilities.go)) held `"deepseek"`, on the note *"no vision model in the family as of 2026-07"*, and that list wins over `visionModelMarkers`. So the family name beat the word `vision` in the model's own id and Aetox called a sighted model blind, never attached the image, and left the agent with OCR as its only door.
+
+It was dead weight besides. An unknown model already resolves to blind, so a family listed as text-only changed no outcome **except** the one where a member's own name disagreed with it — the only case it could ever affect was the case where it was wrong.
+
+The list is now `textOnlyRoleMarkers`, and every entry names a role rather than a family: `embed`, `rerank`, `whisper`, `tts`. Those still win over an explicit vision marker, which is the half of the old rule worth keeping — `nomic-embed-vision` really does take images and is still not something to hold a turn with. **A family name must never be added.** A role is a fact about what a model *is* and does not expire; a family is a fact about what a company had *shipped* on the day somebody typed it, and the blind-by-default fallback already covers that without going stale.
+
+This amends the sentence in §51 that reads "Text-only markers win over family markers". Role markers win. Family markers are not kept at all.
+
+### 167.4 Go decides which failure it was, the window decides what words to use
+
+The owner, looking at the chip that offered to do this in a separate session: *"อะไรอ่ะ ทำไมไม่ทำเอง"*. Fair, and it is here.
+
+A connection that never came back is labelled by `model.AsDroppedConnection` before it leaves the engine, and `DroppedConnectionMarker` is a wire contract rather than prose: it is persisted with the failed turn and read back on the next launch, so changing it silently un-translates every stored failure. `endingFor` in [cockpit.svelte.ts](../desktop/frontend/src/lib/stores/cockpit.svelte.ts) keys on it and says *"การเชื่อมต่อกับผู้ให้บริการหลุดระหว่างที่โมเดลกำลังตอบ ลองต่อใหม่ให้แล้วแต่ยังไม่ติด"*.
+
+The split is the point. The window has to say this in the user's own language and cannot work out which failure it was from the text: Windows says `wsarecv: An existing connection was forcibly closed`, Linux says `read: connection reset by peer`, and a TypeScript file matching all of them would be a second copy of a judgement Go already makes from the error's **type**. So the engine answers *which kind*, the window answers *what words*, and neither owns both halves.
+
+Everything unlabelled is still reported verbatim, deliberately: an error this window has no sentence for is one the user is better off being able to paste somewhere. And the original stays under the label for the log, because a label that replaced its evidence would make the next one of these unfindable.
+
+The retry count is not in the copy. It would be a number in a Thai string tracking a constant in Go, and the sentence is true without it.
+
+**One duplicate closed on the way.** `endingFor` and an inline ternary in `restoreTranscript` were the same three lines twice, harmless right up until a third ending had to be added to both. A failure worded one way on screen and another way after a reload is the app disagreeing with itself about what happened to the same turn; `failedTurn.test.ts` now pins that they agree.
+
+### 167.5 The window had four labelled buttons and the model had one tool id
+
+Same morning, different screenshot. Asked *"ตอนนี้ใช้ Tool อะไรได้บ้างครับ"* in คู่คิด, the assistant answered **ไฟล์ / เชลล์ / desk_open** while the panel beside it was showing four buttons reading **เทอร์มินัล, เบราว์เซอร์, ไฟล์, สไลด์**. Owner: *"มันควรจะพูดถึงพวกนี้ได้นะ ไม่ใช่พูด `desk_open` ชื่อแบบนี้ตรงๆ"*.
+
+It was not wrong. It listed everything it could see.
+
+คู่คิด sends no tool definitions, so the desk manifest's body is the entire inventory, and `Direction()` returns the body alone — `description:` and `categories:` are frontmatter, read by the picker card and by `AllowsTool`, never sent. [assistant.md](../internal/mode/modes/assistant.md) named exactly one tool in prose: `desk_open`. Files and shell came from the phrase "the files and the shell". That is the complete answer, and it is three items long because three is what was there.
+
+The accurate list was already in the file, on line 3 (`categories: agent, web, media, files, shell`), which is the one line the model never sees.
+
+**Two things were wrong and they are different.**
+
+The first is §116 crossed from the inside. A manifest body is prose, and a model paraphrases prose to the user — so a tool id written into one is an identifier handed to somebody who has never seen it and cannot type it. `desk_open` is gone from both bodies that had it, replaced by the act ("put on the desk"), and `TestNoDeskManifestSpellsAToolIdInItsBody` keeps it out. Bundled manifests only: a desk the user wrote is theirs, and this rule has no standing in their file.
+
+The second is that nothing had ever described the panels. Not in คู่คิด, not in ลงมือ — there the model infers them from tool descriptions, which is why it went unnoticed. `workbench()` in [prompt.go](../internal/prompt/prompt.go) says what is beside the chat, as surfaces and never as calls, so the whole string is safe to repeat to the user and repeating it is the point. Desktop only; the CLI has no panes.
+
+**`Desk.Holds`, and why a second field rather than a second read.** The layer cannot ask `Carries`: `bootstrap.withStance` wraps the stance around it, so under คู่คิด it answers false to every name there is. That is correct about the turn and useless here, because "what is this desk for" does not stop being true when the user turns a dial — it is precisely what they ask about when they turn one. `Holds` is the desk's own `AllowsTool`, set in `deskFor` and deliberately left alone by `withStance`. Nil falls back to `Carries`, so a Desk built by an older caller degrades to slightly narrow rather than to empty.
+
+Derived from what the desk holds rather than written out, for the reason the vision markers were wrong in §167.3: a second list is right the day it is typed.
+
+### 167.6 Not addressed here
+
+§166.4's `usage_limit_reached` gap is still open.
+
+The pane wording is English in an English system prompt, and the model renders it into Thai. That is a translation the prompt does not control, and matching the window's exact labels would mean copying `th.ts` into Go — a second copy of the frontend's locale, which is the trade this section just refused to make twice. Worth revisiting only if the model is observed drifting from the words on the buttons.

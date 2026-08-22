@@ -240,6 +240,55 @@ func rewindBody(req *http.Request) error {
 	return nil
 }
 
+// DroppedConnectionMarker is the phrase a spent-out reconnect puts at the front
+// of its error, and it is a wire contract rather than prose.
+//
+// The window has to be able to say "the connection dropped" in the user's own
+// language, and it cannot work that out from the error text: Windows says
+// "wsarecv: An existing connection was forcibly closed by the remote host",
+// Linux says "read: connection reset by peer", and a TypeScript file matching
+// all of them would be a second copy of a judgement Go already makes from the
+// error's TYPE. So Go decides which kind of failure it was and the window
+// decides what words to use for it, which is the only split that keeps both
+// halves honest.
+//
+// Stable, therefore. It is persisted with the failed turn and read back on the
+// next launch, so changing it silently un-translates every stored failure.
+const DroppedConnectionMarker = "aetox: connection dropped"
+
+// AsDroppedConnection labels an error the reconnect gave up on, keeping the
+// original underneath for the log and for %w.
+func AsDroppedConnection(err error) error {
+	return fmt.Errorf("%s: %w", DroppedConnectionMarker, err)
+}
+
+// IsDroppedConnection reports whether a turn died because the connection went
+// away rather than because the provider answered and said no.
+//
+// The same judgement retryableTransportError makes, exported for the one caller
+// that has to make it a level up. retryTransport can only see failures that
+// happen before a response exists: it wraps RoundTrip, and RoundTrip returns
+// the instant the headers land. Everything read after that — the body of a
+// plain answer, every SSE frame of a streamed one — is read by the caller, so a
+// socket cut there is invisible to the retry that was written for exactly this
+// failure.
+//
+// That is not the corner it sounds like. Dropping the socket mid-answer is the
+// commonest shape this takes, because a provider that is going to fall over
+// does it while it is generating and not while it is deciding. The owner hit it
+// three seconds into a DeepSeek turn at 10:54 on 22 ส.ค.: "wsarecv: An existing
+// connection was forcibly closed by the remote host", raw Go on screen, the
+// whole turn thrown away, and the two extra tries that would have covered it
+// sitting one layer below where the error happened.
+//
+// The retry itself belongs to the caller and cannot be moved down here: only
+// the caller knows whether the half-answer that streamed has been taken back
+// (cognitive.discardPreview), and a replay under text still on screen would
+// write the answer twice.
+func IsDroppedConnection(ctx context.Context, err error) bool {
+	return retryableTransportError(ctx, err)
+}
+
 // retryableTransportError reports whether a failure to get any response at all
 // is worth asking again.
 //

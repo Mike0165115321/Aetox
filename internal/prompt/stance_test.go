@@ -101,3 +101,96 @@ func TestAStancelessDeskIsUnchanged(t *testing.T) {
 		t.Error("a desk with no stance must build the prompt exactly as it did before stances")
 	}
 }
+
+// deskHolding is deskAt's counterpart for the one question a stance does not
+// get to answer: what the DESK is for. bootstrap.withStance narrows Carries and
+// leaves Holds standing, so a คู่คิด session carries nothing and still knows
+// which room it is sitting in.
+func deskHolding(toolLess bool, holds ...string) Desk {
+	d := deskAt("DESK", "", toolLess)
+	d.Holds = func(name string) bool {
+		for _, h := range holds {
+			if h == name {
+				return true
+			}
+		}
+		return false
+	}
+	return d
+}
+
+// Asked what it could do, the assistant answered "ไฟล์ เชลล์ desk_open" while
+// the window beside it was showing four buttons reading เทอร์มินัล, เบราว์เซอร์,
+// ไฟล์ and สไลด์. Owner, 22 ส.ค.: "มันควรจะพูดถึงพวกนี้ได้นะ ไม่ใช่พูด desk_open
+// ชื่อแบบนี้ตรงๆ".
+//
+// It answered with the only names in its context. Nothing in the prompt had
+// ever described the panels, so the model's whole inventory was one tool id
+// left in a desk manifest.
+func TestThePromptNamesThePanelsBesideTheChat(t *testing.T) {
+	got := BuildForDesk(SurfaceDesktop, Scope{Root: t.TempDir()},
+		deskHolding(false, "desk_terminal", "browser", "desk_open"))
+
+	for _, pane := range []string{"a terminal", "a browser", "a file view", "a slide view"} {
+		if !strings.Contains(got, pane) {
+			t.Errorf("the prompt never mentions %q, so the model cannot talk about it:\n%s", pane, got)
+		}
+	}
+}
+
+// The §116 line, held from the side it was crossed on. A tool id is wiring, and
+// the user has never seen one and cannot act on one — so nothing the model is
+// invited to repeat may contain one.
+func TestThePanelsAreNamedWithoutNamingATool(t *testing.T) {
+	got := workbench(SurfaceDesktop, deskHolding(false, "desk_terminal", "browser", "desk_open"))
+	if got == "" {
+		t.Fatal("no workbench layer at a desk that holds all three panes")
+	}
+	for _, id := range []string{"desk_open", "desk_terminal", "desk_list", "desk_close"} {
+		if strings.Contains(got, id) {
+			t.Errorf("the layer spells the tool id %q, which is the thing that reached the user:\n%s", id, got)
+		}
+	}
+}
+
+// The whole reason Holds exists. Under คู่คิด, Carries is false for every name
+// there is — correctly, the turn carries nothing — and a layer reading it would
+// answer "what can you do" with "nothing", which is true of the turn and false
+// of the desk. The question the user asks when they turn the dial is about the
+// desk.
+func TestASessionCarryingNoToolsStillKnowsWhatTheDeskIsFor(t *testing.T) {
+	got := BuildForDesk(SurfaceDesktop, Scope{Root: t.TempDir()},
+		deskHolding(true, "desk_terminal", "browser", "desk_open"))
+
+	if !strings.Contains(got, "a browser") {
+		t.Errorf("คู่คิด lost the panels along with the tools:\n%s", got)
+	}
+	// It keeps its tool-less silence everywhere it was already silent, though —
+	// this layer must not be a door back in for the paragraphs Desk.ToolLess
+	// exists to withhold.
+	if strings.Contains(got, "skills_list returns them on request") {
+		t.Errorf("the workbench layer let the tool block back in:\n%s", got)
+	}
+}
+
+// Panels in a window. A terminal session has none of them, and a prompt that
+// described them there would be describing furniture that is not in the room.
+func TestTheCLIIsNotToldAboutPanels(t *testing.T) {
+	got := BuildForDesk(SurfaceCLI, Scope{Root: t.TempDir()},
+		deskHolding(false, "desk_terminal", "browser", "desk_open"))
+	if strings.Contains(got, "panels of its own") {
+		t.Errorf("the terminal prompt describes a window it is not running in:\n%s", got)
+	}
+}
+
+// A desk that does not hold a pane is not told it has one. The specialized desk
+// refuses shell on purpose, so the terminal is not its to offer.
+func TestADeskWithoutAPaneIsNotToldItHasOne(t *testing.T) {
+	got := workbench(SurfaceDesktop, deskHolding(false, "browser", "desk_open"))
+	if strings.Contains(got, "a terminal") {
+		t.Errorf("a desk that refuses shell was offered a terminal:\n%s", got)
+	}
+	if !strings.Contains(got, "a browser") {
+		t.Errorf("the panes it does hold went missing with the one it does not:\n%s", got)
+	}
+}

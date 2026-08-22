@@ -237,9 +237,12 @@ export function restoreTranscript(messages: main.SessionMessage[] | null | undef
     const err = rows[i].errorText
     if (!err || out[i].role !== 'agent') continue
     const question = rows[i - 1]
-    const ending = /context canceled/i.test(err)
-      ? t('cockpit.turnStopped')
-      : t('cockpit.sendError', { err })
+    // The same endingFor the live path uses. These were two copies of one
+    // ternary until a third ending had to be added to both, which is the moment
+    // a duplicate stops being harmless: a failure worded one way while it is on
+    // screen and another way after a reload is the app disagreeing with itself
+    // about what happened.
+    const ending = endingFor(err)
     out[i].failed = true
     out[i].failedText = question?.role === 'user' ? question.text : undefined
     out[i].text = out[i].text.trim() ? `${out[i].text}\n\n${ending}` : ending
@@ -1027,11 +1030,30 @@ async function turnEndedBubble(err: unknown, sentText: string): Promise<ChatMess
   }
 }
 
-/** Stop is a command that succeeded; every other ending is an error. */
+/**
+ * How a turn that did not produce an answer is worded, for the live path and
+ * for one read back from the database alike.
+ *
+ * Stop is a command that succeeded. A dropped connection is the network, and it
+ * gets a sentence rather than the transport's own words: the user was being
+ * shown `read tcp 192.168.1.40:47800->3.173.21.63:443: wsarecv: An existing
+ * connection was forcibly closed by the remote host` and asked what it meant
+ * (22 ส.ค.). Everything else is still reported verbatim, because an error this
+ * window has no sentence for is an error the user is better off being able to
+ * paste somewhere.
+ *
+ * The dropped case is recognised by a label Go puts there
+ * (model.DroppedConnectionMarker), not by reading the message. Windows says
+ * "wsarecv", Linux says "connection reset by peer", and matching all of them
+ * here would be a second copy of a judgement the engine already makes from the
+ * error's type.
+ */
+const DROPPED_CONNECTION = 'aetox: connection dropped'
 function endingFor(err: unknown): string {
-  return /context canceled/i.test(String(err))
-    ? t('cockpit.turnStopped')
-    : t('cockpit.sendError', { err: String(err) })
+  const text = String(err)
+  if (/context canceled/i.test(text)) return t('cockpit.turnStopped')
+  if (text.includes(DROPPED_CONNECTION)) return t('cockpit.connectionLost')
+  return t('cockpit.sendError', { err: text })
 }
 
 /**
