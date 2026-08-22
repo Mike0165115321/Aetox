@@ -137,4 +137,30 @@ describe('the slides room', () => {
 
     expect(reached).toEqual([])
   })
+
+  // อาการที่เจ้าของรายงาน 2026-08-22: เปิดแถบพรีวิวค้างไว้ที่ห้องสไลด์ (หรือเปิด
+  // เบราว์เซอร์ทับไว้ ซึ่งไม่ถอดห้องสไลด์ออกจากหน้าจอ มันแค่ถูกซ่อน) แล้วพิมพ์ใน
+  // ช่องพร้อมต์ กด Space ไม่เว้นวรรคเลยสักครั้ง
+  //
+  // ห้องนี้ฟังปุ่มที่ "หน้าต่าง" ไม่ใช่ที่ตัวมันเอง ปุ่มที่คนกดลงในช่องพิมพ์จึงลอย
+  // ขึ้นมาถึงมัน แล้วโดน preventDefault ไปเดินสไลด์แทน — คีย์บอร์ดของทั้งแอปถูก
+  // ห้องเดียวยึดไป
+  it('leaves the prompt box alone: a space typed there is still a space', async () => {
+    render(SlidesPane, { path: 'output/s1/deck.html', name: 'deck.html', content: stacked })
+    await loadDeck(stacked)
+    await waitFor(() => expect(screen.getByText('1 / 3')).toBeTruthy())
+
+    // ช่องพิมพ์ของแชต อยู่คนละที่กับห้องสไลด์ แต่อยู่ในหน้าต่างเดียวกัน
+    const box = document.createElement('textarea')
+    document.body.appendChild(box)
+    box.focus()
+
+    for (const key of [' ', 'ArrowRight', 'ArrowLeft', 'Home', 'End']) {
+      const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+      box.dispatchEvent(e)
+      expect(`${key}: ${e.defaultPrevented}`).toBe(`${key}: false`)
+    }
+    // และไม่มีใบไหนถูกเดินไปเพราะการพิมพ์
+    expect(screen.getByText('1 / 3')).toBeTruthy()
+  })
 })

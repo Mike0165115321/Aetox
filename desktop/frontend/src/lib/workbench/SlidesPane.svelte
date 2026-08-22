@@ -15,7 +15,7 @@
   import { DeckFormats, ExportDeck, OpenExport, OpenFileExternally } from '../../../wailsjs/go/main/App'
   import type { main } from '../../../wailsjs/go/models'
   import FileEditor from '../FileEditor.svelte'
-  import { DECK_BASE, deckFit, documentScrolls, sendStepKey, slideElements, visibleIndex } from './deckNav'
+  import { DECK_BASE, deckFit, documentScrolls, sendStepKey, slideElements, typedIntoField, visibleIndex } from './deckNav'
   import { deckPick, startDeckPick, stopDeckPick, type PickMode } from './pagePick.svelte'
   import { fileURL } from '../fileUrl'
   import { t } from '../i18n.svelte'
@@ -234,6 +234,9 @@
 
   function onKey(e: KeyboardEvent) {
     if (sending) return // ปุ่มที่แพเนลเพิ่งกดเข้าไปในเด็คเอง
+    // ห้องนี้ฟังทั้งหน้าต่าง คนที่กำลังพิมพ์อยู่จึงต้องได้ปุ่มของตัวเองคืนไปครบ
+    // ทุกปุ่ม ไม่ใช่แค่ Space (กฎอยู่ที่ deckNav — มันเป็นคำถามว่าปุ่มเป็นของใคร)
+    if (typedIntoField(e.target)) return
     if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
       e.preventDefault()
       goto(current + 1)
