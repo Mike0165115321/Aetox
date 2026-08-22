@@ -306,14 +306,23 @@ func (a *App) appendTurn(conv *conversation, userMsg, agentMsg SessionMessage) i
 		conv.cfg.ModelProvider, conv.cfg.ModelName, conv.cfg.ModelWireFormat,
 		conv.cfg.ThinkLevel, conv.cfg.ApprovalMode)
 	// The question, unless openTurn already wrote it when it was asked —
-	// writing it twice would double every user message in the transcript. The
-	// flag is the whole coupling between the two halves, and it is deliberately
-	// on the App rather than passed in: only one turn is ever in flight.
+	// writing it twice would double every user message in the transcript.
+	//
+	// The flag is THIS conversation's, read off the `conv` this function was
+	// already handed — never off `a.cur()`, which is wherever the user has
+	// moved to since. It was the cursor for as long as only one turn could
+	// exist ("only one turn is ever in flight", the old comment said), and the
+	// day two could, a turn ending off screen consulted the OPEN chat's flag:
+	// false there, so the question went in a second time — the first doubled
+	// user bubble arrived within minutes of two chats genuinely overlapping
+	// (measured live, 22 ส.ค., session D of the multichat test). The other
+	// direction is quieter and worse: an open flag on the wrong conversation
+	// makes a turn skip storing its question entirely.
 	pending := []SessionMessage{userMsg, agentMsg}
-	if a.cur().turnOpened {
+	if conv.turnOpened {
 		pending = []SessionMessage{agentMsg}
 	}
-	a.cur().turnOpened = false
+	conv.turnOpened = false
 	var agentID int64
 	for _, m := range pending {
 		res, execErr := tx.Exec(`INSERT INTO messages(session_id, role, text, time, reasoning, think_secs, parts) VALUES(?,?,?,?,?,?,?)`,

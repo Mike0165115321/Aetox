@@ -133,6 +133,48 @@ func newTestApp(t *testing.T, sandboxRoot string) *App {
 	return a
 }
 
+// A turn that ends while the user is in ANOTHER chat must close its own
+// question, not the open chat's. appendTurn used to consult a.cur().turnOpened
+// — correct for exactly as long as one turn could exist — so the first time
+// two chats genuinely overlapped, the turn that finished off screen read the
+// open chat's flag (down), decided its question was unstored, and wrote it a
+// second time: user, user, agent, live in the store (22 ส.ค., multichat test
+// session D). The reverse misread silently drops a question instead.
+func TestATurnEndingOffScreenClosesItsOwnQuestion(t *testing.T) {
+	a := newTestApp(t, t.TempDir())
+	worker := a.cur()
+	question := SessionMessage{Role: "user", Text: "งานที่ถูกสลับหนี", Time: "22:22"}
+	if !a.openTurn(worker, question) {
+		t.Fatal("openTurn refused")
+	}
+
+	// The user walks away mid-turn: the engine's open conversation is now a
+	// different one, whose own flag is down.
+	elsewhere := &conversation{id: newSessionID(), cfg: worker.cfg}
+	a.convs.show(elsewhere)
+
+	a.appendTurn(worker, question,
+		SessionMessage{Role: "agent", Text: "เสร็จแล้ว", Time: "22:23"})
+
+	messages, err := a.SessionTranscript(worker.id)
+	if err != nil {
+		t.Fatalf("SessionTranscript: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("stored %d messages, want exactly the question and its answer — a third row is the doubled question", len(messages))
+	}
+	if messages[0].Role != "user" || messages[1].Role != "agent" {
+		t.Fatalf("roles = %s,%s; want user,agent", messages[0].Role, messages[1].Role)
+	}
+	if worker.turnOpened {
+		t.Error("turnOpened still up on the turn's own conversation — its next turn would drop the question")
+	}
+	// And the flag that must NOT have been touched: the open chat had no turn.
+	if elsewhere.turnOpened {
+		t.Error("the open chat's flag was raised by somebody else's ending")
+	}
+}
+
 func TestAppendAndListSessions(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
 	a.appendTurn(a.cur(),
