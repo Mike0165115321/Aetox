@@ -3233,7 +3233,7 @@ func (a *App) workbenchSkills(conv *conversation, sandboxRoot string) []skill.Sk
 		&deskSkill{app: a, conv: conv},
 		&deskTerminalSkill{app: a},
 		&askUserSkill{app: a, conv: conv},
-		&todoWriteSkill{app: a},
+		&todoWriteSkill{app: a, conv: conv},
 		&sessionSearchSkill{app: a},
 		&suggestTaskSkill{app: a, conv: conv},
 		// The engines' power switches. Registered for every session like the

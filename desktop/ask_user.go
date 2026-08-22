@@ -202,7 +202,15 @@ func (a *App) AnswerUserQuestion(sessionID, answer string) {
 // replaces the whole list; state lives in the frontend only.
 // ponytail: not persisted with the session — store it in SessionMessage land
 // if surviving a reload ever matters.
-type todoWriteSkill struct{ app *App }
+//
+// conv is the chat whose plan this is, so the event can say so. It went out
+// unstamped for as long as one chat could work at a time; with several, an
+// unstamped list landed on whichever plan panel was on screen — a background
+// chat re-planning overwrote the checklist the user was reading.
+type todoWriteSkill struct {
+	app  *App
+	conv *conversation
+}
 
 func (*todoWriteSkill) Name() string { return "todo_write" }
 
@@ -243,17 +251,20 @@ func (*todoWriteSkill) ToolDefinition() model.ToolDefinition {
 	}
 }
 
+// todoItem is one checklist row as the frontend draws it. Package-level (it
+// was local to ExecuteTool) so the stamped event type can name it.
+type todoItem struct {
+	Content string `json:"content"`
+	Status  string `json:"status"`
+	// ActiveForm is what the row reads while the step is running. Optional:
+	// a model that omits it leaves the UI showing Content, which is what
+	// happened before this field existed.
+	ActiveForm string `json:"activeForm,omitempty"`
+}
+
 func (s *todoWriteSkill) ExecuteTool(_ context.Context, args map[string]any) (skill.Output, error) {
 	start := time.Now()
 	raw, _ := args["todos"].([]any)
-	type todoItem struct {
-		Content string `json:"content"`
-		Status  string `json:"status"`
-		// ActiveForm is what the row reads while the step is running. Optional:
-		// a model that omits it leaves the UI showing Content, which is what
-		// happened before this field existed.
-		ActiveForm string `json:"activeForm,omitempty"`
-	}
 	items := make([]todoItem, 0, len(raw))
 	for _, r := range raw {
 		m, ok := r.(map[string]any)
@@ -275,8 +286,15 @@ func (s *todoWriteSkill) ExecuteTool(_ context.Context, args map[string]any) (sk
 		}
 		items = append(items, todoItem{Content: content, Status: status, ActiveForm: activeForm})
 	}
-	if s.app.ctx != nil {
-		s.app.emitEvent("todo:update", items)
+	// Stamped with the conversation like every other agent event; nil conv is
+	// the test seam and degrades to the old unstamped shape the frontend still
+	// accepts.
+	if s.app.ctx != nil || s.app.emit != nil {
+		if s.conv != nil {
+			s.app.emitEvent("todo:update", sessionEvent[[]todoItem]{SessionID: s.conv.id, Data: items})
+		} else {
+			s.app.emitEvent("todo:update", items)
+		}
 	}
 	doneCount := 0
 	for _, it := range items {

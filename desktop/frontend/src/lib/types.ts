@@ -591,6 +591,11 @@ export interface ParkedTurn {
    *  followed the user into the next chat and drew one conversation's spend
    *  under another's composer. */
   turnSpend: TurnSpend
+  /** Stragglers — messages the engine handed back because its turn was already
+   *  returning (agent:interjection-missed). Parked with the chat they were
+   *  typed into: the queue was one module global, so a message missed in chat A
+   *  while the user stood in chat B went out as B's next turn. */
+  queued: string[]
 }
 
 export interface CockpitState {

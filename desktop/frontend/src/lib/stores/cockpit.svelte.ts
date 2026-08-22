@@ -131,10 +131,16 @@ function onScreenSession(engineSession: string): string {
 }
 
 /** Re-mark the lists without a round-trip, for the doors that change what is on
- *  screen without changing what the engine is on. */
+ *  screen without changing what the engine is on.
+ *
+ *  All three lists, including the one the storefront draws while you are
+ *  standing inside a โปรเจกต์. That one was left out, so a click there marked
+ *  nothing until refreshDesk's round-trip landed — and "without a round-trip"
+ *  is the entire reason this function exists. */
 function markOnScreen(id: string): void {
   for (const s of cockpit.sessions) s.active = s.id === id
   for (const s of cockpit.history) s.active = s.id === id
+  for (const s of cockpit.spaceHistory) s.active = s.id === id
 }
 
 /** Pull this project's chat history (sessions are stored per project in Go). */
@@ -585,7 +591,7 @@ async function restoreLiveTranscript(): Promise<void> {
       cockpit.parked[other] = {
         chat: [], awaitingReply: true, agentStatus: '', toolSteps: [],
         turnFiles: [], turnProposals: [], streamingText: '', reasoningText: '',
-        ask: null, todos: [], turnSpend: emptyTurnSpend(),
+        ask: null, todos: [], turnSpend: emptyTurnSpend(), queued: [],
       }
     }
   }
@@ -621,7 +627,28 @@ async function restoreLiveTranscript(): Promise<void> {
  * died with the previous webview.
  */
 export async function applyAgentDone(status: { sessionId: string }): Promise<void> {
-  if (!reattachedTurn) return
+  const ended = status?.sessionId ?? ''
+  // A turn this window started ends through its own promise — runLiveTurn's
+  // finally clears its live state wherever it lives. Acting here too would
+  // race that finally over the same fields.
+  if (ended && turnKnown(ended)) return
+  // A chat parked with no promise behind it: the stub loadRealState holds for
+  // work that was already running when this window loaded. Its live detail
+  // died with the previous webview, so there is nothing to fold into a
+  // transcript — dropping the record is what lets the next open read the
+  // finished turn from the store instead of restoring an empty mid-flight
+  // shell, and it is the only thing that takes the sidebar's ring off.
+  if (ended && ended !== cockpit.openSession && cockpit.parked[ended]) {
+    delete cockpit.parked[ended]
+    await refreshSessions()
+    await refreshGlobalHistory()
+    return
+  }
+  // On screen with no promise to end it: the turn this window reattached to
+  // after a reload — or one of those stubs restored to the screen mid-flight,
+  // which is the same situation without the flag.
+  const orphanOnScreen = ended === cockpit.openSession && cockpit.awaitingReply
+  if (!reattachedTurn && !orphanOnScreen) return
   reattachedTurn = false
   cockpit.awaitingReply = false
   cockpit.turnSession = ''
@@ -652,8 +679,7 @@ export async function applyAgentDone(status: { sessionId: string }): Promise<voi
   // window there is no promise tail to send it. alreadyShown because the net
   // has always worked that way — the text goes out as its own turn, and the
   // transcript re-read above is what the screen shows meanwhile.
-  const next = queuedMessages.shift()
-  if (next !== undefined) await sendUserMessage(next, true)
+  await drainStraggler()
 }
 
 /** The one gate in front of every door that leaves the running turn's chat.
@@ -683,13 +709,20 @@ function turnStillRunning(): boolean {
  * and `active` is the flag that names it — true even while another chat is on
  * screen, which is exactly the case this is for. Written as a function rather
  * than inlined into the markup so that the day sessions run side by side, the
- * answer changes in one place instead of in every list that draws a row. */
-export function sessionWorking(s: Session): boolean {
-  // Two answers because there are two places a working chat can be: on screen,
-  // where `turnSession` names it, and parked, where its own live state carries
-  // the flag. The list has to ring both — the whole point of being able to walk
-  // away from a turn is seeing, from anywhere, that it is still going.
+ * answer changes in one place instead of in every list that draws a row.
+ *
+ * Takes an id, not a `Session`: the โปรเจกต์ page draws its chats from
+ * `main.SessionMeta` straight off the engine, and a signature that only fits
+ * the sidebar's row type is how a list ends up not drawing the ring at all. */
+export function sessionWorking(s: { id: string }): boolean {
+  // Three answers because there are three places a working chat can be: on
+  // screen, where `turnSession` names it; parked, where its own live state
+  // carries the flag; and the register of turns this window started, which is
+  // the ground truth the other two are views of. The list has to ring them
+  // all — the whole point of being able to walk away from a turn is seeing,
+  // from anywhere, that it is still going.
   if (cockpit.turnSession && s.id === cockpit.turnSession) return true
+  if (turnKnown(s.id)) return true
   return !!cockpit.parked[s.id]?.awaitingReply
 }
 
@@ -722,6 +755,9 @@ function parkLive(id: string): void {
     ask: cockpit.ask,
     todos: cockpit.todos,
     turnSpend: cockpit.turnSpend,
+    // splice(0) moves rather than copies: the screen queue empties for the
+    // chat arriving, and the stragglers leave WITH the chat they belong to.
+    queued: queuedMessages.splice(0),
   }
 }
 
@@ -744,13 +780,32 @@ function restoreLive(id: string): boolean {
   cockpit.ask = held.ask
   cockpit.todos = held.todos
   cockpit.turnSpend = held.turnSpend
+  // The question card that just came back on screen is this chat's — clicking
+  // it must answer here, not wherever the last card was raised.
+  if (held.ask) askSession = id
+  queuedMessages.push(...(held.queued ?? []))
+  // The turn these stragglers were waiting on ended while the chat was off
+  // screen — nothing else will ever drain them, so coming back is the moment
+  // they go out. A turn still running keeps them queued: its own ending drains.
+  if (!held.awaitingReply) void drainStraggler()
   hydrateImages()
   return true
+}
+
+/** Send the next waiting straggler as its own turn. One at a time: the send's
+ *  own tail (sendUserMessage) drains the one after, so a backlog empties in
+ *  order instead of racing itself. */
+function drainStraggler(): Promise<void> {
+  const next = queuedMessages.shift()
+  return next !== undefined ? sendUserMessage(next, true) : Promise.resolve()
 }
 
 /** Everything the chat arriving on screen starts from when it is NOT working. */
 function clearLive(): void {
   cockpit.awaitingReply = false
+  // The queue is the screen chat's; an idle arrival starts with an empty one.
+  // (A working chat that just left took its stragglers with it in parkLive.)
+  queuedMessages.length = 0
   cockpit.agentStatus = ''
   cockpit.toolSteps = []
   cockpit.turnFiles = []
@@ -766,40 +821,49 @@ function clearLive(): void {
   cockpit.turnSpend = emptyTurnSpend()
 }
 
-/** Apply a change to the live state of the chat an event names.
+/** The turns this window itself started and still holds a promise for, each as
+ * a mutable ref so the id can be corrected mid-flight (forLiveTurn's adoption).
+ * runLiveTurn registers on entry and deregisters in its finally — so "is this
+ * id one of ours" is answerable without guessing, which is what applyAgentDone
+ * and the sidebar's ring need. */
+type LiveTurnRef = { id: string }
+const runningTurns: LiveTurnRef[] = []
+function turnKnown(id: string): boolean {
+  return !!id && runningTurns.some((turn) => turn.id === id)
+}
+
+/** Where a session's live turn state lives right now, or null for a session
+ * this window holds nothing for.
  *
  * Three answers, and each of them matters. The chat on screen: the fields on
  * `cockpit`, which is what every component already reads. A chat working off
  * screen: its parked record, so its timeline goes on filling while the user
- * works somewhere else and is all there when they come back. Anything else —
- * an event from a turn this window is holding nothing for — is DROPPED, because
- * the alternative is drawing one conversation's work into another's, which is
- * the failure this whole change exists to end.
+ * works somewhere else and is all there when they come back. And a turn
+ * running under an id the window guessed wrong (neither on screen nor parked,
+ * but named by `turnSession` after forLiveTurn's adoption): the screen, the
+ * only place it can belong.
  *
- * An unstamped event (an older engine against a newer window, across a dev
- * reload) is treated as the chat on screen, which is what this window did for
- * its whole life before events carried a session at all. */
-function writeLive(id: string, change: (live: ParkedTurn) => void): void {
-  // No id, or a window that has not been told which chat it is on yet (the
-  // moment before the first load answers): the chat on screen is the only
-  // conversation there is, and dropping its events would leave a working agent
-  // drawing nothing at all.
+ * The empty id — an unstamped event from an older engine, or a window that has
+ * not been told which chat it is on yet — is the chat on screen, which is what
+ * this window did for its whole life before events carried a session at all. */
+function liveHome(id: string): ParkedTurn | null {
   if (!id || !cockpit.openSession || id === cockpit.openSession) {
-    change(cockpit as unknown as ParkedTurn)
-    return
+    return cockpit as unknown as ParkedTurn
   }
   const held = cockpit.parked[id]
-  if (held) {
-    change(held)
-    return
-  }
-  // Nobody is holding this session, and it is the turn this window started.
-  // The chat on screen is the only place it can belong: forLiveTurn has already
-  // established that a stamp naming a chat the window tracks nothing for is not
-  // somebody else's turn, it is this one, running under an id the window
-  // guessed wrong. Without this the status line and the streamed text would
-  // still fall into the gap after forLiveTurn stopped dropping them.
-  if (id === cockpit.turnSession) change(cockpit as unknown as ParkedTurn)
+  if (held) return held
+  if (id === cockpit.turnSession) return cockpit as unknown as ParkedTurn
+  return null
+}
+
+/** Apply a change to the live state of the chat an event names — the ONE
+ * router every live write goes through. An event from a session this window
+ * holds nothing for is DROPPED, because the alternative is drawing one
+ * conversation's work into another's, which is the failure this whole change
+ * exists to end. */
+function writeLive(id: string, change: (live: ParkedTurn) => void): void {
+  const home = liveHome(id)
+  if (home) change(home)
 }
 
 /** Let the user pick a real folder via the native dialog; re-points the engine at it. */
@@ -960,8 +1024,16 @@ export function clearQueuedMessages(): void {
 export function applyMissedInterjections(ev: SessionEvent<string[]> | string[]): void {
   const texts = forLiveTurn(ev)
   if (texts === null) return
+  // Into the queue of the chat the turn ran in: `queuedMessages` is the screen
+  // chat's queue, a parked chat keeps its own (ParkedTurn.queued) and drains it
+  // when it comes back on screen. One global queue was how a message missed in
+  // chat A went out as chat B's next turn.
+  const home = liveHome(eventSession(ev))
+  const dest = !home || home === (cockpit as unknown as ParkedTurn)
+    ? queuedMessages
+    : (home.queued ??= [])
   for (const text of texts) {
-    if (text.trim()) queuedMessages.push(text)
+    if (text.trim()) dest.push(text)
   }
 }
 
@@ -1036,11 +1108,11 @@ export async function undoLastTurn(): Promise<void> {
  * the thinking are what the turn *did*, and a turn that was stopped did not do
  * less of it. Stop means stop, not discard.
  */
-async function turnEndedBubble(err: unknown, sentText: string): Promise<ChatMessage> {
+async function turnEndedBubble(err: unknown, sentText: string, turn: LiveTurnRef): Promise<ChatMessage> {
   // Taken first, before any await: the finally in runLiveTurn has not run yet,
   // but nothing about that is worth betting a turn's work on.
-  const live = turnArtifacts()
-  const stored = await storedEndingFor(sentText)
+  const live = turnArtifacts(turn)
+  const stored = await storedEndingFor(sentText, turn)
   if (stored) {
     return {
       ...stored,
@@ -1057,7 +1129,7 @@ async function turnEndedBubble(err: unknown, sentText: string): Promise<ChatMess
       failedText: sentText,
     }
   }
-  const partial = cockpit.streamingText.trim()
+  const partial = (liveHome(turn.id) ?? (cockpit as unknown as ParkedTurn)).streamingText.trim()
   return {
     role: 'agent',
     text: partial ? `${partial}\n\n${endingFor(err)}` : endingFor(err),
@@ -1119,9 +1191,9 @@ function endingFor(err: unknown): string {
  * itself — the newest failed row belongs to an older turn, and grafting it here
  * would answer this question with that one's work.
  */
-async function storedEndingFor(sentText: string): Promise<ChatMessage | null> {
+async function storedEndingFor(sentText: string, turn: LiveTurnRef): Promise<ChatMessage | null> {
   try {
-    const id = cockpit.turnSession || cockpit.openSession || (await CurrentSessionID())
+    const id = turn.id || cockpit.openSession || (await CurrentSessionID())
     if (!id) return null
     const last = restoreTranscript(await SessionTranscript(id)).at(-1)
     if (!last || last.role !== 'agent' || !last.failed) return null
@@ -1196,35 +1268,42 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
   cockpit.pendingImage = null
   cockpit.pendingContext = null
   cockpit.pendingFile = null
-  // A turn is already running: hand it the message rather than starting a second
-  // one. Its answer arrives inside that turn's reply, so nothing below runs — the
-  // live state (toolSteps, streaming text) belongs to the turn still in flight and
-  // resetting it here would blank the UI mid-work.
-  // Fold it into the turn only when the turn is THIS chat's. Typing in another
-  // conversation while one works is an ordinary thing to do now, and an
-  // interjection sent from it would land in a chat the user is not even looking
-  // at — the same class of bug as an answer following the user out of the room.
-  if (cockpit.awaitingReply && cockpit.turnSession === cockpit.openSession) {
+  // A turn is already running IN THIS CHAT: hand it the message rather than
+  // starting a second one. Its answer arrives inside that turn's reply, so
+  // nothing below runs — the live state (toolSteps, streaming text) belongs to
+  // the turn still in flight and resetting it here would blank the UI mid-work.
+  // awaitingReply alone answers "is it this chat's" now: the flag parks and
+  // restores with its conversation, so typing under another chat's running turn
+  // finds it false and starts this chat's own turn instead.
+  if (cockpit.awaitingReply) {
     await Interject(sentText)
     return
   }
-  await runLiveTurn(async () => {
+  const ranTurn = await runLiveTurn(async (turn) => {
     try {
       const reply = await SendMessage(sentText)
-      cockpit.chat.push({
+      // Into the turn's own transcript, wherever it is being drawn: the user
+      // may have walked away mid-turn, and `cockpit.chat` is then the chat
+      // they walked TO — an answer following the user out of the room.
+      turnChat(turn).push({
         role: 'agent', text: reply.text, parts: reply.parts as TurnPart[] | undefined,
-        time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(),
+        time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(turn),
       })
     } catch (err) {
       // The engine persists nothing for a turn that failed, so the text it was
       // given rides on the bubble: it is the only copy left to retry with.
-      cockpit.chat.push(await turnEndedBubble(err, sentText))
+      turnChat(turn).push(await turnEndedBubble(err, sentText, turn))
     }
   })
   // Only stragglers land here now — anything typed under a running turn went
   // straight into it via Interject. Their bubbles are already on screen.
-  const next = queuedMessages.shift()
-  if (next !== undefined) await sendUserMessage(next, true)
+  //
+  // And only for a turn that ended ON SCREEN: `queuedMessages` is the screen
+  // chat's queue, so a turn that finished parked must not pull from it — its
+  // own stragglers are in its parked record and go out when it is reopened
+  // (restoreLive). "Not parked" rather than "id equals openSession" so the
+  // one-turn id drift (a brand-new chat) still drains.
+  if (!cockpit.parked[ranTurn.id]) await drainStraggler()
 }
 
 /**
@@ -1236,7 +1315,7 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
  * wrong, and four half-copies of it would strand `awaitingReply` on the first
  * path anyone forgot.
  */
-async function runLiveTurn(call: () => Promise<void>): Promise<void> {
+async function runLiveTurn(call: (turn: LiveTurnRef) => Promise<void>): Promise<LiveTurnRef> {
   cockpit.awaitingReply = true
   // The spend meter starts over here and nowhere else. A turn is the unit a
   // person can actually answer "is this costing me too much" about, and every
@@ -1280,6 +1359,16 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
       // reports that properly.
     }
   }
+  // This turn's own name, held as a ref rather than read back from
+  // `cockpit.turnSession` later: that field is one string for the whole
+  // window, and the moment a second chat starts a turn it names THAT one —
+  // so a finally that read it cleared whichever turn finished last into
+  // whichever chat started most recently. The ref is registered so events
+  // and endings can be told apart from a stranger's (turnKnown), and it is
+  // mutable because forLiveTurn corrects the id when the window guessed it
+  // wrong (the first message of a brand-new chat).
+  const turn: LiveTurnRef = { id: cockpit.turnSession }
+  runningTurns.push(turn)
   cockpit.agentStatus = ''
   cockpit.toolSteps = []
   cockpit.streamingText = ''
@@ -1313,7 +1402,7 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
   }
   cockpit.ask = null
   try {
-    await call()
+    await call(turn)
   } finally {
     // Ended where it ran, not where the user happens to be. A turn can finish
     // while its chat is parked — the whole point of being able to walk away —
@@ -1321,15 +1410,22 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
     // screen while leaving the working one flagged as working forever: a ring
     // in the sidebar that never goes out and a chat that can never be typed in
     // again. writeLive puts the ending in the same place the work went.
-    const ran = cockpit.turnSession
-    // End it before letting go of it, and the order is load-bearing rather than
-    // tidy. `writeLive`'s last resort — for a turn running under an id the
-    // window guessed wrong, which is neither the chat on screen nor a parked
-    // one — is `id === cockpit.turnSession`. Clearing that first left the write
-    // with nowhere to land, so the finally ran and changed nothing: the live
-    // block stayed up forever, holding the finished answer that the transcript
-    // had ALSO just been handed. One reply, drawn twice, over a Stop button that
-    // could not be dismissed (2026-08-22).
+    //
+    // The name comes off the ref, NOT off `cockpit.turnSession`: with two
+    // turns running that field names whichever started last, and reading it
+    // here made the first turn to finish end the second one's live block.
+    const ran = turn.id
+    const at = runningTurns.indexOf(turn)
+    if (at >= 0) runningTurns.splice(at, 1)
+    thinkClocks.delete(ran)
+    // End it before letting go of the name, and the order is load-bearing
+    // rather than tidy. `liveHome`'s last resort — for a turn running under an
+    // id the window guessed wrong, which is neither the chat on screen nor a
+    // parked one — is `id === cockpit.turnSession`. Clearing that first left
+    // the write with nowhere to land, so the finally ran and changed nothing:
+    // the live block stayed up forever, holding the finished answer that the
+    // transcript had ALSO just been handed. One reply, drawn twice, over a
+    // Stop button that could not be dismissed (2026-08-22).
     //
     // It bit the first message of a new chat, where `CurrentSessionID()` answers
     // with the session Go still holds while the engine stamps the one it is
@@ -1353,7 +1449,10 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
       // cleared here; see the note at the head of this function.
       l.ask = null
     })
-    if (ran === cockpit.openSession || !cockpit.parked[ran]) cockpit.turnSession = ''
+    // Only let go of the shared cursor if it is still this turn's: a later
+    // turn may have claimed it, and clearing it under that one orphans its
+    // events the same way the old single-field read orphaned its ending.
+    if (cockpit.turnSession === ran) cockpit.turnSession = ''
     // The "still working" banner (turnStillRunning) explained a refusal that
     // just stopped being true. A stale one over an idle chat would be a lie.
     cockpit.sessionError = ''
@@ -1367,20 +1466,39 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
   await refreshUndo()
   await refreshSessions()
   await refreshGlobalHistory()
+  // Handed back so a caller can ask where the turn actually ran — the id may
+  // have been corrected mid-flight (forLiveTurn's adoption), and the guess it
+  // started from is not worth returning.
+  return turn
 }
 
 /**
  * Snapshots what the turn that just finished produced, so it survives the reset
  * above — the live panels alone vanish the moment the turn completes.
  * Must be called before runLiveTurn's finally runs, i.e. inside the call.
+ *
+ * Reads the TURN's live state, not the screen's: a turn can finish while its
+ * chat is parked, and snapshotting `cockpit` there would staple whatever chat
+ * the user is looking at onto another conversation's reply.
  */
-function turnArtifacts(): Pick<ChatMessage, 'steps' | 'reasoning' | 'thinkSecs' | 'producedFiles' | 'proposals'> {
-  const steps = cockpit.toolSteps.length ? cockpit.toolSteps.map((s) => ({ ...s })) : undefined
-  const reasoning = cockpit.reasoningText.trim() || undefined
-  const thinkSecs = reasoning ? Math.max(1, Math.round((thinkLastAt - thinkStartedAt) / 1000)) : undefined
-  const producedFiles = cockpit.turnFiles.length ? [...cockpit.turnFiles] : undefined
-  const proposals = cockpit.turnProposals.length ? [...cockpit.turnProposals] : undefined
+function turnArtifacts(turn: LiveTurnRef): Pick<ChatMessage, 'steps' | 'reasoning' | 'thinkSecs' | 'producedFiles' | 'proposals'> {
+  const live = liveHome(turn.id) ?? (cockpit as unknown as ParkedTurn)
+  const steps = live.toolSteps.length ? live.toolSteps.map((s) => ({ ...s })) : undefined
+  const reasoning = live.reasoningText.trim() || undefined
+  const clock = thinkClocks.get(turn.id)
+  const thinkSecs = reasoning
+    ? Math.max(1, Math.round(((clock?.last ?? 0) - (clock?.start ?? 0)) / 1000))
+    : undefined
+  const producedFiles = live.turnFiles.length ? [...live.turnFiles] : undefined
+  const proposals = live.turnProposals.length ? [...live.turnProposals] : undefined
   return { steps, reasoning, thinkSecs, producedFiles, proposals }
+}
+
+/** The transcript the turn's reply belongs in — its own conversation's, wherever
+ * that is being drawn right now. Falls back to the screen only when the window
+ * holds nothing under the turn's name, which is the pre-stamp behaviour. */
+function turnChat(turn: LiveTurnRef): ChatMessage[] {
+  return (liveHome(turn.id) ?? (cockpit as unknown as ParkedTurn)).chat
 }
 
 /**
@@ -1396,15 +1514,15 @@ export async function retryFailedTurn(index: number): Promise<void> {
   const text = failed?.failedText
   if (!text || cockpit.awaitingReply) return
   cockpit.chat.splice(index, 1)
-  await runLiveTurn(async () => {
+  await runLiveTurn(async (turn) => {
     try {
       const reply = await RetryFailedTurn(text)
-      cockpit.chat.push({
+      turnChat(turn).push({
         role: 'agent', text: reply.text, parts: reply.parts as TurnPart[] | undefined,
-        time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(),
+        time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(turn),
       })
     } catch (err) {
-      cockpit.chat.push(await turnEndedBubble(err, text))
+      turnChat(turn).push(await turnEndedBubble(err, text, turn))
     }
   })
 }
@@ -1437,15 +1555,15 @@ export async function editFailedTurn(failedIndex: number, text: string): Promise
   const sent = (trimmed + (question.attachSuffix ?? '')).trim()
   const previous = cockpit.chat.splice(failedIndex - 1, 2)
   cockpit.chat.push({ ...previous[0], text: trimmed, time: nowLabel() })
-  await runLiveTurn(async () => {
+  await runLiveTurn(async (turn) => {
     try {
       const reply = await RetryFailedTurn(sent)
-      cockpit.chat.push({
+      turnChat(turn).push({
         role: 'agent', text: reply.text, parts: reply.parts as TurnPart[] | undefined,
-        time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(),
+        time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(turn),
       })
     } catch (err) {
-      cockpit.chat.push(await turnEndedBubble(err, sent))
+      turnChat(turn).push(await turnEndedBubble(err, sent, turn))
     }
   })
 }
@@ -1466,10 +1584,10 @@ export async function regenerateReply(revertFiles: boolean): Promise<void> {
   const previous: MessageVariant[] = last.variants ?? [
     { text: last.text, reasoning: last.reasoning, thinkSecs: last.thinkSecs, steps: last.steps },
   ]
-  await runLiveTurn(async () => {
+  await runLiveTurn(async (turn) => {
     try {
       const result = await RegenerateReply(revertFiles)
-      const artifacts = turnArtifacts()
+      const artifacts = turnArtifacts(turn)
       const variants: MessageVariant[] = result.variants.map((v, i) => ({ ...v, steps: previous[i]?.steps }))
       variants[result.active] = { ...variants[result.active], steps: artifacts.steps }
       Object.assign(last, artifacts, {
@@ -1526,15 +1644,15 @@ export async function resendEdited(text: string, revertFiles: boolean): Promise<
   const sent = (trimmed + (question.attachSuffix ?? '')).trim()
   const previous = cockpit.chat.splice(cockpit.chat.length - 2, 2)
   cockpit.chat.push({ ...previous[0], text: trimmed, time: nowLabel() })
-  await runLiveTurn(async () => {
+  await runLiveTurn(async (turn) => {
     try {
       const reply = await ResendEdited(sent, revertFiles)
-      cockpit.chat.push({
+      turnChat(turn).push({
         role: 'agent', text: reply.text, parts: reply.parts as TurnPart[] | undefined,
-        time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(),
+        time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(turn),
       })
     } catch (err) {
-      cockpit.chat.push(await turnEndedBubble(err, sent))
+      turnChat(turn).push(await turnEndedBubble(err, sent, turn))
     }
   })
 }
@@ -1557,14 +1675,22 @@ export function applyAskUser(
 ): void {
   const payload = forLiveTurn(ev)
   if (payload === null) return
-  askSession = eventSession(ev)
-  cockpit.ask = payload
+  writeLive(eventSession(ev), (l) => { l.ask = payload })
+  // The addressee only moves when the card being asked about is the one on
+  // screen: a parked chat's question waits in its parked state, and stamping
+  // it here would make the next click on the VISIBLE card answer it.
+  if (liveHome(eventSession(ev)) === (cockpit as unknown as ParkedTurn)) {
+    askSession = eventSession(ev)
+  }
 }
 
 export function applyAskDone(ev?: SessionEvent<unknown> | unknown): void {
   if (ev !== undefined && forLiveTurn(ev) === null) return
-  askSession = ''
-  cockpit.ask = null
+  const id = ev !== undefined ? eventSession(ev) : ''
+  writeLive(id, (l) => { l.ask = null })
+  if (!id || id === askSession || liveHome(id) === (cockpit as unknown as ParkedTurn)) {
+    askSession = ''
+  }
 }
 
 /** Which chat the card on screen is addressed to. '' when nothing is asking. */
@@ -1573,15 +1699,24 @@ let askSession = ''
 /** Deliver the user's choice (an option click or free text) to the blocked tool. */
 export function answerAsk(answer: string): void {
   if (!answer.trim()) return
-  const session = askSession || cockpit.turnSession
+  // The card being clicked is always the one on screen, so the open chat is the
+  // honest fallback when no stamp named the addressee.
+  const session = askSession || cockpit.openSession || cockpit.turnSession
   cockpit.ask = null
   askSession = ''
   AnswerUserQuestion(session, answer)
 }
 
-/** todo_write tool: the model replaced its task checklist. */
-export function applyTodos(todos: CockpitState['todos']): void {
-  cockpit.todos = Array.isArray(todos) ? todos : []
+/** todo_write tool: the model replaced its task checklist.
+ *
+ * Stamped and routed like every other live event (the plan panel is the
+ * session's — ParkedTurn carries it): a background chat re-planning must not
+ * overwrite the checklist of the chat the user is reading. A bare array is
+ * still accepted for an older engine across a dev reload. */
+export function applyTodos(ev: SessionEvent<CockpitState['todos']> | CockpitState['todos']): void {
+  const todos = forLiveTurn(ev)
+  if (todos === null) return
+  writeLive(eventSession(ev), (l) => { l.todos = Array.isArray(todos) ? todos : [] })
 }
 
 /** The user putting down a plan that is not going to be finished.
@@ -1719,48 +1854,44 @@ function eventSession(ev: unknown): string {
   return ''
 }
 
-/** Whether an event belongs to the live state this window is currently holding.
+/** Unwrap a live event's payload, adopting a stamp the window did not expect.
  *
- * One live block today, so this drops nothing in practice: the only turn that
- * can be running is the one it names. It is the seam the per-session live state
- * lands on — when there are several, this stops being a filter and becomes the
- * lookup that finds the right one — and it is a guard in the meantime, because
- * an event drawn into another chat's timeline is worse than one not drawn.
+ * This used to be the FILTER: one live block, one `turnSession`, and every
+ * event whose stamp disagreed was dropped. That was honest while only one turn
+ * could run — and the day several could, it was the freeze the owner
+ * screenshotted (22 ส.ค.): starting a second chat's turn overwrote
+ * `turnSession`, so every event from the first was discarded before
+ * `writeLive` could file it, and that chat sat on "กำลังคิด" forever while its
+ * engine worked perfectly.
+ *
+ * Routing is `writeLive`'s job now — it alone decides which chat's live state
+ * an event lands in, screen or parked. What is left here is the two edges only
+ * this side can see:
+ *
+ * An unstamped event (an older engine across a dev reload) is treated as the
+ * chat on screen, which is what this window did for its whole life.
+ *
+ * A stamp naming a chat this window holds NOTHING for — not on screen, not
+ * parked, not a turn it started — cannot be somebody else's turn; there is no
+ * somebody else. It is this window's own turn, running in a session whose id
+ * the window guessed and guessed badly (the first message of a brand-new chat,
+ * where the engine stamps the session it is about to create). The engine's
+ * stamp wins: the turn's ref and `turnSession` are corrected so everything
+ * later — writeLive's fallback, the finally in runLiveTurn — lands where the
+ * work actually went. Guarded by awaitingReply: outside a turn the window has
+ * no claim to correct, and the stray is dropped.
  */
 function forLiveTurn<T>(ev: SessionEvent<T> | T): T | null {
   if (!ev || typeof ev !== 'object' || !('sessionId' in (ev as object))) {
-    // An older engine against a newer window (a dev reload across a rebuild).
-    // Treating it as the live turn's is what this window did for its whole life.
     return ev as T
   }
   const stamped = ev as SessionEvent<T>
-  if (!cockpit.turnSession || !stamped.sessionId || stamped.sessionId === cockpit.turnSession) {
-    return stamped.data
-  }
-
-  // The stamp disagrees with the chat this window thinks the turn belongs to.
-  // Two very different situations wear that shape, and the old rule dropped
-  // both.
-  //
-  // The first is ordinary and dropping is right: the event is from ANOTHER
-  // chat, one this window is tracking — parked while it works, or the one on
-  // screen while a different one runs. Several conversations at once is the
-  // point (§150), and their events must not leak into each other.
-  //
-  // The second is the window being wrong. A stamp naming a chat this window
-  // holds nothing for cannot be somebody else's turn — there is no somebody
-  // else. It is *this* turn, running in a session the window guessed the id of
-  // and guessed badly, and dropping it deletes the whole turn's visible life:
-  // no status, no tool rows, no streamed text, and a Stop that never lifts,
-  // while the engine works perfectly and the finished answer still arrives
-  // (that one comes back as SendMessage's return value, not as an event).
-  //
-  // So the engine's stamp wins the second case, because in the second case the
-  // engine is the only one who knows. Guarded by awaitingReply: outside a turn
-  // the window has no claim to correct.
-  const knownElsewhere = !!cockpit.parked[stamped.sessionId] || stamped.sessionId === cockpit.openSession
-  if (knownElsewhere || !cockpit.awaitingReply) return null
-  cockpit.turnSession = stamped.sessionId
+  const sid = stamped.sessionId
+  if (!sid || liveHome(sid)) return stamped.data
+  if (!cockpit.awaitingReply) return null
+  const ref = runningTurns.find((turn) => turn.id === cockpit.turnSession)
+  if (ref) ref.id = sid
+  cockpit.turnSession = sid
   return stamped.data
 }
 
@@ -1798,9 +1929,12 @@ export function applyAgentChunk(
   })
 }
 
-// First/last reasoning-chunk timestamps this turn, for the "thought for Xs" label.
-let thinkStartedAt = 0
-let thinkLastAt = 0
+// First/last reasoning-chunk timestamps per session, for the "thought for Xs"
+// label. A map rather than the pair of module globals it used to be: two chats
+// thinking at once shared one clock, so whichever streamed last set the other
+// one's reading. Keyed the same way live state is routed; cleaned up in
+// runLiveTurn's finally.
+const thinkClocks = new Map<string, { start: number; last: number }>()
 
 /** Live reasoning/thinking text from the Go engine (see desktop/app.go
  * SendMessage's onReasoningChunk) — only fires for providers that stream
@@ -1810,9 +1944,15 @@ export function applyReasoningChunk(ev: SessionEvent<string> | string): void {
   const chunk = forLiveTurn(ev)
   if (chunk === null) return
   const now = Date.now()
-  if (!cockpit.reasoningText) thinkStartedAt = now
-  thinkLastAt = now
-  writeLive(eventSession(ev), (l) => { l.reasoningText += chunk })
+  // After forLiveTurn, an unstamped event is the screen turn's — key it by the
+  // same name turnArtifacts will read it back under.
+  const key = eventSession(ev) || cockpit.turnSession
+  writeLive(eventSession(ev), (l) => {
+    const clock = thinkClocks.get(key)
+    if (!clock || !l.reasoningText) thinkClocks.set(key, { start: now, last: now })
+    else clock.last = now
+    l.reasoningText += chunk
+  })
 }
 
 /**
@@ -1894,9 +2034,10 @@ export async function stopBackgroundRun(runId: string): Promise<void> {
  * user's tokens, and a meter that quietly left them out would read lowest at
  * exactly the moment four delegates were spending the most.
  *
- * Rounds for another chat are dropped. Several conversations can work at once,
- * and adding a spend this window did not cause would put one chat's bill under
- * another chat's composer.
+ * Each round lands on ITS chat's meter — screen or parked, the same routing
+ * every live event takes. A round from a chat this window holds nothing for is
+ * dropped, because adding a spend this window did not cause would put one
+ * chat's bill under another chat's composer.
  */
 export function applyUsageRound(round: {
   session?: string
@@ -1908,25 +2049,25 @@ export function applyUsageRound(round: {
   priced?: boolean
 }): void {
   if (!round) return
-  const here = cockpit.turnSession || cockpit.openSession
-  if (round.session && here && round.session !== here) return
   const spent = (round.in ?? 0) > 0 || (round.out ?? 0) > 0
-  const spend = cockpit.turnSpend
-  cockpit.turnSpend = {
-    in: spend.in + (round.in ?? 0),
-    out: spend.out + (round.out ?? 0),
-    cached: spend.cached + (round.cached ?? 0),
-    // Sticky once any round has claimed cache accounting. A turn that ran
-    // partly on a provider that reports it and partly on one that does not
-    // still has a real cached figure, and dropping the flag on the second
-    // round would hide a number that was truthfully measured.
-    cacheReported: spend.cacheReported || round.cacheReported === true,
-    cost: spend.cost + (round.priced ? (round.cost ?? 0) : 0),
-    // Counted rather than flagged, so the panel can stay silent about money for
-    // a turn it can only half account for. A running total that quietly omits
-    // three rounds is a number the user would trust and should not.
-    unpriced: spend.unpriced + (spent && !round.priced ? 1 : 0),
-  }
+  writeLive(round.session ?? '', (l) => {
+    const spend = l.turnSpend
+    l.turnSpend = {
+      in: spend.in + (round.in ?? 0),
+      out: spend.out + (round.out ?? 0),
+      cached: spend.cached + (round.cached ?? 0),
+      // Sticky once any round has claimed cache accounting. A turn that ran
+      // partly on a provider that reports it and partly on one that does not
+      // still has a real cached figure, and dropping the flag on the second
+      // round would hide a number that was truthfully measured.
+      cacheReported: spend.cacheReported || round.cacheReported === true,
+      cost: spend.cost + (round.priced ? (round.cost ?? 0) : 0),
+      // Counted rather than flagged, so the panel can stay silent about money for
+      // a turn it can only half account for. A running total that quietly omits
+      // three rounds is a number the user would trust and should not.
+      unpriced: spend.unpriced + (spent && !round.priced ? 1 : 0),
+    }
+  })
 }
 
 /**
@@ -1974,10 +2115,12 @@ function autoCollectFinished(): void {
  * this turn's list, the delegation started in an earlier one and everything it
  * does now is background. An event with no parent is always the main agent's,
  * and the main agent only ever works inside a turn. */
-function listFor(ev: ToolEvent): ToolStep[] {
-  if (!ev.parent) return cockpit.toolSteps
-  const inThisTurn = cockpit.toolSteps.some((s) => s.ref === ev.parent)
-  return inThisTurn ? cockpit.toolSteps : cockpit.backgroundSteps
+function listFor(live: ParkedTurn, ev: ToolEvent): ToolStep[] {
+  if (!ev.parent) return live.toolSteps
+  const inThisTurn = live.toolSteps.some((s) => s.ref === ev.parent)
+  // backgroundSteps stays the window's one tray: a delegate that outlived its
+  // turn is background work wherever its chat is being drawn.
+  return inThisTurn ? live.toolSteps : cockpit.backgroundSteps
 }
 
 /** Give a delegation's own row the id its work is registered under.
@@ -1998,7 +2141,7 @@ function listFor(ev: ToolEvent): ToolStep[] {
  * its first step can arrive after the transcript took the row. Same objects
  * either way, so stamping the one in the message updates what is on screen.
  */
-function joinDelegationToRegister(ev: ToolEvent): void {
+function joinDelegationToRegister(home: ParkedTurn, ev: ToolEvent): void {
   if (!ev.parent || !ev.task) return
   // A delegation running inside this turn is a delegation the register knows
   // about, and until this the poll was armed only by a *background* event or by
@@ -2006,13 +2149,13 @@ function joinDelegationToRegister(ev: ToolEvent): void {
   // the list its card reads was empty and the card fell back to the row it was
   // written to ignore. The clock froze exactly where it had before.
   if (!bgPollTimer) void refreshBackgroundTasks()
-  const live = cockpit.toolSteps.find((s) => s.ref === ev.parent)
+  const live = home.toolSteps.find((s) => s.ref === ev.parent)
   if (live) {
     live.task ||= ev.task
     return
   }
-  for (let i = cockpit.chat.length - 1; i >= 0; i--) {
-    const row = cockpit.chat[i].steps?.find((s) => s.ref === ev.parent)
+  for (let i = home.chat.length - 1; i >= 0; i--) {
+    const row = home.chat[i].steps?.find((s) => s.ref === ev.parent)
     if (row) {
       row.task ||= ev.task
       return
@@ -2026,13 +2169,17 @@ function joinDelegationToRegister(ev: ToolEvent): void {
 export function applyToolEvent(stamped: SessionEvent<ToolEvent> | ToolEvent): void {
   const ev = forLiveTurn(stamped)
   if (ev === null) return
-  const steps = listFor(ev)
+  // forLiveTurn just established this session has a home (adopting the stamp
+  // if the window's guess was wrong), so the fallback is the screen — the
+  // pre-stamp behaviour, reachable only from unstamped events.
+  const home = liveHome(eventSession(stamped)) ?? (cockpit as unknown as ParkedTurn)
+  const steps = listFor(home, ev)
   // Background work just made a sound — make sure the tray is listening. The
   // poll re-arms itself while anything runs, so this only matters as the
   // starter (first event after a reload, say); an armed timer means it is
   // already being watched and one more Go call would be noise.
   if (steps === cockpit.backgroundSteps && !bgPollTimer) void refreshBackgroundTasks()
-  joinDelegationToRegister(ev)
+  joinDelegationToRegister(home, ev)
   // The loop's own story, interleaved between the calls it explains (§59).
   // Both land as finished rows: there is nothing running to close later.
   if (ev.action === 'note') {
@@ -2130,13 +2277,13 @@ export function applyToolEvent(stamped: SessionEvent<ToolEvent> | ToolEvent): vo
   // the same workbook twice — a first pass and a correction — and the answer
   // should offer it once.
   for (const path of ev.artifacts ?? []) {
-    if (path && !cockpit.turnFiles.includes(path)) cockpit.turnFiles.push(path)
+    if (path && !home.turnFiles.includes(path)) home.turnFiles.push(path)
   }
   // What the turn asked to remember. Deduped like the files above: asking twice
   // in one turn answers with the id already waiting (desktop/pending.go treats
   // the second attempt as a duplicate), and one proposal deserves one card.
-  if (ev.proposalId && !cockpit.turnProposals.includes(ev.proposalId)) {
-    cockpit.turnProposals.push(ev.proposalId)
+  if (ev.proposalId && !home.turnProposals.includes(ev.proposalId)) {
+    home.turnProposals.push(ev.proposalId)
   }
 }
 
