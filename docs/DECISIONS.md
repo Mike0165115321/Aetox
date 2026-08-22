@@ -5546,6 +5546,47 @@ So the room is a `page` rather than a `soon`, and that is the one thing the conc
 
 **Two lessons, and the second one cost more than the first.** A request to add a room is not a licence to re-file the rooms already there. And a decision the owner has made is not re-openable by me because the thing it decided turned out to be inconvenient to build — the concern was worth raising and was raised; what it earns is a better room, not a withdrawn door.
 
+### 158.10 Amendment, 2026-08-22 — the third door was drawn but never registered
+
+The owner, asking for an audit rather than a feature: *"ผมหมายถึงผมถามแค่ว่าระบบอ่ะมัน แยก หน้าผู้ช่วย หน้าโค้ด และ หน้าทีมได้ดีหรือยัง"*.
+
+**It was not.** ผู้ช่วย and โค้ด separate cleanly — one room table, history scoped in SQL, `DeskFilter` with §158.4's `Agents` field correctly gone — and the nav tests covering it pass. ทีม was drawn in `NAV` and **left out of the second register of rooms**, `RESTORABLE_VIEWS` in cockpit.svelte.ts. The comment above that list already named two rooms it had happened to before (โปรเจกต์, then ระบบออโตเมชั่น the day after); ห้องทำงาน was the third, and the list still had no test holding it to the nav.
+
+One missing entry, and it was not cosmetic. `isOverlayView` derives from that list, and two unrelated things read it: Escape, and BrowserPane — which hides a **native OS window** that composites above the webview and cannot be reached with a z-index. So ห้องทำงาน could not be closed with Escape, an F5 inside it came back somewhere else, and a browser tab left open floated on top of the room. That is the 2026-08-14 *"ทำไมมีหลุดมาอ่ะครับ"* bug, arriving a second time by the exact route its own comment predicted.
+
+**And three more, all one sentence: every way out of ทีม ran to a chat that door does not have.** Startup restored the door from localStorage but never read `homeForShell`, so relaunching behind ทีม landed on `activeView: 'chat'` — a foreign conversation under a sidebar with one room and no history. ห้องทำงาน's back button said `setActiveView('chat')`, and so did Settings' when closed from that door. The file tab strip, left standing from a run of coding work, offered a `Chat` tab that led out of the door entirely.
+
+**Decision: a door's home is not an overlay, and the two registers are held together by a test.**
+
+- `isOverlayView` stops asking `view !== 'chat'` — true only while every door landed on a conversation — and asks whether the view is any door's `home`, read off `SHELLS`. A fourth door cannot arrive without this knowing.
+- **ห้องทำงาน renders inside `<main>`, not over the window.** §158.9 already said *"the rooms row stays; that is the door"* — and under a full-window overlay that row, and the topbar's door menu with it, was never on screen. The page had no way out that did not leave the door. So it loses its back button, because it is the door's home and there is nothing behind it to return to.
+- `closeOverlay()` replaces `setActiveView('chat')` at every page's exit, and `restoreActiveView()` falls back to the door's home. Both read the same `homeForShell`.
+- The tab strip is gated on `shellHasChats`.
+
+**What is deliberately NOT decided here.** The inspector still draws on all three doors. That is not new and not this fix — the storefront has always shown it — so it stays a design question rather than something a leak audit gets to settle quietly.
+
+**The lesson is the one the repo keeps re-learning: a room lives in two lists, and only one of them is the one anybody edits.** The fix that matters is not the missing entry, it is `doorViews.test.ts` walking `NAV` and refusing a `page` that no reload can return to. Removing `'lines'` again fails three tests instead of shipping.
+
+### 158.11 Amendment, same day — the door comes off the switch until the room is real
+
+With the leaks closed, the owner walked into ทีม and looked at what was actually there. First he asked for a label — *"ขึ้นว่า รอติดตามเวอร์ชั่นถัดไปได้มั้ยครับ"* — then answered his own question a moment later: *"ไม่ดิไม่ให้กดได้ดีกว่า หรือไม่แสดงเลยดี ผมว่าไม่แสดงเลยดีกว่านะ แต่โค้ดยังมี แค่บอกในเรดมี หรือ คำอธิบายก็พอมั้งว่าจะมีโหมดนี้เพิ่มมา"*.
+
+**Decision: `Aetox ทีม` stays built, routed and tested, and comes off the door menu. `ShellDef.offered` is false for it, and flipping that flag is the whole of shipping it.**
+
+He is right, and the reason is one §158.9 already made from the other end. That section refused `kind: 'soon'` for ห้องทำงาน because a disabled button would have been the only thing behind the door — *"walking through a door into nothing"*. The empty page it chose instead is honest, but honesty was never the thing missing: **the room is empty either way, and every version of putting it on screen is a promise the product cannot keep this week.** A label saying "รอติดตามเวอร์ชั่นถัดไป" would have been the same promise with a date on it. Not offering the door costs the user nothing, because there is no button to be disappointed by.
+
+**Three things this is deliberately not.**
+
+It is **not a deletion**, and the flag is what keeps that true. `deskFilterFor`, `homeForShell`, `shellHasChats`, `isOverlayView`, the `lines` room, the page and every fix in §158.10 stay live and stay exercised — `doorViews.test.ts` reaches the door through `setShell` and would go quiet the day someone removed it. A feature that is switched off and tested is a flag; a feature that is switched off and untested is a rumour.
+
+It is **not a withdrawal of the door** (§158.9's second lesson, and it applies to the owner's own hand as much as to mine): the decision that ทีม is a door stands, in the code, in COMPANY.md and in the vocabulary. What changed is when the menu says so.
+
+And it is **not silent**. The one thing a hidden feature must not do is disappear, so it is announced — in `docs/release-notes/v1.5.0.md`, which is opened as a draft for it.
+
+**Not in the README, and the owner corrected me on that within the hour: *"หรือว่าไม่เพิ่มในเรดมีดี เพิ่มใน 1.5.0 ดีกว่า ไม่ต้องยุ่งกับเรดมี อันนั้นสำคัญสุด"*.** He is right and the distinction is worth keeping: **the README says what the app IS, release notes say what CHANGED.** A door that cannot be opened is not something the app is — putting it in the README would have made the page describe a product the download does not match, on the one page a stranger reads first. The release note is where a promise about a future version belongs, and it costs the README nothing.
+
+**One thing that had to move with it, and would have been easy to miss.** The door was in use when it left — this machine had `aetox-shell: 'team'` in localStorage — and that key outlives the build. So `preferred()` restores only *offered* doors now: without that, the next launch would have opened behind a door the menu could no longer take it out of. `RESTORABLE_DOORS`, and a test for it.
+
 ## 161. Decision — The Counts Were a Claim (2026-08-21)
 
 The owner, after using the โค้ด desk: *"เราลืมให้มันแสดงตอน Aetox แก้โค้ด แสดงเหมือน Claude code อ่ะ ขึ้นว่าแบบมันแก้โค้ดอะไรไปตรงไหนบ้าง แบบเชื่อมกับ Git"*.
@@ -5639,3 +5680,151 @@ Nothing is hosted yet, so **`DefaultBaseURL` is the empty string** and `account.
 Closed is **absent**, not disabled and not badged "soon". The settings page is left out of the nav (so the settings search cannot find it either), the sidebar menu has no sign-in row, `Start` returns `ErrNotOpen` without opening a listener or a browser, and `aetox account` says the system is not open in this build. A greyed-out control is a promise with a date attached; there is no date.
 
 Two things keep the switch honest. `AETOX_ID_URL` opens it for a checkout running against a local server, which is how all of this was tested end to end. And `TestNoServerIsConfiguredInThisBuild` fails the moment `DefaultBaseURL` is filled in — so opening the feature means editing a test whose comment points back here, rather than editing a constant in passing.
+
+## 163. Decision — A Brake You Cannot Reach Is Not a Brake (2026-08-22)
+
+The owner watched `@research` reach its seventy-second tool call and wrote: *"เราไม่มีปุ่มหยุดเอเจนหรือซับเอเจนตอนทำงานเลย แย่แล้ว โดยสูบหมดตัวดิ"*. He was right, and the gap was structural rather than a missing button.
+
+§105 settled that work handed to a delegate outlives the turn that handed it over, and that was the correct call. What it left behind was this: the composer's Stop is the only door into `Delegations.StopAll`, and it only draws while `awaitingReply` is true. So the ordinary path — the assistant dispatches, says "สั่งไปแล้วครับ", the turn ends, the button flips back to send — left up to four sub-agents looping, each with no loop cap (§110), and **nothing on screen anywhere that could end them**. §110 said the bound is Stop; on that path there was no Stop.
+
+The second half was the same shape. `StopAll` was the whole vocabulary, so the answer to one runaway delegate was to throw away the three that were fine.
+
+### 163.1 The same cancel, reached by a name
+
+`Delegations.Stop(id)` and `StopRun(runID)` narrow the act that already existed. All three now go through one unexported `stop(t)`, which marks before it cancels — a delegate can notice the cancelled context and finish within microseconds, and a snapshot taken in that window would otherwise draw work the user just stopped as work that failed on its own.
+
+The buttons live on the tray card ([BackgroundWork.svelte](../desktop/frontend/src/lib/BackgroundWork.svelte)), one per delegate and one per declared run, because that card is on screen for exactly as long as the work is unclaimed. That makes it the right surface and means the composer's Stop keeps its meaning untouched. A run gets its own button rather than being stopped a worker at a time, which would be a race against its own phases starting more.
+
+`Stop` returning false is not an error. The tray polls every two seconds, so a row can finish between the paint and the click, and "it is already over" is the outcome the person wanted.
+
+### 163.2 Stopped is not failed, and nothing collects it
+
+`TaskInfo.Stopped` is its own flag and `taskState` reads it ahead of both `Running` and `OK`.
+
+Without it, a stopped delegate is `Running:false, OK:false` — indistinguishable from one that broke. That matters because of what the app does with a finished delegate: `autoCollectFinished` sends a turn telling the model to go and read the result. Applied to work somebody just paid a click to end, that spends another turn on it and invites the model to start the same job again. So auto-collect skips `stopped` on purpose, and [SKILL.md](../internal/skill/skills/aetox/SKILL.md) tells the assistant the same thing in words: a stopped delegate sends no `[ระบบ]` message and must not be chased.
+
+What is left on screen is a receipt, and its counts are the point of one — how far it got, and what it had already cost by the time the brake reached it.
+
+### 163.3 The spend was measured all along and never said out loud
+
+The owner's second sentence: *"ระหว่างเอเจนทำงานควรจะเห็น อินพุตโทเค็นและเอาท์พุตโทเค็น ระหว่างนั้นด้วย ... ซับเอเจนด้วยควรจะเห็น"*.
+
+Two different holes, both of them one line from being closed:
+
+- **Sub-agents had the split and threw it away.** `task.go` held a whole `model.Usage` and called `self.spend(u.TotalTokenCount())`. `spend` now takes the `Usage`, and `TaskInfo` carries `TokensIn`/`TokensOut` alongside the total the run cards already read.
+- **The main agent said nothing at all.** Every round has always reached `recordTokenUsage`, which wrote it to a table nobody reads until the next day. It now also emits `usage:round`, which the composer adds up.
+
+Two numbers rather than one, because they fail differently and the brake is a different decision for each: input climbing is a transcript being re-sent every round; output climbing is a model that will not stop writing.
+
+The meter sits **beside** the context ring, not inside it. Those are two facts that happen to share a unit — how full the window is, and what has been spent — and only the second answers "am I being drained". It resets when a turn starts rather than when one ends, because a delegate outlives the turn that dispatched it and spend continuing while nothing looks busy is precisely the case worth showing.
+
+Cache accounting stays honest throughout: `CacheReported` distinguishes "this provider does not account for a cache" from "it does, and nothing hit". Both are zero, and only one of them may be drawn.
+
+## 164. Decision — The Engine Had Already Written It Down (2026-08-22)
+
+Owner, pressing Stop on a turn that had been working for several minutes: *"เวลาผมกดหยุดอ่ะ UI หรือหน้าแชท แชทมันจะหายไปเลย ทั้งที่เมื่อกี้มันคิดมายาวมาก"*.
+
+Everything he had been reading vanished, and what replaced it was one line saying หยุดการทำงานแล้ว. The work was not lost. It was in the database the whole time.
+
+`App.runTurn` builds its agent message **above** the error branch, deliberately — same reply, same reasoning, same parts for a turn that failed as for one that succeeded, with a comment saying why. `appendFailedTurn` stores it. Reading the row for the turn the owner stopped (`messages` id 831) shows **sixteen parts**: every line of narration and every tool call, exactly as the turn happened.
+
+None of it reached the bubble. `App.runTurn` returns that message alongside the error, and **Wails discards a return value when the error is non-nil**, so the window fell back to the only copy it had locally — `cockpit.streamingText`. That field holds one round: the one being written now. The engine erases it (`discardAnswerPreview`) at the end of every round that ends in a tool call, which is precisely the moment anybody presses Stop. So the bubble was assembled from a field that was empty by construction.
+
+`turnArtifacts()` had already patched half of this by snapshotting the live timeline and thinking. What it could not reach was the narration between the tool calls and the reply text itself, because those are not in the window's live panels at all.
+
+### 164.1 Read the row, do not rebuild it
+
+`turnEndedBubble` is now async and asks the store first (`storedEndingFor`), through `restoreTranscript` rather than by hand. Reopening a session has always drawn this row correctly; a second way to turn a stored failure into a bubble is a second way for the two to disagree.
+
+The live snapshot did not go away, it moved to being the fallback and the filler: where the store has nothing, `steps`/`reasoning`/`producedFiles`/`proposals` come from the window, so a stored answer is never overwritten by a poorer one.
+
+**Guarded on the question, not on position.** If the rejection came from somewhere that never reached `appendFailedTurn` — the engine gone, Wails itself — the newest failed row belongs to an older turn, and grafting it would answer this question with that one's work. `storedEndingFor` returns null unless the row's question is the question that was just asked.
+
+The reattach path (`applyAgentDone`, after a reload or after leaving and returning to a running chat) already restored from the store and was never part of this bug — which is also why the fix is shaped the way it is: the ordinary path now does what the reload path always did.
+
+## 165. Decision — The Forecast and the Bill Belong in One Panel (2026-08-22)
+
+§163 put the turn's spend on the composer bar, beside the context ring. The owner looked at the result and moved it: *"เข้า 45.3k · ออก 1.4k เอาไว้ในตรงนี้ได้มั้ย ทำหน้าเพิ่มตอนมันทำงานด้วย แสดง hit miss และเงินด้วยหากแสดงได้"*.
+
+He was right, and the screenshot he sent proves it twice over. The bar read `1%  เข้า 45.3k · ออก 1.4k`, and the panel behind it read *"ยังไม่ได้คุยอะไรเลย ยังไม่เสียโทเคนสักตัว"*. Two numbers on one screen, disagreeing.
+
+### 165.1 The bug the screenshot caught
+
+The panel was the honest one. `turnSpend` lived on `cockpit` and nothing cleared it when the chat on screen changed, so a brand-new conversation opened under the previous one's bill.
+
+Fixed where the rest of the live state already handles this: `turnSpend` is now part of `ParkedTurn`, so `parkLive`/`restoreLive` carry it for a chat that walks away mid-turn, and `clearLive` — *"everything the chat arriving on screen starts from when it is NOT working"* — zeroes it for one that does not. The reset §163 had put in `resetBackgroundWork` is gone; a second owner for one field is how the two drift apart.
+
+`emptyTurnSpend()` replaces the object literal at all four reset sites, so a field added to the type cannot silently keep its old value on three of them.
+
+### 165.2 Two facts that share a unit, read in the same breath
+
+The rows above are a forecast: what the NEXT request will weigh. The rows below are the bill: what this turn HAS spent. Separate questions, but a person asks them together, and the panel is where both fit without either pretending to be the other. Ruled off with a border rather than merely spaced, because a reader scanning one column of numbers has no way to tell where the prediction stops and the money starts.
+
+Hit and miss are drawn as children of the input they divide, and **only when the provider accounts for a cache at all**. A local runtime reports neither; a 0% hit rate it never claimed would be the panel inventing a measurement.
+
+### 165.3 Money is computed in Go, and is absent rather than approximate
+
+`UsageRound` now carries `Cost` and `Priced`, filled by `priceRound` next to the emit. Not sent as a rate for the window to multiply, for two reasons: the catalog lives on the Go side, and so does the rule that **a subscription is not a meter** — Codex answers with models OpenAI also sells per token, so pricing those calls at the API rate would bill a flat plan twice over and call the result spend. A window handed rates would need that rule too, and would be a second place to get it wrong.
+
+The cached half is charged at the cache rate (`ModelPrice.Cost` already splits them). On DeepSeek V4 Flash that is a fifty-fold difference against a 93-98% hit rate, so the alternative is not a rounding error, it is an answer off by an order of magnitude.
+
+The window counts `unpriced` rounds rather than flagging them, and **draws no money at all while that count is non-zero**. A total quietly missing three rounds is a number the user would trust and should not, and "this model is not in the price catalog" is not "this model is free".
+
+### 165.4 One vocabulary, and it is the provider's
+
+Owner, seeing the first draft's Thai labels: *"เอาเป็น Input output ปกติเลยได้มั้ย ศัพท์เดียวกันจะได้ตรวจสอบได้ง่าย มาตรฐานเหมือนหน้าสถิติการใช้งาน"*.
+
+The panel and the stats page report the same four quantities, and the point of matching vocabulary is that a figure can be carried from one screen to the other and checked. `อ่านเข้า` here against `Input` there defeats that before anyone opens either.
+
+So the panel does not copy the stats page's words, it **uses its keys**: `settings.usageInput`, `settings.usageOutput`, `settings.usageHit`, `settings.usageMiss`. Copies would agree today and drift the first time one of them was reworded. `chat.spendIn/Out/Hit/Miss` are deleted from all three locale files rather than left as unused synonyms.
+
+Those keys are English in every locale, including Thai, and that was already the stats page's choice: these are the provider's own billing terms, and a translated `Cache hit` is a term you cannot search a provider's dashboard for.
+
+## 166. Decision — An Answer Already Given Is Not Asked Again (2026-08-22)
+
+Owner, with a screenshot of a red bubble and a spinner still turning under it: *"เช็ค log ทีทำไมมันแอบทำงานเบื้องหลังแบบนั้นครับ ทั้งที่มีปัญหาไปแล้ว ผู้ใช้ก็แจ้งว่า บางทีมันบั๊คหรือค้าง หรือรออะไรบางอย่างมันจะกินโทเค็น เครดิตเขา ผมหายังไงก็หาไม่เจอ"*.
+
+The reason it could not be found is that it was never a background task. It was inside the turn, in the gap between two log lines:
+
+```
+[06:38:56.443]     Complete() error: codex: the free plan's limit is used up. It resets in 19 days.
+[06:39:01.530]   --- Agent.RespondWithTools (tools=28) (11124.7ms) ---
+```
+
+Five seconds after the provider gave its final answer, with nothing written down in between. `RespondWithTools` answered a first-round failure — **any** first-round failure — by asking the model again without tools. Measured: 2 `Complete()` calls per question, and `retryTransport` spending 3 attempts under each, so one question against a plan that had said *nineteen days* cost six requests and six seconds of backoff, all of it under an unchanged "กำลังคิดคำตอบ...".
+
+### 166.1 The retry only helps when the tools were the problem
+
+The branch dated to the first commit (a37f52a, 8 June) — scaffolding from when tool-calling support was still being proven, never a fix for a measured defect. Its one defensible case is a provider that accepts the model and rejects the tool block, and that case is **already answered one layer down**: `rejectsTools` in [ollama.go](../internal/model/ollama.go) reads the refusal in the provider's own dialect and re-sends as plain chat, inside the provider, where the knowledge lives.
+
+So the door stays, narrowed to what it was for. `model.IsToolBlockRejection` ([tool_support.go](../internal/model/tool_support.go)) is the same shape as `IsContextLengthError`: vendor phrases, matched conservatively, each entry carrying the refusal and the thing refused *in one phrase* — providers echo the request they rejected often enough that a body containing the word "tools" proves nothing.
+
+`OpenAICompatibleProvider.SupportsToolCalling()` returns a blanket `true` for every row it serves, so a model that turns out not to have it has nothing else to catch it. That is why this is narrowed rather than deleted, and it belongs in the provider layer eventually, next to Ollama's.
+
+The asymmetry now runs the right way. It used to retry by default and the cost was a second bill on every failure; it now declines by default and the cost of being wrong is an honest error with a ลองใหม่ button — which is what the user should have been shown.
+
+And it says so in the log when it does run. The silence was the half that made this unfindable.
+
+### 166.2 A dropped connection is not the model being too weak
+
+The expensive failure was never the quota wall, which bills nothing. It was the blip.
+
+A first-round timeout fell into the same branch, was asked again without tools, returned nothing, and reached `recoverEmptyReply` — a **third** call, whose usage is not recorded anywhere — which returns `emptyReplyFallback` and a **nil error**. So a Wi-Fi stutter was stored as a *successful* turn whose text reads "เกินขีดจำกัดของโมเดลปัจจุบัน ... ลองแบ่งงานให้เล็กลงหรือเปลี่ยนโมเดล".
+
+Three calls, two of them tool-less, no red bubble, no ลองใหม่, and the app's own advice to the user was to go pay for a bigger model to fix their network. `appendFailedTurn` never ran, because as far as the engine was concerned nothing had failed.
+
+`TestABlipIsNotReportedAsTheModelsFault` holds that shut. The rule it writes down is small enough to state once: **a turn that began with a provider error must not end as an answer.**
+
+### 166.3 The window kept drawing a turn that was over
+
+The owner sent a second screenshot the same morning: one reply drawn twice — once as a finished bubble with its copy/ลองใหม่ row, once again below it with none — over a Stop button that could not be dismissed. The engine log for that turn is three lines and innocent: one `Turn`, one `response.text`, 2.6s, clean exit.
+
+The live answer bubble draws under `{#if awaitingReply}`, so the second copy and the stuck Stop are not two bugs. They are one: `runLiveTurn`'s `finally` cleared `cockpit.turnSession` on the line **before** `writeLive` needed to read it, and `writeLive`'s last resort — for a turn running under an id that is neither the open chat nor a parked one — is `id === cockpit.turnSession`. The write landed nowhere. `awaitingReply`, `streamingText` and `agentStatus` all survived a turn that had ended, while the transcript had already been handed the same answer.
+
+The fix is the swap: end the turn, then let go of it. §144 built the stamp so the window and the engine "cannot drift"; they can, for exactly the first message of a new chat, where `CurrentSessionID()` answers with the session Go still holds and the engine stamps the one it is about to create. That one turn is the whole population of this bug, which is why it read as "only new chats are broken".
+
+`turnEndsWhereItRan.test.ts` fails on all three assertions with the old order and passes with the new one, so the ordering cannot be tidied back.
+
+### 166.4 Still open
+
+One finding from the first log is not addressed here: `outOfCreditsMarkers` ([httpclient.go](../internal/model/httpclient.go)) has no entry for `usage_limit_reached`, which is the word Codex uses. `insufficientQuota` therefore reads a nineteen-day wall as "going too fast" and spends the full retry budget on it — 3 requests and 3.00s of sleep, measured.

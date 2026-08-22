@@ -41,7 +41,7 @@ Skills are the deliberate exception and do **not** live here — see below.
 | `<DataRoot>/identity` | every `*.md` here is folded into the system prompt of every session |
 | `<DataRoot>/memory` | `MEMORY.md` (cross-desk), `modes/<desk>.md` (per desk), `projects/<name>-<hash>.md` (per project folder) |
 | `<DataRoot>/modes` | user desk manifests; a file here overrides the bundled desk of the same name |
-| `<DataRoot>/agents` | one folder per เอเจน: `<name>/AGENT.md` + `<name>/MEMORY.md` + `<name>/STARTERS.md` + `<name>/skills/` |
+| `<DataRoot>/agents` | one folder per เอเจน: `<name>/AGENT.md` + `<name>/MEMORY.md` + `<name>/STARTERS.md` + `<name>/skills/` + `<name>/mcp.json` |
 | `<DataRoot>/subagents` | ซับเอเจน — read-only in practice, see below |
 | `<DataRoot>/project` | โปรเจกต์ of the storefront door |
 | `<DataRoot>/prompts` | user prompt presets |
@@ -50,8 +50,8 @@ Skills are the deliberate exception and do **not** live here — see below.
 | `<DataRoot>/permissions.json` | approval rules |
 | `<DataRoot>/hooks.json` | hooks |
 | `<DataRoot>/credentials.json` | provider API keys |
-| `<DataRoot>/account.json` | the user’s Aetox account, if they signed in — a different thing from the sign-ins above |
 | `<DataRoot>/oauth.json` | sign-ins |
+| `<DataRoot>/account.json` | the user’s Aetox account, if they signed in — a different thing from the sign-ins above |
 | `<DataRoot>/model-preference.json` | model choice, last desk |
 | `<DataRoot>/model-catalog.json` | cached prices and context windows from models.dev; refetched at launch, and the app runs on this copy when offline |
 | `<DataRoot>/.env` | whatever the user put in it |
@@ -183,16 +183,26 @@ kind** — nothing inside the file decides which it is.
   Work handed to either of them **outlives the turn that handed it over**
   (§105): a delegate the assistant did not collect before answering keeps
   working, is collectable in a later turn by the same task id, and a question it
-  parked on can be answered then too. Four in flight at once is the cap. The one
-  thing that ends one early is the user pressing **Stop**, which ends every
-  running delegate — that is what makes Stop a statement about the work rather
-  than about the turn. The user watches all of this on a card below the
-  conversation: each uncollected delegation, its last few tool calls, and — for
-  one parked on a question — the question with a box to answer it.
+  parked on can be answered then too. Four in flight at once is the cap. What
+  ends one early is the user: **Stop** in the composer ends every running
+  delegate, and the card below the conversation carries a **หยุด** button on
+  each delegate and on each declared run, which ends that one alone. Either way
+  it is a statement about the work rather than about the turn.
+
+  The user watches all of this on that card: each uncollected delegation, its
+  last few tool calls, what it has read and written in tokens, and — for one
+  parked on a question — the question with a box to answer it.
 
   Nobody has to press anything to get a result. The moment a delegation
   finishes, a `[ระบบ]` message arrives saying so; collect it with
-  `task action=collect` and report what it found. An answer typed on the card
+  `task action=collect` and report what it found.
+
+  **A delegate the user stopped sends no such message, and you must not go
+  looking for one.** Nothing collects it, on purpose: they ended that work
+  deliberately, and restarting the same job — or spending a turn reporting on
+  the wreckage of it — is the opposite of what the click meant. If a stopped
+  delegate mattered to the answer, say plainly that the work was stopped and
+  what is therefore missing, and let the user decide whether to ask again. An answer typed on the card
   arrives as "ตอบ task_N ด้วย task action=answer ว่า …". Both are ordinary user messages — do exactly what
   they say.
 
@@ -203,7 +213,10 @@ kind** — nothing inside the file decides which it is.
   be: a phase that was promised and never filled sits at zero on the user's card
   for the whole run, so a checking round skipped because the answer already
   looked finished is visible rather than silent. There is **no token ceiling** on
-  a run (owner, 16 ส.ค.) — the card shows what it is spending and Stop ends it.
+  a run (owner, 16 ส.ค.) — the card shows what it is spending, split into what
+  each delegate read and what it wrote, and Stop ends it. Both halves of that
+  bargain are the user's to act on, not yours to ration: never refuse or shorten
+  work to save tokens on your own initiative.
 - **Desks (modes)** — what is on the desk, never who is sitting at it. Bundled
   manifests are compiled in; a file in `<DataRoot>/modes` with the same name
   overrides one, and a new file is a new desk.
@@ -232,6 +245,7 @@ before you tell a user what they must write:
 | `model` | Whatever the session is running |
 | `icon` | Derived from what the worker produces |
 | `needs` | Nothing declared. Entries are `connection:<id>` or `mcp:<server>`, and `\|` between two of them means "either one satisfies this". A need **declares and never grants**: the grant is `for:` on the connection or the server. What it buys is that an agent missing one is told so — the fact and where the user switches it on, in its own prompt (§114), and a mark on its page in การตั้งค่า › เอเจน. What it does about it is its own call |
+| `publisher` `package` `version` `requires-app` | Nothing about where this worker came from. They are the **shipping label**, for a worker that was written somewhere else: who made it, what it is called wherever it came from, which release this is, and the oldest Aetox known to run it. Nothing in the resolver reads them, on purpose — the **local id is the folder name** and stays the folder name, so somebody who installs a worker may rename it and have `task`, `for: agent:<name>`, its memory file and its job history all keep working |
 
 Beside `AGENT.md`, a worker may keep a `STARTERS.md` — the question at the top
 of an empty chat with it, and the cards under it. Markdown that happens to
@@ -241,6 +255,22 @@ name. `STARTERS.en.md` beside it is the English version. All of it is optional �
 a worker without one opens with the cards the app draws for any colleague — but
 writing one is what makes a hired worker feel like the shipped ones, so offer it
 whenever you write an `AGENT.md`.
+
+A worker may also keep an `mcp.json` — the tool servers it brings with it, as
+an array in `mcp-servers.json`'s own schema. It is a **declaration and never a
+grant**, exactly as `needs:` is: what the machine actually connects stays
+`mcp-servers.json` and only that, and the file in the folder is read once, when
+a package is installed. A secret in it is written as `${ask:NAME|label}`, which
+is a field the person installing fills in — a package carrying a working token
+would be carrying its author's account.
+
+**Neither road is on screen yet.** Exporting exists in the app (`ExportAgentPackage`
+writes a .zip of the folder, without `MEMORY.md` — what that worker learned on
+*this* machine is never part of what travels) but has no button on it, and
+reading a package back in is not built at all. So an `mcp.json` sitting in a
+folder is a file nothing acts on today: never tell a user that dropping one
+configures a server. The standard is
+`docs/architecture/agent-package-standard-2026-08-08.md`.
 
 **A file holds a pool; the window draws four of it.** Up to 24 cards per file,
 four dealt at a time from a shuffled bag, with a "show me another four" button
@@ -393,6 +423,7 @@ as MCP above. It is Settings → การเชื่อมต่อ, and the u
 
 A connection that has never been placed is carried by every desk. Nothing was
 taken away from anyone by this file arriving.
+
 ## บัญชี Aetox — the user's own account
 
 Separate from everything above, and easy to confuse with it. `oauth.json` holds
@@ -414,7 +445,6 @@ Two things to say correctly if asked, once it is open:
   is Settings → บัญชี Aetox, or `aetox account login` on the CLI, and the user
   does it. If asked whether they are signed in, say where to look; do not read
   `account.json` to find out — it holds a bearer token.
-
 
 ## Reaching a folder outside the project
 

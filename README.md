@@ -18,8 +18,8 @@
 <p align="center">
   <a href="README.th.md">ภาษาไทย</a> ·
   <a href="https://mike0165115321.github.io/Aetox/">Website</a> ·
-  <a href="https://www.facebook.com/share/g/1BnXC5EiWg/">Community</a> ·
   <a href="https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe">Download</a> ·
+  <a href="https://www.facebook.com/share/g/1BnXC5EiWg/">Community</a> ·
   <a href="ARCHITECTURE.md">Architecture</a> ·
   <a href="docs/DECISIONS.md">Every decision, and why</a>
 </p>
@@ -38,8 +38,8 @@ shell, and drives a real browser you can watch.
 
 It is one self-contained 47.5 MB executable. There is no runtime to install alongside it, no
 `node_modules`, no bundled copy of Chromium. It talks to whichever model you point it at —
-a hosted API, a subscription you already pay for, or a 9B running in LM Studio or Ollama on
-your own GPU — and the capability comes from the app rather than from the model's parameters.
+a hosted API, a subscription you already pay for, or a 9B/35B running in LM Studio or Ollama on
+your own GPU (your data never leaves your machine or country — hook it up to Ollama and not a single byte goes anywhere) — and the capability comes from the app rather than from the model's parameters.
 That is why a small local model can still read a picture, transcribe a recording, and produce
 a spreadsheet: `image_ocr`, `audio_transcribe` and `sheet_write` are the app's, not the model's.
 
@@ -136,7 +136,7 @@ clicks by reference and types into it while you watch the same tab.
 <img src="docs/assets/cap-browser.png" alt="The agent driving a page in the workbench browser" width="100%">
 
 **Read what the model cannot see.** `image_ocr` runs Tesseract with Thai and English, so a
-screenshot, a scan or a photographed form becomes text a 9B model can reason about — no vision
+screenshot, a scan or a photographed form becomes text a 9B/35B model can reason about — no vision
 model required, and the model that *can* see gets the image itself instead.
 
 <img src="docs/assets/cap-image-ocr.png" alt="OCR pulling Thai text out of an image" width="100%">
@@ -286,7 +286,7 @@ rather than as a confusing tool error later.
 |  | Where it stands |
 |:---|:---|
 | Chat history, tool runs, produced files | On your disk, in local SQLite and plain folders |
-| Cutting the cloud off entirely | Run the model through LM Studio or Ollama — not one byte of the prompt leaves |
+| Cutting the cloud off entirely | Your data stays on your machine and in your country — run through LM Studio or Ollama and not a single byte leaves |
 | API keys | Their own file, 0600, DPAPI-wrapped against your Windows account. Off Windows there is no encryption at rest — that is stated rather than implied |
 | Secrets in logs | Stripped through one registry into all three sinks: debug log, shell audit log, and the buffer the bug-report form reads |
 | MCP secrets | `${env:VAR}` indirection, so a key never lands in the settings file |
@@ -331,9 +331,9 @@ for video work is absent from an ordinary conversation — not hidden from the m
 writers reach only the specialized desk, so the assistant delegates for a `.pptx` rather than
 carrying three tools it rarely needs.
 
-**17 providers, and the window shows every one** — OpenAI · Anthropic · Gemini · DeepSeek ·
+**20 providers, and the window shows every one** — OpenAI · Anthropic · Gemini · DeepSeek ·
 Qwen · Z.ai · OpenRouter · Codex · Groq · Mistral · Kimi · MiniMax · xAI · ThaiLLM ·
-LM Studio · Ollama · and the built-in `aetox`. OpenRouter and Codex sign in; the rest take an
+ModelScope · NVIDIA · Ollama Cloud · LM Studio · Ollama · and the built-in `aetox`. OpenRouter and Codex sign in; the rest take an
 API key or a local server address. The catalogue and the picker used to disagree; they no longer
 do, because a provider the engine knows and the window hides is one nobody can reach.
 
@@ -434,9 +434,9 @@ date-stamped, because the rule above does not have an exception for numbers we w
 
 </details>
 
-## Status — v1.4.0
+## Status — v1.5.0
 
-The core is in place. [Release notes](docs/release-notes/v1.4.0.md) ·
+The core is in place. [Release notes](docs/release-notes/v1.5.0.md) ·
 [roadmap](ROADMAP.md) · [architecture](ARCHITECTURE.md).
 
 Three things it does today that are worth knowing about:
@@ -461,12 +461,12 @@ assistant door to the code door; a code-door team with defined roles.
 [Benchmark rules](BENCHMARK.md) ·
 [Platform support](PLATFORM-SUPPORT.md) · [Roadmap](ROADMAP.md) ·
 [Automation engines](docs/AUTOMATION-ENGINES.md)
+
 ## Community
 
 There is a Facebook group for questions, ideas, and the kind of half-formed problem that does not
 fit in an issue yet: [the Aetox group](https://www.facebook.com/share/g/1BnXC5EiWg/). Bugs are
 still better filed as issues, because an issue carries the version and the log with it.
-
 
 ## Reporting bugs
 
