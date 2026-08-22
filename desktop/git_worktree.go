@@ -21,11 +21,13 @@ package main
 // user's code.
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/proc"
 	"github.com/Mike0165115321/Aetox/internal/skill"
@@ -57,11 +59,14 @@ func (a *App) GitWorkingTree() []GitFileChange {
 		return out
 	}
 
-	status, err := gitOut(root, "status", "--porcelain")
+	ctx, cancel := a.gitContext()
+	defer cancel()
+
+	status, err := gitOut(ctx, root, "status", "--porcelain")
 	if err != nil {
 		return out
 	}
-	counts := numstat(root)
+	counts := numstat(ctx, root)
 
 	for _, line := range strings.Split(strings.TrimRight(status, "\n"), "\n") {
 		if len(line) < 4 {
@@ -118,7 +123,9 @@ func (a *App) GitFileDiff(path string) string {
 
 	// HEAD's copy, or nothing when the file is new to git — `git show` fails
 	// for a path HEAD never had, and "" is exactly what that means here.
-	before, _ := gitOut(root, "show", "HEAD:"+filepath.ToSlash(clean))
+	ctx, cancel := a.gitContext()
+	defer cancel()
+	before, _ := gitOut(ctx, root, "show", "HEAD:"+filepath.ToSlash(clean))
 
 	after := ""
 	if data, readErr := os.ReadFile(full); readErr == nil {
@@ -147,9 +154,24 @@ func (a *App) gitRoot() (string, bool) {
 	return root, true
 }
 
-func gitOut(root string, args ...string) (string, error) {
-	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+// gitContext bounds every call this panel makes. The panel refreshes on a timer
+// and again at the end of every turn, so a git that hangs — an index.lock left
+// by another process, a repository on a network share — must not pile up
+// processes that nothing on screen can reach. Ten seconds is far past any local
+// `git status`, and a panel answering "nothing" beats an app leaking a git per
+// refresh.
+func (a *App) gitContext() (context.Context, context.CancelFunc) {
+	parent := a.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	return context.WithTimeout(parent, 10*time.Second)
+}
+
+func gitOut(ctx context.Context, root string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", root}, args...)...)
 	proc.HideConsole(cmd)
+	proc.KillOnCancel(cmd)
 	raw, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -159,9 +181,9 @@ func gitOut(root string, args ...string) (string, error) {
 
 // numstat maps path -> {added, removed} against HEAD, staged and unstaged
 // together, which is what the working tree actually holds.
-func numstat(root string) map[string][2]int {
+func numstat(ctx context.Context, root string) map[string][2]int {
 	counts := map[string][2]int{}
-	raw, err := gitOut(root, "diff", "--numstat", "HEAD")
+	raw, err := gitOut(ctx, root, "diff", "--numstat", "HEAD")
 	if err != nil {
 		return counts
 	}

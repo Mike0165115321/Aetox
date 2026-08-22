@@ -153,7 +153,12 @@ func TestEverySpawnCanBeStopped(t *testing.T) {
 	// be stopped, and whether it also needs a tree kill on top is a judgement
 	// about whether the program forks, which no regex can make.
 	spawn := regexp.MustCompile(`exec\.Command\(`)
-	skipDir := map[string]bool{"third_party": true, "node_modules": true, ".git": true}
+	// .claude is gitignored scratch, and on a machine that has used a coding
+	// agent it holds whole git worktrees of this same repository — so every hit
+	// inside it is a second, older copy of a line that is already being checked
+	// where it lives. Reported, it names a path CI does not have and a fix
+	// nobody can commit.
+	skipDir := map[string]bool{"third_party": true, "node_modules": true, ".git": true, ".claude": true}
 
 	var loose []string
 	err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
