@@ -634,6 +634,19 @@ type MCPServerConfig struct {
 	// For means "shown to nobody", which is a decision worth persisting; an
 	// empty Tools means "take everything", which is the absence of a decision.
 	Tools []string `json:"tools,omitempty"`
+	// Source records that this entry arrived with an agent package rather than
+	// being written by the user — "agent:<name>", the same spelling `for:` uses.
+	//
+	// It exists so that removing a bought agent can remove exactly what it
+	// brought and nothing else. `for:` cannot answer that: a user who later
+	// places the same server on a second agent has not thereby made it theirs
+	// to keep, and a server the user added by hand and then pointed at an agent
+	// looks identical from the placement alone.
+	//
+	// Empty is the normal state and means the user owns this entry. An install
+	// that reuses a server somebody already had leaves it empty on purpose —
+	// what was already yours stays yours.
+	Source string `json:"source,omitempty"`
 }
 
 // MCPDefaultDesks is where a server with no `for:` lands: the two general

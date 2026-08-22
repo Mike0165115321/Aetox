@@ -159,15 +159,50 @@ type Profile struct {
 	// server. See needs.go for the rule that makes this safe: a need is a
 	// declaration and never a grant, so a file naming something that does not
 	// exist produces a sentence on screen rather than a silently empty agent.
-	Needs   []string `json:"needs,omitempty"`
-	Prompt  string   `json:"prompt"`
-	Path    string   `json:"path,omitempty"` // on-disk path; "" for a bundled profile
-	Builtin bool     `json:"builtin"`
+	Needs []string `json:"needs,omitempty"`
+	// Publisher, Package, Version and RequiresApp are the shipping label — who
+	// made this worker, what it is called wherever it came from, which release
+	// of it this is, and the oldest Aetox that runs it.
+	//
+	// Nothing in the resolver reads them, and that is deliberate: the *local*
+	// id is the folder name and stays the folder name, so a buyer may rename a
+	// package and have `task`, `for: agent:<name>`, the memory file and the job
+	// history all keep working. These four are the *store's* id — what an
+	// update check, an install screen and "who wrote this" hold on to.
+	//
+	// A version field was refused in the 8 Aug standard, with the reason that
+	// frontmatter is additive and nobody had needed one. That held while every
+	// agent on a machine was written by the person sitting at it. It stops
+	// holding the moment one was paid for: a build that drops a tool name
+	// breaks goods somebody bought, and a version in the file is the only thing
+	// that can say why. The rule underneath it is unchanged — an unknown field
+	// is ignored, never fatal.
+	Publisher   string `json:"publisher,omitempty"`
+	Package     string `json:"package,omitempty"`
+	Version     string `json:"version,omitempty"`
+	RequiresApp string `json:"requires_app,omitempty"`
+	Prompt      string `json:"prompt"`
+	Path        string `json:"path,omitempty"` // on-disk path; "" for a bundled profile
+	Builtin     bool   `json:"builtin"`
 	// Overrides marks a user file that shadows a bundled profile of the same
 	// name. The settings page needs it because deleting one is a **revert** — the
 	// bundled profile comes back — not a removal, and a delete button that lies
 	// about that is how a user loses a capability they meant to reset.
 	Overrides bool `json:"overrides,omitempty"`
+	// Notice is something wrong with this file that is **not** fatal, in the
+	// user's language, or "" when there is nothing to say.
+	//
+	// Deliberately not Invalid, and the difference is the whole point: Invalid
+	// takes a worker out of Chairs() and off every roster, so using it here
+	// would turn a warning into a removal and break agents that work today. A
+	// Notice changes nothing about what runs. It only means a sentence appears
+	// where somebody will read it.
+	//
+	// One case today: a file in the agents home that names a desk of its own.
+	// That worker is real, parses, validates, and is missing from the ทีมเอเจน
+	// roster, from the chat picker and from every door a user can walk
+	// through — the failure that is silent from every angle except this one.
+	Notice string `json:"notice,omitempty"`
 	// Invalid is why this file cannot run, in the user's language, or "" for a
 	// healthy profile. A sub-agent-home file that claims a desk is the case: a
 	// contradiction between where a file sits and what it says is shown with
@@ -217,6 +252,16 @@ func applyHomeRules(p *Profile, agentHome bool) {
 	if agentHome {
 		if p.Desk == "" {
 			p.Desk = mode.Office
+			return
+		}
+		// Left exactly as written, and said out loud. Rewriting it to the office
+		// would be this package overruling a line the user typed, and refusing
+		// the file would delete a worker that runs today — so the third option
+		// is the only honest one: it keeps working, wherever it said to work,
+		// and stops being invisible about it.
+		if p.Desk != mode.Office {
+			p.Notice = "ไฟล์นี้เขียน desk: " + p.Desk +
+				" เอาไว้เอง จึงไม่ขึ้นหน้าทีมเอเจนและเลือกคุยตรงไม่ได้ ถ้าอยากให้เป็นเพื่อนร่วมงานตามปกติ ให้ลบบรรทัด desk ทิ้ง"
 		}
 		return
 	}
@@ -596,6 +641,10 @@ func parse(name, raw string) Profile {
 		Desk:        strings.ToLower(strings.TrimSpace(fields["desk"])),
 		Icon:        strings.TrimSpace(fields["icon"]),
 		Needs:       splitList(fields["needs"]),
+		Publisher:   strings.TrimSpace(fields["publisher"]),
+		Package:     strings.TrimSpace(fields["package"]),
+		Version:     strings.TrimSpace(fields["version"]),
+		RequiresApp: strings.TrimSpace(fields["requires-app"]),
 		Prompt:      body,
 	}
 }

@@ -1,8 +1,9 @@
-// ทีมเอเจน (COMPANY.md §4). The page is a roster and a feed, and the one claim
-// worth pinning is what the roster shows: the tools each chair *gets*, after
-// the office ceiling — not the ones its file asked for. This is the row a
+// เอเจนเฉพาะทาง (COMPANY.md §4). The page is a roster and a feed, and the one
+// claim worth pinning is what the roster shows: the tools each chair *gets*,
+// after the office ceiling — not the ones its file asked for. This is the row a
 // person checks the ceiling on, so a page that echoed the request back would
 // quietly defeat the structure it is reporting on.
+//
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/svelte'
 import Office from '../lib/Office.svelte'
@@ -20,6 +21,7 @@ const job = (over: Record<string, unknown> = {}) => ({
   toolSeq: 'pdf_read>doc_write', toolCount: 2, durationMs: 4200,
   outcome: 'unknown', time: new Date().toISOString(), ...over,
 })
+
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -130,6 +132,10 @@ describe('the received-work feed', () => {
   // between a delivered file and the conversation that asked for it. The whole
   // row is the door — a boxed button repeated down the right edge was the
   // loudest thing on a page whose subject is the line beside it.
+  //
+  // Since §158 that walk crosses a door: the caller is usually the assistant
+  // and this room is behind ทีม. Nothing here has to know that — loading a
+  // session re-reads its desk and the door follows (refreshDesk).
   it('walks back to the chat that sent the job', async () => {
     vi.mocked(ListReceivedJobs).mockResolvedValue([job()] as any)
     vi.mocked(LoadSessionAnyProject).mockResolvedValue([] as any)

@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/mcp"
 	"github.com/Mike0165115321/Aetox/internal/mode"
 	"github.com/Mike0165115321/Aetox/internal/subagent"
 )
@@ -54,6 +55,57 @@ type Chair struct {
 	// have to know which tool means which mark, and that is a fact about the
 	// engine's tools, not about a card.
 	Icon string `json:"icon"`
+	// Missing is what this agent's `tools:` asked for and did not get.
+	//
+	// It is the difference between the two lists this function already holds:
+	// what the file asked for, and what the child registry actually handed
+	// over. Nothing new is looked up to know it, and nothing changes because
+	// of it — the agent runs exactly as it did, with exactly the tools it had.
+	// The only thing that changes is that it stops being silent.
+	//
+	// The case that made it worth a field: a tool leaves the build (slides_write
+	// did, in 2151be7) and every agent naming it quietly gets one tool less,
+	// with no sentence anywhere. Same for a typo, and for a package written
+	// against a newer Aetox than this one.
+	//
+	// Two causes are folded into one list on purpose. A name this build has
+	// never heard of and a name the office ceiling does not carry are different
+	// mistakes, and telling them apart needs the desk manifest — while the
+	// sentence a person needs is the same either way: you asked for this and
+	// you do not have it.
+	Missing []string `json:"missing,omitempty"`
+}
+
+// missingTools is what `tools:` asked for and the registry did not hand over.
+//
+// An empty `tools:` asks for nothing by name — it means "whatever this desk
+// carries" — so it can never be missing anything, and saying so would put a
+// warning on every agent that never narrowed itself.
+//
+// MCP tools are skipped, and that is not a loophole. Their names arrive from
+// the server on connect, and a server placed on one agent is deliberately not
+// connected until that agent runs (mcp.Server.Deferred) — so at the moment this
+// page is drawn, a perfectly working MCP tool is legitimately absent from the
+// registry. mcp.ToolBelongsTo is asked rather than a prefix written here, for
+// the reason its own comment gives: two copies of the naming rule are two
+// chances to disagree with the one that does the naming.
+func missingTools(p subagent.Profile, held []string) []string {
+	if len(p.Tools) == 0 {
+		return nil
+	}
+	have := make(map[string]bool, len(held))
+	for _, name := range held {
+		have[strings.ToLower(strings.TrimSpace(name))] = true
+	}
+	servers := config.MCPServersForAgent(p.Name)
+	var out []string
+	for _, want := range p.Tools {
+		if have[want] || mcp.ToolBelongsTo(want, servers) {
+			continue
+		}
+		out = append(out, want)
+	}
+	return out
 }
 
 // chairIcon is the face an agent wears when its profile does not choose one.
@@ -104,6 +156,10 @@ func (a *App) ListChairs() []Chair {
 		// that could drift from the one the delegate actually runs on.
 		if child := subagent.FilterRegistry(a.cur().registry, p, ceiling); child != nil {
 			c.Tools = child.Names()
+			// Only when there was a registry to ask. A nil child means the engine
+			// is not up yet, and an empty held-list would report every tool the
+			// file names as missing — a page that cries wolf on every cold start.
+			c.Missing = missingTools(p, c.Tools)
 		}
 		c.Icon = chairIcon(p, c.Tools)
 		if act, ok := used[p.Name]; ok {

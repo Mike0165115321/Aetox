@@ -1,11 +1,16 @@
 <script lang="ts">
-  // ทีมเอเจน (COMPANY.md §4): the roster, and the work the team has taken in.
+  // เอเจนเฉพาะทาง (COMPANY.md §4): the roster, and the work the team has taken in.
   //
   // Two lists and no state of its own. A chair is a profile file, and the jobs
   // feed is a query over `jobs` — the rows every delegation already writes. The
   // page was specified as "a roster plus a feed, no new state, no inbox", and
   // that is exactly as much as this does: it reads, and it lets you walk to the
   // conversation a job came from.
+  //
+  // It was split in two and moved behind the ทีม door for about an hour on
+  // 2026-08-20 (§158) and the owner sent it straight back: the page is where you
+  // walk in to talk to a specialist, and that belongs beside the assistant. The
+  // name is the only thing that stayed changed.
   import { onMount } from 'svelte'
   // The hiring door opens the agents' home. Since the homes split, which
   // folder a file lands in is which kind it is — a chair file dropped into the
@@ -30,14 +35,12 @@
   // one-choice filter is furniture.
   let who = $state('')
 
-  async function refresh() {
+  onMount(async () => {
     const [roster, feed] = await Promise.all([ListChairs(), ListReceivedJobs(30)])
     chairs = roster
     jobs = feed
     loaded = true
-  }
-
-  onMount(refresh)
+  })
 
   // Walking from a job to the conversation that sent it. The job row carries
   // the caller's session id, which is the only link there is — and the only one
@@ -59,11 +62,9 @@
   }
 
   // The face a job wears is its author's, resolved off the roster so one agent
-  // cannot show two marks on one page. A job from a profile that has since been
-  // deleted still gets a face rather than a hole.
-  // Every row on this page is a chair, so the derived mark is เอเจน's
-  // (workerFace). A job whose profile has since been deleted keeps a face
-  // rather than leaving a hole, and it is the same one.
+  // cannot show two marks on one page. Every row on this page is a chair, so the
+  // derived mark is เอเจน's (workerFace). A job whose profile has since been
+  // deleted keeps a face rather than leaving a hole, and it is the same one.
   const faces = $derived(new Map(chairs.map((c) => [c.name, workerFace(c.icon, true)])))
   function faceOf(name: string): IconName {
     return faces.get(name) ?? workerFace(undefined, true)
@@ -166,6 +167,13 @@
                 {#if c.overrides}<span class="badge">{t('office.overrides')}</span>{/if}
               </div>
               <p class="chair-desc">{c.description}</p>
+              <!-- Only when there is something to say. The tools list was taken
+                   off this card because it was the same on every one of them;
+                   this is the opposite kind of line, and it appears on a card
+                   only when that agent asked for something it did not get. -->
+              {#if c.missing?.length}
+                <p class="chair-missing">{t('office.missingTools', { list: c.missing.join(', ') })}</p>
+              {/if}
             </div>
             <div class="chair-foot">
               {#if c.jobs > 0}

@@ -17,7 +17,7 @@ import (
 //	<DataRoot>/agents/doc/AGENT.md    frontmatter + brief
 //	<DataRoot>/agents/doc/MEMORY.md   what it learned doing the job
 //	<DataRoot>/agents/doc/skills/     what it knows, one folder per skill
-//	<DataRoot>/agents/doc/mcp.json    (planned) the servers it brings
+//	<DataRoot>/agents/doc/mcp.json    the servers it brings, read at install
 //
 // The paths live here rather than in internal/subagent because two packages
 // need them and only one of them may import the other: subagent imports
@@ -59,6 +59,16 @@ const (
 	// own opening line is a worker whose whole self is in its folder — which is
 	// what makes hiring one a copy and not an install.
 	AgentStartersFile = "STARTERS.md"
+	// AgentMCPFile is the tool servers this worker brings with it.
+	//
+	// A declaration, never a grant — the same line `needs:` draws. The file is
+	// an array in mcp-servers.json's own schema, so a server that already works
+	// can be lifted from one file into the other by copy-paste, and it is read
+	// exactly once: when the package is installed. What the machine actually
+	// connects stays mcp-servers.json and only that, because Settings, the
+	// permission rules and the manager all read it and a second live list is a
+	// second place for them to disagree.
+	AgentMCPFile = "mcp.json"
 )
 
 // AgentStartersName is the starters file for one language.
@@ -120,6 +130,12 @@ func AgentMemoryPath(name string) (string, error) {
 // with nothing to look up should cost nothing to ask.
 func AgentSkillsPath(name string) (string, error) {
 	return agentFile(name, AgentSkillsDir)
+}
+
+// AgentMCPPath is the servers file inside a home. Not created here: most
+// workers bring none, and an absent file is how they say so.
+func AgentMCPPath(name string) (string, error) {
+	return agentFile(name, AgentMCPFile)
 }
 
 // AgentStartersPath is the starters file inside a home, for one language. Not
