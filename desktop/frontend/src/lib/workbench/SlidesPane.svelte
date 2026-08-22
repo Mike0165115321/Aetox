@@ -21,7 +21,15 @@
   import { t } from '../i18n.svelte'
   import Icon from '../Icon.svelte'
 
-  let { path, name, content }: { path: string; name: string; content: string } = $props()
+  // `active` is the tab being the one on screen. The desk keeps every tab
+  // mounted and hides the others (Workbench.svelte's display:none slots), so a
+  // deck opened an hour ago is still listening while the user reads a browser
+  // tab — and would step, unseen, on every arrow key pressed anywhere in the
+  // app. Defaults to true: a room rendered on its own is the room being looked
+  // at, which is what the tests do and what any future single-pane caller means.
+  let { path, name, content, active = true }: {
+    path: string; name: string; content: string; active?: boolean
+  } = $props()
 
   const src = $derived(fileURL(path))
 
@@ -348,7 +356,7 @@
 
 <svelte:body on:click={() => (menuOpen = false)} />
 
-<svelte:window on:keydown={(e) => !source && onKey(e)} />
+<svelte:window on:keydown={(e) => !source && active && onKey(e)} />
 
 <div class="deck-pane">
   <div class="deck-head">

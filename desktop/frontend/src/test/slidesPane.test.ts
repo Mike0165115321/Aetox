@@ -163,4 +163,22 @@ describe('the slides room', () => {
     // และไม่มีใบไหนถูกเดินไปเพราะการพิมพ์
     expect(screen.getByText('1 / 3')).toBeTruthy()
   })
+
+  // ห้องที่ถูกซ่อนอยู่ก็ยังฟังหน้าต่างอยู่ เพราะโต๊ะเก็บทุกแท็บค้างไว้แล้วซ่อนที่ไม่ได้ใช้
+  // (เทอร์มินัลกับเบราว์เซอร์ถูกถอดไม่ได้) กดลูกศรตอนดูเบราว์เซอร์จึงเคยเดินสไลด์ที่มองไม่เห็นให้
+  it('stays out of the keyboard while its tab is hidden', async () => {
+    render(SlidesPane, {
+      path: 'output/s1/deck.html', name: 'deck.html', content: stacked, active: false,
+    })
+    const doc = await loadDeck(stacked)
+    await waitFor(() => expect(screen.getByText('1 / 3')).toBeTruthy())
+
+    for (const key of ['ArrowRight', ' ', 'End']) {
+      const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+      document.body.dispatchEvent(e)
+      expect(`${key}: ${e.defaultPrevented}`).toBe(`${key}: false`)
+    }
+    expect(visible(doc)).toBe(0)
+    expect(screen.getByText('1 / 3')).toBeTruthy()
+  })
 })

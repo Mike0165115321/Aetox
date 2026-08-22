@@ -408,7 +408,7 @@
             {:else if tab.unreadable}
               <ExternalFilePane path={tab.path ?? ''} reason={tab.unreadable} name={tab.name} />
             {:else if tab.deck && tab.content !== undefined}
-              <SlidesPane path={tab.path ?? ''} name={tab.name} content={tab.content} />
+              <SlidesPane path={tab.path ?? ''} name={tab.name} content={tab.content} active={workbench.activeId === tab.id} />
             {:else if tab.content !== undefined}
               <FileEditor path={tab.path ?? ''} content={tab.content} />
             {/if}
