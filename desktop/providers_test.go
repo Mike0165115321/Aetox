@@ -96,8 +96,12 @@ func TestEveryDesktopProviderHasABrandMark(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read %s: %v", marksPath, err)
 	}
-	// Keys are bare identifiers at one indent level: `  openai: ` + backtick.
-	keyed := regexp.MustCompile("(?m)^\t*  ([a-z0-9-]+): `")
+	// Keys sit at one indent level and are followed by a backtick: `  openai: `.
+	// The quotes are optional because a canonical name with a hyphen
+	// ("ollama-cloud") is not a bare JavaScript identifier and has to be
+	// written `'ollama-cloud':` — this test went blind to exactly that row
+	// until the pattern learned to see it.
+	keyed := regexp.MustCompile("(?m)^\t*  '?([a-z0-9-]+)'?: `")
 	marks := make(map[string]bool)
 	for _, m := range keyed.FindAllStringSubmatch(string(raw), -1) {
 		marks[m[1]] = true

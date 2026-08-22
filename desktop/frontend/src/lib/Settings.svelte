@@ -17,6 +17,7 @@
   import { coverHue } from './coverHue'
   import { armFirstRunReplay } from './firstRun'
   import { scopeLabel } from './memoryScope'
+  import { setShell } from './shell.svelte'
   import type { IconName } from './icons'
   import {
     SupportedProviders, HasAPIKey, RequiresAPIKey, AcceptsAPIKey, ProviderAccountFor, TerminalShells,
@@ -42,15 +43,15 @@
     AppVersion, AppCredit, CheckForUpdate, RecentDebugLog,
     LearningEnabled, SetLearningEnabled, ListPendingChanges, ListDecidedChanges,
     ApprovePendingChange, RejectPendingChange, LearnedEntries, LearnedScopes, SaveLearnedEntry, OpenMemoryFolder,
+    ListSystemIssues, MarkIssueReported, ListDecidedIssues,
     AccountStatus, StartAccountSignIn, CompleteAccountSignIn, CancelAccountSignIn,
     AccountSignOut, AccountRefresh,
-    ListSystemIssues, MarkIssueReported, ListDecidedIssues,
   } from '../../wailsjs/go/main/App'
+  import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
   // Deliberately alongside the issue button rather than instead of it: an issue
   // carries the version and the log, the group carries the half-formed question
   // that is not a bug report yet.
   import { COMMUNITY_URL } from './links'
-  import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
   import promptPayQR from '../assets/images/promptpay-qr.png'
   import { config, update, main, subagent } from '../../wailsjs/go/models'
   import { cockpit, startChatWith, setActiveView, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat, setProviderBaseURL, retryActiveProvider, completeSignIn, signOutProvider, importSignIn, SETTINGS_SECTION_KEY } from './stores/cockpit.svelte'
@@ -780,6 +781,7 @@
     signInError = ''
     if (prompt) await CancelSignIn(prompt.provider)
   }
+
   // The Aetox account, which is a different sign-in from the ones above: those
   // decide who pays for a request, this one is who you are to Aetox itself.
   let aetoxAccount = $state<main.AccountState | null>(null)
@@ -842,7 +844,6 @@
     }
   }
 
-
   const doImport = (name: string) => run('import:' + name, async () => {
     await importSignIn(name)
     await refreshSignIn()
@@ -892,8 +893,8 @@
     selected = name
     errorMsg = ''
     keyDraft = ''
-    connTest = ''
-    connTestModel = ''
+    connTesting = {}
+    connResult = {}
     baseURL = await ProviderBaseURL(name)
     baseURLDraft = baseURL
     baseURLIsCustom = await ProviderBaseURLIsCustom(name)
@@ -970,20 +971,43 @@
   })
 
   // Connection test: a real 1-token completion through the chat path, run per
-  // model so a model can be proven before switching to it. connTestModel says
-  // which row the result belongs under; connTest is '' = untested, 'ok:…' /
-  // 'err:…' render as success / failure.
-  let connTest = $state('')
-  let connTestModel = $state('')
-  const testConnection = (name: string) => run('test:' + name, async () => {
-    connTest = ''
-    connTestModel = name
+  // model so a model can be proven before switching to it.
+  //
+  // Deliberately outside run(). That helper takes the page's single `busy`
+  // lock, which is the right shape for switching a provider or saving a key —
+  // one of those at a time is the only sane number. A probe is not one of
+  // those: it changes nothing, it waits however long the provider waits, and
+  // holding the whole page while it does meant a list of twelve models could
+  // only be checked twelve waits deep, one after another. Owner, 22 ส.ค.:
+  // "กดแล้วไม่ต้องรอ ไปกดอันอื่นได้เลย".
+  //
+  // Two records rather than two strings, for the same reason: one string holds
+  // one answer, so testing a second model erased the first one's result — the
+  // comparison you were running the tests to make.
+  //
+  // It also leaves errorMsg alone. A failed probe belongs under the row that
+  // failed, where it stays; the page-level banner holds one message, and with
+  // several probes in flight the last failure would speak for all of them.
+  let connTesting = $state<Record<string, boolean>>({})
+  let connResult = $state<Record<string, string>>({}) // per model: 'ok:…' | 'err:…'
+  const testConnection = async (name: string) => {
+    if (connTesting[name]) return
+    // Which provider asked. A probe can now outlive the page state it started
+    // in, so a late answer must not land under a row belonging to whatever
+    // provider has been clicked into since. Only possible because these run
+    // concurrently — the lock used to make it unreachable.
+    const asked = selected
+    connTesting[name] = true
+    delete connResult[name]
     try {
-      connTest = 'ok:' + await TestProviderConnection(selected, name)
+      const ok = 'ok:' + await TestProviderConnection(asked, name)
+      if (asked === selected) connResult[name] = ok
     } catch (err) {
-      connTest = 'err:' + String(err)
+      if (asked === selected) connResult[name] = 'err:' + String(err)
+    } finally {
+      delete connTesting[name]
     }
-  })
+  }
 
   // Endpoint override. Saving '' clears it — that is the reset, so the button
   // is enabled on an empty box rather than treated as "nothing to save".
@@ -1923,7 +1947,7 @@
   type SubagentRow = {
     name: string; description: string; model?: string
     tools?: string[]; deny?: string[]; steps?: number; prompt: string
-    path?: string; builtin: boolean; overrides?: boolean; invalid?: string; icon?: string
+    path?: string; builtin: boolean; overrides?: boolean; invalid?: string; notice?: string; icon?: string
     // Already resolved by the backend (applyHomeRules fills the default), which
     // is why the editor shows this rather than the raw `desk:` it keeps: the
     // default is a constant in internal/mode and spelling it again here is how
@@ -2889,6 +2913,7 @@
   $effect(() => {
     if (active === 'learning') void loadLearning()
   })
+
   $effect(() => {
     // Reads from disk only, so opening the page costs nothing and works with
     // no network. Asking the server is the separate "check again" button.
@@ -2902,7 +2927,6 @@
   $effect(() => {
     void loadAetoxAccount()
   })
-
 
   $effect(() => {
     if (active === 'issues') void loadIssues()
@@ -2968,6 +2992,7 @@
         terms: ['GitHub', t('settings.ghTokenLabel'), 'n8n', 'Windmill', t('settings.connBaseURLLabel')] },
       { id: 'prompts', label: t('settings.prompts'), icon: 'sparkles', terms: [t('settings.promptNew')] },
     ]},
+    { group: t('settings.groupAbout'), items: [
       // First in this group and nowhere near the model sign-ins: those decide
       // which account pays for a request, this one is who you are to Aetox.
       // It is in About rather than up top because it configures nothing the
@@ -2980,7 +3005,6 @@
         ? [{ id: 'account', label: t('settings.account'), icon: 'circleUser',
              terms: ['GitHub', 'Google', t('settings.accountSignOut')] } satisfies NavItem]
         : []),
-    { group: t('settings.groupAbout'), items: [
       // Usage lives here rather than under Tools: it is a report about the app,
       // not a thing to configure, which is the same kind of page as About.
       { id: 'usage', label: t('settings.usage'), icon: 'chartColumn',
@@ -3170,7 +3194,6 @@
      where n8n or Windmill lives is written in this codebase — a guess would be
      wrong for everyone it was not written for — and the precedent is an MCP
      stdio server, which has always been a command in a config file. -->
-{#snippet serverControls(row: ConnectionRow)}
 <!-- The offer that makes an extension page usable by somebody who does not
      already know what exists.
 
@@ -3198,6 +3221,7 @@
   </div>
 {/snippet}
 
+{#snippet serverControls(row: ConnectionRow)}
   <!-- Its own bordered block, and the heading says which of the two questions
        this half answers. They were a run of fields under the address and the
        owner could not tell them apart from the credential check below — which
@@ -3277,6 +3301,9 @@
            silent reinterpretation, never a row that just vanishes (the file is
            still on the user's disk). -->
       {#if a.invalid}<div class="d ag-invalid">{a.invalid}</div>{/if}
+      <!-- Not fatal, and deliberately a different colour: this file runs, it is
+           just doing something its author probably did not mean. -->
+      {#if a.notice}<div class="d ag-notice">{a.notice}</div>{/if}
       <div class="d mono-dim">{a.path || 'built-in:' + a.name}</div>
     </div>
   </div>
@@ -3321,6 +3348,9 @@
            silent reinterpretation, never a row that just vanishes (the file is
            still on the user's disk). -->
       {#if a.invalid}<div class="d ag-invalid">{a.invalid}</div>{/if}
+      <!-- Not fatal, and deliberately a different colour: this file runs, it is
+           just doing something its author probably did not mean. -->
+      {#if a.notice}<div class="d ag-notice">{a.notice}</div>{/if}
     </div>
     <div class="ag-actions">
       <!-- Whether the MAIN assistant may hand this one work. Not whether the
@@ -3391,7 +3421,11 @@
            to discover, because two places holding one kind of thing is exactly
            what needs a stated rule. -->
       <div class="pp-bar-gap"></div>
-      <button class="ctrl" onclick={() => setActiveView('office')}>{t('settings.teamOpenPage')} <Icon name="arrowRight" size={13} /></button>
+      <!-- The door goes with the room. เอเจนเฉพาะทาง is the storefront's, and
+           Settings can be opened from either door — landing on the page without
+           moving the door would draw one door's room inside the other's
+           sidebar. -->
+      <button class="ctrl" onclick={() => { setShell('assistant'); setActiveView('office') }}>{t('settings.teamOpenPage')} <Icon name="arrowRight" size={13} /></button>
     </div>
   {/if}
   {#if agentError}<div class="mset-error">{agentError}</div>{/if}
@@ -4478,8 +4512,8 @@
                     {/if}
                     <button
                       class="icobtn tiny" title={t('settings.testConnection')} aria-label={t('settings.testConnection')}
-                      disabled={busy !== ''} onclick={() => testConnection(m)}
-                    >{#if busy === 'test:' + m}…{:else}<Icon name="plugZap" size={14} />{/if}</button>
+                      disabled={connTesting[m]} onclick={() => testConnection(m)}
+                    >{#if connTesting[m]}…{:else}<Icon name="plugZap" size={14} />{/if}</button>
                     {#if isActiveProvider && cockpit.model.modelName === m}
                       <span class="badge on">{t('settings.inUse')}</span>
                     {:else}
@@ -4488,12 +4522,12 @@
                       </button>
                     {/if}
                   </div>
-                  {#if connTestModel === m && connTest}
-                    <div class="conn-test" class:ok={connTest.startsWith('ok:')}>
-                      {#if connTest.startsWith('ok:')}
-                        <Icon name="check" size={13} /> {t('settings.connOk')}: {connTest.slice(3)}
+                  {#if connResult[m]}
+                    <div class="conn-test" class:ok={connResult[m].startsWith('ok:')}>
+                      {#if connResult[m].startsWith('ok:')}
+                        <Icon name="check" size={13} /> {t('settings.connOk')}: {connResult[m].slice(3)}
                       {:else}
-                        <Icon name="x" size={13} /> {connTest.slice(4)}
+                        <Icon name="x" size={13} /> {connResult[m].slice(4)}
                       {/if}
                     </div>
                   {/if}
@@ -4628,6 +4662,8 @@
       <h2>{t('settings.skills')}</h2>
       <p class="muted set-sub">{t('settings.skillsDesc')}</p>
 
+      {@render aiFindCard('settings.aiFindSkillTitle', 'settings.aiFindSkillDesc', 'settings.aiFindSkillPrompt')}
+
       <div class="settings-card">
         <div class="card-form">
           <div class="mset-keyrow">
@@ -4639,8 +4675,6 @@
               {skillBusy === 'refresh' ? t('settings.refreshing') : t('settings.refresh')}
             </button>
           </div>
-      {@render aiFindCard('settings.aiFindSkillTitle', 'settings.aiFindSkillDesc', 'settings.aiFindSkillPrompt')}
-
           <!-- The real path, read from the engine. Two of the three places this
                page used to name one had it wrong (~/.agents/skills, which is
                opencode's and which Aetox never scans), so anyone who followed
@@ -4727,6 +4761,7 @@
       <p class="muted set-sub">{t('settings.promptsDesc')}</p>
 
       {#if editing === null}
+        {@render aiFindCard('settings.aiFindPresetTitle', 'settings.aiFindPresetDesc', 'settings.aiFindPresetPrompt')}
         <div class="pp-bar">
           <button class="ctrl" onclick={() => loadPresets()}>{t('settings.refresh')}</button>
           <button class="ctrl" onclick={() => OpenPromptsFolder()}>{t('settings.promptsFolder')}</button>
@@ -4738,7 +4773,6 @@
           </button>
           {#each presets as p (p.name)}
             <button class="pp-card" onclick={() => openPreset(p)}>
-        {@render aiFindCard('settings.aiFindPresetTitle', 'settings.aiFindPresetDesc', 'settings.aiFindPresetPrompt')}
               <span class="pp-cover" style="--h:{coverHue(p.name)}">
                 {#if p.image}
                   <img src={p.image} alt="" />
@@ -5024,6 +5058,7 @@
       <p class="muted set-sub">{t('settings.issuesDesc')}</p>
 
       {#if issuesError}<div class="mset-error">{issuesError}</div>{/if}
+
       <!-- On the page somebody opens when something is wrong. Not instead of
            the issue button below: an issue carries the version and the log,
            the group carries the thing you cannot describe well enough to file
@@ -5037,7 +5072,6 @@
           <button class="ctrl" onclick={() => BrowserOpenURL(COMMUNITY_URL)}>{t('settings.communityOpen')}</button>
         </div>
       </div>
-
 
       <div class="settings-card">
         {#each systemIssues as c (c.id)}
@@ -5399,6 +5433,8 @@
       <h2>{t('settings.mcpServers')}</h2>
       <p class="muted set-sub">{t('settings.mcpDesc')}</p>
 
+      {@render aiFindCard('settings.aiFindMCPTitle', 'settings.aiFindMCPDesc', 'settings.aiFindMCPPrompt')}
+
       <div class="settings-card">
         <div class="card-form">
           <div class="mset-keyrow">
@@ -5410,8 +5446,6 @@
                  the press looks like it did nothing. -->
             <button class="ctrl ctrl-icon" disabled={mcpBusy !== ''} onclick={openMCPForm}>
               <Icon name="plus" size={13} />
-      {@render aiFindCard('settings.aiFindMCPTitle', 'settings.aiFindMCPDesc', 'settings.aiFindMCPPrompt')}
-
               {t('settings.addServer')}
             </button>
             <button class="ctrl" disabled={mcpBusy !== ''} onclick={() => OpenMCPFolder()}>
@@ -5819,6 +5853,7 @@
           </div>
         {/each}
       </div>
+
     {:else if active === 'account'}
       <h2>{t('settings.account')}</h2>
       <p class="muted set-sub">{t('settings.accountDesc')}</p>
@@ -5875,7 +5910,6 @@
           </div>
         </div>
       </div>
-
 
     {:else if active === 'about'}
       <h2>{t('settings.about')}</h2>
@@ -5979,6 +6013,7 @@
           </div>
           <button class="ctrl" onclick={() => BrowserOpenURL(RELEASES_URL)}>{t('settings.aboutOpenRelease')}</button>
         </div>
+
         <div class="set-row">
           <div class="set-txt">
             <div class="t">{t('settings.community')}</div>
@@ -5986,7 +6021,6 @@
           </div>
           <button class="ctrl" onclick={() => BrowserOpenURL(COMMUNITY_URL)}>{t('settings.communityOpen')}</button>
         </div>
-
 
         <div class="set-row">
           <div class="set-txt">

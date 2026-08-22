@@ -545,6 +545,154 @@ var catalog = map[string]*entry{
 		modelDefaults: ModelDefaults{FallbackModel: "Pathumma-ThaiLLM-qwen3-8b-think-3.0.0"},
 		capabilities:  Capabilities{ToolCalling: true},
 	},
+	// Alibaba's model hub, and the row for someone who has no card yet: of the
+	// models here that any source describes at all, every tool-capable one is
+	// priced at zero.
+	//
+	// It is not a second `qwen`. DashScope is Alibaba's paid API with its own
+	// console, its own key and per-token billing; this is the hub's free
+	// inference tier on a different host with a different token. Same company,
+	// two accounts — the rule that keeps `codex` off `openai`.
+	//
+	// Measured against the live endpoint 2026-08-20, because the third-party
+	// catalog was wrong in both directions here: it lists 7 models where the
+	// service serves 45, and 3 of those 7 (GLM-4.5, GLM-4.6,
+	// Qwen3-30B-A3B-Instruct-2507) are not served at all. The picker is filled
+	// by DiscoverOpenAICompatibleModels, which asks the endpoint; nothing in
+	// this row should be taken from a table again.
+	"modelscope": {
+		canonical: "modelscope",
+		// A real account with a free tier, and no endpoint a chat token can
+		// read: the daily allowance is only visible once signed in to the hub.
+		balanceKind: BalanceWebOnly,
+		// QuotaNone, measured rather than assumed — the same mistake this
+		// caught on gemini. GET /v1/models answers 200 without a token and
+		// POST /v1/chat/completions answers 401 with one absent, and neither
+		// response carries a single x-ratelimit-* header among the twelve it
+		// sends. A row claiming QuotaOpenAIStd would put "the limit appears
+		// once you chat" on a card that can never show one.
+		quotaSource:    QuotaNone,
+		aliases:        []string{"modelscope", "model-scope", "modelscope-cn"},
+		requiresAPIKey: true,
+		runtime:        RuntimeOpenAICompatible,
+		baseURL:        "https://api-inference.modelscope.cn/v1",
+		envKeys:        []string{"MODELSCOPE_API_KEY"},
+		apiKeyURL:      "https://modelscope.cn/my/myaccesstoken",
+		// No FallbackModel, for the reason the `ollama` row has none: there is
+		// a server that can be asked. GET /v1/models here answers 200 with no
+		// token at all, so ResolveDefaultModel's second step — ask the
+		// endpoint — cannot fail while the provider works, and a name written
+		// in here would only ever be reached with the network down, when
+		// nothing else works either. Measured 2026-08-20, and it is the whole
+		// justification: on a provider that gates its list behind auth (xAI
+		// answers 403 until a team has credits) an empty fallback would leave
+		// a new user staring at a blank picker.
+		//
+		// No thinking dial either. The hub does serve -Thinking checkpoints,
+		// but they are separate model ids rather than a setting on one, which
+		// is the same stance the `qwen` row takes and the reason Reasoning
+		// stays false: a picker offering levels that go nowhere teaches the
+		// user that the controls lie.
+		modelDefaults: ModelDefaults{},
+		capabilities:  Capabilities{ToolCalling: true},
+	},
+	// NVIDIA's own inference endpoint, and the widest free tier Aetox reaches:
+	// of the models it serves that any source describes, 32 answer tool calls
+	// at zero cost — nearly twice what OpenRouter's free tier offers, and seven
+	// of OpenRouter's are these same Nemotrons through a middleman.
+	//
+	// The draw is not Nemotron though. This one endpoint serves GLM-5.2 and
+	// MiniMax-M3 at a million tokens of context, Kimi K2.6, and gpt-oss — four
+	// labs Aetox otherwise reaches only by paying each of them separately.
+	//
+	// Read the live list, not a table: models.dev describes 100 ids here and
+	// the endpoint serves 57 of them. Among the 43 it gets wrong are every
+	// Qwen id (NVIDIA serves no Qwen at all) and both unsuffixed DeepSeek V4
+	// names, which is what a fallback written from that file would have picked.
+	"nvidia": {
+		canonical: "nvidia",
+		// Free credits granted per account and countable only on their own
+		// dashboard — a real balance, just not one a chat key can read.
+		balanceKind: BalanceWebOnly,
+		// QuotaNone, measured: GET /v1/models answers 200 with five headers and
+		// POST /v1/chat/completions answers 401 with four, and no x-ratelimit-*
+		// field appears in either. Same correction gemini needed.
+		quotaSource:    QuotaNone,
+		aliases:        []string{"nvidia", "nim", "nvidia-nim"},
+		requiresAPIKey: true,
+		runtime:        RuntimeOpenAICompatible,
+		baseURL:        "https://integrate.api.nvidia.com/v1",
+		envKeys:        []string{"NVIDIA_API_KEY"},
+		apiKeyURL:      "https://build.nvidia.com/settings/api-keys",
+		// No FallbackModel: GET /v1/models answers 200 here with no token
+		// either, so the endpoint is the authority and nothing needs writing
+		// down. This is the row where that matters most — the third-party
+		// catalog gets 43 of NVIDIA's 100 listed ids wrong, so any name copied
+		// from it had a better than even chance of being one nobody serves.
+		//
+		// The fetched-catalog step above it will not answer for this row and
+		// that is fine: ModelCatalog.DefaultFor skips anything priced at zero,
+		// which is most of what makes this endpoint worth having.
+		//
+		// One thing no model list can settle, learned the hard way on
+		// 2026-08-20: a served id is not an invocable one. This endpoint
+		// resolves a model to an NVCF function and a new account is refused
+		// every one of them with a 404 "Not found for account", while
+		// /v1/models and the web playground both keep working. The entitlement
+		// is called "Public API Endpoints", NVIDIA does not self-serve it, and
+		// accountAccessError (internal/model/account_access.go) is what turns
+		// that 404 into a sentence naming help@build.nvidia.com. Expect a new
+		// user of this row to meet that wall before they meet a model.
+		modelDefaults: ModelDefaults{},
+		// Reasoning stays false, and it is the interesting field on this row.
+		// NVIDIA has no single thinking dial: gpt-oss models take
+		// `reasoning_effort` (and only when their NIM was started with the
+		// openai_gptoss parser, which is their deployment's business and not
+		// visible from here), Nemotron 3.5 takes
+		// `chat_template_kwargs.enable_thinking` nested inside extra_body, and
+		// Nemotron Super 49B takes no field at all — its reasoning is switched
+		// by what the system prompt says. Three mechanisms, two of which this
+		// request struct cannot express and one of which is not a wire field.
+		// A picker drawn over that would offer levels that go nowhere.
+		capabilities: Capabilities{ToolCalling: true},
+	},
+	// Ollama's hosted tier, and the way up for someone whose own GPU ran out of
+	// room. It exists as its own row rather than a setting on `ollama` because
+	// the two share nothing but a name: a different host, an account, a token,
+	// and a fixed served list instead of whatever the user happened to pull.
+	//
+	// RuntimeOpenAICompatible, and that is measured rather than preferred.
+	// ollama.com does serve the native API — /api/tags answers 200 with the
+	// real list — but OllamaProvider has no API key in it anywhere, not a
+	// field and not a header, because the local server it was written for asks
+	// for none. The OpenAI-compatible path needs no new client: the endpoint
+	// returns OpenAI's own error envelope, and DiscoverOpenAICompatibleModels
+	// already fills the picker from it.
+	"ollama-cloud": {
+		canonical:   "ollama-cloud",
+		balanceKind: BalanceWebOnly,
+		// QuotaNone, measured: fourteen headers on the 200 and thirteen on the
+		// 401, all of them build stamps and trace ids, none a rate limit.
+		quotaSource:    QuotaNone,
+		aliases:        []string{"ollama-cloud", "ollamacloud", "ollama.com"},
+		requiresAPIKey: true,
+		runtime:        RuntimeOpenAICompatible,
+		baseURL:        "https://ollama.com/v1",
+		envKeys:        []string{"OLLAMA_API_KEY"},
+		apiKeyURL:      "https://ollama.com/settings/keys",
+		// No FallbackModel, the same as the local `ollama` row and for a reason
+		// that survives the move to a host: /v1/models answers 200 here
+		// without a token, so the served list is always readable and always
+		// more current than anything typed here. Ollama's ids carry tags
+		// (`deepseek-v4-flash:0731`), and a name written without one is the
+		// exact shape of mistake that reads as "model not found" against a
+		// server that is working perfectly.
+		modelDefaults: ModelDefaults{},
+		// No thinking dial: the served list is open-weights models whose
+		// reasoning is baked into the checkpoint, and Ollama's OpenAI-compatible
+		// surface documents no effort field to turn it with.
+		capabilities: Capabilities{ToolCalling: true},
+	},
 }
 
 var canonicalOrder = sortedCanonicalKeys()

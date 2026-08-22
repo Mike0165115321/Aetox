@@ -174,7 +174,7 @@ func NewOpenAICompatibleProvider(cfg OpenAICompatibleConfig) (*OpenAICompatibleP
 		reasoning:   supportsNativeReasoning(provider),
 		tokenSource: cfg.TokenSource,
 		headers:     cfg.Headers,
-		httpClient:  newModelHTTPClient(timeout),
+		httpClient:  newModelHTTPClient(timeout, baseURL),
 	}, nil
 }
 
@@ -238,6 +238,14 @@ func (p *OpenAICompatibleProvider) statusError(resp *http.Response, body []byte)
 	case http.StatusUnauthorized:
 		return fmt.Errorf("%s rejected the credentials (401: %s)", p.provider, detail)
 	default:
+		// A 404 is usually a model id nobody serves, and that message is
+		// already clear. It is also how at least one provider says "the key is
+		// good, the account is not entitled" — a different problem with a
+		// different fix, and unreadable as the raw body. Asked before the
+		// generic sentence, answered only when the provider's own words say so.
+		if err := accountAccessError(p.provider, resp.StatusCode, body, detail); err != nil {
+			return err
+		}
 		return fmt.Errorf("%s request failed with status %d: %s", p.provider, resp.StatusCode, detail)
 	}
 }
@@ -332,25 +340,26 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 	}
 
 	payload := struct {
-		Model            string                 `json:"model"`
-		Messages         []openAIRequestMessage `json:"messages"`
-		Temperature      float64                `json:"temperature,omitempty"`
-		MaxTokens        int                    `json:"max_tokens,omitempty"`
-		Tools            []ToolDefinition       `json:"tools,omitempty"`
-		ToolChoice       string                 `json:"tool_choice,omitempty"`
-		Reasoning        *ReasoningConfig       `json:"reasoning,omitempty"`
-		Thinking         *ThinkingConfig        `json:"thinking,omitempty"`
-		ReasoningEffort  string                 `json:"reasoning_effort,omitempty"`
-		IncludeReasoning *bool                  `json:"include_reasoning,omitempty"`
-		ReasoningSplit   *bool                  `json:"reasoning_split,omitempty"`
+		Model               string                 `json:"model"`
+		Messages            []openAIRequestMessage `json:"messages"`
+		Temperature         float64                `json:"temperature,omitempty"`
+		MaxTokens           int                    `json:"max_tokens,omitempty"`
+		MaxCompletionTokens int                    `json:"max_completion_tokens,omitempty"`
+		Tools               []ToolDefinition       `json:"tools,omitempty"`
+		ToolChoice          string                 `json:"tool_choice,omitempty"`
+		Reasoning           *ReasoningConfig       `json:"reasoning,omitempty"`
+		Thinking            *ThinkingConfig        `json:"thinking,omitempty"`
+		ReasoningEffort     string                 `json:"reasoning_effort,omitempty"`
+		IncludeReasoning    *bool                  `json:"include_reasoning,omitempty"`
+		ReasoningSplit      *bool                  `json:"reasoning_split,omitempty"`
 	}{
 		Model:       model,
 		Messages:    convertMessagesToOpenAI(req.Messages),
 		Temperature: req.Temperature,
-		MaxTokens:   req.MaxTokens,
 		Tools:       req.Tools,
 		ToolChoice:  req.ToolChoice,
 	}
+	p.setOutputCap(&payload.MaxTokens, &payload.MaxCompletionTokens, req.MaxTokens)
 	if p.usesDeepSeekThinking() {
 		payload.Thinking = normalizeDeepSeekThinking(req.Thinking, req.Reasoning)
 		payload.ReasoningEffort = p.wireEffort(model, req.Reasoning)
@@ -476,18 +485,19 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		model = p.model
 	}
 	payload := struct {
-		Model            string                 `json:"model"`
-		Messages         []openAIRequestMessage `json:"messages"`
-		Temperature      float64                `json:"temperature,omitempty"`
-		MaxTokens        int                    `json:"max_tokens,omitempty"`
-		Tools            []ToolDefinition       `json:"tools,omitempty"`
-		ToolChoice       string                 `json:"tool_choice,omitempty"`
-		Reasoning        *ReasoningConfig       `json:"reasoning,omitempty"`
-		Thinking         *ThinkingConfig        `json:"thinking,omitempty"`
-		ReasoningEffort  string                 `json:"reasoning_effort,omitempty"`
-		IncludeReasoning *bool                  `json:"include_reasoning,omitempty"`
-		ReasoningSplit   *bool                  `json:"reasoning_split,omitempty"`
-		Stream           bool                   `json:"stream"`
+		Model               string                 `json:"model"`
+		Messages            []openAIRequestMessage `json:"messages"`
+		Temperature         float64                `json:"temperature,omitempty"`
+		MaxTokens           int                    `json:"max_tokens,omitempty"`
+		MaxCompletionTokens int                    `json:"max_completion_tokens,omitempty"`
+		Tools               []ToolDefinition       `json:"tools,omitempty"`
+		ToolChoice          string                 `json:"tool_choice,omitempty"`
+		Reasoning           *ReasoningConfig       `json:"reasoning,omitempty"`
+		Thinking            *ThinkingConfig        `json:"thinking,omitempty"`
+		ReasoningEffort     string                 `json:"reasoning_effort,omitempty"`
+		IncludeReasoning    *bool                  `json:"include_reasoning,omitempty"`
+		ReasoningSplit      *bool                  `json:"reasoning_split,omitempty"`
+		Stream              bool                   `json:"stream"`
 		// Without this the spec says a streamed response carries no usage at
 		// all, and a server that follows it sends none: LM Studio recorded 0
 		// tokens for every streamed turn, which is every desktop turn. DeepSeek
@@ -497,12 +507,12 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		Model:         model,
 		Messages:      convertMessagesToOpenAI(req.Messages),
 		Temperature:   req.Temperature,
-		MaxTokens:     req.MaxTokens,
 		Tools:         req.Tools,
 		ToolChoice:    req.ToolChoice,
 		Stream:        true,
 		StreamOptions: &streamOptions{IncludeUsage: true},
 	}
+	p.setOutputCap(&payload.MaxTokens, &payload.MaxCompletionTokens, req.MaxTokens)
 	if p.usesDeepSeekThinking() {
 		payload.Thinking = normalizeDeepSeekThinking(req.Thinking, req.Reasoning)
 		payload.ReasoningEffort = p.wireEffort(model, req.Reasoning)
@@ -685,28 +695,44 @@ type streamToolCallDelta struct {
 
 // streamToolAccumulator stitches streamed tool-call fragments back into whole
 // ToolCalls, preserving first-seen order.
+//
+// Two wire shapes have to come out the same way, because both call themselves
+// OpenAI-compatible:
+//
+//   - OpenAI's own: one call per index, opened by a fragment carrying id and
+//     index, continued by fragments carrying index and a slice of the arguments.
+//   - Gemini's compat layer: each call arrives WHOLE in its own chunk, with its
+//     own id and NO index field at all — which decodes to 0 for every one of
+//     them. Keying on the index alone folded a parallel pair into one call whose
+//     arguments were the two JSON objects glued together
+//     ({"city":"X"}{"city":"X"}), and sending that back cost the next turn a
+//     flat "400 Request contains an invalid argument" with nothing named.
+//     Measured against gemini-3.7-flash, 21 Aug 2026.
+//
+// So the id decides when there is one, and the index only fills in for the
+// fragments that carry no id. A slot is the position in `calls`, which is also
+// what the progress rows are keyed by — two calls that share a wire index must
+// not share a row either.
 type streamToolAccumulator struct {
-	byIndex map[int]*ToolCall
-	order   []int
+	calls   []*ToolCall
+	byIndex map[int]int
+	byID    map[string]int
 	// progress reports a call as it is written — see Request.OnToolCallProgress.
 	progress *toolProgressTracker
 }
 
 func newStreamToolAccumulator(onProgress func(id, name, subject string, lines int)) *streamToolAccumulator {
 	return &streamToolAccumulator{
-		byIndex:  map[int]*ToolCall{},
+		byIndex:  map[int]int{},
+		byID:     map[string]int{},
 		progress: newToolProgressTracker(onProgress),
 	}
 }
 
 func (a *streamToolAccumulator) add(deltas []streamToolCallDelta) {
 	for _, d := range deltas {
-		call := a.byIndex[d.Index]
-		if call == nil {
-			call = &ToolCall{Type: "function"}
-			a.byIndex[d.Index] = call
-			a.order = append(a.order, d.Index)
-		}
+		slot := a.slotFor(d)
+		call := a.calls[slot]
 		if d.ID != "" {
 			call.ID = d.ID
 		}
@@ -720,21 +746,56 @@ func (a *streamToolAccumulator) add(deltas []streamToolCallDelta) {
 		if len(d.ExtraContent) > 0 {
 			call.ExtraContent = d.ExtraContent
 		}
-		a.progress.report(d.Index, call.ID, call.Function.Name, call.Function.Arguments)
+		a.progress.report(slot, call.ID, call.Function.Name, call.Function.Arguments)
 	}
 }
 
+// slotFor answers which call this fragment belongs to.
+func (a *streamToolAccumulator) slotFor(d streamToolCallDelta) int {
+	if d.ID == "" {
+		// No id to go on: the index is all there is, and a fragment with no id
+		// is a continuation by definition — OpenAI sends the id once, on the
+		// fragment that opens the call.
+		if slot, ok := a.byIndex[d.Index]; ok {
+			return slot
+		}
+		return a.open(d.Index)
+	}
+	if slot, ok := a.byID[d.ID]; ok {
+		return slot
+	}
+	// An id nobody has claimed. If the call sitting at this index has no id yet
+	// it is the same call — a provider that opens with the index and names it a
+	// fragment later. Otherwise this is a new call that happens to reuse the
+	// index, which is every call after the first on Gemini.
+	if slot, ok := a.byIndex[d.Index]; ok && a.calls[slot].ID == "" {
+		a.byID[d.ID] = slot
+		return slot
+	}
+	slot := a.open(d.Index)
+	a.byID[d.ID] = slot
+	return slot
+}
+
+// open starts a new call and gives it the index, so the fragments that follow
+// with no id of their own reach the newest call rather than the oldest.
+func (a *streamToolAccumulator) open(index int) int {
+	a.calls = append(a.calls, &ToolCall{Type: "function"})
+	slot := len(a.calls) - 1
+	a.byIndex[index] = slot
+	return slot
+}
+
 func (a *streamToolAccumulator) finalize() []ToolCall {
-	if len(a.order) == 0 {
+	if len(a.calls) == 0 {
 		return nil
 	}
-	calls := make([]ToolCall, 0, len(a.order))
-	for _, idx := range a.order {
-		call := a.byIndex[idx]
+	calls := make([]ToolCall, 0, len(a.calls))
+	for slot, call := range a.calls {
 		// The arguments are complete now, so this is the last chance for the row
 		// to learn its subject — and the chance pacing would otherwise eat when
 		// the naming argument came last. See toolProgressTracker.flush.
-		a.progress.flush(idx, call.ID, call.Function.Name, call.Function.Arguments)
+		a.progress.flush(slot, call.ID, call.Function.Name, call.Function.Arguments)
 		calls = append(calls, *call)
 	}
 	return calls
@@ -751,6 +812,36 @@ func supportsNativeReasoning(provider string) bool {
 
 func (p *OpenAICompatibleProvider) usesDeepSeekThinking() bool {
 	return NormalizeProvider(p.provider) == "deepseek"
+}
+
+// setOutputCap writes the output ceiling into whichever field this host calls
+// it, because the two spellings are not interchangeable and picking the wrong
+// one ends the turn before a token is generated.
+//
+// OpenAI retired max_tokens on its newer models and answers them with
+// "400: Unsupported parameter: 'max_tokens' is not supported with this model.
+// Use 'max_completion_tokens' instead" — measured on gpt-5.6-sol, 21 Aug 2026,
+// where it made every chat on the openai provider fail on the first turn.
+// max_completion_tokens is accepted by the older chat models too, so this is
+// per-provider rather than per-model: a model list kept here would be a second
+// copy of OpenAI's release schedule, and it would be wrong the week they ship.
+//
+// Everybody else keeps max_tokens. The name is not OpenAI's to change for
+// hosts that only speak its wire format — llama.cpp, LM Studio, Ollama's compat
+// endpoint and most of the catalog reject a field they have never heard of.
+func (p *OpenAICompatibleProvider) setOutputCap(maxTokens, maxCompletionTokens *int, want int) {
+	if want <= 0 {
+		return
+	}
+	if p.usesMaxCompletionTokens() {
+		*maxCompletionTokens = want
+		return
+	}
+	*maxTokens = want
+}
+
+func (p *OpenAICompatibleProvider) usesMaxCompletionTokens() bool {
+	return NormalizeProvider(p.provider) == "openai"
 }
 
 func (p *OpenAICompatibleProvider) usesOpenAIReasoningEffort() bool {

@@ -233,7 +233,63 @@ func resolveStatusModelLabel(prov, model string) string {
 // ModelChoicesWithEndpointAndAPIKey fetches model names from the
 // provider's API. This is the live discovery path; static fallbacks
 // live in provider.RecommendedModels.
+//
+// The result is ordered, not filtered — see usableFirst. Ordering matters
+// beyond the picker because ResolveDefaultModel takes the first entry as a
+// cold start, and alphabetical-first is not an opinion about anything.
 func ModelChoicesWithEndpointAndAPIKey(p, baseURL, apiKey string) ([]string, error) {
+	models, err := discoverModelChoices(p, baseURL, apiKey)
+	if err != nil {
+		return nil, err
+	}
+	return usableFirst(p, models), nil
+}
+
+// usableFirst moves the ids the fetched catalog can vouch for as tool-calling
+// chat models to the front, keeping each group in the order discovery returned
+// (alphabetical). Nothing is removed.
+//
+// It exists because a provider's /v1/models is a shelf, not a statement about
+// what a model can do or what an account may invoke. NVIDIA's returns 103 ids
+// as bare {id, object, created, owned_by} records with one identical created
+// stamp — no field separates gpt-oss-120b from nv-embed-v1, and none says
+// whether the key can call either. Sorted alphabetically that put
+// 01-ai/yi-large first, which is how a first turn on a fresh key answered
+// 404 "Function not found for account": listed, not deployed.
+//
+// Ordering rather than filtering, because the catalog only describes 43 of
+// those 103. Hiding the other 60 would hide most of what the provider serves
+// on the strength of a table already measured to be wrong about this endpoint
+// 43 times. Floating the known-good ones costs nothing and is honest about
+// what it knows: everything is still there, in a better order.
+//
+// A no-op when the catalog has nothing to say — which is every unit test, and
+// every local runtime whose model names no catalog has ever heard of.
+func usableFirst(providerName string, models []string) []string {
+	if len(models) < 2 {
+		return models
+	}
+	installedCatalogMu.RLock()
+	c := installedCatalog
+	installedCatalogMu.RUnlock()
+
+	vouched := make([]string, 0, len(models))
+	rest := make([]string, 0, len(models))
+	for _, id := range models {
+		facts, ok := c.For(providerName, id)
+		if ok && facts.ToolCall && facts.TextOut {
+			vouched = append(vouched, id)
+			continue
+		}
+		rest = append(rest, id)
+	}
+	if len(vouched) == 0 {
+		return models
+	}
+	return append(vouched, rest...)
+}
+
+func discoverModelChoices(p, baseURL, apiKey string) ([]string, error) {
 	canonical := provider.Normalize(p)
 	switch provider.RuntimeFor(canonical) {
 	case provider.RuntimeOllama:

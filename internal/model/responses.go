@@ -79,7 +79,7 @@ func NewResponsesProvider(cfg ResponsesConfig) (*ResponsesProvider, error) {
 		apiKey:      strings.TrimSpace(cfg.APIKey),
 		tokenSource: cfg.TokenSource,
 		headers:     cfg.Headers,
-		httpClient:  newModelHTTPClient(timeout),
+		httpClient:  newModelHTTPClient(timeout, baseURL),
 	}, nil
 }
 

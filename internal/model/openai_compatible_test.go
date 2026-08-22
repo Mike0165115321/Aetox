@@ -887,3 +887,158 @@ func TestStreamAccumulatorKeepsExtraContent(t *testing.T) {
 		t.Errorf("arguments were disturbed: %q", got)
 	}
 }
+
+// Gemini's compat layer sends each tool call whole, in its own chunk, with its
+// own id and no index field — so every one of them decodes to index 0. Keyed by
+// index alone the pair became one call carrying both argument objects glued
+// together, and sending that back cost the next turn a flat 400
+// "Request contains an invalid argument" (gemini-3.7-flash, 21 Aug 2026).
+func TestStreamAccumulatorSplitsWholeCallsThatShareAnIndex(t *testing.T) {
+	fn := func(name, args string) struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} {
+		return struct {
+			Name      string `json:"name"`
+			Arguments string `json:"arguments"`
+		}{Name: name, Arguments: args}
+	}
+	acc := newStreamToolAccumulator(nil)
+	acc.add([]streamToolCallDelta{{
+		ID: "call_1", Type: "function", Function: fn("get_weather", `{"city":"Chiang Mai"}`),
+		ExtraContent: json.RawMessage(`{"google":{"thought_signature":"sig"}}`),
+	}})
+	acc.add([]streamToolCallDelta{{
+		ID: "call_2", Type: "function", Function: fn("get_time", `{"city":"Chiang Mai"}`),
+	}})
+
+	calls := acc.finalize()
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 calls, got %d: %#v", len(calls), calls)
+	}
+	if calls[0].ID != "call_1" || calls[0].Function.Name != "get_weather" {
+		t.Errorf("first call is wrong: %#v", calls[0])
+	}
+	if calls[1].ID != "call_2" || calls[1].Function.Name != "get_time" {
+		t.Errorf("second call is wrong: %#v", calls[1])
+	}
+	for _, call := range calls {
+		if _, err := ParseToolArguments(call.Function.Arguments); err != nil {
+			t.Errorf("arguments of %s are not valid JSON (%q): %v", call.ID, call.Function.Arguments, err)
+		}
+	}
+	// The signature belongs to the call it arrived with, not to whichever call
+	// happened to be open at index 0.
+	if got := string(calls[0].ExtraContent); got != `{"google":{"thought_signature":"sig"}}` {
+		t.Errorf("first call lost its signature: %q", got)
+	}
+	if len(calls[1].ExtraContent) != 0 {
+		t.Errorf("second call was handed a signature it never had: %q", string(calls[1].ExtraContent))
+	}
+}
+
+// The OpenAI shape must keep working: id once on the opening fragment, index on
+// every fragment, arguments in pieces — and two calls that differ only by index.
+func TestStreamAccumulatorKeepsIndexedFragmentsApart(t *testing.T) {
+	fn := func(name, args string) struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} {
+		return struct {
+			Name      string `json:"name"`
+			Arguments string `json:"arguments"`
+		}{Name: name, Arguments: args}
+	}
+	acc := newStreamToolAccumulator(nil)
+	acc.add([]streamToolCallDelta{{Index: 0, ID: "call_a", Type: "function", Function: fn("read", `{"path":`)}})
+	acc.add([]streamToolCallDelta{{Index: 1, ID: "call_b", Type: "function", Function: fn("read", `{"path":`)}})
+	acc.add([]streamToolCallDelta{{Index: 0, Function: fn("", `"a.txt"}`)}})
+	acc.add([]streamToolCallDelta{{Index: 1, Function: fn("", `"b.txt"}`)}})
+
+	calls := acc.finalize()
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 calls, got %d: %#v", len(calls), calls)
+	}
+	if calls[0].ID != "call_a" || calls[0].Function.Arguments != `{"path":"a.txt"}` {
+		t.Errorf("first call is wrong: %#v", calls[0])
+	}
+	if calls[1].ID != "call_b" || calls[1].Function.Arguments != `{"path":"b.txt"}` {
+		t.Errorf("second call is wrong: %#v", calls[1])
+	}
+}
+
+// OpenAI's newer models answer max_tokens with "400: Unsupported parameter:
+// 'max_tokens' is not supported with this model. Use 'max_completion_tokens'
+// instead", which ends the turn before a token is generated — measured on
+// gpt-5.6-sol, 21 Aug 2026. Every other host in the catalog is still on
+// max_tokens and rejects a field it has never heard of, so the switch is
+// per-provider and has to stay that way.
+func TestOpenAISendsMaxCompletionTokensAndNobodyElseDoes(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body = nil
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if streamed, _ := body["stream"].(bool); streamed {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n"))
+			_, _ = w.Write([]byte("data: [DONE]\n\n"))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	openai, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
+		Provider: "openai", Model: "gpt-5.6-sol", APIKey: "sk-x", BaseURL: server.URL,
+	})
+	if err != nil {
+		t.Fatalf("NewOpenAICompatibleProvider: %v", err)
+	}
+	if _, err := openai.Complete(context.Background(), Request{
+		Messages:  []Message{{Role: RoleUser, Content: "hi"}},
+		MaxTokens: 4096,
+	}); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if _, sent := body["max_tokens"]; sent {
+		t.Errorf("openai was sent max_tokens, the field it rejects: %v", body)
+	}
+	if body["max_completion_tokens"] != float64(4096) {
+		t.Errorf("max_completion_tokens = %v, want 4096", body["max_completion_tokens"])
+	}
+
+	// The streamed path is the one every desktop turn takes, so it has to make
+	// the same choice.
+	if _, err := openai.StreamComplete(context.Background(), Request{
+		Messages:  []Message{{Role: RoleUser, Content: "hi"}},
+		MaxTokens: 4096,
+	}, nil, nil); err != nil {
+		t.Fatalf("StreamComplete: %v", err)
+	}
+	if _, sent := body["max_tokens"]; sent {
+		t.Errorf("streamed openai request carried max_tokens: %v", body)
+	}
+	if body["max_completion_tokens"] != float64(4096) {
+		t.Errorf("streamed max_completion_tokens = %v, want 4096", body["max_completion_tokens"])
+	}
+
+	other, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
+		Provider: "kimi", Model: "kimi-k2", APIKey: "k", BaseURL: server.URL,
+	})
+	if err != nil {
+		t.Fatalf("NewOpenAICompatibleProvider (kimi): %v", err)
+	}
+	if _, err := other.Complete(context.Background(), Request{
+		Messages:  []Message{{Role: RoleUser, Content: "hi"}},
+		MaxTokens: 4096,
+	}); err != nil {
+		t.Fatalf("Complete (kimi): %v", err)
+	}
+	if body["max_tokens"] != float64(4096) {
+		t.Errorf("kimi lost max_tokens: %v", body)
+	}
+	if _, sent := body["max_completion_tokens"]; sent {
+		t.Errorf("kimi was sent a field only OpenAI takes: %v", body)
+	}
+}

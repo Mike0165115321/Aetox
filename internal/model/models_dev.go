@@ -482,7 +482,7 @@ func FetchModelCatalog(ctx context.Context, endpoint string) (*ModelCatalog, err
 	}
 	// The shared model client: same retry and timeout behaviour every other
 	// outbound call in this package gets, rather than a second HTTP policy.
-	resp, err := newModelHTTPClient(2 * time.Minute).Do(req)
+	resp, err := newModelHTTPClient(2*time.Minute, endpoint).Do(req)
 	if err != nil {
 		return nil, err
 	}

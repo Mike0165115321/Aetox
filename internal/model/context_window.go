@@ -72,7 +72,17 @@ func ContextWindowTokens(provider, modelName string) int {
 		}
 		return 0
 	default:
-		return 0 // ollama and unknown providers: no promise we can keep
+		// ollama and unknown providers: no promise we can keep.
+		//
+		// modelscope, nvidia and ollama-cloud are here by decision, not by
+		// omission. The fetched catalog above already answers for the models it
+		// describes, and for the rest — which on these three is most of them,
+		// since all three serve far more than any table lists — the only
+		// figures available are checkpoint numbers off model cards —
+		// which is the source that put 32,768 on a ThaiLLM deployment serving
+		// 16,384. A curated line here would be that same guess with a nicer
+		// home. Fill it in when the endpoint refuses something and says so.
+		return 0
 	}
 }
 

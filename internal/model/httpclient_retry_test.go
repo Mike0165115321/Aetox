@@ -41,7 +41,7 @@ func TestRetryTransportRetriesRateLimitAndSucceeds(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newModelHTTPClient(5 * time.Second)
+	client := newModelHTTPClient(5*time.Second, "")
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL, strings.NewReader("hello"))
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
@@ -70,7 +70,7 @@ func TestRetryTransportDoesNotRetryClientErrors(t *testing.T) {
 			w.WriteHeader(status)
 		}))
 
-		client := newModelHTTPClient(5 * time.Second)
+		client := newModelHTTPClient(5*time.Second, "")
 		resp, err := client.Do(mustPost(t, server.URL))
 		if err != nil {
 			t.Fatalf("Do: %v", err)
@@ -98,7 +98,7 @@ func TestRetryTransportDoesNotRetryInsufficientQuota(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newModelHTTPClient(5 * time.Second)
+	client := newModelHTTPClient(5*time.Second, "")
 	resp, err := client.Do(mustPost(t, server.URL))
 	if err != nil {
 		t.Fatalf("Do: %v", err)
@@ -135,7 +135,7 @@ func TestRetryTransportDoesNotRetryABalanceOfZeroInAnyDialect(t *testing.T) {
 			_, _ = w.Write([]byte(body))
 		}))
 
-		client := newModelHTTPClient(5 * time.Second)
+		client := newModelHTTPClient(5*time.Second, "")
 		resp, err := client.Do(mustPost(t, server.URL))
 		if err != nil {
 			server.Close()
@@ -173,7 +173,7 @@ func TestRetryTransportStillRetriesARealRateLimit(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newModelHTTPClient(5 * time.Second)
+	client := newModelHTTPClient(5*time.Second, "")
 	resp, err := client.Do(mustPost(t, server.URL))
 	if err != nil {
 		t.Fatalf("Do: %v", err)
@@ -196,7 +196,7 @@ func TestRetryTransportGivesUpOnLongWindows(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newModelHTTPClient(5 * time.Second)
+	client := newModelHTTPClient(5*time.Second, "")
 	start := time.Now()
 	resp, err := client.Do(mustPost(t, server.URL))
 	if err != nil {
@@ -221,7 +221,7 @@ func TestRetryTransportStopsAtTheAttemptCap(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newModelHTTPClient(5 * time.Second)
+	client := newModelHTTPClient(5*time.Second, "")
 	resp, err := client.Do(mustPost(t, server.URL))
 	if err != nil {
 		t.Fatalf("Do: %v", err)
@@ -245,7 +245,7 @@ func TestRetryTransportHonorsCancellation(t *testing.T) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, strings.NewReader("x"))
 
 	start := time.Now()
-	if _, err := newModelHTTPClient(5 * time.Second).Do(req); err == nil {
+	if _, err := newModelHTTPClient(5*time.Second, "").Do(req); err == nil {
 		t.Fatal("a cancelled request kept waiting out the retry")
 	}
 	if elapsed := time.Since(start); elapsed > 3*time.Second {
@@ -406,5 +406,46 @@ func TestProviderRetryAfterReportsWhetherTheProviderSaid(t *testing.T) {
 	wait, stated := providerRetryAfter(spoke)
 	if !stated || wait != 12*time.Second {
 		t.Fatalf("providerRetryAfter = %s, %v; want 12s stated", wait, stated)
+	}
+}
+
+// Google says "you exceeded your current quota, please check your plan and
+// billing details" for a limit that clears in forty seconds, and the marker list
+// matched it — so a free key was told to go top up, and the retry that would
+// have fixed it never ran. The body's own "Please retry in 43.3s" is the
+// rebuttal. Measured against gemini-3.7-flash, 21 Aug 2026.
+func TestRetryTransportRetriesAQuotaThatNamesItsOwnWait(t *testing.T) {
+	const body = `{"error":{"code":429,"message":"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits.\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.7-flash\nPlease retry in 43.324604531s.","status":"RESOURCE_EXHAUSTED"}}`
+
+	var calls int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(body))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := newModelHTTPClient(5*time.Second, "")
+	resp, err := client.Do(mustPost(t, server.URL))
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	resp.Body.Close()
+
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Fatalf("calls = %d; want the wait honoured and the turn saved", got)
+	}
+	if outOfCredits([]byte(body)) {
+		t.Error("a 429 that names a retry window was read as an empty wallet")
+	}
+	// The rebuttal must not reach across bodies: a wallet that really is empty
+	// says nothing about waiting, and still has to stop the retries.
+	empty := `{"error":{"message":"You exceeded your current quota, please check your plan and billing details.","type":"insufficient_quota"}}`
+	if !outOfCredits([]byte(empty)) {
+		t.Error("insufficient_quota stopped being read as an empty wallet")
 	}
 }

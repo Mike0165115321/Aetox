@@ -216,6 +216,12 @@ type App struct {
 	// because it is one running app's state, not the package's — and guarded
 	// because StageUpdate runs on whichever goroutine Wails hands it while
 	// RestartToUpdate reads it from another.
+	// capabilities guards the one capability download allowed to be in flight
+	// (capabilities.go). Its own lock rather than stagedMu: they protect
+	// unrelated things, and one mutex covering two is how an unrelated caller
+	// ends up waiting on a 150MB download.
+	capabilities capabilityInstall
+
 	stagedMu sync.Mutex
 	staged   update.Staged
 }
@@ -1362,6 +1368,13 @@ var desktopProviders = []string{
 	// back "Unauthorized" rather than "No API key found", which is what proves
 	// the standard header is read and no new client is needed.
 	"xai", "thaillm",
+	// Added 2026-08-20 and probed the same way, all three from a Thai IP with
+	// no token: api-inference.modelscope.cn, integrate.api.nvidia.com and
+	// ollama.com each answered 200 on /v1/models and 401 on
+	// /v1/chat/completions, so none is geo-walled and all three read the
+	// standard bearer header. They are the free-and-cheap end of the picker —
+	// the rows that let someone start without a card.
+	"modelscope", "nvidia", "ollama-cloud",
 	"aetox",
 }
 

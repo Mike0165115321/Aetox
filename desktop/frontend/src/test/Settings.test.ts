@@ -12,7 +12,7 @@ import {
   AgentSkills, AgentNeeds, PlacementTargets, SetMCPServerTargets,
   ChairStarters, SaveChairStarters,
   Connections, ConnectAccount, SetConnectionTargets, VerifyConnection, DisconnectAccount,
-  AcceptsAPIKey, ProviderAPIKeyURL, ProviderReady, PriceModels,
+  AcceptsAPIKey, ProviderAPIKeyURL, ProviderReady, PriceModels, TestProviderConnection,
 } from './mocks/wailsApp'
 import { BrowserOpenURL } from './mocks/wailsRuntime'
 import { applyTypeScale } from '../lib/typeScale.svelte'
@@ -2394,5 +2394,84 @@ describe('the model list can be searched and priced', () => {
     await fireEvent.click(toggle!)
 
     await waitFor(() => expect(rowNames(container)).toEqual(['google/gemma-4-31b-it:free']))
+  })
+})
+
+// A probe changes nothing, so it has no business holding the page.
+//
+// Until 22 ส.ค. 2569 the test button went through run(), which takes the single
+// `busy` lock every control on the page is disabled by — so checking a list of
+// twelve models meant twelve waits, one after another. The result was one
+// string too, so testing the second model erased the first one's answer: the
+// comparison the tests were being run to make.
+describe('model probes run side by side', () => {
+  const seedTwo = () => {
+    vi.mocked(SupportedProviders).mockResolvedValue(['openrouter'] as any)
+    vi.mocked(EnabledProviders).mockResolvedValue(['openrouter'] as any)
+    vi.mocked(SignInMethods).mockResolvedValue([] as any)
+    vi.mocked(ListModelsForProvider).mockResolvedValue(['model-a', 'model-b'] as any)
+    vi.mocked(PriceModels).mockResolvedValue([] as any)
+  }
+  const probes = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.mrow button.icobtn.tiny')) as HTMLButtonElement[]
+
+  it('does not disable the other rows while one is in flight, and keeps both answers', async () => {
+    seedTwo()
+    // Two deferred calls, so both can be in flight at once — the state the old
+    // lock made unreachable.
+    const settle: Record<string, (v: string) => void> = {}
+    vi.mocked(TestProviderConnection).mockImplementation(
+      (_p: string, m: string) => new Promise<string>((resolve) => { settle[m] = resolve }) as any,
+    )
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การตั้งค่าโมเดล')
+    await waitFor(() => expect(probes(container).length).toBe(2))
+
+    await fireEvent.click(probes(container)[0])
+    // The regression, in one assertion: the second row must still be clickable
+    // while the first is waiting.
+    await waitFor(() => expect(probes(container)[0].disabled).toBe(true))
+    expect(probes(container)[1].disabled).toBe(false)
+
+    await fireEvent.click(probes(container)[1])
+    await waitFor(() => expect(probes(container)[1].disabled).toBe(true))
+
+    // Answer out of order, because that is what a real pair of providers does.
+    settle['model-b']('model-b · 120ms')
+    settle['model-a']('model-a · 900ms')
+
+    // Both results survive. One string could only ever hold the last one.
+    await waitFor(() => {
+      const text = container.textContent ?? ''
+      expect(text).toContain('model-a · 900ms')
+      expect(text).toContain('model-b · 120ms')
+    })
+    expect(container.querySelectorAll('.conn-test').length).toBe(2)
+  })
+
+  it('keeps a failure under the row that failed', async () => {
+    seedTwo()
+    vi.mocked(TestProviderConnection).mockImplementation((_p: string, m: string) =>
+      m === 'model-a' ? Promise.reject(new Error('401 no key')) : Promise.resolve('model-b · 80ms') as any,
+    )
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การตั้งค่าโมเดล')
+    await waitFor(() => expect(probes(container).length).toBe(2))
+
+    await fireEvent.click(probes(container)[0])
+    await fireEvent.click(probes(container)[1])
+
+    await waitFor(() => {
+      const rows = Array.from(container.querySelectorAll('.conn-test'))
+      expect(rows.length).toBe(2)
+      // A failed probe belongs under its own row, not in the page-level error
+      // banner, where the next probe's failure would speak over it.
+      expect(rows[0].textContent).toContain('401 no key')
+      expect(rows[0].classList.contains('ok')).toBe(false)
+      expect(rows[1].classList.contains('ok')).toBe(true)
+    })
+    expect(container.querySelector('.mset-error')).toBeNull()
   })
 })

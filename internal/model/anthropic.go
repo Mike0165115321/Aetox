@@ -80,7 +80,7 @@ func NewAnthropicProvider(cfg AnthropicConfig) (*AnthropicProvider, error) {
 		model:      model,
 		apiKey:     apiKey,
 		baseURL:    baseURL,
-		httpClient: newModelHTTPClient(timeout),
+		httpClient: newModelHTTPClient(timeout, baseURL),
 	}, nil
 }
 

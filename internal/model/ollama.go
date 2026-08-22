@@ -46,7 +46,7 @@ func NewOllamaProvider(cfg OllamaConfig) (*OllamaProvider, error) {
 	return &OllamaProvider{
 		model:      model,
 		baseURL:    baseURL,
-		httpClient: newModelHTTPClient(timeout),
+		httpClient: newModelHTTPClient(timeout, baseURL),
 	}, nil
 }
 

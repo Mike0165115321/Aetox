@@ -117,6 +117,11 @@ func TestLiveEveryConfiguredProvider(t *testing.T) {
 			// The model list is asked of the provider before it is used, so a
 			// fallback id that has quietly died reads as its own failure rather
 			// than as a confusing 404 out of the chat call.
+			// An empty fallback is an answer, not an omission: rows whose
+			// endpoint serves /v1/models to anyone deliberately write no name
+			// down (modelscope, nvidia, ollama-cloud — see their catalog
+			// entries). For those the live list is not a check on the row, it
+			// IS the row, so take the first served id and carry on.
 			modelID := spec.ModelDefaults.FallbackModel
 			if live, err := model.DiscoverOpenAICompatibleModels(name, spec.BaseURL, key); err != nil {
 				// Not a failure of its own: a provider may refuse to list models
@@ -124,18 +129,30 @@ func TestLiveEveryConfiguredProvider(t *testing.T) {
 				// xAI answers /v1/models with 403 until the team has credits.
 				t.Logf("  %-11s (model list unavailable: %v)", name, err)
 			} else if len(live) > 0 {
-				found := false
-				for _, m := range live {
-					if sameModelID(m, modelID) {
-						found = true
-						break
+				if strings.TrimSpace(modelID) == "" {
+					modelID = live[0]
+					t.Logf("  %-11s (no fallback by design — asking the endpoint: %s)", name, modelID)
+				} else {
+					found := false
+					for _, m := range live {
+						if sameModelID(m, modelID) {
+							found = true
+							break
+						}
+					}
+					if !found {
+						t.Errorf("fallbackModel %q is NOT in the live list (%d served, first: %s) — "+
+							"the catalog row points at something nobody serves", modelID, len(live), live[0])
+						modelID = live[0]
 					}
 				}
-				if !found {
-					t.Errorf("fallbackModel %q is NOT in the live list (%d served, first: %s) — "+
-						"the catalog row points at something nobody serves", modelID, len(live), live[0])
-					modelID = live[0]
-				}
+			}
+			// Only reachable when the row writes no name AND the list could not
+			// be read — a provider that gates /v1/models behind a key it just
+			// rejected, say. Nothing left to try, and guessing would report a
+			// 404 as if the row were wrong.
+			if strings.TrimSpace(modelID) == "" {
+				t.Skipf("  %-11s SKIP  no fallback in the row and no live list to ask", name)
 			}
 
 			p, err := model.NewProvider(model.ProviderOptions{

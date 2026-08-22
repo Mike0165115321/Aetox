@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -28,7 +29,12 @@ import (
 //
 // connectTimeout bounds only establishing the TCP connection, so an unreachable
 // API still fails fast without capping generation.
-func newModelHTTPClient(connectTimeout time.Duration) *http.Client {
+//
+// endpoint is where this client will be pointed, and it decides the one bound
+// that IS set — see firstByteBudget. Passing "" is treated as remote, which is
+// the safer of the two guesses: a bound that is too generous only delays an
+// error, while one that is too tight cancels work that was going fine.
+func newModelHTTPClient(connectTimeout time.Duration, endpoint string) *http.Client {
 	if connectTimeout <= 0 {
 		connectTimeout = 30 * time.Second
 	}
@@ -37,7 +43,84 @@ func newModelHTTPClient(connectTimeout time.Duration) *http.Client {
 		Timeout:   connectTimeout,
 		KeepAlive: 30 * time.Second,
 	}).DialContext
+	// The backstop that was missing. Until this, connectTimeout was the only
+	// bound in the client and it covers only the dial — which is worth nothing
+	// against a local server, because dialing localhost always succeeds
+	// instantly. Ollama accepts the connection the moment it is asked and then
+	// says nothing at all while it loads a model into VRAM, and with no
+	// http.Client.Timeout and no ResponseHeaderTimeout there was nothing above
+	// it: the turn's context is WithCancel, not WithTimeout (desktop/app.go —
+	// cancel belongs to the Stop button, it is not a clock). So a stalled
+	// server was an unbounded wait with no error, which is what "it hangs" is.
+	// Measured against a server that accepts and never writes a header:
+	// http.Client.Timeout 0s, ResponseHeaderTimeout 0s, nothing returned.
+	//
+	// ResponseHeaderTimeout rather than http.Client.Timeout, deliberately, and
+	// for the reason stated above: it stops waiting for the FIRST header and
+	// never touches a response already arriving, so a long generation that is
+	// working is left alone.
+	transport.ResponseHeaderTimeout = firstByteBudget(endpoint)
 	return &http.Client{Transport: &retryTransport{base: transport}}
+}
+
+// firstByteBudget is how long to wait for a provider to begin answering before
+// calling it stuck.
+//
+// Both numbers are backstops, not latency targets, and they are large on
+// purpose. A tight bound is not available here: the streaming path writes its
+// header as soon as the first token exists, but the tool loop and the
+// summarizer call Complete (cognitive/agent.go), and a non-streaming response
+// sends no header until the whole generation is finished. Thirty seconds would
+// have been a fine number for the streaming half and would have cancelled a
+// perfectly healthy 8k-token tool-loop reply for everyone else — the same
+// mistake http.Client.Timeout would make, moved one field over. Splitting the
+// two would take a second client per provider, and it is worth doing only if
+// these numbers turn out to be reached in practice.
+//
+// Local gets three times the room because it has a whole extra phase first:
+// a hosted endpoint that has said nothing for five minutes is stuck, while a
+// local one may still be reading a 70B checkpoint off a cold disk, which is
+// slow and completely healthy.
+func firstByteBudget(endpoint string) time.Duration {
+	const (
+		remote = 5 * time.Minute
+		local  = 15 * time.Minute
+	)
+	if isLoopbackEndpoint(endpoint) {
+		return local
+	}
+	return remote
+}
+
+// isLoopbackEndpoint reports whether this URL points at the user's own machine.
+//
+// The host is what is asked, not the provider name, and that is the point: it
+// answers correctly for someone who has pointed the openai row at a llama-server
+// on their own box, and it does not hand the local budget to `ollama-cloud`,
+// which is the ollama name on somebody else's hardware.
+func isLoopbackEndpoint(endpoint string) bool {
+	raw := strings.TrimSpace(endpoint)
+	if raw == "" {
+		return false
+	}
+	if !strings.Contains(raw, "://") {
+		raw = "http://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	if host == "" {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }
 
 // retryTransport retries the answers that mean "ask again shortly", and the
@@ -240,6 +323,27 @@ var outOfCreditsMarkers = [][]byte{
 	[]byte("exceeded your current quota"),
 }
 
+// waitItOutMarkers are a body's own rebuttal: words that name a wait, which an
+// account with no money in it never has a reason to say.
+//
+// They exist because one entry above is not a provider's phrase but a fragment
+// of English, and Google reuses it for the opposite condition. The free tier's
+// 429 opens with "You exceeded your current quota, please check your plan and
+// billing details" — matching the marker — and then goes on: "* Quota exceeded
+// for metric: generate_content_free_tier_requests, limit: 20 ... Please retry
+// in 43.324604531s." Read as an empty wallet, that told a user on a free key to
+// go top up a card that has nothing to do with it, and stopped the retry that
+// would have cleared it in under a minute (measured against gemini-3.7-flash,
+// 21 Aug 2026).
+//
+// A rebuttal beats a marker rather than joining the list, because the two are
+// not the same kind of evidence. A marker is a guess from wording; a retry
+// window is the provider stating the fix.
+var waitItOutMarkers = [][]byte{
+	[]byte("please retry in"), // Google, in the sentence it appends to the quota line
+	[]byte("retrydelay"),      // the same fact as a field, in Google's RetryInfo detail
+}
+
 // providerErrorMessage pulls the human sentence out of the {"error":{"message":
 // …}} shape every OpenAI-compatible host uses for failures, so an error can
 // quote the provider instead of paraphrasing it. Empty when the body is shaped
@@ -277,6 +381,11 @@ func outOfCreditsError(providerName string, status int, said string) error {
 // rate limit. No backoff clears the first; only the user paying does.
 func outOfCredits(body []byte) bool {
 	lower := bytes.ToLower(body)
+	for _, rebuttal := range waitItOutMarkers {
+		if bytes.Contains(lower, rebuttal) {
+			return false
+		}
+	}
 	for _, marker := range outOfCreditsMarkers {
 		if bytes.Contains(lower, marker) {
 			return true

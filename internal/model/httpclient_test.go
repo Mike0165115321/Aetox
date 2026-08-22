@@ -17,7 +17,7 @@ func TestModelHTTPClientDoesNotCapGeneration(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newModelHTTPClient(20 * time.Millisecond)
+	client := newModelHTTPClient(20 * time.Millisecond, "")
 	if client.Timeout != 0 {
 		t.Fatalf("model client must not set a whole-request timeout, got %v", client.Timeout)
 	}
