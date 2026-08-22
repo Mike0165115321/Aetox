@@ -312,26 +312,6 @@ func discoverModelChoices(p, baseURL, apiKey string) ([]string, error) {
 		}
 		return nil, err
 	case provider.RuntimeResponses:
-		// api.openai.com speaks /responses for turns but still lists its models
-		// the ordinary way, at GET /v1/models. The codex list below is the
-		// ChatGPT backend's own endpoint — it answers what one *plan* may use,
-		// takes a client_version, and replies in a shape of its own, so asking
-		// it of the public API returns nothing and the picker comes up empty.
-		//
-		// Keyed on the row having an OpenAI-compatible alt rather than on the
-		// name "openai", which is the same test the Anthropic branch below
-		// already uses to find DeepSeek's model list.
-		if spec, ok := provider.Lookup(canonical); ok && spec.AltRuntime == provider.RuntimeOpenAICompatible {
-			listURL := baseURL
-			if listURL == "" {
-				listURL = spec.AltBaseURL
-			}
-			models, err := DiscoverOpenAICompatibleModels(canonical, listURL, apiKey)
-			if err == nil && len(models) > 0 {
-				return models, nil
-			}
-			return nil, err
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if apiKey == "" {

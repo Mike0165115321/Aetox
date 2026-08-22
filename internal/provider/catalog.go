@@ -241,20 +241,24 @@ var catalog = map[string]*entry{
 		quotaSource:    QuotaOpenAIStd,
 		aliases:        []string{"openai", "chatgpt", "gpt", "openai-compatible", "compatible"},
 		requiresAPIKey: true,
-		// Default to /responses, keep /chat/completions as the alt — the same
-		// call DeepSeek's row makes below, for the same reason: the default has
-		// to be the format that actually carries the models people came for.
+		// /chat/completions stays the default — OpenAI's own model pages list
+		// it alongside /responses for the ordinary line (gpt-5.6 sol, luna,
+		// terra, 5.5), and it is the format this row has always spoken, which
+		// matters because the same row is what a third-party OpenAI-compatible
+		// endpoint gets pointed at.
 		//
-		// Measured 2026-08-22 on the owner's key: every current model (5.6 sol
-		// at xhigh/high/medium, 5.5) answers /chat/completions with a 400 that
-		// says the model is not supported on that endpoint. Reasoning models
-		// are Responses-only on api.openai.com, so the old default was dead for
-		// everything except the leftovers — including this row's own fallback
-		// model. A user pointing this row at a third-party OpenAI-compatible
-		// endpoint switches back in Settings, which is what the alt is for.
-		runtime:        RuntimeResponses,
+		// /responses is the alt because a whole family is served there and
+		// nowhere else: the codex models (gpt-5-codex, 5.1/5.3-codex), the Pro
+		// tiers (5.4-pro, 5.5-pro) and 5.6-cyber. On /chat/completions those
+		// answer 400 rather than a reply, and before this row had a second
+		// format there was no way to reach them with an API key at all — only
+		// through a ChatGPT sign-in, which is a different account and a
+		// different bill (see "codex" below).
+		//
+		// Same host either way, so the URL does not change with the format.
+		runtime:        RuntimeOpenAICompatible,
 		baseURL:        "https://api.openai.com/v1",
-		altRuntime:     RuntimeOpenAICompatible,
+		altRuntime:     RuntimeResponses,
 		altBaseURL:     "https://api.openai.com/v1",
 		envKeys:        []string{"OPENAI_API_KEY", "OPENAI_TOKEN"},
 		apiKeyURL:      "https://platform.openai.com/api-keys",
