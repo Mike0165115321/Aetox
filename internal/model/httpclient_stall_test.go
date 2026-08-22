@@ -2,6 +2,8 @@ package model
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -87,5 +89,86 @@ func TestAStalledServerEventuallyErrors(t *testing.T) {
 		}
 	case <-time.After(30 * time.Second):
 		t.Fatal("nothing bounded the request — this is the hang, still unfixed")
+	}
+}
+
+// The first byte is only half the promise. A provider that starts streaming
+// and then goes silent — falls over mid-answer without dropping the socket —
+// used to be the SAME unbounded wait one layer later: ResponseHeaderTimeout
+// was spent, the context is WithCancel, and a blocked Read has no clock of its
+// own. The watchdog closes the read and surfaces io.ErrUnexpectedEOF so the
+// existing dropped-connection machinery (transport retry, cognitive replay)
+// treats a stalled stream exactly like a cut one.
+func TestAStalledStreamEventuallyErrors(t *testing.T) {
+	stall := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("data: first chunk\n\n"))
+		w.(http.Flusher).Flush()
+		<-stall
+	}))
+	defer func() { close(stall); srv.Close() }()
+
+	c := newModelHTTPClient(20*time.Second, srv.URL)
+	c.Transport.(*retryTransport).idle = 300 * time.Millisecond
+
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		_, readErr := io.ReadAll(resp.Body)
+		done <- readErr
+	}()
+
+	select {
+	case readErr := <-done:
+		if readErr == nil {
+			t.Fatal("a stream that went silent forever read to a clean EOF")
+		}
+		if !errors.Is(readErr, io.ErrUnexpectedEOF) {
+			t.Fatalf("a stalled stream must fail as io.ErrUnexpectedEOF so the dropped-connection retry covers it, got: %v", readErr)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("nothing bounded the silent stream — the mid-answer hang, still unfixed")
+	}
+}
+
+// The bound is on silence, not on duration: an answer that keeps trickling in
+// past the idle budget many times over must arrive whole. This is the case
+// that rules out the obvious wrong fixes (Client.Timeout, a deadline on the
+// context), which would have cancelled it.
+func TestASlowButLiveStreamIsNeverInterrupted(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		for range 6 {
+			_, _ = w.Write([]byte("chunk."))
+			w.(http.Flusher).Flush()
+			time.Sleep(100 * time.Millisecond)
+		}
+	}))
+	defer srv.Close()
+
+	c := newModelHTTPClient(20*time.Second, srv.URL)
+	// Total transfer ~600ms, longest single gap ~100ms: over the budget as a
+	// whole, comfortably under it between bytes.
+	c.Transport.(*retryTransport).idle = 300 * time.Millisecond
+
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("a live stream was interrupted: %v", err)
+	}
+	if got, want := string(body), "chunk.chunk.chunk.chunk.chunk.chunk."; got != want {
+		t.Fatalf("body = %q, want %q", got, want)
 	}
 }

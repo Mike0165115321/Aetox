@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -59,8 +60,19 @@ func newModelHTTPClient(connectTimeout time.Duration, endpoint string) *http.Cli
 	// for the reason stated above: it stops waiting for the FIRST header and
 	// never touches a response already arriving, so a long generation that is
 	// working is left alone.
-	transport.ResponseHeaderTimeout = firstByteBudget(endpoint)
-	return &http.Client{Transport: &retryTransport{base: transport}}
+	//
+	// idle is the same budget applied to the OTHER half of the exchange: the
+	// gap between bytes once the response is arriving. ResponseHeaderTimeout
+	// covers only the first byte, so a provider that started streaming and then
+	// went silent — the shape a remote endpoint takes when it falls over
+	// mid-answer without dropping the socket — was an unbounded wait that no
+	// clock anywhere could end (the turn's context is WithCancel, not
+	// WithTimeout: cancel belongs to the Stop button). Per-read, so a long
+	// generation that keeps producing tokens is never touched; only total
+	// silence for the whole budget trips it.
+	budget := firstByteBudget(endpoint)
+	transport.ResponseHeaderTimeout = budget
+	return &http.Client{Transport: &retryTransport{base: transport, idle: budget}}
 }
 
 // firstByteBudget is how long to wait for a provider to begin answering before
@@ -150,6 +162,10 @@ type retryTransport struct {
 	// resets in an hour is not something to block a turn on; it is something to
 	// report.
 	maxWait time.Duration
+	// idle bounds the silence between body bytes once a response is arriving
+	// (see newModelHTTPClient). Zero means unwrapped — the state every test
+	// that constructs a retryTransport by hand has always relied on.
+	idle time.Duration
 }
 
 func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -190,14 +206,14 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		if attempt >= attempts || !replayable || !retryableStatus(resp.StatusCode) || insufficientQuota(resp) {
-			return resp, nil
+			return t.wrapIdle(resp), nil
 		}
 
 		wait := retryAfter(resp, attempt)
 		if wait > maxWait {
 			// Longer than we are willing to hold the turn open: hand the
 			// response back so the runtime can report when it resets.
-			return resp, nil
+			return t.wrapIdle(resp), nil
 		}
 
 		// The body must be drained and closed or the connection is not reused,
@@ -213,6 +229,49 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 	}
 }
+
+// wrapIdle puts the between-bytes watchdog on a response the caller is about
+// to be handed. Zero idle hands it back untouched.
+func (t *retryTransport) wrapIdle(resp *http.Response) *http.Response {
+	if t.idle <= 0 || resp == nil || resp.Body == nil {
+		return resp
+	}
+	resp.Body = &idleTimeoutBody{rc: resp.Body, budget: t.idle}
+	return resp
+}
+
+// idleTimeoutBody fails a read the underlying connection has gone silent on.
+//
+// Each Read arms a watchdog for the idle budget and disarms it the moment any
+// bytes (or a real error) arrive, so a stream that keeps producing is never
+// interrupted no matter how long the whole answer takes — the bound is on
+// SILENCE, not on duration. When the watchdog fires it closes the underlying
+// body, which is the one documented way to unblock a Read from outside, and
+// the error is surfaced wrapped around io.ErrUnexpectedEOF on purpose: that is
+// already the "connection died under the answer" error the whole stack knows —
+// retryableTransportError retries it, IsDroppedConnection recognises it, and
+// the cognitive layer's dropped-connection replay (its 2-attempt budget)
+// covers a stalled stream exactly as it covers a cut one.
+type idleTimeoutBody struct {
+	rc      io.ReadCloser
+	budget  time.Duration
+	stalled atomic.Bool
+}
+
+func (b *idleTimeoutBody) Read(p []byte) (int, error) {
+	watchdog := time.AfterFunc(b.budget, func() {
+		b.stalled.Store(true)
+		_ = b.rc.Close()
+	})
+	n, err := b.rc.Read(p)
+	watchdog.Stop()
+	if err != nil && b.stalled.Load() {
+		return n, fmt.Errorf("aetox: stream stalled — no data from the provider for %s: %w", b.budget, io.ErrUnexpectedEOF)
+	}
+	return n, err
+}
+
+func (b *idleTimeoutBody) Close() error { return b.rc.Close() }
 
 // sleepBeforeRetry waits out the backoff, but never past the caller's own
 // cancellation — the desktop Stop button has to take effect during a retry
