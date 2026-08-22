@@ -144,7 +144,10 @@ func (a *App) closeAgentTab(id string) error {
 	if err := a.mustOwn(id); err != nil {
 		return err
 	}
-	a.BrowserClose(id)
+	// closeTab, not BrowserClose: this IS the agent closing its own tab, and
+	// telling it afterwards that the user closed the page would be a lie it
+	// would then act on.
+	a.closeTab(id)
 	return nil
 }
 

@@ -795,6 +795,16 @@ type browserHost struct {
 	lastID     string
 	agentID    string
 	agentOrder []string
+	// agentTabClosed remembers that a page the agent was working was closed
+	// out from under it, so the next thing the agent asks of the browser can
+	// say so instead of answering "you have no page open" as though the agent
+	// had forgotten to open one. Owner, 22 ส.ค.: a click in the browser is a
+	// user-side action, and the model is meant to hear about it and carry on.
+	//
+	// One flag rather than a list of ids: what the model can act on is that the
+	// page is gone, and the only move from there is to open again. Which id it
+	// used to have is not something it can do anything with.
+	agentTabClosed bool
 }
 
 func newBrowserHost(app *App) *browserHost {
@@ -1150,7 +1160,23 @@ func (a *App) CloseAllBrowserTabs() {
 	}
 }
 
+// BrowserClose is the frontend's door onto closing a tab, so every call to it
+// is the user: the × on the tab strip, or the panel closing behind one. The
+// agent's own `browser tabs close` goes to closeTab instead, which is what
+// keeps the note this leaves behind honest.
 func (a *App) BrowserClose(id string) {
+	if isAgentTabID(id) {
+		if host, err := a.browserHostLazy(); err == nil {
+			host.mu.Lock()
+			host.agentTabClosed = true
+			host.mu.Unlock()
+		}
+	}
+	a.closeTab(id)
+}
+
+// closeTab is the close itself, with nothing said about who asked for it.
+func (a *App) closeTab(id string) {
 	if host, err := a.browserHostLazy(); err == nil {
 		host.mu.Lock()
 		v := host.views[id]

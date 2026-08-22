@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
@@ -256,43 +257,97 @@ type win32Host struct {
 	cmds     []func()
 	threadID uint32
 	parent   uintptr
-	ready    chan struct{}
+	attempt  *startAttempt
 	started  bool
 	class    *uint16
 }
 
-func newHostBackend() hostBackend { return &win32Host{ready: make(chan struct{})} }
+// startAttempt is one try at bringing the host thread up: a latch that closes
+// exactly once, and the reason it closed.
+//
+// It replaces a bare `ready chan struct{}` that only ever closed on the happy
+// path. err is read only after done closes, so it needs no lock of its own.
+type startAttempt struct {
+	done chan struct{}
+	err  error
+}
+
+func newAttempt() *startAttempt { return &startAttempt{done: make(chan struct{})} }
+
+// browserStartBudget bounds the wait for the host thread.
+//
+// The thread is a CoInitializeEx, a DPI call and a RegisterClassExW — about a
+// millisecond in practice, which browser.start logs every launch. The budget is
+// not a latency target, it is the promise that a browser tool ENDS. Owner, 22
+// ส.ค.: *"มันไม่ควรหยุดสิ ... เว้นแต่จะถูกกดหยุด"* — closing a tab or a panel is
+// a user-side event the model is told about and works around, and the only
+// thing that ends a turn is Stop.
+// A var rather than a const only so the test that pins the bound can shorten
+// it, the same way toolProgressInterval is reached in internal/model.
+var browserStartBudget = 10 * time.Second
+
+func newHostBackend() hostBackend { return &win32Host{attempt: newAttempt()} }
 
 // start spins up the dedicated STA browser thread (idempotent).
 func (h *win32Host) start() error {
 	h.mu.Lock()
 	if h.started {
+		att := h.attempt
 		h.mu.Unlock()
-		<-h.ready
-		return nil
+		return await(att)
 	}
 	h.started = true
+	att := h.attempt
 	h.mu.Unlock()
 
 	parent := findOwnMainWindow()
 	if parent == 0 {
 		debuglog.Msg("browser.start: main window not found")
-		// Release the claim. Without this every later call parks forever on
-		// h.ready, which is never closed on this path — and browserHostLazy
-		// calls start() on every single binding, so one early failure would
-		// hang the whole browser surface rather than failing it.
-		h.mu.Lock()
-		h.started = false
-		h.mu.Unlock()
-		return fmt.Errorf("main window not found")
+		// Released with the reason, not merely un-claimed.
+		//
+		// h.started goes up BEFORE this lookup runs, so a second binding
+		// arriving during it takes the branch above and parks on this same
+		// attempt — and this path used to abandon that channel without ever
+		// closing it. Nothing woke those callers again, ever, and
+		// browserHostLazy calls start() on EVERY binding: one failed lookup
+		// could park the whole browser surface for the life of the process,
+		// with no error, no timeout and nothing in the log. That is the shape
+		// of "นิ่งค้างไปเลย".
+		h.abandon(att, fmt.Errorf("main window not found"))
+		return await(att)
 	}
 	debuglog.Msg("browser.start: parent hwnd=%#x (pid=%d)", parent, os.Getpid())
 	h.parent = parent
 
-	go h.run()
-	<-h.ready
+	go h.run(att)
+	if err := await(att); err != nil {
+		return err
+	}
 	debuglog.Msg("browser.start: host thread ready (tid=%d)", h.threadID)
 	return nil
+}
+
+// abandon ends a failed attempt: everyone parked on it wakes with the reason,
+// and the next caller gets a fresh latch to try again on.
+func (h *win32Host) abandon(att *startAttempt, err error) {
+	h.mu.Lock()
+	h.started = false
+	if h.attempt == att {
+		h.attempt = newAttempt()
+	}
+	h.mu.Unlock()
+	att.err = err // before the close: nobody may read it until then
+	close(att.done)
+}
+
+// await blocks until this attempt settles, and never longer than the budget.
+func await(att *startAttempt) error {
+	select {
+	case <-att.done:
+		return att.err
+	case <-time.After(browserStartBudget):
+		return fmt.Errorf("เบราว์เซอร์ยังไม่พร้อมใน %s", browserStartBudget)
+	}
 }
 
 // findOwnMainWindow returns this process's visible top-level window (the wails
@@ -325,7 +380,7 @@ func findOwnMainWindow() uintptr {
 	return found
 }
 
-func (h *win32Host) run() {
+func (h *win32Host) run(att *startAttempt) {
 	runtime.LockOSThread()
 	procCoInitializeEx.Call(0, coinitApartmentThreaded)
 
@@ -358,7 +413,7 @@ func (h *win32Host) run() {
 	atom, _, regErr := procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
 	debuglog.Msg("browser.run: RegisterClassExW atom=%d err=%v", atom, regErr)
 
-	close(h.ready)
+	close(att.done)
 
 	var msg winMsg
 	for {

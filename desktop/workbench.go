@@ -254,14 +254,28 @@ func (a *App) agentTab() (AgentTabID, error) {
 	}
 	h.mu.Lock()
 	id := h.agentID
+	// Taken, not read: this is said once, to the call that runs into it. The
+	// second call has nothing new to learn from it, and repeating it would have
+	// the model believing the page was closed again.
+	closed := h.agentTabClosed
+	h.agentTabClosed = false
 	h.mu.Unlock()
 	if id == "" || !h.live(id) {
+		if closed {
+			return "", errAgentTabClosed
+		}
 		return "", errNoAgentTab
 	}
 	return AgentTabID(id), nil
 }
 
 var errNoAgentTab = errors.New("the agent has no page open — use open first (tabs the user opened are theirs, not the agent's)")
+
+// errAgentTabClosed is the same "no page" state with the reason attached, and
+// the reason is the whole value of it: the agent did not lose its page, the
+// user closed it. Worded so the next move is obvious, because a user action is
+// something to work around rather than something to stop for.
+var errAgentTabClosed = errors.New("the page you were working on was closed while you worked (the user closed the tab) — open it again and carry on from there")
 
 // browserWhere names the page a tab is on, as a parenthetical to hang off the
 // end of an action's result, or "" when the tab cannot say.
