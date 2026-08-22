@@ -20,7 +20,7 @@
   import { onMount } from 'svelte'
   import { Spaces, CreateSpace, OpenSpaceFolder, SessionsInSpace, AddSpaceContext, RemoveSpaceContext } from '../../wailsjs/go/main/App'
   import { main } from '../../wailsjs/go/models'
-  import { agoLabel, newSpaceSession, selectGlobalSession, setActiveView } from './stores/cockpit.svelte'
+  import { agoLabel, newSpaceSession, selectGlobalSession, sessionWorking, setActiveView } from './stores/cockpit.svelte'
   import { t } from './i18n.svelte'
   import Icon from './Icon.svelte'
   import { coverHue } from './coverHue'
@@ -192,7 +192,11 @@
               <ul class="proj-chats">
                 {#each chats as chat (chat.id)}
                   <li>
-                    <button onclick={() => openChat(chat)}>
+                    <!-- Same ring the sidebar draws, on the same fact: this
+                         chat still has a turn running in it. The page is a
+                         list of the project's conversations, so it is one of
+                         the places you walk back to in order to find out. -->
+                    <button class:working={sessionWorking(chat)} onclick={() => openChat(chat)}>
                       <Icon name="messageSquare" size={13} />
                       <span class="proj-chat-title">{chat.title}</span>
                       <span class="proj-chat-ago">{agoLabel(chat.updatedAt)}</span>

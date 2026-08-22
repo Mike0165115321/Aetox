@@ -448,7 +448,12 @@
             </div>
             {#if !collapsedProjects[g.project.key]}
               {#each expandedProjects[g.project.key] ? g.sessions : g.sessions.slice(0, PROJECT_GROUP_PREVIEW) as s (s.id)}
-                <div class="proj-group-sess" class:active={s.active}>
+                <!-- The ring goes on this list too. It was on .sess-row only,
+                     which is the flat history the storefront draws — so on the
+                     workshop side, where every chat lives nested under its
+                     project, a running turn had no mark anywhere in the column
+                     (owner, 22 ส.ค.). Same fact, same light, same class name. -->
+                <div class="proj-group-sess" class:active={s.active} class:working={sessionWorking(s)}>
                   <button type="button" class="proj-group-sess-open" onclick={() => selectGlobalSession(s)}>{s.title}</button>
                   <!-- Floated over the row's right end rather than sitting in
                        it: this row has only one line, and two invisible buttons

@@ -196,3 +196,54 @@ describe('the project rows in the workshop column', () => {
     expect(container.querySelector('.proj-group-new')).toBeNull()
   })
 })
+
+// The working ring, in the column that nests its chats under a project.
+//
+// It was written for .sess-row and only .sess-row — the flat list the
+// storefront draws. The workshop draws no flat list at all: every chat there
+// hangs under its project as a .proj-group-sess, so a turn left running had no
+// mark anywhere in that column, and the one thing the ring exists for — walking
+// away from a turn and still knowing it is going — did not work on the side of
+// the app where the long turns actually happen (owner, 22 ส.ค.).
+describe('the working ring on a workshop project chat', () => {
+  beforeEach(() => {
+    cockpit.turnSession = ''
+    cockpit.parked = {}
+  })
+
+  it('rings the chat the turn is running in, and no other', () => {
+    setShell('code')
+    cockpit.projects = [
+      { key: 'b', name: 'senior-architect-agent', path: 'D:/work/agent', active: true },
+    ] as any
+    cockpit.history.push(
+      { ...chat('s1', 'ลองแก้ไฟล์ให้ผมหน่อย', daysAgo(0, 9)), projectName: 'senior-architect-agent' },
+      { ...chat('s2', 'เทสครับแก้ไฟล์แล้ว', daysAgo(0, 10)), projectName: 'senior-architect-agent' },
+    )
+    cockpit.turnSession = 's1'
+
+    const { container } = render(Sidebar, { onOpenSettings: () => {} })
+
+    const rows = Array.from(container.querySelectorAll('.proj-group-sess'))
+    expect(rows.length).toBe(2)
+    expect(rows[0].classList.contains('working')).toBe(true)
+    expect(rows[1].classList.contains('working')).toBe(false)
+  })
+
+  it('rings a chat left working in the background, which is the whole point', () => {
+    setShell('code')
+    cockpit.projects = [
+      { key: 'b', name: 'senior-architect-agent', path: 'D:/work/agent', active: true },
+    ] as any
+    cockpit.history.push(
+      { ...chat('s1', 'งานยาว', daysAgo(0, 9)), projectName: 'senior-architect-agent' },
+    )
+    // Parked: the user switched away while the turn was still going, so it is
+    // no longer the engine's session and only its own record says it is alive.
+    cockpit.parked = { s1: { awaitingReply: true } } as any
+
+    const { container } = render(Sidebar, { onOpenSettings: () => {} })
+
+    expect(container.querySelector('.proj-group-sess')?.classList.contains('working')).toBe(true)
+  })
+})

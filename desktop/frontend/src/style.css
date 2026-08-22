@@ -477,6 +477,43 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .sess-exp .fmt:hover { color:var(--accent); background:var(--surface-hover); }
 .proj-group-more { display:block; padding:5px 8px 5px 33px; color:var(--text-dim); font-size:var(--fs-xs); cursor:pointer; }
 
+/* The title gets out of the buttons' way by FADING, not by being guillotined.
+ *
+ * This row has one line and the hover actions are floated over its right end,
+ * deliberately: reserving space for two buttons nobody can see is 50px the
+ * chat's name never gets (see .sess-acts.float). The cost was paid by the
+ * name — the float is an opaque plate, so a long title arrived under the
+ * pointer chopped mid-glyph with no ellipsis, which reads as a rendering bug
+ * rather than as "there is more here" (owner, 22 ส.ค., holding the screenshot).
+ *
+ * The fix is on the text, not on the plate: the last stretch of the title is
+ * masked out, so it is gone before the buttons begin. Doing it this way rather
+ * than as a gradient over the top is what makes it work on every row state —
+ * a mask needs no colour, and this row's background is three different things
+ * (transparent, hover, selected) that a gradient stop would have to name.
+ *
+ * --acts-mask is where the text must be fully gone, measured from the right
+ * edge; the band fades over the 30px before it. Registered rather than plain so
+ * it can transition, and the text drifts away on the same .12s the buttons
+ * arrive on instead of snapping. The default is negative on purpose: it pushes
+ * both stops past the element's own right edge, which is how "no mask at all"
+ * is written in a declaration that is always present. */
+@property --acts-mask { syntax:'<length>'; initial-value:-40px; inherits:false; }
+.proj-group-sess-open {
+  --acts-mask:-40px; transition:--acts-mask .12s ease;
+  -webkit-mask:linear-gradient(to right, #000 calc(100% - var(--acts-mask) - 30px), transparent calc(100% - var(--acts-mask)));
+  mask:linear-gradient(to right, #000 calc(100% - var(--acts-mask) - 30px), transparent calc(100% - var(--acts-mask)));
+}
+/* The three widths the float actually takes, in the three states that reveal
+   it — same selectors the buttons' own opacity uses, so the text can never
+   clear space for a plate that is not there, or stay put under one that is. */
+.proj-group-sess:hover .proj-group-sess-open,
+.proj-group-sess:focus-within .proj-group-sess-open { --acts-mask:56px; }
+/* Armed, the export button is two format chips wide instead of one icon. */
+.proj-group-sess:has(.sess-exp.armed) .proj-group-sess-open { --acts-mask:118px; }
+/* Armed, the delete button is the word ยืนยัน? instead of an ×. */
+.proj-group-sess:has(.sess-del.confirm) .proj-group-sess-open { --acts-mask:86px; }
+
 /* A session the engine refused to open, said where the chat would have been. */
 .session-error {
   display:flex; align-items:flex-start; gap:8px; margin:12px 0;
@@ -1177,6 +1214,8 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 @keyframes beam-phase { to { --beam-phase:360deg; } }
 .bgw-card.run,
 .sess-row.working,
+.proj-group-sess.working,
+.proj-chats li button.working,
 .markdown-body:has(.live) { animation:beam-phase 3s linear infinite; }
 
 .markdown-body .plan-card.live,
@@ -1184,6 +1223,8 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .markdown-body .drawing-box.live { position:relative; }
 .bgw-card.run::before,
 .sess-row.working::before,
+.proj-group-sess.working::before,
+.proj-chats li button.working::before,
 .markdown-body .plan-card.live::before,
 .markdown-body .codeblock.live::before,
 .markdown-body .drawing-box.live::before {
@@ -1220,6 +1261,14 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    and travel up the sidebar as the list scrolls. */
 .sess-row { position:relative; }
 .sess-row.working::before { inset:0; }
+/* The same two lines for the lists that draw a chat row of their own rather
+   than reusing .sess-row: the workshop sidebar's nested project chats, and the
+   โปรเจกต์ page's list. .proj-group-sess is already positioned (its hover
+   actions float over it); the page's button was not, and an unpositioned
+   carrier would anchor its ring to the scroller and slide it up the page. */
+.proj-chats li button { position:relative; }
+.proj-group-sess.working::before,
+.proj-chats li button.working::before { inset:0; }
 /* A drawing box has no border of its own to inherit a radius from. */
 .markdown-body .drawing-box.live::before { border-radius:var(--r-md); }
 /* Motion off, signal kept: a steady lit outline still says which one is the
@@ -1227,9 +1276,13 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 @media (prefers-reduced-motion: reduce) {
   .bgw-card.run,
   .sess-row.working,
+  .proj-group-sess.working,
+  .proj-chats li button.working,
   .markdown-body:has(.live) { animation:none; }
   .bgw-card.run::before,
   .sess-row.working::before,
+  .proj-group-sess.working::before,
+  .proj-chats li button.working::before,
   .markdown-body .plan-card.live::before,
   .markdown-body .codeblock.live::before,
   .markdown-body .drawing-box.live::before {
