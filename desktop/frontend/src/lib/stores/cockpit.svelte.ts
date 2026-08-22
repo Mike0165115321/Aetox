@@ -805,8 +805,20 @@ function writeLive(id: string, change: (live: ParkedTurn) => void): void {
 /** Let the user pick a real folder via the native dialog; re-points the engine at it. */
 export async function openFolder(): Promise<void> {
   if (turnStillRunning()) return
-  const project = await OpenProjectFolder()
-  Object.assign(cockpit.project, project)
+  // The local guard above answers for the chat ON SCREEN; the engine's
+  // guardSessionSwitch answers for every chat at once, and re-rooting is
+  // refused while a turn runs ANYWHERE. So the call still gets refused with a
+  // chat working off screen — and without this catch that refusal was an
+  // unhandled rejection: the click did nothing, said nothing, and read as a
+  // dead button (owner, 22 ส.ค.: "มี Chat นึงกำลังทำงาน แต่กดแชตใหม่ไม่ได้").
+  // Same shape as setStance's, which is the one door that already did this.
+  try {
+    Object.assign(cockpit.project, await OpenProjectFolder())
+  } catch (err) {
+    showSessionRefusal(err)
+    return
+  }
+  cockpit.sessionError = ''
   cockpit.chat = []
   await refreshWorkspace()
   await refreshProjectFolders()
@@ -818,8 +830,20 @@ export async function openFolder(): Promise<void> {
 /** Switch straight to a previously-opened project (sidebar's project list), no dialog. */
 export async function openProject(path: string): Promise<void> {
   if (turnStillRunning()) return
-  const project = await OpenProjectPath(path)
-  Object.assign(cockpit.project, project)
+  // The local guard above answers for the chat ON SCREEN; the engine's
+  // guardSessionSwitch answers for every chat at once, and re-rooting is
+  // refused while a turn runs ANYWHERE. So the call still gets refused with a
+  // chat working off screen — and without this catch that refusal was an
+  // unhandled rejection: the click did nothing, said nothing, and read as a
+  // dead button (owner, 22 ส.ค.: "มี Chat นึงกำลังทำงาน แต่กดแชตใหม่ไม่ได้").
+  // Same shape as setStance's, which is the one door that already did this.
+  try {
+    Object.assign(cockpit.project, await OpenProjectPath(path))
+  } catch (err) {
+    showSessionRefusal(err)
+    return
+  }
+  cockpit.sessionError = ''
   cockpit.chat = []
   await refreshWorkspace()
   await refreshProjectFolders()
@@ -832,8 +856,20 @@ export async function openProject(path: string): Promise<void> {
  * but is no longer tied to any project — like opening Claude/Codex bare. */
 export async function clearProjectFocus(): Promise<void> {
   if (turnStillRunning()) return
-  const project = await ClearProjectFocus()
-  Object.assign(cockpit.project, project)
+  // The local guard above answers for the chat ON SCREEN; the engine's
+  // guardSessionSwitch answers for every chat at once, and re-rooting is
+  // refused while a turn runs ANYWHERE. So the call still gets refused with a
+  // chat working off screen — and without this catch that refusal was an
+  // unhandled rejection: the click did nothing, said nothing, and read as a
+  // dead button (owner, 22 ส.ค.: "มี Chat นึงกำลังทำงาน แต่กดแชตใหม่ไม่ได้").
+  // Same shape as setStance's, which is the one door that already did this.
+  try {
+    Object.assign(cockpit.project, await ClearProjectFocus())
+  } catch (err) {
+    showSessionRefusal(err)
+    return
+  }
+  cockpit.sessionError = ''
   cockpit.chat = []
   await refreshWorkspace()
   await refreshProjectFolders()
