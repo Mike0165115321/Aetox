@@ -311,13 +311,14 @@ func TestRuntimeFor(t *testing.T) {
 	if rt := RuntimeFor("noop"); rt != RuntimeNoop {
 		t.Fatalf("noop runtime: want %q got %q", RuntimeNoop, rt)
 	}
-	if rt := RuntimeFor("openai"); rt != RuntimeOpenAICompatible {
-		t.Fatalf("openai runtime: want %q got %q", RuntimeOpenAICompatible, rt)
+	// /chat/completions refuses function tools together with reasoning_effort,
+	// which is every turn this app takes, so the row defaults to /responses and
+	// keeps the older format as its alt (2026-08-22).
+	if rt := RuntimeFor("openai"); rt != RuntimeResponses {
+		t.Fatalf("openai runtime: want %q got %q", RuntimeResponses, rt)
 	}
-	// The codex and Pro models are served on /responses and nowhere else, so
-	// the row carries that format as its alt (2026-08-22).
-	if spec, ok := Lookup("openai"); !ok || spec.AltRuntime != RuntimeResponses {
-		t.Fatalf("openai alt runtime: want %q got %q", RuntimeResponses, spec.AltRuntime)
+	if spec, ok := Lookup("openai"); !ok || spec.AltRuntime != RuntimeOpenAICompatible {
+		t.Fatalf("openai alt runtime: want %q got %q", RuntimeOpenAICompatible, spec.AltRuntime)
 	}
 	if rt := RuntimeFor("ollama"); rt != RuntimeOllama {
 		t.Fatalf("ollama runtime: want %q got %q", RuntimeOllama, rt)

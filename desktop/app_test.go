@@ -607,13 +607,13 @@ func TestProviderWireFormatsListsAltForDeepSeek(t *testing.T) {
 	}
 }
 
-// openai grew a second format on 2026-08-22: /responses, which is where the
-// codex and Pro models live and nowhere else. /chat/completions stays the
-// default, since the ordinary line is served on both.
+// openai grew a second format on 2026-08-22, and it became the default:
+// /chat/completions rejects function tools sent with reasoning_effort, which
+// is every turn Aetox takes. /chat/completions stays reachable as the alt.
 func TestProviderWireFormatsListsAltForOpenAI(t *testing.T) {
 	a := &App{}
 	got := a.ProviderWireFormats("openai")
-	want := []string{"openai-compatible", "responses"}
+	want := []string{"responses", "openai-compatible"}
 	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("ProviderWireFormats(openai) = %v, want %v", got, want)
 	}

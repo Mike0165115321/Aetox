@@ -241,24 +241,37 @@ var catalog = map[string]*entry{
 		quotaSource:    QuotaOpenAIStd,
 		aliases:        []string{"openai", "chatgpt", "gpt", "openai-compatible", "compatible"},
 		requiresAPIKey: true,
-		// /chat/completions stays the default — OpenAI's own model pages list
-		// it alongside /responses for the ordinary line (gpt-5.6 sol, luna,
-		// terra, 5.5), and it is the format this row has always spoken, which
-		// matters because the same row is what a third-party OpenAI-compatible
-		// endpoint gets pointed at.
+		// Default to /responses, keep /chat/completions as the alt — the same
+		// call the deepseek row makes below, and for the same reason: the
+		// default has to be the format that carries how this app actually
+		// works.
 		//
-		// /responses is the alt because a whole family is served there and
-		// nowhere else: the codex models (gpt-5-codex, 5.1/5.3-codex), the Pro
-		// tiers (5.4-pro, 5.5-pro) and 5.6-cyber. On /chat/completions those
-		// answer 400 rather than a reply, and before this row had a second
-		// format there was no way to reach them with an API key at all — only
-		// through a ChatGPT sign-in, which is a different account and a
-		// different bill (see "codex" below).
+		// OpenAI's model pages do list /chat/completions for the ordinary line,
+		// so "the models need /responses" is not the reason. Two errors from
+		// the owner's own app on 2026-08-22 are:
 		//
-		// Same host either way, so the URL does not change with the format.
-		runtime:        RuntimeOpenAICompatible,
+		//	400  Function tools with reasoning_effort are not supported for
+		//	     gpt-5.6-luna in /v1/chat/completions. To use function tools,
+		//	     use /v1/responses or set reasoning_effort to 'none'.
+		//	404  This is not a chat model and thus not supported in the
+		//	     v1/chat/completions endpoint.   (gpt-5.5-pro)
+		//
+		// The first is the one that decides it. Aetox always sends tools — an
+		// agent with no tools is not this app — so the moment the thinking dial
+		// is anything but off, every gpt-5.6 model 400s on /chat/completions.
+		// The endpoint's own message names /responses as the way out, and the
+		// other way out ("set reasoning_effort to none") is deleting the dial.
+		//
+		// The second is the Responses-only family: the Pro tiers (5.4-pro,
+		// 5.5-pro), the codex models and 5.6-cyber, which an API key could not
+		// reach at all before this row had a second format.
+		//
+		// Someone pointing this row at a third-party OpenAI-compatible endpoint
+		// switches back in Settings, which is what the alt is for. Same host
+		// either way, so the URL does not change with the format.
+		runtime:        RuntimeResponses,
 		baseURL:        "https://api.openai.com/v1",
-		altRuntime:     RuntimeResponses,
+		altRuntime:     RuntimeOpenAICompatible,
 		altBaseURL:     "https://api.openai.com/v1",
 		envKeys:        []string{"OPENAI_API_KEY", "OPENAI_TOKEN"},
 		apiKeyURL:      "https://platform.openai.com/api-keys",
