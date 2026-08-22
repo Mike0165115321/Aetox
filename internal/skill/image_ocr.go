@@ -46,6 +46,8 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/proc"
 	"github.com/Mike0165115321/Aetox/internal/statereport"
+
+	"github.com/Mike0165115321/Aetox/internal/config"
 )
 
 type imageOCRSkill struct {
@@ -164,10 +166,51 @@ func resolveTesseract() string {
 	if path, err := exec.LookPath(tesseractCommand); err == nil {
 		return path
 	}
+	if path := managedTesseract(); path != "" {
+		return path
+	}
 	if path := tesseractInInstallDir(); path != "" {
 		return path
 	}
 	return tesseractCommand
+}
+
+// managedTesseract is the copy internal/capability unpacked into
+// <DataRoot>/tools/tesseract, which needs no administrator to write and so is
+// the only address a normally-launched Aetox can install to at all.
+//
+// Ahead of Program Files because that one is whatever some past installer
+// left; this one is the build the current release pinned. Behind PATH for the
+// reason above: a tesseract someone put on PATH was chosen.
+func managedTesseract() string {
+	if runtime.GOOS != "windows" {
+		return ""
+	}
+	root, err := config.DataRoot()
+	if err != nil {
+		return ""
+	}
+	candidate := filepath.Join(root, "tools", "tesseract", "tesseract.exe")
+	if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
+		return candidate
+	}
+	return ""
+}
+
+// tesseractEnv is the environment for one tesseract run.
+//
+// The managed copy is a loose tree, not an install: nothing registered it, so
+// tesseract.exe cannot find its own tessdata the way it does after a real
+// setup, and asked for tha+eng it would fail with "Failed loading language"
+// rather than with anything about a missing folder. TESSDATA_PREFIX is the
+// documented way to say where the folder is, and it is set only for our own
+// copy — overriding it for a system install would break a machine whose
+// tessdata sits somewhere we did not put it.
+func tesseractEnv(binary string) []string {
+	if binary != managedTesseract() || binary == "" {
+		return nil
+	}
+	return append(os.Environ(), "TESSDATA_PREFIX="+filepath.Join(filepath.Dir(binary), "tessdata"))
 }
 
 // tesseractAvailable reports whether a tesseract can be found at all, for
@@ -289,7 +332,9 @@ func runTesseract(ctx context.Context, imagePath string) (ocrResult, error) {
 	defer os.RemoveAll(dir)
 
 	base := filepath.Join(dir, "page")
-	cmd := exec.CommandContext(ctx, resolveTesseract(), imagePath, base, "-l", "tha+eng", "txt", "tsv")
+	binary := resolveTesseract()
+	cmd := exec.CommandContext(ctx, binary, imagePath, base, "-l", "tha+eng", "txt", "tsv")
+	cmd.Env = tesseractEnv(binary)
 	proc.HideConsole(cmd)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

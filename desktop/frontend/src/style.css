@@ -566,6 +566,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .acct-menu-row { display:flex; flex-direction:column; gap:2px; }
 /* 12px and --text-muted: this is a provider's name, which is read, not a mark
    that only has to be noticed. At 11px in --text-dim it was 2.54:1. */
+.acct-menu-name { font-size:var(--fs-xs); color:var(--text-muted); text-transform:lowercase; }
 /* The Aetox account's email under its name. Dimmer than the name because it is
    there to identify the account, not to be read every time the menu opens. */
 .acct-menu-sub { font-size:var(--fs-xs); color:var(--text-dim); }
@@ -580,7 +581,6 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   transition:background .2s ease;
 }
 .acct-dot.on { background:var(--accent); }
-.acct-menu-name { font-size:var(--fs-xs); color:var(--text-muted); text-transform:lowercase; }
 /* Shared by the language and theme rows. max-width so the 14-entry theme list
    can't stretch the menu wider than the sidebar it hangs off. */
 .lang-select {
@@ -1244,6 +1244,28 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .bgw-mark.wait { color:var(--status-modified); }
 .bgw-mark.ok { color:var(--status-success); }
 .bgw-mark.fail { color:var(--status-danger); }
+.bgw-mark.off { color:var(--text-dim); }
+/* The brake, on the row it belongs to (BackgroundWork.svelte). Quiet by
+   default on purpose: it sits beside work that is going fine far more often
+   than beside work anybody wants to end, and a button that shouts from a
+   healthy card teaches people to stop reading the card. Hover is where it
+   admits what it is. */
+.bgw-stop {
+  flex:none; display:flex; align-items:center; gap:5px;
+  margin-left:8px; padding:2px 8px;
+  border:1px solid var(--border-subtle); border-radius:999px;
+  background:transparent; color:var(--text-dim);
+  font-size:var(--fs-2xs); line-height:1.6; cursor:pointer;
+  transition:color .12s ease, border-color .12s ease;
+}
+.bgw-stop:hover { color:var(--status-danger); border-color:var(--status-danger); }
+/* Inside a run the label comes off: the group header already says "stop", and
+   eight worker rows each repeating the word is the card shouting again. */
+.bgw-stop-worker { padding:2px 6px; margin-left:6px; }
+/* A receipt for work somebody ended. Dimmer than a finished one because it is
+   the only card here nobody is going to read back — nothing collects it, so it
+   is the end of that delegate's story rather than a step in it. */
+.bgw-card.is-stopped .bgw-done-note { color:var(--text-dim); }
 .bgw-agent { color:var(--text-primary); font-weight:600; }
 .bgw-badge { padding:1px 8px; border-radius:999px; font-size:var(--fs-2xs); }
 .bgw-badge.run { color:var(--interactive); border:1px solid var(--interactive); }
@@ -2027,6 +2049,19 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .ctx-btn .ring .bg { fill:none; stroke:var(--border-strong); stroke-width:3.5; }
 .ctx-btn .ring .fg { fill:none; stroke:var(--accent); stroke-width:3.5; stroke-linecap:round; }
 .ctx-btn .ctx-pct { font-size:var(--fs-xs); font-variant-numeric:tabular-nums; }
+/* The bill so far, under the forecast of the next request (§165). Ruled off
+   rather than merely spaced: the rows above are a prediction about one message
+   and these are money already spent, and a reader scanning a single column of
+   numbers has no way to tell where one claim ends and the other begins. */
+.ctx-spend { margin-top:10px; padding-top:9px; border-top:1px solid var(--border-subtle); }
+.ctx-spend .ctx-head { margin-bottom:6px; }
+/* Hit and miss sit under the input they divide, so the eye reads them as its
+   parts rather than as two more totals. */
+.ctx-spend .ctx-row.sub { padding-left:14px; color:var(--text-dim); }
+.ctx-spend .dot.in { background:var(--interactive); }
+.ctx-spend .dot.out { background:var(--accent); }
+.ctx-spend .dot.hit { background:var(--status-success); }
+.ctx-spend .dot.miss { background:var(--text-dim); }
 /* Anchored to its right edge, because the control is: the meter moved to the
    right end of the row on 2026-08-14 and this line did not follow it, so a
    270px panel that used to grow inward from the left of the composer started
@@ -2409,6 +2444,10 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   border-radius:var(--r-lg) 0 0 var(--r-lg);
   margin:6px 0 6px 6px;
 }
+/* The same page drawn as a door's home rather than over one: it sits inside
+   .main, which already carries the outline and the radius, so wearing its own
+   would be a card inside a card. ห้องทำงาน is the only one today (§158.3). */
+.page-shell.in-main { border:0; border-radius:0; margin:0; }
 .page-head { flex:none; padding:20px 64px 0; }
 .page-title { max-width:var(--content-max, 760px); margin:18px auto 0; }
 .page-title h2 { margin:0 0 6px; font-size:var(--fs-3xl); }
@@ -3684,6 +3723,11 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 
 .ob-stack { display:flex; flex-direction:column; gap:9px; }
 .ob-stack.tight { margin-top:22px; }
+
+/* The size of one capability's download, on the row it belongs to. --text-dim
+   and not --text-muted: it is a number you consult when unticking, not part of
+   reading what the row offers. */
+.ob-size { flex:none; color:var(--text-dim); font-size:var(--fs-xs); font-variant-numeric:tabular-nums; }
 .ob-big {
   display:flex; align-items:center; gap:11px; width:100%;
   background:var(--surface-panel); border:1px solid var(--border-default); color:var(--text-primary);
@@ -3829,10 +3873,10 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .ob-dots { position:absolute; bottom:26px; left:50%; transform:translateX(-50%); display:flex; gap:7px; }
 .ob-dots i { width:6px; height:6px; border-radius:50%; background:var(--border-default); transition:width .22s ease, background .22s ease; }
 .ob-dots i.past { background:var(--border-strong); }
+.ob-dots i.on { width:18px; border-radius:3px; background:var(--accent); }
 /* Above the step dots and quieter than everything on the screen: an offer on
    the way past, never a step in the setup. */
 .ob-community { position:absolute; bottom:52px; left:50%; transform:translateX(-50%); }
-.ob-dots i.on { width:18px; border-radius:3px; background:var(--accent); }
 
 /* Motion here is feedback — a press that answers, a screen that arrives. Where
    the machine is set to do without it, the states still differ by colour and
@@ -3992,6 +4036,8 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .tag.ag-override { background:var(--badge-think-bg); color:var(--badge-think-text); border-color:var(--badge-think-border); }
 /* Why a file cannot run — the loud half of "refused loudly". */
 .ag-invalid { color:var(--status-danger); }
+.ag-notice { color:var(--text-muted); border-left:3px solid var(--status-warning, #d29922); padding-left:8px; }
+.chair-missing { margin:6px 0 0; font-size:var(--fs-xs); line-height:1.5; color:var(--text-muted); border-left:3px solid var(--status-warning, #d29922); padding-left:8px; }
 .tag.ag-deny { background:var(--diff-del-bg); color:var(--status-danger); border-color:var(--status-danger); }
 /* min-height is the floor a short file sits at — the size this field always
    had — while the height itself is set to the content by `autogrow`, so a long

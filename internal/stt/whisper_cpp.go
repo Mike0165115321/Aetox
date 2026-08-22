@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -153,13 +154,44 @@ func parseWhisperTimestamp(ts string) (int, bool) {
 	return seconds*1000 + millis, true
 }
 
+// findBinary looks on PATH first, then at the copy internal/capability
+// downloads into <DataRoot>/tools/whisper.
+//
+// PATH first, which is the opposite of skill.bundledBinary's order and the
+// same order resolveTesseract uses, for the same reason: whisper.cpp has real
+// variants — a CUDA or BLAS build is many times faster than the plain one we
+// pin — and someone who went and installed a particular whisper-cli chose it.
+// Ours is the floor, not the ceiling.
 func findBinary(desc Descriptor) (string, error) {
 	for _, name := range desc.Binaries {
 		if path, err := lookPath(name); err == nil {
 			return path, nil
 		}
 	}
+	if path := managedBinary(desc); path != "" {
+		return path, nil
+	}
 	return "", missingBinaryError(desc)
+}
+
+// managedBinary is the copy Aetox installed for itself, which is not on PATH
+// and deliberately never put there — editing a stranger's PATH is a much worse
+// thing to get wrong than looking in one more place.
+func managedBinary(desc Descriptor) string {
+	root, err := config.DataRoot()
+	if err != nil {
+		return ""
+	}
+	for _, name := range desc.Binaries {
+		if runtime.GOOS == "windows" {
+			name += ".exe"
+		}
+		candidate := filepath.Join(root, "tools", "whisper", name)
+		if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
 }
 
 // resolveModel prefers an explicitly configured file, then the model the error

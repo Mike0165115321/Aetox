@@ -22,12 +22,14 @@
   import {
     SupportedProviders, RequiresAPIKey, AcceptsAPIKey, HasAPIKey,
     ProviderAPIKeyURL, SignInMethods, StartSignIn, CancelSignIn,
+    CapabilityStatuses, InstallCapabilities,
   } from '../../wailsjs/go/main/App'
   import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
   import { cockpit, switchProvider, submitAPIKey, switchApprovalMode, completeSignIn } from './stores/cockpit.svelte'
   import { DONE_KEY, takeFirstRunReplay } from './firstRun'
-  import { COMMUNITY_URL } from './links'
   import { durationMs } from './motion'
+  import { COMMUNITY_URL } from './links'
+  import { noteCapabilityRequest } from './capabilities.svelte'
 
   // 0 language · 1 connect · 2 look · 3 approval · 4 done. Connecting comes
   // before the theme because it is the only step that decides whether the app
@@ -66,6 +68,46 @@
   let signInCode = $state('')
   let approval = $state('unsafe-only')
 
+  // What the agent cannot read yet. Empty is the normal answer for two whole
+  // groups of people — a non-Windows build has no manifest, and anyone
+  // upgrading from a release whose installer did the fetching already owns
+  // every file — and for them this screen never appears at all. A screen with
+  // one dead button is worse than one screen fewer.
+  // A row is a capability, not a download. Speech is two files (the engine
+  // and a model) and neither is any use alone, so ticking it takes both —
+  // which is why the window sends capability names and never component ids.
+  type CapRow = { capability: string; installed: boolean; approx_bytes: number }
+  let caps = $state<CapRow[]>([])
+  const capsMissing = $derived(caps.filter((c) => !c.installed))
+
+  // Everything starts ticked. The screen exists to offer, and someone who
+  // wants all of it should not have to click four times to say so; the size
+  // on every row is what makes unticking an informed move rather than a
+  // guess.
+  let capsPicked = $state<string[]>([])
+  const capsPickedSet = $derived(new Set(capsPicked))
+  const capsSize = $derived(
+    capsMissing
+      .filter((c) => capsPickedSet.has(c.capability))
+      .reduce((n, c) => n + c.approx_bytes, 0),
+  )
+
+  function toggleCap(key: string) {
+    capsPicked = capsPicked.includes(key)
+      ? capsPicked.filter((k) => k !== key)
+      : [...capsPicked, key]
+  }
+
+  const CAP_ICONS: Record<string, 'eye' | 'fileText' | 'clapperboard' | 'headphones'> = {
+    image: 'eye', pdf: 'fileText', media: 'clapperboard', speech: 'headphones',
+  }
+
+  // Rounded to whole megabytes: the number is here so someone can decide
+  // before pressing, and a decimal place implies a precision this figure does
+  // not have (it is the sum of the manifest's own estimates, not of the real
+  // Content-Lengths).
+  const mb = (bytes: number) => `${Math.round(bytes / (1024 * 1024))}MB`
+
   onMount(async () => {
     // Armed by "see the first-run screen" in Settings. It wins over both
     // shortcuts below: on the machine of anyone who would press it, a working
@@ -87,6 +129,13 @@
     }
     swatches = readThemeSwatches()
     await loadProviders()
+    try {
+      caps = (await CapabilityStatuses()) ?? []
+      capsPicked = caps.filter((c) => !c.installed).map((c) => c.capability)
+    } catch {
+      /* no manifest on this platform, or the engine is not up — the
+         capability screen simply does not appear */
+    }
     visible = true
   })
 
@@ -244,9 +293,40 @@
       errorMsg = String(err)
     } finally {
       busy = ''
-      step = 4
-      setTimeout(() => { if (step === 4) finish() }, durationMs('--dur-hold-done', 1600))
+      // One more question only if there is one to ask.
+      if (capsMissing.length > 0) step = 4
+      else goDone()
     }
+  }
+
+  function goDone() {
+    step = 5
+    setTimeout(() => { if (step === 5) finish() }, durationMs('--dur-hold-done', 1600))
+  }
+
+  // Fire and forget, deliberately. The download is ~150MB and the last
+  // screen of a setup is the worst place to watch a progress bar, so the
+  // call returns as soon as the work has started and the background strip
+  // carries it from there.
+  async function installCapabilities() {
+    // Nothing ticked is a legitimate answer, and it is the same answer as
+    // "later" — so the button carries it rather than sitting there disabled.
+    // A disabled primary button on the last screen of a setup gives no
+    // reason and no way forward.
+    if (capsPicked.length === 0) {
+      goDone()
+      return
+    }
+    // Tell the card what was asked for before asking for it: the install
+    // outlives this screen, and a failure arriving after the wizard has
+    // closed still needs to know what to offer to resume.
+    noteCapabilityRequest(capsPicked)
+    try {
+      await InstallCapabilities(capsPicked)
+    } catch {
+      /* the strip reports a failure; this screen is already leaving */
+    }
+    goDone()
   }
 
   const APPROVALS = [
@@ -421,6 +501,48 @@
           </div>
           <div class="ob-links"><button class="ob-link" disabled={!!busy} onclick={() => (step = 2)}>{t('onboard.back')}</button></div>
 
+        {:else if step === 4}
+          <h2>{t('onboard.capTitle')}</h2>
+          <p class="ob-sub">{t('onboard.capDesc')}</p>
+
+          <!-- .ob-row, the same shell the approval screen uses, because these
+               genuinely are choices now. The first draft of this screen drew a
+               plain list and installed all of it from one button; wearing the
+               choice shell without being choosable would have been the worse
+               half of both shapes. -->
+          <div class="ob-stack">
+            {#each capsMissing as cap (cap.capability)}
+              <button
+                class="ob-row" class:on={capsPickedSet.has(cap.capability)}
+                aria-pressed={capsPickedSet.has(cap.capability)}
+                onclick={() => toggleCap(cap.capability)}
+              >
+                <span class="ic"><Icon name={CAP_ICONS[cap.capability] ?? 'package'} size={17} /></span>
+                <span class="txt">
+                  <span class="t">{t(`cap.${cap.capability}`)}</span>
+                  <span class="d">{t(`cap.${cap.capability}Desc`)}</span>
+                </span>
+                <!-- The size sits on the row it belongs to. A single total under
+                     the button tells you what the set costs but not which one to
+                     drop, which is the only question an untick answers. -->
+                <span class="ob-size">{mb(cap.approx_bytes)}</span>
+              </button>
+            {/each}
+          </div>
+
+          <div class="ob-stack tight">
+            <button class="ob-big primary" onclick={installCapabilities}>
+              <span class="ob-bigt">
+                {capsPicked.length === 0
+                  ? t('onboard.capSkip')
+                  : t('onboard.capInstall', { size: mb(capsSize) })}
+              </span>
+            </button>
+          </div>
+          <div class="ob-links">
+            <button class="ob-link" onclick={goDone}>{t('onboard.capLater')}</button>
+          </div>
+
         {:else}
           <div class="ob-done"><Icon name="check" size={24} /></div>
           <h2>{t('onboard.readyTitle')}</h2>
@@ -429,9 +551,14 @@
       </div>
     {/key}
 
-    <!-- Where you are, without a number: four steps is few enough to draw. -->
+    <!-- Where you are, without a number: five steps is still few enough to
+         draw. The capability step is in the list even on a machine that
+         skips it — the run is four screens long there, and a row of dots
+         that changes length between installs reads as a bug rather than
+         as a shorter setup. -->
     <div class="ob-dots">
-      {#each [0, 1, 2, 3] as i}<i class:on={step === i} class:past={step > i}></i>{/each}
+      {#each [0, 1, 2, 3, 4] as i}<i class:on={step === i} class:past={step > i}></i>{/each}
+    </div>
 
     <!-- The group, on every screen but the last. Setup is exactly when
          somebody has a question and nowhere to ask it. Not on the ready
@@ -442,6 +569,5 @@
         <button class="ob-link" onclick={() => BrowserOpenURL(COMMUNITY_URL)}>{t('onboard.community')}</button>
       </div>
     {/if}
-    </div>
   </div>
 {/if}

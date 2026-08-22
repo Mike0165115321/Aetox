@@ -29,10 +29,21 @@ func TestPDFReadRejectsEscape(t *testing.T) {
 	}
 }
 
+// bundledBinary reads config.DataRoot(), so on a developer's machine it can
+// see the tools that machine really has installed. Every test below points it
+// at an empty directory first — without that they pass or fail depending on
+// whether whoever ran them had pressed the install button, which is not a
+// property of the code.
+func emptyDataRoot(t *testing.T) {
+	t.Helper()
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+}
+
 // With no bundled copy present, the bare name must come back so PATH does the
 // resolving — and so a missing poppler still surfaces as exec.ErrNotFound,
 // which is what turns into the install instructions.
 func TestPDFToTextFallsBackToPath(t *testing.T) {
+	emptyDataRoot(t)
 	if got := bundledBinary("poppler", "pdftotext"); got != "pdftotext" {
 		t.Errorf("bundledBinary = %q, want the bare name for PATH lookup", got)
 	}
@@ -42,6 +53,7 @@ func TestPDFToTextFallsBackToPath(t *testing.T) {
 // it on PATH (it ships as a plain zip), so this lookup is the only thing that
 // makes a bundled copy reachable at all.
 func TestPDFToTextPrefersTheBundledCopy(t *testing.T) {
+	emptyDataRoot(t)
 	exe, err := os.Executable()
 	if err != nil {
 		t.Skipf("cannot locate the test binary: %v", err)
@@ -71,6 +83,7 @@ func TestPDFToTextPrefersTheBundledCopy(t *testing.T) {
 // the tools that were dead on a fresh install: the model can call them, but
 // nothing put an ffmpeg on the machine for them to use.
 func TestBundledBinaryFindsFFmpegNextToTheExecutable(t *testing.T) {
+	emptyDataRoot(t)
 	exe, err := os.Executable()
 	if err != nil {
 		t.Skipf("cannot locate the test binary: %v", err)
@@ -93,6 +106,51 @@ func TestBundledBinaryFindsFFmpegNextToTheExecutable(t *testing.T) {
 
 	if got := bundledBinary("ffmpeg", "ffmpeg"); got != bundled {
 		t.Errorf("bundledBinary = %q, want the bundled copy at %q", got, bundled)
+	}
+}
+
+// DataRoot beats next-to-the-executable, and the order is the point: after a
+// version bump the downloaded copy is the one this build pinned and tested,
+// while the one beside the exe is whatever some earlier release's installer
+// happened to leave behind.
+func TestBundledBinaryPrefersDataRootOverTheExecutablesNeighbour(t *testing.T) {
+	dataRoot := t.TempDir()
+	t.Setenv("AETOX_DATA_ROOT", dataRoot)
+
+	name := "pdftotext"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		t.Skipf("cannot locate the test binary: %v", err)
+	}
+	besideRoot := filepath.Join(filepath.Dir(exe), "poppler")
+	beside := filepath.Join(besideRoot, "bin", name)
+	if err := os.MkdirAll(filepath.Dir(beside), 0o755); err != nil {
+		t.Skipf("cannot write next to the test binary: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(besideRoot) })
+	if err := os.WriteFile(beside, []byte("old"), 0o755); err != nil {
+		t.Skipf("cannot write next to the test binary: %v", err)
+	}
+
+	// Only the old copy exists: it must still be found, which is what keeps an
+	// upgrade from re-downloading 160MB it already owns.
+	if got := bundledBinary("poppler", "pdftotext"); got != beside {
+		t.Fatalf("bundledBinary = %q, want the neighbour copy at %q", got, beside)
+	}
+
+	managed := filepath.Join(dataRoot, "tools", "poppler", "bin", name)
+	if err := os.MkdirAll(filepath.Dir(managed), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(managed, []byte("new"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := bundledBinary("poppler", "pdftotext"); got != managed {
+		t.Errorf("bundledBinary = %q, want the managed copy at %q", got, managed)
 	}
 }
 
