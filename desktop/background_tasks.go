@@ -3,6 +3,7 @@ package main
 import (
 	"time"
 
+	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/subagent"
 )
 
@@ -41,7 +42,22 @@ type BackgroundTask struct {
 	// has put work in yet is exactly the row worth drawing.
 	Run   string `json:"run,omitempty"`
 	Phase string `json:"phase,omitempty"`
-	// State: "running" | "waiting" (parked on a question) | "done" | "failed".
+	// TokensIn and TokensOut split Tokens into what this delegate's model read
+	// and what it wrote, updated live as its rounds come back. The tray draws
+	// both because they fail differently and the brake is a different decision
+	// for each: input climbing is a transcript being re-sent every round,
+	// output climbing is a model that will not stop writing.
+	//
+	// CachedIn is the share of TokensIn the provider served from its prompt
+	// cache. CacheReported is whether it accounts for that at all, and the UI
+	// must draw nothing rather than a zero when it does not: a local runtime
+	// reporting no cache is not a runtime reporting a 0% hit.
+	TokensIn      int  `json:"tokensIn"`
+	TokensOut     int  `json:"tokensOut"`
+	CachedIn      int  `json:"cachedIn"`
+	CacheReported bool `json:"cacheReported"`
+	// State: "running" | "waiting" (parked on a question) | "done" | "failed"
+	// | "stopped" (the user ended it).
 	State string `json:"state"`
 	// ElapsedMs is the finished delegation's real duration, 0 while it runs —
 	// the clock is still going then, and the frontend runs it from StartedAt.
@@ -70,12 +86,17 @@ func (a *App) BackgroundTasks() []BackgroundTask {
 			ToolCalls: t.ToolCalls,
 			Model:     t.Model,
 			Tokens:    t.Tokens,
-			Run:       t.Run,
-			Phase:     t.Phase,
-			State:     taskState(t),
-			ElapsedMs: t.ElapsedMs,
-			Question:  t.Question,
-			Collected: t.Collected,
+
+			TokensIn:      t.TokensIn,
+			TokensOut:     t.TokensOut,
+			CachedIn:      t.CachedIn,
+			CacheReported: t.CacheReported,
+			Run:           t.Run,
+			Phase:         t.Phase,
+			State:         taskState(t),
+			ElapsedMs:     t.ElapsedMs,
+			Question:      t.Question,
+			Collected:     t.Collected,
 		})
 	}
 	return out
@@ -135,8 +156,18 @@ func (a *App) BackgroundRuns() []BackgroundRun {
 	return out
 }
 
+// taskState flattens the register's flags into the one word the tray draws.
+//
+// Stopped comes first, ahead of Running, and that order is the whole point of
+// the field. A delegate is marked stopped the moment the user asks for it and
+// keeps running until its goroutine unwinds, which can be a tool call away; a
+// row that reported "running" through that window would answer the click with
+// a spinner, and the user would press it again. Ahead of the outcome for the
+// same reason it exists at all: work somebody stopped is not work that failed.
 func taskState(t subagent.TaskInfo) string {
 	switch {
+	case t.Stopped:
+		return "stopped"
 	case t.Waiting:
 		return "waiting"
 	case t.Running:
@@ -146,4 +177,38 @@ func taskState(t subagent.TaskInfo) string {
 	default:
 		return "failed"
 	}
+}
+
+// StopBackgroundTask ends one running delegation, and reports whether there was
+// anything left to end.
+//
+// The tray's per-row brake. Until this existed the only door to a running
+// delegate was CancelTurn, which the composer only offers while a turn is live
+// โ€” and a delegate deliberately outlives the turn that started it
+// (internal/subagent/runner.go). So the ordinary case, an agent dispatched and
+// the turn finished, left up to four sub-agents looping with no button on
+// screen that could reach them. The card in the tray is on screen for exactly
+// as long as that work is unclaimed, which makes it the right place for it.
+//
+// False is not an error. The tray polls every two seconds, so a row can finish
+// between the paint and the click, and the user got what they wanted anyway.
+func (a *App) StopBackgroundTask(id string) bool {
+	if a.cur().delegations == nil {
+		return false
+	}
+	stopped := a.cur().delegations.Stop(id)
+	debuglog.Msg("stop: sub-agent %s stopped=%v", id, stopped)
+	return stopped
+}
+
+// StopBackgroundRun ends every delegate inside one declared job and reports how
+// many it found. A run is one piece of work to the person watching it, however
+// many workers it spread across, so it needs a brake shaped like the job.
+func (a *App) StopBackgroundRun(runID string) int {
+	if a.cur().delegations == nil {
+		return 0
+	}
+	stopped := a.cur().delegations.StopRun(runID)
+	debuglog.Msg("stop: run %s ended %d sub-agent(s)", runID, stopped)
+	return stopped
 }

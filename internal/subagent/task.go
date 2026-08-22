@@ -687,7 +687,7 @@ func (t *taskTool) begin(ctx context.Context, args map[string]any, out **running
 		// child's configuration because the stamp needs `self`, which does not
 		// exist until the register has admitted the job.
 		child.SetUsageReporter(func(u model.Usage) {
-			self.spend(u.TotalTokenCount())
+			self.spend(u)
 			if t.opts.OnUsage != nil {
 				t.opts.OnUsage(u)
 			}

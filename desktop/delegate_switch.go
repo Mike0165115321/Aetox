@@ -82,18 +82,23 @@ type DelegateWorker struct {
 	On bool `json:"on"`
 }
 
-// shippedReachableAgent is the one เอเจน a machine arrives with in reach.
+// shippedReachableAgents are the เอเจน a machine arrives with in reach.
 //
-// research rather than none, and rather than all five: an assistant that can
-// hand nothing to anybody is a company with one employee, while five in the
-// block cost ~21 tokens each in every message for colleagues most people never
-// call. Going out to find something out is the errand that comes up on any desk,
-// whatever the work is (owner, 20 ส.ค.).
+// Three rather than none, and rather than all five: an assistant that can hand
+// nothing to anybody is a company with one employee, while five in the block
+// cost ~21 tokens each in every message for colleagues most people never call.
+// The three kept are the errands that come up on any desk, whatever the work
+// is: going out to find something out, writing it up, and putting it in a
+// table. The two left out are the ones that need a thing set up before they can
+// do anything at all — github wants a token, automation wants a server — so
+// arriving in reach would only spend tokens on a colleague who cannot start
+// (owner, 20 ส.ค.).
 //
-// A name rather than a flag in the profile, and it is the honest spelling: this
-// is one choice about how the app arrives, not a property of the agent. The day
-// a second one earns its place here, this becomes a list.
-const shippedReachableAgent = "research"
+// Names rather than a flag in the profile, and it is the honest spelling: this
+// is one choice about how the app arrives, not a property of the agent. It was
+// one name until 20 ส.ค. and the comment then said the day a second earned its
+// place this becomes a list. It did.
+var shippedReachableAgents = []string{"doc", "research", "sheet"}
 
 // shippedDelegation is the delegation a machine gets before anybody answers the
 // question — read at startup, never written to disk (App.resolveConfig).
@@ -108,7 +113,9 @@ func shippedDelegation() (agents bool, workersOff []string) {
 		if p.Invalid != "" || p.Desk == "" {
 			continue
 		}
-		if strings.EqualFold(p.Name, shippedReachableAgent) {
+		if slices.ContainsFunc(shippedReachableAgents, func(n string) bool {
+			return strings.EqualFold(p.Name, n)
+		}) {
 			continue
 		}
 		workersOff = append(workersOff, strings.ToLower(p.Name))

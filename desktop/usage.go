@@ -37,6 +37,100 @@ func (a *App) recordTokenUsage(conv *conversation, u model.Usage) {
 	if err != nil {
 		debuglog.Msg("usage: insert failed: %v", err)
 	}
+	a.emitUsageRound(conv, u)
+}
+
+// UsageRound is one model round's spend, sent to the UI as it happens.
+//
+// It exists because the app knew this number all along and never said it out
+// loud: every round already landed in recordTokenUsage, and recordTokenUsage
+// only wrote it to a table nobody reads until later. The meter on the composer
+// is not this โ€” it reports how full the context window is, which is a different
+// fact that happens to also be measured in tokens, and it cannot answer "how
+// much is this turn costing me" at all.
+//
+// Sent per round rather than as a running total: the frontend is the side that
+// knows which turn is open and when it started, and a total accumulated here
+// would have to be reset from there anyway.
+//
+// Session is which chat spent it. Several chats can be working at once, so a
+// window that added every round it heard about would draw one conversation's
+// spend on another's screen.
+type UsageRound struct {
+	Session string `json:"session"`
+	In      int    `json:"in"`
+	Out     int    `json:"out"`
+	// Cached is the share of In the provider served from its prompt cache, and
+	// CacheReported whether it accounts for one at all. Zero with the flag
+	// false means unknown, not "nothing hit", and the UI has to draw those
+	// differently or it is inventing an answer.
+	Cached        int  `json:"cached"`
+	CacheReported bool `json:"cacheReported"`
+	// Cost is this round in USD, and Priced whether it could be priced at all.
+	//
+	// Computed here rather than sent to the window as a rate, for two reasons.
+	// The catalog lives on this side, and so does the rule that a subscription
+	// is not a meter: Codex answers with models OpenAI also sells per token, so
+	// pricing those calls by the API rate would bill a flat plan twice over and
+	// call the result spend. A window given rates would have to know that rule
+	// too, and would be a second place to get it wrong.
+	//
+	// Priced false means nobody published a rate for this model, which is not
+	// the same as free. The meter must show nothing rather than $0.00.
+	Cost   float64 `json:"cost"`
+	Priced bool    `json:"priced"`
+}
+
+// emitUsageRound tells the window what the round just cost. Fire and forget:
+// usage reporting must never be able to break a turn, which is the same rule
+// the insert above follows.
+func (a *App) emitUsageRound(conv *conversation, u model.Usage) {
+	if conv == nil {
+		return
+	}
+	in, out := u.PromptTokens, u.CompletionTokens
+	if in < 0 {
+		in = 0
+	}
+	if out < 0 {
+		out = 0
+	}
+	if in == 0 && out == 0 {
+		return
+	}
+	round := UsageRound{Session: conv.id, In: in, Out: out, CacheReported: u.CacheReported}
+	if u.CacheReported && u.CachedPromptTokens > 0 {
+		round.Cached = u.CachedPromptTokens
+	}
+	round.Cost, round.Priced = a.priceRound(conv, u)
+	a.emitEvent("usage:round", round)
+}
+
+// priceRound turns one round into money, or reports that it cannot.
+//
+// The same three rules priceUsage applies to the stats page, applied live so
+// the two can never disagree: a subscription is not a meter, a model the
+// catalog declined to price is shown as unpriced rather than as free, and the
+// cached half of the input is charged at the cache rate. That last one is not a
+// rounding detail — DeepSeek V4 Flash reads cache at fifty times less than
+// fresh input, and this session runs at a 93-98% hit rate, so pricing the whole
+// input at the fresh rate would be wrong by an order of magnitude.
+func (a *App) priceRound(conv *conversation, u model.Usage) (float64, bool) {
+	providerName := model.NormalizeProvider(conv.cfg.ModelProvider)
+	if provider.BalanceKindFor(providerName) == provider.BalanceSubscription {
+		return 0, false
+	}
+	catalog := a.modelCatalog()
+	if catalog == nil {
+		return 0, false
+	}
+	facts, ok := lookupFacts(catalog, providerName, conv.cfg.ModelName)
+	if !ok || !facts.Price.Priced() {
+		return 0, false
+	}
+	return facts.Price.Cost(
+		int64(u.UncachedPromptTokens()), int64(u.CachedPromptTokens), int64(u.CompletionTokens),
+	), true
 }
 
 // UsageRow is one model's aggregated token usage within a period.

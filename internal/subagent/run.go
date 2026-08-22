@@ -214,6 +214,13 @@ func (r *Delegations) Runs() []RunInfo {
 						phase.Waiting++
 					}
 					info.Running = true
+				// Stopped before failed, because a stopped delegate is not a
+				// successful one either and would otherwise be counted as
+				// broken. The user ending work is not the job going wrong, and
+				// a phase that reports one as the other tells them their run
+				// hit an error they never had.
+				case t.wasStopped():
+					phase.Done++
 				case !t.output.Success:
 					phase.Done++
 					phase.Failed++

@@ -228,15 +228,18 @@ func TestDelegationShipsOffForAgentsAndOnForHelpers(t *testing.T) {
 // The switch fields still ship the way the test above proves; this is the layer
 // over them, and it exists because "may my assistant hand work to a colleague"
 // answered NO for everybody meant a company whose employees were never asked to
-// do anything. research is the one errand that comes up on any desk.
-func TestNobodyAnsweredMeansResearchAndNobodyElse(t *testing.T) {
+// do anything. The three shipped in reach are the errands that come up on any
+// desk; the two left out cannot start without a token or a server.
+func TestNobodyAnsweredMeansTheShippedThreeAndNobodyElse(t *testing.T) {
 	agents, off := shippedDelegation()
 	if !agents {
 		t.Fatal("the assistant cannot hand work to anybody on a fresh machine")
 	}
 	lower := lowered(off)
-	if slices.Contains(lower, shippedReachableAgent) {
-		t.Errorf("%s is meant to be the one in reach and it is switched off: %v", shippedReachableAgent, off)
+	for _, want := range shippedReachableAgents {
+		if slices.Contains(lower, want) {
+			t.Errorf("%s is meant to be in reach and it is switched off: %v", want, off)
+		}
 	}
 	var agentNames, helperNames []string
 	for _, p := range subagent.List() {
@@ -250,11 +253,11 @@ func TestNobodyAnsweredMeansResearchAndNobodyElse(t *testing.T) {
 		}
 	}
 	for _, name := range agentNames {
-		if name == shippedReachableAgent {
+		if slices.Contains(shippedReachableAgents, name) {
 			continue
 		}
 		if !slices.Contains(lower, name) {
-			t.Errorf("%s is in reach on a machine nobody has touched; only %s was meant to be", name, shippedReachableAgent)
+			t.Errorf("%s is in reach on a machine nobody has touched; only %v were meant to be", name, shippedReachableAgents)
 		}
 	}
 	// ซับเอเจน are the assistant's own hands and ship on. A default that reached
@@ -274,7 +277,7 @@ func TestAnsweringOnceStopsTheShippedDefault(t *testing.T) {
 	if a.cur().cfg.DelegateSet {
 		t.Fatal("a config nobody has touched already claims to be an answer")
 	}
-	a.SetAgentOff(shippedReachableAgent, true)
+	a.SetAgentOff(shippedReachableAgents[0], true)
 	if !a.cur().cfg.DelegateSet {
 		t.Error("switching one agent off is an answer and was not recorded as one")
 	}

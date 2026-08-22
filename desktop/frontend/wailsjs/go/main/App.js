@@ -70,6 +70,10 @@ export function BrowserBack(arg1) {
   return window['go']['main']['App']['BrowserBack'](arg1);
 }
 
+export function BrowserCaptureFullPNG(arg1, arg2) {
+  return window['go']['main']['App']['BrowserCaptureFullPNG'](arg1, arg2);
+}
+
 export function BrowserCapturePNG(arg1) {
   return window['go']['main']['App']['BrowserCapturePNG'](arg1);
 }
@@ -968,6 +972,14 @@ export function StartMobileRemote() {
 
 export function StartSignIn(arg1) {
   return window['go']['main']['App']['StartSignIn'](arg1);
+}
+
+export function StopBackgroundRun(arg1) {
+  return window['go']['main']['App']['StopBackgroundRun'](arg1);
+}
+
+export function StopBackgroundTask(arg1) {
+  return window['go']['main']['App']['StopBackgroundTask'](arg1);
 }
 
 export function StopMobileRemote() {

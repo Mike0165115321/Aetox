@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/skill"
 )
 
@@ -86,7 +87,30 @@ type runningTask struct {
 	// (task.go). Nothing was told WHO spent it, so "this run cost 712k across
 	// eight workers" had no source. Stamping it here changes no total.
 	tokensUsed int
-	pending    *pendingAsk // non-nil while a question is waiting for an answer
+	// The same spend, split the way the bill is: input the provider had to
+	// read, output it wrote. One number cannot answer what a person watching a
+	// delegate reach its seventy-second tool call is actually asking, which is
+	// WHICH HALF is growing โ€” a transcript re-sent every round and a model
+	// writing at length cost the same and mean opposite things, and only one of
+	// them is worth stopping.
+	//
+	// The split was always in hand and thrown away one line before it arrived
+	// (task.go handed spend a Usage and kept only the total), so this costs a
+	// wider parameter and nothing else.
+	tokensIn  int
+	tokensOut int
+	// cachedIn is the part of tokensIn the provider served from its own prompt
+	// cache; cacheReported is whether it accounts for that at all. A local
+	// runtime reports neither, and drawing that as a 0% hit rate would be the
+	// tray claiming something the provider never said (model.Usage).
+	cachedIn      int
+	cacheReported bool
+	// stopped: the user ended this delegate on purpose. Kept apart from the
+	// failure it would otherwise be indistinguishable from, because "I stopped
+	// it" and "it broke" are different sentences and only the second is worth
+	// sending the model back to look at (see taskState, desktop layer).
+	stopped bool
+	pending *pendingAsk // non-nil while a question is waiting for an answer
 	// parked is non-nil for the whole time the delegate's goroutine is inside
 	// ask() — from before the question is even collectable to the moment an
 	// answer (or cancellation) frees it. It exists for Snapshot alone: pending
@@ -114,21 +138,54 @@ func (r *runningTask) calls() int {
 	return r.toolCalls
 }
 
-// spend records one round's tokens against this delegate. Called from the
+// spend records one round's usage against this delegate. Called from the
 // delegate's own usage reporter, which runs on its goroutine.
-func (r *runningTask) spend(n int) {
-	if n <= 0 {
+//
+// It takes the whole Usage rather than a total because the caller already holds
+// one โ€” the total was simply the only part that used to survive the trip. A
+// round that reports nothing at all is still ignored; a round that reports only
+// one half is not, because half a bill is a fact and a zero is not.
+func (r *runningTask) spend(u model.Usage) {
+	in, out := atLeastZero(u.PromptTokens), atLeastZero(u.CompletionTokens)
+	total := u.TotalTokenCount()
+	if in == 0 && out == 0 && total <= 0 {
 		return
 	}
 	r.mu.Lock()
-	r.tokensUsed += n
+	r.tokensUsed += total
+	r.tokensIn += in
+	r.tokensOut += out
+	// Only from a provider that accounts for it. Summing a 0 from one that does
+	// not would turn "unknown" into "nothing hit", which reads as a real answer.
+	if u.CacheReported {
+		r.cacheReported = true
+		r.cachedIn += atLeastZero(u.CachedPromptTokens)
+	}
 	r.mu.Unlock()
+}
+
+// atLeastZero floors a reported count. A provider sending a negative is not a
+// case worth a branch at every call site, but it must never subtract from a
+// running total the user is reading.
+func atLeastZero(n int) int {
+	if n < 0 {
+		return 0
+	}
+	return n
 }
 
 func (r *runningTask) tokens() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.tokensUsed
+}
+
+// tokenSplit reports the same spend as input and output, with the cached share
+// of the input when the provider says there is one.
+func (r *runningTask) tokenSplit() (in, out, cached int, reported bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.tokensIn, r.tokensOut, r.cachedIn, r.cacheReported
 }
 
 // ask parks the delegate until somebody answers, which may be a later turn than
@@ -204,6 +261,22 @@ func (r *runningTask) wasCollected() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.collected
+}
+
+// markStopped records that the user ended this delegate, before the cancel that
+// actually ends it. The order matters: the goroutine may notice the cancelled
+// context and finish within microseconds, and a snapshot taken in between would
+// otherwise draw a delegate the user just stopped as one that failed on its own.
+func (r *runningTask) markStopped() {
+	r.mu.Lock()
+	r.stopped = true
+	r.mu.Unlock()
+}
+
+func (r *runningTask) wasStopped() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.stopped
 }
 
 func (r *runningTask) finished() bool {
@@ -437,6 +510,22 @@ type TaskInfo struct {
 	// Tokens is this delegate's own spend. The session's total already includes
 	// it; this says whose it was.
 	Tokens int `json:"tokens"`
+	// TokensIn and TokensOut split that spend into what the model read and what
+	// it wrote, live while the delegate runs. Two numbers rather than one
+	// because they are two different problems: input that keeps climbing is a
+	// transcript being re-sent, output that keeps climbing is a model that will
+	// not stop writing, and a person deciding whether to press the brake is
+	// deciding between exactly those.
+	//
+	// TokensIn counts cached input too, the same as model.Usage.PromptTokens.
+	// CachedIn is the part of it that was served from the provider's cache, and
+	// CacheReported says whether the provider accounts for that at all: without
+	// it, a local runtime that reports nothing is indistinguishable from one
+	// that reported a genuine zero, and the tray must not draw the second.
+	TokensIn      int  `json:"tokensIn"`
+	TokensOut     int  `json:"tokensOut"`
+	CachedIn      int  `json:"cachedIn"`
+	CacheReported bool `json:"cacheReported"`
 	// Run and Phase are the declared job this belongs to, both empty for a loose
 	// delegate (run.go).
 	Run   string `json:"run,omitempty"`
@@ -450,6 +539,11 @@ type TaskInfo struct {
 	Question string `json:"question,omitempty"`
 	// OK is the outcome, meaningful only once Running is false.
 	OK bool `json:"ok"`
+	// Stopped: the user ended this one. It is not OK and it is not a failure
+	// either, and the tray and the auto-collect both have to tell the
+	// difference โ€” work somebody stopped on purpose must not come back as a
+	// report the model is asked to go and read.
+	Stopped bool `json:"stopped"`
 	// ElapsedMs is how long the delegation actually took, set once Running is
 	// false and 0 before that (the clock is still running; read it from Started).
 	//
@@ -478,11 +572,21 @@ func (r *Delegations) Snapshot() []TaskInfo {
 
 	out := make([]TaskInfo, 0, len(tasks))
 	for _, t := range tasks {
+		// Named apart from the `out` slice this loop is filling, which the
+		// obvious names for these would have shadowed.
+		tokIn, tokOut, tokCached, tokReported := t.tokenSplit()
 		info := TaskInfo{
 			ID: t.id, Profile: t.profile, Label: t.label,
 			Model: t.model, Run: t.run, Phase: t.phase,
 			Started: t.started, ToolCalls: t.calls(), Tokens: t.tokens(),
+			TokensIn: tokIn, TokensOut: tokOut, CachedIn: tokCached, CacheReported: tokReported,
 			Running: !t.finished(),
+			// Read before the running check rather than inside the finished
+			// branch: a delegate is marked stopped the instant the user asks
+			// for it and stays Running until its goroutine unwinds, so a row
+			// that only learned this once it had ended would keep drawing a
+			// live spinner over work that is already on its way out.
+			Stopped: t.wasStopped(),
 		}
 		if info.Running {
 			if p := t.parkedAsk(); p != nil {
@@ -502,10 +606,10 @@ func (r *Delegations) Snapshot() []TaskInfo {
 
 // StopAll ends every delegation still running, and reports how many it found.
 //
-// This is the Stop button reaching the work, and it is the only thing that ends
-// a delegate early now that a turn ending does not (see start). The host calls
-// it; nothing in this package does, because "the user pressed Stop" is not a
-// fact a tool can observe.
+// This is the Stop button reaching the work, now that a turn ending does not
+// (see start). Stop and StopRun below narrow the same act to one delegate and
+// to one declared job. The host calls all three; nothing in this package does,
+// because "the user pressed Stop" is not a fact a tool can observe.
 //
 // Cancelling is enough — it does not wait. Each delegate notices through its own
 // context, unparks whatever it was blocked on (a question nobody answered, a
@@ -522,7 +626,58 @@ func (r *Delegations) StopAll() int {
 	r.mu.Unlock()
 
 	for _, t := range stopping {
-		t.cancel()
+		stop(t)
 	}
 	return len(stopping)
+}
+
+// Stop ends one delegation and reports whether there was anything to end.
+//
+// StopAll was the whole vocabulary for a long time, and that made the brake
+// coarser than the work it brakes: delegates run concurrently, so "one of the
+// four is looping and the other three are fine" is an ordinary state, and the
+// only answer to it was to throw all four away. Naming one is not a second
+// mechanism, it is the same cancel reached by id.
+//
+// False means no such delegation, or one that had already finished. Neither is
+// an error: the tray polls, so the row a person clicks can finish between the
+// paint and the click, and "it is already over" is the outcome they were after.
+func (r *Delegations) Stop(id string) bool {
+	r.mu.Lock()
+	task, ok := r.tasks[id]
+	r.mu.Unlock()
+	if !ok || task.finished() {
+		return false
+	}
+	stop(task)
+	return true
+}
+
+// StopRun ends every delegation inside one declared job, and reports how many.
+// A run is one piece of work in the user's head however many workers it spread
+// across, so stopping it a worker at a time, while the phases still running
+// start more, would be a brake the job outruns.
+func (r *Delegations) StopRun(runID string) int {
+	r.mu.Lock()
+	stopping := make([]*runningTask, 0, len(r.tasks))
+	for _, t := range r.tasks {
+		if t.run == runID && !t.finished() {
+			stopping = append(stopping, t)
+		}
+	}
+	r.mu.Unlock()
+
+	for _, t := range stopping {
+		stop(t)
+	}
+	return len(stopping)
+}
+
+// stop is the one place a delegate is ended, so the mark and the cancel cannot
+// drift apart. Marked first, deliberately: cancel can be noticed and the
+// goroutine finished before this returns, and a snapshot taken in that window
+// would draw work the user just stopped as work that failed on its own.
+func stop(t *runningTask) {
+	t.markStopped()
+	t.cancel()
 }

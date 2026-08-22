@@ -31,6 +31,7 @@
     addProjectFolder, removeProjectFolder,
     retryActiveProvider, undoLastTurn, switchApprovalMode,
     startTaskChip, dismissTaskChip,
+    stopBackgroundTask, stopBackgroundRun,
     retryFailedTurn, editFailedTurn, regenerateReply, switchVariant, resendEdited, rateReply,
     setActiveView, newChairSession, newSessionAt, openSettingsAt, setStance,
     sendUserMessage,
@@ -866,6 +867,23 @@
   function fmtTokens(n: number): string {
     return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n)
   }
+  // This turn's spend, counted live off usage:round (cockpit). It lives in the
+  // context panel beside the forecast, because the two answer questions a
+  // person asks in the same breath: what will the next message weigh, and what
+  // has this already cost.
+  const spend = $derived(cockpit.turnSpend)
+  // The input the provider had to read fresh. Floored, because a provider that
+  // reports more cache than input would otherwise draw a negative row.
+  const spendMiss = $derived(Math.max(0, spend.in - spend.cached))
+  const sharePct = (n: number) => (spend.in > 0 ? Math.round((n / spend.in) * 100) + '%' : '')
+  const hitPct = $derived(sharePct(spend.cached))
+  const missPct = $derived(sharePct(spendMiss))
+  // Shown only when every spending round could be priced. A partial total is
+  // the one kind of wrong a money figure must never be.
+  const showMoney = $derived(spend.unpriced === 0 && spend.cost > 0)
+  // Four places, because the interesting figures are small: a cheap turn on a
+  // flash model runs to fractions of a cent, and $0.00 would read as free.
+  const fmtMoney = (usd: number) => '$' + usd.toFixed(usd < 0.01 ? 4 : 2)
   const ctxLabels = $derived<Record<string, string>>({
     system: t('chat.ctx_system'),
     tools: t('chat.ctx_tools'),
@@ -2453,6 +2471,8 @@
       allTasks={cockpit.backgroundTasks}
       steps={cockpit.backgroundSteps}
       onAnswer={answerBgTask}
+      onStop={stopBackgroundTask}
+      onStopRun={stopBackgroundRun}
     />
     <!-- Side work the agent flagged (suggest_task): each chip starts its own
          fresh session on click. Lives on the composer, not in the transcript —
@@ -3110,6 +3130,70 @@
                        tokens" comes from. -->
                   <div class="ctx-note">{t('chat.contextCached', { cached: fmtTokens(ctx.cachedTokens) })}</div>
                 {/if}
+                <!-- What the turn has actually spent, under what the next
+                     request will weigh. Two different facts that share a unit,
+                     and the panel is where they belong together: the rows above
+                     are a forecast of one message, these are the bill so far.
+                     Drawn only once a round has come back, because "เข้า 0 ·
+                     ออก 0" reads as a measurement and there has not been one.
+                     Keeps counting after the turn ends, on purpose: a sub-agent
+                     outlives the turn that dispatched it. -->
+                {#if spend.in > 0 || spend.out > 0}
+                  <div class="ctx-spend">
+                    <div class="ctx-head">
+                      <span class="t">{t('chat.spendTitle')}</span>
+                      {#if showMoney}<span class="v">{fmtMoney(spend.cost)}</span>{/if}
+                    </div>
+                    <!-- The labels are the usage page's own keys, not copies of
+                         its words (owner, 22 ส.ค.: "ศัพท์เดียวกันจะได้ตรวจสอบ
+                         ได้ง่าย"). This panel and the stats page report the same
+                         four quantities, and the whole point of matching
+                         vocabulary is that a number can be carried from one to
+                         the other — which a second set of strings saying almost
+                         the same thing would quietly break the first time one
+                         of them was reworded. They are English in every locale
+                         there too, deliberately: these are the provider's own
+                         billing terms. -->
+                    <div class="ctx-row">
+                      <span class="dot in"></span>
+                      <span class="lbl">{t('settings.usageInput')}</span>
+                      <span class="val">{fmtTokens(spend.in)}</span>
+                      <span class="pct"></span>
+                    </div>
+                    <!-- Hit and miss, and only when the provider accounts for
+                         a cache at all. A local runtime reports neither, and
+                         drawing that as a 0% hit rate would be the panel
+                         claiming something nobody measured. -->
+                    {#if spend.cacheReported}
+                      <div class="ctx-row sub">
+                        <span class="dot hit"></span>
+                        <span class="lbl">{t('settings.usageHit')}</span>
+                        <span class="val">{fmtTokens(spend.cached)}</span>
+                        <span class="pct">{hitPct}</span>
+                      </div>
+                      <div class="ctx-row sub">
+                        <span class="dot miss"></span>
+                        <span class="lbl">{t('settings.usageMiss')}</span>
+                        <span class="val">{fmtTokens(spendMiss)}</span>
+                        <span class="pct">{missPct}</span>
+                      </div>
+                    {/if}
+                    <div class="ctx-row">
+                      <span class="dot out"></span>
+                      <span class="lbl">{t('settings.usageOutput')}</span>
+                      <span class="val">{fmtTokens(spend.out)}</span>
+                      <span class="pct"></span>
+                    </div>
+                    <!-- Money is absent rather than approximate. An unpriced
+                         round means the catalog publishes no rate for this
+                         model, which is not the same as the round being free,
+                         and a total quietly missing three rounds is a number
+                         the user would trust and should not. -->
+                    {#if !showMoney}
+                      <div class="ctx-note">{t('chat.spendUnpriced')}</div>
+                    {/if}
+                  </div>
+                {/if}
               </div>
             {/if}
             <button
@@ -3132,6 +3216,7 @@
             </button>
           </div>
         {/if}
+
         {#if model.provider}
           <div class="model-pick">
             {#if modelMenuOpen}

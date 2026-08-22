@@ -419,6 +419,10 @@ export namespace main {
 	    tokens: number;
 	    run?: string;
 	    phase?: string;
+	    tokensIn: number;
+	    tokensOut: number;
+	    cachedIn: number;
+	    cacheReported: boolean;
 	    state: string;
 	    elapsedMs?: number;
 	    question?: string;
@@ -439,6 +443,10 @@ export namespace main {
 	        this.tokens = source["tokens"];
 	        this.run = source["run"];
 	        this.phase = source["phase"];
+	        this.tokensIn = source["tokensIn"];
+	        this.tokensOut = source["tokensOut"];
+	        this.cachedIn = source["cachedIn"];
+	        this.cacheReported = source["cacheReported"];
 	        this.state = source["state"];
 	        this.elapsedMs = source["elapsedMs"];
 	        this.question = source["question"];
