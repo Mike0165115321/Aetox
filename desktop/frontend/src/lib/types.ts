@@ -245,7 +245,34 @@ export interface MessageVariant {
 
 /** One tool call in the live per-turn timeline ("Using browser_read… 12s"). */
 /** One background delegation as the engine's register reports it — mirrors
- * desktop/background_tasks.go BackgroundTask. The tray draws these. */
+/** desktop/usage.go UsageRound, added up over one turn.
+ *
+ *  `in` counts cached input too, the same as the provider's own bill does.
+ *  `cached` is the part of it that was served from the prompt cache, and
+ *  cacheReported whether any provider in this turn accounts for one: false
+ *  means nobody said, which is not the same as nothing hit, and the meter must
+ *  stay silent about it rather than draw a zero it made up. */
+export interface TurnSpend {
+  in: number
+  out: number
+  cached: number
+  cacheReported: boolean
+  /** USD, summed over the rounds the engine could price. */
+  cost: number
+  /** How many spending rounds had no published rate. Money is drawn only while
+   *  this is 0: half a bill presented as the bill is worse than no bill, and
+   *  "this model is not in the price catalog" is not "this model is free". */
+  unpriced: number
+}
+
+/** What a turn starts from. One function rather than the literal repeated at
+ *  every reset, because a field added to TurnSpend must not silently keep its
+ *  old value on three of the four paths that clear it. */
+export function emptyTurnSpend(): TurnSpend {
+  return { in: 0, out: 0, cached: 0, cacheReported: false, cost: 0, unpriced: 0 }
+}
+
+/** desktop/background_tasks.go BackgroundTask. The tray draws these. */
 export interface BackgroundTask {
   id: string
   agent: string
@@ -258,11 +285,23 @@ export interface BackgroundTask {
    *  untouched, so the total knows how much and nothing knew by whom. */
   model?: string
   tokens: number
+  /** The same spend split into what the model read and what it wrote, live.
+   *  Two numbers because they are two different problems and the brake is a
+   *  different decision for each: input climbing is a transcript being re-sent
+   *  every round, output climbing is a model that will not stop writing. */
+  tokensIn: number
+  tokensOut: number
+  /** The share of tokensIn served from the provider's prompt cache, and whether
+   *  the provider accounts for one at all. cacheReported false means unknown,
+   *  NOT zero, and the card must draw nothing rather than a 0 it invented. */
+  cachedIn: number
+  cacheReported: boolean
   /** The declared job this belongs to, both absent for a delegate started on
    *  its own (internal/subagent/run.go). */
   run?: string
   phase?: string
-  /** 'running' | 'waiting' (parked on a question) | 'done' | 'failed' */
+  /** 'running' | 'waiting' (parked on a question) | 'done' | 'failed'
+   *  | 'stopped' (the user ended it, which is neither of the last two) */
   state: string
   /** How long the delegation really took, present only once it has finished.
    *  While it runs the clock is still going, so the row counts from startedAt. */
@@ -547,6 +586,11 @@ export interface ParkedTurn {
   reasoningText: string
   ask: { question: string; options: string[] } | null
   todos: { content: string; status: 'pending' | 'in_progress' | 'completed' }[]
+  /** Parked with the rest of the live state, because the meter belongs to the
+   *  turn and the turn is what is being parked. Left on `cockpit` instead, it
+   *  followed the user into the next chat and drew one conversation's spend
+   *  under another's composer. */
+  turnSpend: TurnSpend
 }
 
 export interface CockpitState {
@@ -631,6 +675,13 @@ export interface CockpitState {
    *  running from done. Refreshed by refreshBackgroundTasks. */
   backgroundTasks: BackgroundTask[]
   backgroundRuns: BackgroundRun[]
+  /** What has been spent since this turn began, counted live off usage:round.
+   *  Reset when a turn starts, not when one ends: a sub-agent outlives the turn
+   *  that dispatched it, and the rounds it keeps spending afterwards are still
+   *  this chat's bill. Zeroing at the end would hide exactly the case worth
+   *  watching, which is spend continuing while nothing looks like it is going
+   *  on. */
+  turnSpend: TurnSpend
   /** Sandbox paths of finished files this turn produced — a spreadsheet, a deck,
    *  a document. Collected live from agent:tool results so the reply can show
    *  them as cards with an open button: the file panel is where you go looking,
@@ -736,6 +787,7 @@ export function emptyCockpitState(): CockpitState {
     backgroundSteps: [],
     backgroundTasks: [],
     backgroundRuns: [],
+    turnSpend: emptyTurnSpend(),
     streamingText: '',
     reasoningText: '',
     ask: null,

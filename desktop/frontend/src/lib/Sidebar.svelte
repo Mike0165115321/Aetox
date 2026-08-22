@@ -13,7 +13,7 @@
   } from '../../wailsjs/go/main/App'
   import ProviderAccount from './ProviderAccount.svelte'
   import { navFor, deskLabelKey, type NavEntry } from './desks'
-  import { shell } from './shell.svelte'
+  import { shell, shellHasChats } from './shell.svelte'
   import { t, i18n, setLocale, localeNames, type Locale, type TKey } from './i18n.svelte'
   import { dayBucket } from './dayBucket'
   import { theme, applyTheme, THEMES, type ThemeName } from './theme.svelte'
@@ -44,6 +44,7 @@
     } catch {
       account = null
     }
+  }
 
   // The Aetox account, which is not the provider account above and not the name
   // beside it either: that name is what the agent calls you and you typed it.
@@ -77,7 +78,6 @@
       // identity stays, only the dot goes out.
       aetoxOnline = false
     }
-  }
   }
   let nameDraft = $state('')
   const avatarInitial = $derived((profileName.trim()[0] ?? 'A').toUpperCase())
@@ -152,6 +152,13 @@
   // projects with their chats nested underneath. A tab offering the other
   // door's list is the mixing the split exists to end.
   const showProjects = $derived(shell.name === 'code')
+
+  // Whether this door has a conversation column at all. ทีม does not: nothing
+  // behind it opens a session, so the search box, the import button and the
+  // history list would all be controls over an empty set — or worse, over
+  // another door's list, since deskFilterFor has no answer for a door that
+  // holds no chats (§158.3). The rooms row above stays; that is the door.
+  const showChats = $derived(shellHasChats(shell.name))
 
   // The rooms behind the door the window is showing (§86).
   const rooms = $derived(navFor(shell.name))
@@ -371,6 +378,7 @@
        scroller with the rooms — a row that scrolls away is a row you go
        looking for. As icons rather than the two blocks they used to be: this
        is the top of a list, and the list is what the column is for. -->
+  {#if showChats}
   <div class="side-actions">
     <span class="side-search">
       <span class="ic"><Icon name="search" size={14} /></span>
@@ -386,7 +394,9 @@
       data-tip="{t('sidebar.newSession')} · {shortcutLabel('newSession')}" onclick={newSession}
     ><Icon name="pencil" size={15} /></button>
   </div>
+  {/if}
 
+  {#if showChats}
   <div class="side-sections">
   <div class="side-panel">
     {#if showProjects}
@@ -508,6 +518,7 @@
     {/if}
   </div>
   </div>
+  {/if}
 
   <div class="side-footer-wrap">
     <button type="button" class="side-footer" onclick={() => { profileOpen = !profileOpen; if (profileOpen) { loadAccount(); loadAetoxAccount() } }}>
@@ -537,6 +548,7 @@
             onkeydown={(e) => e.key === 'Enter' && saveName()}
             onblur={saveName}
           />
+        </div>
         <div class="menu-sep"></div>
         {#if aetox?.signed_in}
           <div class="acct-menu">
@@ -556,7 +568,6 @@
             <span class="ic"><Icon name="circleUser" size={14} /></span> {t('sidebar.accountSignIn')}
           </button>
         {/if}
-        </div>
         {#if account}
           <div class="menu-sep"></div>
           <div class="acct-menu">

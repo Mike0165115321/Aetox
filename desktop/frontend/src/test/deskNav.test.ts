@@ -10,8 +10,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte'
 import Sidebar from '../lib/Sidebar.svelte'
 import { NewSessionAt, NewChairSession, ListModes, SessionMode, CurrentSessionID } from './mocks/wailsApp'
-import { cockpit } from '../lib/stores/cockpit.svelte'
-import { setShell, deskFilterFor } from '../lib/shell.svelte'
+import { cockpit, switchShell } from '../lib/stores/cockpit.svelte'
+import { setShell, deskFilterFor, shellForDesk } from '../lib/shell.svelte'
 
 const deskButton = (label: string): HTMLButtonElement => {
   const el = Array.from(document.querySelectorAll('.desk-btn'))
@@ -41,7 +41,7 @@ describe('the rooms behind each door', () => {
     // that was never kept. Every room behind this door is now open, so the
     // whole row is checked rather than a list of exceptions — the next `soon`
     // room to be added has to come back here and say so out loud.
-    for (const label of ['ผู้ช่วย', 'โปรเจกต์', 'ทีมเอเจน', 'ระบบออโตเมชั่น', 'ผลงาน']) {
+    for (const label of ['ผู้ช่วย', 'โปรเจกต์', 'เอเจนเฉพาะทาง', 'ระบบออโตเมชั่น', 'ผลงาน']) {
       expect(deskButton(label)).toBeTruthy()
       expect(deskButton(label).disabled).toBe(false)
       expect(deskButton(label).textContent).not.toContain('เร็ว ๆ นี้')
@@ -50,15 +50,53 @@ describe('the rooms behind each door', () => {
 
   // The whole point of §86: the workshop is not the storefront with extra
   // furniture, it is a different building. โค้ด hands work to no one, so a
-  // window showing it must not offer the office, its files, or its routines.
+  // window showing it must not offer the team, its files, or its routines.
   it('draws only the workshop behind the code door', () => {
     setShell('code')
     render(Sidebar, { onOpenSettings: () => {} })
 
     expect(deskButton('โค้ด')).toBeTruthy()
-    for (const hidden of ['ผู้ช่วย', 'โปรเจกต์', 'ทีมเอเจน', 'ระบบออโตเมชั่น', 'ผลงาน']) {
+    for (const hidden of ['ผู้ช่วย', 'โปรเจกต์', 'เอเจนเฉพาะทาง', 'ห้องทำงาน', 'ระบบออโตเมชั่น', 'ผลงาน']) {
       expect(() => deskButton(hidden)).toThrow()
     }
+  })
+
+  // Aetox ทีม (§158) holds one room and that room is the reason it exists. It
+  // does NOT hold the roster: that page went there for an hour on 2026-08-20 and
+  // came straight back to the storefront (§158.9), and this is the assertion
+  // that keeps it back.
+  it('draws the team door with ห้องทำงาน and nothing else', () => {
+    setShell('team')
+    render(Sidebar, { onOpenSettings: () => {} })
+
+    expect(deskButton('ห้องทำงาน').disabled).toBe(false)
+    for (const hidden of ['ผู้ช่วย', 'โปรเจกต์', 'เอเจนเฉพาะทาง', 'ระบบออโตเมชั่น', 'ผลงาน', 'โค้ด']) {
+      expect(() => deskButton(hidden)).toThrow()
+    }
+  })
+
+  // Nothing behind this door opens a session, so the conversation column would
+  // be a control over an empty set — or over another door's list, since
+  // deskFilterFor has no answer for a door that holds no chats.
+  it('draws no chat column behind a door with no conversations', () => {
+    setShell('team')
+    cockpit.history.push({ id: 'a', title: 'chat a', ago: '', mode: 'assistant' })
+    render(Sidebar, { onOpenSettings: () => {} })
+
+    expect(screen.queryByText('chat a')).toBeNull()
+    expect(document.querySelector('.side-actions')).toBeNull()
+  })
+
+  // The team door opens no conversation: you do not talk to the team, you
+  // arrange it and press เริ่ม (§158.3). Walking in must therefore start
+  // nothing — the chat you were holding is still running behind you.
+  it('starts no session when you walk into the team door', async () => {
+    cockpit.desk = 'assistant'
+    await switchShell('team')
+
+    expect(vi.mocked(NewSessionAt)).not.toHaveBeenCalled()
+    expect(cockpit.activeView).toBe('lines')
+    expect(cockpit.desk).toBe('assistant')
   })
 
   // One list per door, no switch between them: the workshop's column is
@@ -106,7 +144,7 @@ describe('the rooms behind each door', () => {
     await fireEvent.click(deskButton('ผลงาน'))
     expect(cockpit.activeView).toBe('artifacts')
 
-    await fireEvent.click(deskButton('ทีมเอเจน'))
+    await fireEvent.click(deskButton('เอเจนเฉพาะทาง'))
     expect(cockpit.activeView).toBe('office')
     expect(vi.mocked(NewSessionAt)).not.toHaveBeenCalled()
   })
@@ -135,7 +173,7 @@ describe('the rooms behind each door', () => {
   })
 
   // A chair chat runs at the office desk, so lighting the nav by desk would
-  // leave ทีมเอเจน lit while the user is standing in ระบบออโตเมชั่น.
+  // leave the wrong room lit while the user is standing in ระบบออโตเมชั่น.
   it('lights the room by who you are talking to, not by the desk', async () => {
     cockpit.desk = 'specialized'
     cockpit.chair = 'automation'
@@ -143,7 +181,16 @@ describe('the rooms behind each door', () => {
     render(Sidebar, { onOpenSettings: () => {} })
 
     expect(deskButton('ระบบออโตเมชั่น').className).toContain('active')
-    expect(deskButton('ทีมเอเจน').className).not.toContain('active')
+    expect(deskButton('เอเจนเฉพาะทาง').className).not.toContain('active')
+  })
+
+  // Every chat with an เอเจน runs at the specialized desk and is the
+  // storefront's, which is where its roster lives. A session that predates desks
+  // is held at no desk at all and is at home there too.
+  it('files a session behind the door its desk belongs to', () => {
+    expect(shellForDesk('specialized')).toBe('assistant')
+    expect(shellForDesk('coding')).toBe('code')
+    expect(shellForDesk('')).toBe('assistant')
   })
 
   // The button's tooltip is the desk's own description, so editing a mode file

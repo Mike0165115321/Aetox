@@ -5,10 +5,13 @@
   import FileEditor from './lib/FileEditor.svelte'
   import Settings from './lib/Settings.svelte'
   import Office from './lib/Office.svelte'
+  import Workroom from './lib/Workroom.svelte'
   import Artifacts from './lib/Artifacts.svelte'
   import Projects from './lib/Projects.svelte'
   import Onboarding from './lib/Onboarding.svelte'
   import Updater from './lib/Updater.svelte'
+  import CapabilityProgress from './lib/CapabilityProgress.svelte'
+  import { listenCapabilities } from './lib/capabilities.svelte'
   import Workbench from './lib/workbench/Workbench.svelte'
   import { onMount } from 'svelte'
   import {
@@ -16,10 +19,11 @@
     switchProvider, switchThinkLevel,
     switchModel, submitAPIKey, setActiveView, restoreActiveView, closeFile, applyAgentStatus, applyToolEvent,
     applyAgentChunk, applyReasoningChunk, attachImageFromPath,
-    applyAskUser, applyAskDone, applyTodos, applyMissedInterjections, applyTaskChips,
-    applyPendingLearned, refreshPendingLearned, refreshPendingIssues, applyAgentDone, isOverlayView,
+    applyAskUser, applyAskDone, applyTodos, applyMissedInterjections, applyTaskChips, applyUsageRound,
+    applyPendingLearned, refreshPendingLearned, refreshPendingIssues, applyAgentDone, isOverlayView, closeOverlay,
     refreshProjectFolders,
   } from './lib/stores/cockpit.svelte'
+  import { shell, shellHasChats } from './lib/shell.svelte'
   import { RelativizePath, CloseAllBrowserTabs } from '../wailsjs/go/main/App'
   import { OnFileDrop, OnFileDropOff, EventsOn } from '../wailsjs/runtime/runtime'
   import { workbench, openPathsInWorkbench } from './lib/stores/workbench.svelte'
@@ -179,10 +183,16 @@
     // could not fold it in, so it comes back here and goes out as its own turn.
     const offMissed = EventsOn('agent:interjection-missed', applyMissedInterjections)
     const offTaskChips = EventsOn('tasks:changed', applyTaskChips)
+    // What the turn is costing, round by round, from the same reporter that
+    // has always written it to the usage table (desktop/usage.go). The table
+    // answered the question a day later; this answers it while there is still
+    // something to do about it.
+    const offUsage = EventsOn('usage:round', applyUsageRound)
     // A folder the user let in from the card the agent raised mid-turn. The
     // panel is the one place that says what this session can reach, so it has
     // to learn about a folder that arrived without anybody opening it.
     const offWorkspace = EventsOn('workspace:changed', () => { void refreshProjectFolders() })
+    const offCapabilities = listenCapabilities()
     // What the agent wants to remember and cannot until it is allowed to, and
     // what keeps failing and might be worth telling the developer about.
     // One event, two queues (docs/architecture/system-problems-vs-learning-2026-08-18.md):
@@ -253,7 +263,9 @@
       offTodos()
       offMissed()
       offTaskChips()
+      offUsage()
       offWorkspace()
+      offCapabilities()
       offLearning()
       offUpdate()
     }
@@ -367,7 +379,10 @@
       // before it reaches window, so this only ever fires on a bare page. The
       // office and the gallery close the same way, because a page you can only
       // leave with the mouse is one people get stuck on.
-      setActiveView('chat')
+      //
+      // closeOverlay, not setActiveView('chat'): behind ทีม there is no chat to
+      // land on, and this used to hand that door another door's conversation.
+      closeOverlay()
     }
   }
 </script>
@@ -396,7 +411,12 @@
     onpointerdown={startSidebarResize}
   ></div>
   <main class="main">
-    {#if cockpit.openFiles.length > 0}
+    <!-- The tab strip switches between a conversation and the files opened
+         from it, so it belongs to a door that holds conversations. Behind ทีม
+         neither destination exists, and a run of coding work left the strip
+         standing over ห้องทำงาน with a "Chat" tab that led to another door's
+         session. -->
+    {#if cockpit.openFiles.length > 0 && shellHasChats(shell.name)}
       <div class="tabs">
         <button class="tab" class:active={cockpit.activeView === 'chat'} onclick={() => setActiveView('chat')}>Chat</button>
         {#each cockpit.openFiles as f}
@@ -411,7 +431,15 @@
         {/each}
       </div>
     {/if}
-    {#if cockpit.activeView === 'chat'}
+    {#if cockpit.activeView === 'lines'}
+      <!-- The ทีม door's home, drawn IN the layout rather than over it. Every
+           other page here is somewhere you visit from a conversation and
+           return to; this one is where you stand when that door is open, so an
+           overlay would have covered the only two controls that lead anywhere
+           — the topbar's door menu and the sidebar's rooms row, which §158.9
+           says is the door itself. -->
+      <Workroom />
+    {:else if cockpit.activeView === 'chat'}
       <Chat
         messages={cockpit.chat}
         task={cockpit.task}
@@ -450,19 +478,19 @@
      untouched, and closing one puts you back exactly where you were. -->
 {#if cockpit.activeView === 'settings'}
   <div class="settings-overlay">
-    <Settings onClose={() => setActiveView('chat')} />
+    <Settings onClose={closeOverlay} />
   </div>
 {:else if cockpit.activeView === 'office'}
   <div class="settings-overlay">
-    <Office onClose={() => setActiveView('chat')} />
+    <Office onClose={closeOverlay} />
   </div>
 {:else if cockpit.activeView === 'artifacts'}
   <div class="settings-overlay">
-    <Artifacts onClose={() => setActiveView('chat')} />
+    <Artifacts onClose={closeOverlay} />
   </div>
 {:else if cockpit.activeView === 'projects'}
   <div class="settings-overlay">
-    <Projects onClose={() => setActiveView('chat')} />
+    <Projects onClose={closeOverlay} />
   </div>
 {/if}
 
@@ -471,3 +499,4 @@
      whichever room the user is standing in, that is where the notice has to
      find them. Renders nothing until there is something to say. -->
 <Updater />
+<CapabilityProgress />

@@ -3,7 +3,7 @@
 // incremental updates here — append a chat message, advance a timeline step) and
 // the UI reacts. Do not reassign `cockpit` itself; mutate its properties.
 
-import { emptyCockpitState, type CockpitState, type ParkedTurn, type TreeNode, type Session, type ToolStep, type ToolEvent, type ChatMessage, type MessageVariant, type TurnPart, type PendingFile } from '../types'
+import { emptyCockpitState, emptyTurnSpend, type CockpitState, type ParkedTurn, type TreeNode, type Session, type ToolStep, type ToolEvent, type ChatMessage, type MessageVariant, type TurnPart, type PendingFile } from '../types'
 import type { CockpitSource } from '../services/cockpit'
 import {
   SendMessage, GetProjectStatus, GetModelInfo, OpenProjectFolder, OpenProjectPath,
@@ -18,6 +18,7 @@ import {
   ListTaskChips, DismissTaskChip,
   BackgroundTasks,
   BackgroundRuns,
+  StopBackgroundTask, StopBackgroundRun,
   RateTurn, PendingLearnedCount, PendingIssueCount,
   WorkspaceFolders, AddWorkspaceFolder, RemoveWorkspaceFolder,
   RetryFailedTurn, RegenerateReply, ResendEdited, SwitchVariant,
@@ -26,7 +27,7 @@ import {
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
-import { shell, setShell, shellForDesk, deskForShell, deskFilterFor, SHELLS, type ShellName } from '../shell.svelte'
+import { shell, setShell, shellForDesk, deskForShell, deskFilterFor, homeForShell, SHELLS, type ShellName } from '../shell.svelte'
 import { workbench, switchWorkbenchSession, adoptWorkbenchSession, removeWorkbenchState } from './workbench.svelte'
 
 // Model info comes from a real Go IPC round-trip (GetModelInfo), which is
@@ -581,7 +582,7 @@ async function restoreLiveTranscript(): Promise<void> {
       cockpit.parked[other] = {
         chat: [], awaitingReply: true, agentStatus: '', toolSteps: [],
         turnFiles: [], turnProposals: [], streamingText: '', reasoningText: '',
-        ask: null, todos: [],
+        ask: null, todos: [], turnSpend: emptyTurnSpend(),
       }
     }
   }
@@ -717,6 +718,7 @@ function parkLive(id: string): void {
     reasoningText: cockpit.reasoningText,
     ask: cockpit.ask,
     todos: cockpit.todos,
+    turnSpend: cockpit.turnSpend,
   }
 }
 
@@ -738,6 +740,7 @@ function restoreLive(id: string): boolean {
   cockpit.reasoningText = held.reasoningText
   cockpit.ask = held.ask
   cockpit.todos = held.todos
+  cockpit.turnSpend = held.turnSpend
   hydrateImages()
   return true
 }
@@ -753,6 +756,11 @@ function clearLive(): void {
   cockpit.reasoningText = ''
   cockpit.ask = null
   cockpit.todos = []
+  // The meter is the arriving chat's, not the one being left. Without this it
+  // followed the user across, and a brand-new conversation opened under a
+  // reading of 45.3k while its own panel said "ยังไม่เสียโทเคนสักตัว" — two
+  // numbers on one screen, disagreeing, and the panel was the honest one.
+  cockpit.turnSpend = emptyTurnSpend()
 }
 
 /** Apply a change to the live state of the chat an event names.
@@ -989,16 +997,81 @@ export async function undoLastTurn(): Promise<void> {
  * the thinking are what the turn *did*, and a turn that was stopped did not do
  * less of it. Stop means stop, not discard.
  */
-function turnEndedBubble(err: unknown, sentText: string): ChatMessage {
+async function turnEndedBubble(err: unknown, sentText: string): Promise<ChatMessage> {
+  // Taken first, before any await: the finally in runLiveTurn has not run yet,
+  // but nothing about that is worth betting a turn's work on.
+  const live = turnArtifacts()
+  const stored = await storedEndingFor(sentText)
+  if (stored) {
+    return {
+      ...stored,
+      // The store cannot hold everything the window saw. Where it has nothing,
+      // the live snapshot stands in rather than overwriting a stored answer
+      // with a poorer one.
+      steps: stored.steps?.length ? stored.steps : live.steps,
+      reasoning: stored.reasoning || live.reasoning,
+      thinkSecs: stored.thinkSecs || live.thinkSecs,
+      producedFiles: stored.producedFiles?.length ? stored.producedFiles : live.producedFiles,
+      proposals: stored.proposals?.length ? stored.proposals : live.proposals,
+      time: nowLabel(),
+      failed: true,
+      failedText: sentText,
+    }
+  }
   const partial = cockpit.streamingText.trim()
-  const ending = /context canceled/i.test(String(err))
-    ? t('cockpit.turnStopped')
-    : t('cockpit.sendError', { err: String(err) })
   return {
     role: 'agent',
-    text: partial ? `${partial}\n\n${ending}` : ending,
+    text: partial ? `${partial}\n\n${endingFor(err)}` : endingFor(err),
     time: nowLabel(), failed: true, failedText: sentText,
-    ...turnArtifacts(),
+    ...live,
+  }
+}
+
+/** Stop is a command that succeeded; every other ending is an error. */
+function endingFor(err: unknown): string {
+  return /context canceled/i.test(String(err))
+    ? t('cockpit.turnStopped')
+    : t('cockpit.sendError', { err: String(err) })
+}
+
+/**
+ * The row the engine wrote for the turn that just ended, read back.
+ *
+ * This is the half of the bargain the window kept losing. `App.runTurn` builds
+ * the agent message once for BOTH endings — the same reply, reasoning and parts
+ * a successful turn gets — and `appendFailedTurn` stores it. It is all there:
+ * a turn stopped after sixteen rounds has sixteen parts in the database, every
+ * line of narration and every tool call among them.
+ *
+ * None of it reached the bubble. The engine returns that message alongside the
+ * error, and Wails discards a return value when the error is non-nil, so the
+ * window fell back to what it had locally: `streamingText`, which holds only
+ * the round being written *now* and which the engine erases at the end of every
+ * round that ends in a tool call. That is precisely the moment somebody presses
+ * Stop. So the user watched sixteen rounds of work scroll past, pressed Stop,
+ * and got one line reading "หยุดการทำงานแล้ว" over nothing (owner, 22 ส.ค.:
+ * *"แชทมันจะหายไปเลย ทั้งที่เมื่อกี้มันคิดมายาวมาก"*).
+ *
+ * Read through restoreTranscript on purpose, rather than by hand: reopening the
+ * session has always drawn this row correctly, and a second way to turn a
+ * stored failure into a bubble is a second way for the two to disagree.
+ *
+ * Guarded on the question, not on position. If the rejection came from
+ * somewhere that never reached `appendFailedTurn` — the engine gone, Wails
+ * itself — the newest failed row belongs to an older turn, and grafting it here
+ * would answer this question with that one's work.
+ */
+async function storedEndingFor(sentText: string): Promise<ChatMessage | null> {
+  try {
+    const id = cockpit.turnSession || cockpit.openSession || (await CurrentSessionID())
+    if (!id) return null
+    const last = restoreTranscript(await SessionTranscript(id)).at(-1)
+    if (!last || last.role !== 'agent' || !last.failed) return null
+    return last.failedText === sentText ? last : null
+  } catch {
+    // The store is unreachable. The live snapshot below is still a real answer,
+    // and a turn that ended is not the moment to surface a second failure.
+    return null
   }
 }
 
@@ -1087,7 +1160,7 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
     } catch (err) {
       // The engine persists nothing for a turn that failed, so the text it was
       // given rides on the bubble: it is the only copy left to retry with.
-      cockpit.chat.push(turnEndedBubble(err, sentText))
+      cockpit.chat.push(await turnEndedBubble(err, sentText))
     }
   })
   // Only stragglers land here now — anything typed under a running turn went
@@ -1107,6 +1180,11 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
  */
 async function runLiveTurn(call: () => Promise<void>): Promise<void> {
   cockpit.awaitingReply = true
+  // The spend meter starts over here and nowhere else. A turn is the unit a
+  // person can actually answer "is this costing me too much" about, and every
+  // path that produces an answer comes through this function, so one reset
+  // covers a send, a retry, a regenerate and an edited resend alike.
+  cockpit.turnSpend = emptyTurnSpend()
   // Whose turn this is: the chat on screen, because that is the only chat a
   // turn can be started from. Read from the window's own answer rather than
   // asked of the engine — it is synchronous, so there is no frame in which a
@@ -1186,7 +1264,19 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
     // in the sidebar that never goes out and a chat that can never be typed in
     // again. writeLive puts the ending in the same place the work went.
     const ran = cockpit.turnSession
-    if (ran === cockpit.openSession || !cockpit.parked[ran]) cockpit.turnSession = ''
+    // End it before letting go of it, and the order is load-bearing rather than
+    // tidy. `writeLive`'s last resort — for a turn running under an id the
+    // window guessed wrong, which is neither the chat on screen nor a parked
+    // one — is `id === cockpit.turnSession`. Clearing that first left the write
+    // with nowhere to land, so the finally ran and changed nothing: the live
+    // block stayed up forever, holding the finished answer that the transcript
+    // had ALSO just been handed. One reply, drawn twice, over a Stop button that
+    // could not be dismissed (2026-08-22).
+    //
+    // It bit the first message of a new chat, where `CurrentSessionID()` answers
+    // with the session Go still holds while the engine stamps the one it is
+    // about to create. §144 built the stamp so the two "cannot drift"; they can,
+    // for exactly one turn, and this is the end of that turn.
     writeLive(ran, (l) => {
       l.awaitingReply = false
       // The live block is gone, so anything that was drawn below it takes its
@@ -1205,6 +1295,7 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
       // cleared here; see the note at the head of this function.
       l.ask = null
     })
+    if (ran === cockpit.openSession || !cockpit.parked[ran]) cockpit.turnSession = ''
     // The "still working" banner (turnStillRunning) explained a refusal that
     // just stopped being true. A stale one over an idle chat would be a lie.
     cockpit.sessionError = ''
@@ -1255,7 +1346,7 @@ export async function retryFailedTurn(index: number): Promise<void> {
         time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(),
       })
     } catch (err) {
-      cockpit.chat.push(turnEndedBubble(err, text))
+      cockpit.chat.push(await turnEndedBubble(err, text))
     }
   })
 }
@@ -1296,7 +1387,7 @@ export async function editFailedTurn(failedIndex: number, text: string): Promise
         time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(),
       })
     } catch (err) {
-      cockpit.chat.push(turnEndedBubble(err, sent))
+      cockpit.chat.push(await turnEndedBubble(err, sent))
     }
   })
 }
@@ -1385,7 +1476,7 @@ export async function resendEdited(text: string, revertFiles: boolean): Promise<
         time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(),
       })
     } catch (err) {
-      cockpit.chat.push(turnEndedBubble(err, sent))
+      cockpit.chat.push(await turnEndedBubble(err, sent))
     }
   })
 }
@@ -1710,6 +1801,77 @@ export async function refreshBackgroundTasks(): Promise<void> {
 }
 
 /**
+ * The tray's brake, on one delegate.
+ *
+ * Refreshed immediately rather than left to the next poll: two seconds of a row
+ * still spinning after a click reads as a button that did nothing, and the one
+ * thing a brake cannot afford to look like is optional. The engine marks the
+ * delegation stopped before it cancels it, so the refresh that follows this
+ * call already sees the new state even though the goroutine has not unwound.
+ */
+export async function stopBackgroundTask(id: string): Promise<void> {
+  try {
+    await StopBackgroundTask(id)
+  } catch {
+    // Engine unreachable. The row stays as it was; nothing is lost by silence,
+    // and there is no second way to say this that the user could act on.
+  }
+  await refreshBackgroundTasks()
+}
+
+/** The same brake, shaped like the job: every worker in one declared run. */
+export async function stopBackgroundRun(runId: string): Promise<void> {
+  try {
+    await StopBackgroundRun(runId)
+  } catch {
+    // As above.
+  }
+  await refreshBackgroundTasks()
+}
+
+/**
+ * One model round's spend, added to this turn's running total (usage:round,
+ * desktop/usage.go). Every round lands here, the main agent's and its
+ * delegates' alike, because they are one bill: a sub-agent's tokens are the
+ * user's tokens, and a meter that quietly left them out would read lowest at
+ * exactly the moment four delegates were spending the most.
+ *
+ * Rounds for another chat are dropped. Several conversations can work at once,
+ * and adding a spend this window did not cause would put one chat's bill under
+ * another chat's composer.
+ */
+export function applyUsageRound(round: {
+  session?: string
+  in?: number
+  out?: number
+  cached?: number
+  cacheReported?: boolean
+  cost?: number
+  priced?: boolean
+}): void {
+  if (!round) return
+  const here = cockpit.turnSession || cockpit.openSession
+  if (round.session && here && round.session !== here) return
+  const spent = (round.in ?? 0) > 0 || (round.out ?? 0) > 0
+  const spend = cockpit.turnSpend
+  cockpit.turnSpend = {
+    in: spend.in + (round.in ?? 0),
+    out: spend.out + (round.out ?? 0),
+    cached: spend.cached + (round.cached ?? 0),
+    // Sticky once any round has claimed cache accounting. A turn that ran
+    // partly on a provider that reports it and partly on one that does not
+    // still has a real cached figure, and dropping the flag on the second
+    // round would hide a number that was truthfully measured.
+    cacheReported: spend.cacheReported || round.cacheReported === true,
+    cost: spend.cost + (round.priced ? (round.cost ?? 0) : 0),
+    // Counted rather than flagged, so the panel can stay silent about money for
+    // a turn it can only half account for. A running total that quietly omits
+    // three rounds is a number the user would trust and should not.
+    unpriced: spend.unpriced + (spent && !round.priced ? 1 : 0),
+  }
+}
+
+/**
  * A finished background task does not wait to be noticed (owner, 14 ส.ค.:
  * "มันควรจะรู้ตัวเองสิครับ ว่าถ้ามันเสร็จ"). The moment the poll sees one done
  * and uncollected, a "[ระบบ]" message goes into the chat telling the model to
@@ -1726,6 +1888,12 @@ export async function refreshBackgroundTasks(): Promise<void> {
  */
 function autoCollectFinished(): void {
   if (cockpit.awaitingReply) return
+  // 'stopped' is deliberately not in this list. Auto-collect exists so a
+  // finished delegate reports itself without being asked, and a delegate the
+  // user stopped has nothing to report: sending the model after it spends a
+  // whole turn on work somebody just paid a click to end, and invites it to
+  // start the same job again. The row stays visible in the tray, which is
+  // where the user already is.
   const ready = cockpit.backgroundTasks.find(
     (t) => (t.state === 'done' || t.state === 'failed') && !t.collected && !autoCollected.has(t.id),
   )
@@ -2104,12 +2272,23 @@ export const activeViewStorageKey = 'aetox.activeView'
 // two places — โปรเจกต์ was missed when it opened, and ระบบออโตเมชั่น the day
 // after. File tabs are deliberately absent: they do not persist, so a stored
 // path would point at nothing.
-const RESTORABLE_VIEWS = ['chat', 'settings', 'office', 'artifacts', 'projects']
+export const RESTORABLE_VIEWS = ['chat', 'settings', 'office', 'artifacts', 'projects', 'lines']
 
-/** The rooms that draw over the whole window, as opposed to `chat`, which is
- *  the layout underneath them (App.svelte renders each as a .settings-overlay).
+/** Where each door lands, as a set. `chat` for the two doors you talk to,
+ *  `lines` for the one you do not (§158.3).
  *
- *  Derived from the list above rather than written out again, because that
+ *  A door's home is never an overlay — it IS the layout, the thing the pages
+ *  you visit and leave are drawn over. That used to be written `view !== 'chat'`
+ *  below, which said the same thing for as long as every door landed on a chat
+ *  and stopped being true the day ทีม opened. Read off SHELLS so a fourth door
+ *  cannot arrive without this knowing. */
+const DOOR_HOMES = new Set(SHELLS.map((s) => s.home))
+
+/** The rooms that draw over the whole window, as opposed to a door's home,
+ *  which is the layout underneath them (App.svelte renders each as a
+ *  .settings-overlay).
+ *
+ *  Derived from the lists above rather than written out again, because that
  *  comment's lesson applies here twice over: a room added to the set has to
  *  become an overlay everywhere at once, and the place that forgets is not the
  *  one that shows a blank page — it is the native browser window.
@@ -2119,9 +2298,14 @@ const RESTORABLE_VIEWS = ['chat', 'settings', 'office', 'artifacts', 'projects']
  *  be told to hide whenever something is drawn over its pane; a z-index cannot
  *  reach it. BrowserPane knew about `settings` and only `settings`, so opening
  *  ทีมเอเจน, ผลงาน or โปรเจกต์ with a page loaded left that page floating on top
- *  of the room (owner, 2026-08-14: "ทำไมมีหลุดมาอ่ะครับ"). */
+ *  of the room (owner, 2026-08-14: "ทำไมมีหลุดมาอ่ะครับ").
+ *
+ *  ห้องทำงาน is the first room this answers *no* for, and that is the point of
+ *  reading DOOR_HOMES rather than a hardcoded `chat`: it is not drawn over the
+ *  window, it is what the ทีม door's window IS. The browser pane sits beside it
+ *  in the inspector, where it belongs, instead of over it. */
 export const isOverlayView = (view: string): boolean =>
-  view !== 'chat' && RESTORABLE_VIEWS.includes(view)
+  RESTORABLE_VIEWS.includes(view) && !DOOR_HOMES.has(view)
 
 export function setActiveView(view: string): void {
   cockpit.activeView = view
@@ -2162,16 +2346,36 @@ export function openSettingsAt(section: string): void {
   setActiveView('settings')
 }
 
+/** Leave a page and go back to the door you are standing behind.
+ *
+ * Every caller used to say `setActiveView('chat')`, which was true while both
+ * doors landed on a conversation. ทีม does not have one, so closing Settings
+ * from behind it dropped the window onto ANOTHER door's chat — the sidebar
+ * showing the team's single room while the middle of the screen showed a
+ * conversation that lives somewhere else. A door's own home is the only honest
+ * answer to "back", and for ทีม that means this is a no-op: you are already
+ * home, and there is nothing behind ห้องทำงาน to return to. */
+export function closeOverlay(): void {
+  setActiveView(homeForShell(shell.name))
+}
+
 /** Restore the last room after a frontend reload (same run only). */
 export function restoreActiveView(): void {
   try {
     const saved = sessionStorage.getItem(activeViewStorageKey)
     if (saved && RESTORABLE_VIEWS.includes(saved)) {
       cockpit.activeView = saved
+      return
     }
   } catch {
     /* storage unavailable */
   }
+  // Nothing stored means a fresh run, and a fresh run still remembers the DOOR
+  // — that is localStorage, and it outlives the window on purpose. The room is
+  // not remembered, so the view has to be read off the door rather than left at
+  // the `chat` the state object happens to default to: relaunching behind ทีม
+  // put the user in front of a conversation that door does not hold.
+  cockpit.activeView = homeForShell(shell.name)
 }
 
 /** Leave the chat on screen and arrive at another one, live state and all.
@@ -2453,7 +2657,12 @@ export async function switchShell(name: ShellName): Promise<void> {
   // lines up happens to leave behind.
   const resume = name === 'code' && !cockpit.project.focused ? cockpit.projects[0]?.path : ''
   setShell(name)
-  setActiveView('chat')
+  setActiveView(def.home)
+  // A door with no desk of its own opens no conversation: ทีม is a place you
+  // arrange and start work from, not somebody you talk to (§158.3). Walking in
+  // must leave the chat you were holding exactly where it was — it is still
+  // running, and its own door is one click away.
+  if (!def.desk) return
   if (cockpit.desk !== def.desk) await newSessionAt(def.desk)
   // The storefront does not focus a project — that is what §19 and §86 have
   // said all along, and the window was contradicting it: its chat still

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { t } from './i18n.svelte'
   import { cockpit, newSession, switchShell } from './stores/cockpit.svelte'
-  import { shell, SHELLS } from './shell.svelte'
+  import { shell, SHELLS, offeredShells } from './shell.svelte'
   import { shortcutLabel } from './shortcuts'
   import Wordmark from './Wordmark.svelte'
   import Icon from './Icon.svelte'
@@ -80,7 +80,10 @@
   </button>
   {#if doorOpen}
     <div class="door-menu" role="menu">
-      {#each SHELLS as s (s.name)}
+      <!-- offeredShells, not SHELLS: a door that is built but has nothing
+           behind it yet stays off the menu rather than showing as a button
+           that disappoints (shell.svelte's `offered`). -->
+      {#each offeredShells() as s (s.name)}
         <button type="button" class="door-item" class:on={shell.name === s.name} role="menuitem" onclick={() => pick(s.name)}>
           <span class="ic"><Icon name={s.icon} size={15} /></span>
           <span class="txt">
