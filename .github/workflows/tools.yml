@@ -132,6 +132,15 @@ jobs:
 
             Not an Aetox release. Built by `.github/workflows/tools.yml`.
           files: tesseract-win64.zip
+          # "Not an Aetox release" in the body is for a person; this is the same
+          # sentence in a form GitHub reads. Without it these archives take the
+          # Latest badge simply by being the newest thing published, and
+          # /releases/latest — which the in-app update check used to ask —
+          # answers with an ffmpeg build. It did, on 2026-08-21, and every Aetox
+          # on earth said it was up to date until it was found the next morning.
+          # internal/update no longer trusts that endpoint, but a release that
+          # is not the app must not claim to be the newest one either way.
+          prerelease: true
 
   # ffmpeg is mirrored for a different reason than Tesseract, and a sharper one.
   #
@@ -194,3 +203,6 @@ jobs:
             Mirrored because BtbN prunes its autobuild tags after a few days,
             so a pin against one stops resolving. Not an Aetox release.
           files: ffmpeg-win64-lgpl.zip
+          # See the Tesseract job above: this is the release that took the
+          # Latest badge and broke the update check for every install.
+          prerelease: true
