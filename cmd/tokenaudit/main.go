@@ -134,6 +134,7 @@ func repeatWaste(db *sql.DB, window string) {
 		totalRepeat += repeat
 		fmt.Printf("  %-28s %7d %12d %12d %6.1f%% %8d\n", tool, calls, bytes, repeat, pct(repeat, bytes), reruns)
 	}
+	stopEarly(rows)
 	if totalBytes == 0 {
 		fmt.Println("  nothing repeated in this window")
 	} else {
@@ -183,6 +184,7 @@ func delegationContainment(db *sql.DB, window string) {
 		}
 		fmt.Printf("  %-28s %7d %12d %12d\n", who, calls, bytes, per)
 	}
+	stopEarly(rows)
 	if total := chat + delegated; total > 0 {
 		fmt.Println()
 		fmt.Printf("  kept out of the chat: %.1f%% of tool output (%d of %d bytes)\n",
@@ -227,6 +229,7 @@ func cacheHealth(db *sql.DB, window string) {
 		}
 		fmt.Printf("  %-26s %7d %12d %12d %6.1f%% %11d\n", m, calls, prompt, fresh, pct(cached, prompt), per)
 	}
+	stopEarly(rows)
 	if !any {
 		fmt.Println("  no model has 20+ calls with cache accounting in this window")
 	} else {
@@ -260,7 +263,20 @@ func outputVolume(db *sql.DB, window string) {
 		}
 		fmt.Printf("  %-28s %7d %12d %12d\n", tool, calls, out, args)
 	}
+	stopEarly(rows)
 	fmt.Println()
+}
+
+// stopEarly says so when the read did not reach the end of the result.
+//
+// rows.Next() returns false for "no more rows" and for "the read broke", and
+// this whole program exists to put a number in front of the owner and let him
+// decide something with it. A table that quietly lost its tail is the one
+// failure an audit must not have: it does not look wrong, it looks smaller.
+func stopEarly(rows *sql.Rows) {
+	if err := rows.Err(); err != nil {
+		fmt.Println("  ! the read stopped early, so these totals are short:", err)
+	}
 }
 
 func section(title string) {
