@@ -42,8 +42,13 @@ remote image can be missing from a `.pdf` that looked right on screen, and a
 chart drawn by a CDN library can print blank. Fetch pictures into the deck's own
 folder and reference them relatively (`imgs/hero.png` resolves against the deck,
 in the room and in the export both), or inline small ones as `data:`. Same for
-fonts: `"Kanit", "Noto Sans Thai", "Leelawadee UI", Tahoma, sans-serif` is on a
-plain Windows machine; a Google Fonts link is a CDN.
+fonts. On a plain Windows machine `"Leelawadee UI", Tahoma, sans-serif` is
+there; `Prompt`, `Kanit` and `Noto Sans Thai` are not, so naming one of those
+with nothing behind it is the same bet as a CDN, lost silently. A Google Fonts
+link is a CDN too, and it is worse than a missing picture: the export prints
+whatever had loaded by the time it walked the deck. A typeface that has to
+arrive belongs in the deck's own folder, loaded with `@font-face` off a
+relative path, exactly as the pictures do.
 
 **An animation prints wherever it comes to rest.** Before it prints, the export
 walks the deck: it scrolls every slide into view, collapses animations and
@@ -103,6 +108,24 @@ Type at this size: h1 ~96px, h2 ~64px, body ~22px, caption ~13px — below about
 13px the export to pictures stops resolving it. Paragraphs hold a `max-width`
 around 720px even on a 1280px slide.
 
+**`Prompt` is the deck typeface, and the tail behind it is not decoration.** A
+deck opens in an iframe pointed at the file, so it inherits nothing from
+Aetox's own stylesheet: a name renders only if that font is installed on the
+machine or the deck carries it. `Prompt` is a Google face and a plain Windows
+install does not have it, so `"Leelawadee UI",Tahoma,sans-serif` behind it is
+what the deck actually falls to, and it is Thai either way.
+
+Which is why **no rule may end at a bare `sans-serif`**. The heading here read
+`font-family:"Kanit",sans-serif` with no Thai behind it, and on a machine
+without Kanit it fell to the generic sans, which carries no Thai glyphs at all,
+so every Thai title came out in whatever the system substituted one character
+at a time. Set a different face on an element only with the same tail after it.
+
+To make `Prompt` certain rather than likely, carry it: an `@font-face` in the
+deck's own `<head>` pointing at a `.woff2` beside the file, or inlined as a
+`data:` URL when the deck travels as one file. A name on its own is a wish, and
+the export prints exactly what the screen showed.
+
 Where a deck quotes a number somebody else published, say whose it is.
 
 ## The skeleton
@@ -116,13 +139,13 @@ Where a deck quotes a number somebody else published, say whose it is.
 <style>
   :root{ --accent:#ff3b30; --stage:#050608; --text:#fff; --body:#d2d4da; --muted:#9ea2ad; }
   *{ box-sizing:border-box; margin:0; padding:0 }
-  body{ background:var(--stage); font-family:"Prompt","Noto Sans Thai","Leelawadee UI",Tahoma,sans-serif }
+  body{ background:var(--stage); font-family:"Prompt","Leelawadee UI",Tahoma,sans-serif }
 
   .slide{ width:1280px; height:720px; position:relative; overflow:hidden;
           padding:78px 120px; display:flex; flex-direction:column; justify-content:center;
           background:radial-gradient(circle at 80% 15%,#242630 0,#101116 28%,#07080a 70%);
           color:var(--text) }
-  h1{ font-family:"Kanit",sans-serif; font-size:96px; line-height:1.05; letter-spacing:-.035em }
+  h1{ font-size:96px; line-height:1.05; letter-spacing:-.035em }
   p { font-size:22px; line-height:1.7; color:var(--body); max-width:720px }
 
   .kicker{ color:var(--accent); font-weight:600; letter-spacing:.14em;
