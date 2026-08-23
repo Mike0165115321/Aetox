@@ -280,10 +280,21 @@ func TestRespondWithToolsSendsPerProviderMaxTokens(t *testing.T) {
 	}
 }
 
-func TestRespondWithToolsLengthWithoutToolCallsReturnsText(t *testing.T) {
+// finish_reason "length" with no tool calls used to be handed over as the
+// reply, on the reasoning that half an answer is better than none. It is, but
+// it is not better than the whole one — and the user was reading answers that
+// stopped in the middle of a word with no sign anything was missing and nothing
+// anywhere asking for the rest (owner, 23 ส.ค.: *"โมเดลทำงานนานเกินจนระบบตัดอ่ะ
+// ... รับไว้แล้วส่งไปใหม่ไม่ให้มันขาดตอน"*).
+//
+// The pieces are joined with nothing between them, because the limit cuts
+// mid-token: "ตารางราคาจะเป็นแบบ" + "นี้ครับ" is one word, and a space or a
+// newline inserted here would split it.
+func TestATruncatedAnswerIsCarriedOnAndJoined(t *testing.T) {
 	provider := &toolLoopProvider{
 		responses: []model.Response{
-			{Text: "partial but usable answer", FinishReason: model.FinishReasonLength},
+			{Text: "ครึ่งแรกของคำตอบที่ยังเขียนไม่", FinishReason: model.FinishReasonLength},
+			{Text: "จบครับ"},
 		},
 	}
 	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model"})
@@ -302,8 +313,99 @@ func TestRespondWithToolsLengthWithoutToolCallsReturnsText(t *testing.T) {
 	if usedTools {
 		t.Fatal("no tools were called")
 	}
-	if reply != "partial but usable answer" {
-		t.Fatalf("length without tool calls must return the text as-is, got %q", reply)
+	if reply != "ครึ่งแรกของคำตอบที่ยังเขียนไม่จบครับ" {
+		t.Fatalf("reply = %q, want both halves joined with nothing between them", reply)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider was called %d times, want 2 (the cut answer and its continuation)", provider.calls)
+	}
+	// The model has to be able to see what it already wrote, or it starts over.
+	second := provider.requests[1].Messages
+	if second[len(second)-2].Content != "ครึ่งแรกของคำตอบที่ยังเขียนไม่" {
+		t.Errorf("the continuation was asked without the half already written: %q",
+			second[len(second)-2].Content)
+	}
+	if !strings.Contains(second[len(second)-1].Content, "cut off mid-answer") {
+		t.Errorf("the continuation carried no instruction to carry on: %q", second[len(second)-1].Content)
+	}
+	// And history must hold each piece once. Storing the stitched version
+	// alongside the piece it was stitched from would say the first half twice,
+	// and the model reads that as having repeated itself.
+	var stored []string
+	for _, msg := range agent.context.Messages() {
+		if msg.Role == model.RoleAssistant {
+			stored = append(stored, msg.Content)
+		}
+	}
+	if len(stored) != 2 || stored[0] != "ครึ่งแรกของคำตอบที่ยังเขียนไม่" || stored[1] != "จบครับ" {
+		t.Errorf("history holds %q, want each piece exactly once", stored)
+	}
+}
+
+// The half-answer must not outlive the answer it belongs to. A turn does not
+// end at its first reply — a round that calls tools carries straight on, and an
+// interjection keeps a finished one alive — so the pieces buffer has to be
+// emptied the moment it is used. It was not, in the first draft of this: the
+// continuation worked, and then the NEXT answer in the same turn arrived with
+// the previous one's first half glued to its front.
+func TestTheCarriedHalfDoesNotFollowTheNextAnswer(t *testing.T) {
+	provider := &toolLoopProvider{
+		responses: []model.Response{
+			{Text: "ครึ่งแรก", FinishReason: model.FinishReasonLength},
+			{Text: "ครึ่งหลัง", ToolCalls: []model.ToolCall{{
+				ID: "1", Type: "function",
+				Function: model.FunctionCall{Name: "read", Arguments: `{"path":"a.md"}`},
+			}}},
+			{Text: "คำตอบสุดท้าย"},
+		},
+	}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model"})
+
+	reply, _, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
+		"long question",
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) {
+			return "อ่านแล้ว", nil, nil
+		},
+		nil,
+		turn.TurnOptions{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reply != "คำตอบสุดท้าย" {
+		t.Errorf("reply = %q, want the last answer alone, with no half of the first one on the front", reply)
+	}
+}
+
+// Bounded, and the bound is not the same judgement as the retries next to it:
+// a continuation is something that is WORKING, so the cap is only there to stop
+// a model that answers every continuation with a fresh essay. Past it the user
+// gets everything written so far rather than an error, because what is in hand
+// is a real answer that happens to be unfinished.
+func TestAnAnswerThatNeverStopsGrowingIsStillHandedOver(t *testing.T) {
+	cut := model.Response{Text: "ยาว", FinishReason: model.FinishReasonLength}
+	provider := &toolLoopProvider{responses: []model.Response{cut, cut, cut, cut, cut, cut}}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model"})
+
+	reply, _, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
+		"long question",
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) { return "", nil, nil },
+		nil,
+		turn.TurnOptions{},
+	)
+	if err != nil {
+		t.Fatalf("an answer that kept growing was reported as a failure: %v", err)
+	}
+	if provider.calls != 1+maxAnswerContinuations {
+		t.Fatalf("provider was called %d times, want %d (the answer plus its continuations)",
+			provider.calls, 1+maxAnswerContinuations)
+	}
+	if reply != strings.Repeat("ยาว", 1+maxAnswerContinuations) {
+		t.Errorf("reply = %q, want every piece that was written", reply)
 	}
 }
 
@@ -522,7 +624,9 @@ func TestCompactionFailureIsNonFatal(t *testing.T) {
 
 func TestRespondWithToolsEmptyReplyNudgeKeepsTools(t *testing.T) {
 	toolDefs := []model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read_image", Parameters: []byte(`{"type":"object"}`)}}}
-	execTool := func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) { return "image says hi", nil, nil }
+	execTool := func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) {
+		return "image says hi", nil, nil
+	}
 
 	provider := &toolLoopProvider{responses: []model.Response{{}, {Text: "recovered"}}}
 	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model", MaxToolCalls: 4})
@@ -1308,3 +1412,133 @@ func TestRespondWithToolsReportsEachRound(t *testing.T) {
 // turn), so nothing else would notice if this method were renamed away, and
 // every tool result would quietly go back to being cut at the floor.
 var _ interface{ HistoryChars() int } = (*Agent)(nil)
+
+// The provider that started this: it cut the call and reported an ordinary
+// stop, so finish_reason had nothing to say and the guard used to wave the
+// round through to a parse error the model then "fixed" by rewriting paths.
+//
+// The second call in the round arrived whole, and is the reason the refusals
+// are worded per call: telling web_search to produce something shorter would
+// shrink a query that was never the problem.
+func TestRespondWithToolsCatchesTruncationWithoutFinishReason(t *testing.T) {
+	provider := &toolLoopProvider{
+		responses: []model.Response{
+			{
+				FinishReason: "stop", // the provider claims an ordinary end
+				Usage:        &model.Usage{PromptTokens: 40000, CompletionTokens: 900},
+				ToolCalls: []model.ToolCall{
+					{
+						ID:       "call_search_1",
+						Type:     "function",
+						Function: model.FunctionCall{Name: "web_search", Arguments: `{"query":"Gemini 3.1 pricing"}`},
+					},
+					{
+						ID:   "call_write_1",
+						Type: "function",
+						Function: model.FunctionCall{
+							Name:      "write",
+							Arguments: `{"path": "report.html", "content": "<!DOCTYPE html>\n<html`, // cut mid-JSON
+						},
+					},
+				},
+			},
+			{Text: "ok, wrote the skeleton first"},
+		},
+	}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model", MaxToolCalls: 4})
+
+	executed := 0
+	reply, usedTools, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "write", Parameters: []byte(`{"type":"object"}`)}}},
+		"research this and write it up",
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) {
+			executed++
+			return "should never run", nil, nil
+		},
+		nil,
+		turn.TurnOptions{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if executed != 0 {
+		t.Fatalf("a round the model never finished writing must not run, ran %d times", executed)
+	}
+	if !usedTools || reply != "ok, wrote the skeleton first" {
+		t.Fatalf("expected the turn to continue after the refusal, got %q (usedTools=%v)", reply, usedTools)
+	}
+
+	// Every id answered, or the next request is a 400 from the providers that
+	// pair tool_use with tool_result.
+	receipts := map[string]string{}
+	for _, msg := range provider.requests[1].Messages {
+		if msg.Role == model.RoleTool {
+			receipts[msg.ToolCallID] = msg.Content
+		}
+	}
+	if len(receipts) != 2 {
+		t.Fatalf("every tool call needs a result, got %d: %v", len(receipts), receipts)
+	}
+	if !strings.Contains(receipts["call_write_1"], "truncated") {
+		t.Fatalf("the cut call must be told it was cut: %q", receipts["call_write_1"])
+	}
+	if !strings.Contains(receipts["call_search_1"], "reissue") {
+		t.Fatalf("the intact call must be told to reissue, not to shorten: %q", receipts["call_search_1"])
+	}
+	if strings.Contains(receipts["call_search_1"], "shorter") {
+		t.Fatalf("nothing about the intact call was too long: %q", receipts["call_search_1"])
+	}
+}
+
+// The 400 that ended a 173-second turn one second after the guard did its job:
+// the refused call's arguments stayed in the history, and the next request
+// carried them back to a provider that validates what it is handed.
+func TestRespondWithToolsKeepsTruncatedArgumentsOutOfHistory(t *testing.T) {
+	provider := &toolLoopProvider{
+		responses: []model.Response{
+			{
+				FinishReason: model.FinishReasonLength,
+				ToolCalls: []model.ToolCall{{
+					ID:   "call_write_1",
+					Type: "function",
+					Function: model.FunctionCall{
+						Name:      "write",
+						Arguments: `{"path": "slides.html", "content": "<!DOCTYPE html>\n<html`,
+					},
+				}},
+			},
+			{Text: "split into two"},
+		},
+	}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model", MaxToolCalls: 4})
+
+	if _, _, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "write", Parameters: []byte(`{"type":"object"}`)}}},
+		"make me slides",
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) {
+			return "should never run", nil, nil
+		},
+		nil,
+		turn.TurnOptions{},
+	); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var seen int
+	for _, msg := range provider.requests[1].Messages {
+		for _, call := range msg.ToolCalls {
+			seen++
+			if _, parseErr := model.ParseToolArguments(call.Function.Arguments); parseErr != nil {
+				t.Fatalf("history still carries unparseable arguments (%s): %v", call.ID, parseErr)
+			}
+			if call.ID != "call_write_1" {
+				t.Fatalf("the call id must survive so its result stays paired, got %q", call.ID)
+			}
+		}
+	}
+	if seen != 1 {
+		t.Fatalf("the assistant message must keep its one tool call, saw %d", seen)
+	}
+}

@@ -1185,12 +1185,28 @@ const failureReasonMax = 300
 func (e *Executor) executeToolCallWithOutcome(ctx context.Context, call model.ToolCall) (string, skill.Output, bool, error) {
 	args, parseErr := model.ParseToolArguments(call.Function.Arguments)
 	if parseErr != nil {
+		// The same refusal, worded from the actual cause. One argument written
+		// twice is valid JSON that means something the model did not intend,
+		// and telling it about the token limit would send it to fix a size that
+		// is not the problem.
+		var duplicate *model.DuplicateArgumentError
+		if errors.As(parseErr, &duplicate) {
+			return "", skill.Output{}, false, fmt.Errorf(
+				"tool call NOT executed: you wrote %q twice in one call, and only the last value would have survived — the first was about to be dropped with nothing said. If you meant to do two things, make two separate tool calls.",
+				duplicate.Key)
+		}
 		// No salvage: writing half a file and reporting success is worse than
-		// failing loudly. Truncated JSON usually means the output token limit
-		// cut the call short — say so, so the model fixes the size, not the path.
-		return "", skill.Output{}, false, fmt.Errorf(
-			"tool call NOT executed: arguments are not valid JSON (%v) — likely truncated by the output token limit; retry with shorter content or split the work into smaller calls",
-			parseErr)
+		// failing loudly. Truncated JSON means the output token limit cut the
+		// call short, so the wording comes from the one place that says it
+		// (model.TruncatedToolCallRefusal) rather than being written a second
+		// time here, in different words, for the same model to read.
+		//
+		// The ceiling is passed as 0 because this side does not know it: the
+		// round's max_tokens belongs to the tool loop, which now catches this
+		// case ahead of here and can state the number. What still arrives here
+		// came by another road, and gets the same remedy without it.
+		return "", skill.Output{}, false, errors.New(
+			model.TruncatedToolCallRefusal(call.Function.Name, 0, false, parseErr))
 	}
 
 	name := strings.TrimSpace(call.Function.Name)

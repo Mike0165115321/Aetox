@@ -67,6 +67,18 @@ const (
 	// lost three connections in a row has a network problem that a fourth
 	// attempt will not out-wait.
 	maxDroppedConnectionRetries = 2
+
+	// maxEmptyCompletionReplays caps how many times one round may be sent again
+	// after the provider answered with nothing at all (model.ErrEmptyCompletion).
+	//
+	// Two, like the dropped connection above, and for a reason that reads the
+	// same way from the other end: an empty answer that survives three
+	// identical asks is not a hiccup at the gateway, it is this conversation —
+	// and a fourth ask would spend the same input tokens to be told the same
+	// nothing. What comes after the two is a DIFFERENT request (the nudge),
+	// because repeating a question that has been answered the same way three
+	// times is not a strategy.
+	maxEmptyCompletionReplays = 2
 )
 
 // Small local models (Ollama-scale) sometimes reply with nothing at all,
@@ -97,6 +109,23 @@ const interjectionNote = "[system] The user sent this WHILE you were working on 
 // as text (see model.ContainsLeakedDSML). Each retry is one extra round-trip,
 // so keep it small; past the cap we stop rather than surface raw markup.
 const maxDSMLNudges = 2
+
+// maxAnswerContinuations caps how many times one answer may be picked up again
+// after the model ran out of output tokens mid-sentence.
+//
+// Three, which is a different judgement from the two above: those cap a retry
+// of something that FAILED, this caps the continuation of something that is
+// working. A long answer being written in four pieces is the feature doing its
+// job, not a loop, and the model has to stop on its own eventually because each
+// piece starts nearer the end. The cap is here only so a model that answers
+// every continuation with a fresh essay cannot run forever.
+const maxAnswerContinuations = 3
+
+// The instruction that joins the pieces. Every clause in it is load-bearing:
+// left to itself a model asked to continue will re-introduce the topic, or
+// apologise, or start the list again from item one — and the two halves are
+// glued with no separator, so anything it adds lands in the middle of a word.
+const truncatedAnswerNudge = "[system] Your reply was cut off mid-answer because it reached the output token limit. It was NOT finished, and the user can see what you had written so far. Carry straight on from the last character you wrote, in the same language and the same formatting. Do not repeat any of it, do not start over, do not summarise what you already said, do not apologise and do not announce that you are continuing: the two pieces are joined into one message with nothing between them. If the answer is long, prefer finishing the point you were making over starting new ones."
 
 const dsmlLeakNudge = "[system] Your previous reply wrote a tool call as plain-text markup, so nothing ran and no file was created. Do NOT write tool calls as text or invent your own tool-call format. Call the tool through the normal tool interface — e.g. the write tool with a `path` argument (not `file_path`) and a `content` argument. You may issue several tool calls at once. Do it now."
 
@@ -355,6 +384,13 @@ func (a *Agent) RespondWithTools(
 	dsmlNudges := 0
 	overflowCompactions := 0
 	droppedConnections := 0
+	emptyCompletions := 0
+	// The pieces of an answer the output limit cut in half, waiting to be
+	// joined back together. Empty for every turn that fits in one round, which
+	// is nearly all of them. Held raw rather than trimmed: the limit cuts
+	// mid-token, so the whitespace at the seam is part of the word.
+	carried := ""
+	continuations := 0
 	var lastCallKey string
 	repeatedCalls := 0
 	for i := 0; maxToolCalls <= 0 || i < maxToolCalls; i++ {
@@ -408,6 +444,46 @@ func (a *Agent) RespondWithTools(
 				droppedConnections++
 				i--
 				continue
+			}
+			// The provider answered, and what it said was nothing: no text, no
+			// reasoning, no tool call, and not a truncation either. Nothing
+			// about the request was wrong — it is the same round that succeeded
+			// six times before it — so it gets asked again instead of ending
+			// the turn. A turn that had already run for 350 seconds and
+			// collected eighteen tool results is what this used to throw away,
+			// on one blank stream frame from a gateway.
+			//
+			// Same bookkeeping as the drop above, for the same three reasons:
+			// discardPreview has taken back whatever streamed, the failed round
+			// was never added to the context, and i-- keeps a silent provider
+			// from spending one of MaxToolCalls.
+			again, endWith = askAgainAfterEmpty(ctx, err, emptyCompletions)
+			if endWith != nil {
+				return "", anyToolUsed, endWith
+			}
+			if again {
+				emptyCompletions++
+				i--
+				continue
+			}
+			if model.IsEmptyCompletion(err) {
+				// Out of replays, so change the question rather than ask it
+				// again: this is the same nudge the no-error empty reply gets
+				// below, and it shares that path's flag because "this turn has
+				// been nudged once" is one fact about the turn, not two.
+				if !nudgedEmpty {
+					nudgedEmpty = true
+					debuglog.Msg("provider still answering with nothing, nudging once: %v", err)
+					a.context.Add(model.RoleUser, emptyReplyNudge)
+					i--
+					continue
+				}
+				// Nudged and still silent. Ended as an error rather than as
+				// emptyReplyFallback because that string is an answer, and an
+				// answer cannot be retried — the error can, and everything the
+				// turn did up to here is still in context for the retry to
+				// build on.
+				return "", anyToolUsed, err
 			}
 			// The one failure in here with a mechanical fix. Everything else is
 			// the model, the network or the account; this one is just too many
@@ -464,10 +540,71 @@ func (a *Agent) RespondWithTools(
 		}
 		a.recordUsage(response.Usage)
 
-		content := strings.TrimSpace(response.Text)
+		// Two different things from here on, and they were one before an answer
+		// could arrive in pieces:
+		//
+		//   recorded — what THIS round said, which is what history gets. The
+		//              earlier pieces are already in context as their own
+		//              messages, so stitching them in again would say the first
+		//              half twice.
+		//   content  — the whole answer, which is what the user is shown and
+		//              what the turn is recorded as having replied.
+		//
+		// Joined with nothing between them: the limit cuts mid-token, so any
+		// separator inserted here lands inside a word.
+		recorded := strings.TrimSpace(response.Text)
+		whole := carried + response.Text
+		content := strings.TrimSpace(whole)
+		// Consumed. Cleared here rather than where the answer is handed over,
+		// because a turn does not end at its first answer: an interjection keeps
+		// it alive, and a round that calls tools carries straight on. Either
+		// would have found the previous answer's first half still sitting here
+		// and glued it to the front of the next one.
+		carried = ""
 		debuglog.Info("response.text", truncateStr(content, 100))
 		debuglog.Info("response.toolCalls", fmt.Sprintf("%d", len(response.ToolCalls)))
+		// Logged because its absence cost a diagnosis. An empty round is either
+		// a model that spent its whole output budget thinking (finish_reason
+		// "length") or a provider that answered with nothing at all, and the
+		// two want opposite remedies — shrink the round, or change model. The
+		// log said "response.text = " for both, twice in one session, for two
+		// minutes each (owner's log, 13:20 and 13:21 on 23 ส.ค. 2026).
+		spent := 0
+		if response.Usage != nil {
+			spent = response.Usage.CompletionTokens
+		}
+		debuglog.Info("response.finish", fmt.Sprintf("%q, out %d of %d", response.FinishReason, spent, loopMaxTokens))
 		if len(response.ToolCalls) == 0 {
+			// The answer did not end, it ran out of room. finish_reason
+			// "length" on a round with no tool calls means the model was still
+			// writing when the output budget ran out, and until this existed
+			// that half-sentence was simply handed over as the reply — the
+			// answer stopped mid-word and nothing anywhere asked for the rest.
+			//
+			// The preview is deliberately NOT discarded: what is on screen is
+			// the first half of this same answer and the continuation appends to
+			// it, so the user watches one answer being written rather than
+			// seeing it vanish and restart. That is the whole difference between
+			// this and every other retry in this loop, all of which replace what
+			// they took back.
+			//
+			// i-- because a continuation is not a round of work, it is the same
+			// round still being written.
+			if response.FinishReason == model.FinishReasonLength && recorded != "" &&
+				continuations < maxAnswerContinuations {
+				continuations++
+				debuglog.Msg("answer cut at the output limit, asking for the rest (%d/%d)",
+					continuations, maxAnswerContinuations)
+				carried = whole
+				a.context.AddMessage(model.Message{
+					Role:             model.RoleAssistant,
+					Content:          recorded,
+					ReasoningContent: strings.TrimSpace(response.ReasoningContent),
+				})
+				a.context.Add(model.RoleUser, truncatedAnswerNudge)
+				i--
+				continue
+			}
 			// DeepSeek can leak DSML tool-call markup as plain text, and the
 			// backstop (openai_compatible.go) only lifts out COMPLETE blocks —
 			// a block cut off before its closing tag falls through here as raw
@@ -485,7 +622,11 @@ func (a *Agent) RespondWithTools(
 					a.context.Add(model.RoleUser, dsmlLeakNudge)
 					continue
 				}
+				// Both, because from here the two have to say the same thing:
+				// a fallback that reached the user but not the history would
+				// leave the next round answering a question it cannot see.
 				content = dsmlLeakFallback // gave up — don't surface raw markup
+				recorded = content
 			}
 			if content == "" {
 				// Nudge inside the loop, not via recoverEmptyReply: here the
@@ -501,10 +642,11 @@ func (a *Agent) RespondWithTools(
 					continue
 				}
 				content = emptyReplyFallback
+				recorded = content
 			}
 			a.context.AddMessage(model.Message{
 				Role:             model.RoleAssistant,
-				Content:          content,
+				Content:          recorded,
 				ReasoningContent: strings.TrimSpace(response.ReasoningContent),
 			})
 			// The model was ready to stop, but the user typed while it was writing
@@ -539,11 +681,16 @@ func (a *Agent) RespondWithTools(
 		}
 		anyToolUsed = true
 
+		// Sanitized on the way in, never raw: a tool call whose arguments were
+		// cut off is refused below, but the message carrying it is re-sent for
+		// the rest of the conversation, and a provider that validates history
+		// 400s on the fragment long after the round it came from. See
+		// model.SanitizeToolCallArguments for the turn this cost.
 		a.context.AddMessage(model.Message{
 			Role:             model.RoleAssistant,
-			Content:          content,
+			Content:          recorded,
 			ReasoningContent: strings.TrimSpace(response.ReasoningContent),
-			ToolCalls:        response.ToolCalls,
+			ToolCalls:        model.SanitizeToolCallArguments(response.ToolCalls),
 		})
 		// Before the tool calls run, so the narration lands in the sequence
 		// above the work it announces. It is a part of the turn, not a draft to
@@ -554,19 +701,29 @@ func (a *Agent) RespondWithTools(
 		}
 
 		// Truncation guard (same failure OpenCode hit, sst/opencode#18108):
-		// finish_reason "length" means the tool-call JSON was cut off at
-		// MaxTokens. Executing it would fail with a misleading parse/path
-		// error the model then "fixes" forever. Tell it the truth instead.
-		if response.FinishReason == model.FinishReasonLength {
-			debuglog.Msg("tool call truncated at max_tokens, telling the model")
+		// a tool call the model did not finish writing. Executing it would
+		// fail with a misleading parse/path error the model then "fixes"
+		// forever. Tell it the truth instead.
+		//
+		// The judgement moved into model.ToolCallTruncated so it stops
+		// depending on finish_reason, which not every provider sets when it
+		// cuts a call; the round's own ceiling and the arguments themselves
+		// answer without asking the provider anything. Every call in the round
+		// still gets a result, since the ids in the assistant message above
+		// require one, but only the call actually cut is told to write less.
+		if cut, atLimit := model.ToolCallTruncated(response, loopMaxTokens); cut {
+			debuglog.Msg("tool call truncated (at_limit=%v, ceiling=%d, finish_reason=%q), telling the model",
+				atLimit, loopMaxTokens, response.FinishReason)
 			for _, toolCall := range response.ToolCalls {
+				content := model.UnfinishedRoundRefusal(toolCall.Function.Name, loopMaxTokens)
+				if model.ToolCallUnfinished(toolCall) {
+					content = model.TruncatedToolCallRefusal(toolCall.Function.Name, loopMaxTokens, atLimit, nil)
+				}
 				a.context.AddMessage(model.Message{
 					Role:       model.RoleTool,
 					Name:       toolCall.Function.Name,
 					ToolCallID: toolCall.ID,
-					Content: fmt.Sprintf(
-						"tool call NOT executed: your %s arguments were truncated at the %d-token output limit. Produce a shorter version, or split the work into several smaller tool calls (e.g. write a skeleton file first, then extend it with edit).",
-						toolCall.Function.Name, loopMaxTokens),
+					Content:    content,
 				})
 			}
 			continue
@@ -1001,6 +1158,35 @@ func askAgainAfterDrop(ctx context.Context, err error, spent int) (bool, error) 
 	}
 }
 
+// askAgainAfterEmpty is askAgainAfterDrop for the other silence: the provider
+// answered on time, with nothing in it.
+//
+// Same three answers, with one deliberate difference at the end. A spent budget
+// returns (false, nil) rather than an error, because unlike a dropped
+// connection there IS something for the caller to fall through to — the nudge
+// in the tool loop, recoverEmptyReply in the plain one. This function decides
+// only whether the identical request is still worth repeating.
+func askAgainAfterEmpty(ctx context.Context, err error, spent int) (bool, error) {
+	if !model.IsEmptyCompletion(err) {
+		return false, nil
+	}
+	if spent >= maxEmptyCompletionReplays {
+		return false, nil
+	}
+	// The same short pause the drop gets, for a different reason: an empty
+	// stream is usually a gateway shedding one request, and the shedding lasts
+	// about as long as it takes to say so.
+	wait := time.Duration(spent+1) * time.Second
+	debuglog.Msg("the provider answered with nothing, asking again in %s (%d/%d): %v",
+		wait, spent+1, maxEmptyCompletionReplays, err)
+	select {
+	case <-ctx.Done():
+		return false, ctx.Err()
+	case <-time.After(wait):
+		return true, nil
+	}
+}
+
 // completeWithReconnect is provider.Complete with the rule above applied, and
 // it is what every completion in this file goes through bar one.
 //
@@ -1016,7 +1202,10 @@ func askAgainAfterDrop(ctx context.Context, err error, spent int) (bool, error) 
 // comes back to the user as "this conversation no longer fits the context
 // window" — the model blamed for the wifi, which §166 is the long version of.
 func (a *Agent) completeWithReconnect(ctx context.Context, req model.Request) (model.Response, error) {
-	for dropped := 0; ; dropped++ {
+	// Two budgets, not one: a socket that keeps dying and a gateway that keeps
+	// answering with nothing are different failures, and neither should be able
+	// to spend the other's attempts.
+	for dropped, empties := 0, 0; ; {
 		response, err := a.provider.Complete(ctx, req)
 		if err == nil {
 			return response, nil
@@ -1025,9 +1214,19 @@ func (a *Agent) completeWithReconnect(ctx context.Context, req model.Request) (m
 		if endWith != nil {
 			return model.Response{}, endWith
 		}
-		if !again {
-			return model.Response{}, err
+		if again {
+			dropped++
+			continue
 		}
+		again, endWith = askAgainAfterEmpty(ctx, err, empties)
+		if endWith != nil {
+			return model.Response{}, endWith
+		}
+		if again {
+			empties++
+			continue
+		}
+		return model.Response{}, err
 	}
 }
 
@@ -1037,7 +1236,15 @@ func (a *Agent) completeWithReconnect(ctx context.Context, req model.Request) (m
 func (a *Agent) respondFromContext(ctx context.Context, opts turn.TurnOptions) (string, error) {
 	response, err := a.completeWithReconnect(ctx, a.buildRequest(a.context.Messages(), a.toolLoopMaxTokens(), 0.2, nil, "", opts))
 	if err != nil {
-		return "", err
+		// An empty answer that outlasted its replays is not a failure to report
+		// — it is the empty reply the line below has always known how to
+		// handle. It only ever arrived as a Response with no text; providers
+		// that state it as an error (model.ErrEmptyCompletion) were skipping
+		// the recovery entirely and ending the turn red instead.
+		if !model.IsEmptyCompletion(err) {
+			return "", err
+		}
+		response = model.Response{}
 	}
 
 	reply := strings.TrimSpace(response.Text)

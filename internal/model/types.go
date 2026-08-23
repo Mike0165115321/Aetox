@@ -346,7 +346,63 @@ func ParseToolArguments(raw string) (map[string]any, error) {
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
 		return nil, err
 	}
+	if key := duplicateArgument(raw); key != "" {
+		return nil, &DuplicateArgumentError{Key: key}
+	}
 	return parsed, nil
+}
+
+// DuplicateArgumentError is the model writing one argument twice in a single
+// call. It is a parse failure by intent rather than by grammar: the JSON is
+// valid, and that is the problem — encoding/json keeps the last value and
+// discards the first without a word.
+//
+// Measured, not imagined. At 13:13:43 on 23 ส.ค. a model asked for three
+// searches and wrote the third as {"query":"Kimi K3 ... pricing","query":
+// "Mistral Large 3 ... pricing"}. Mistral ran, Kimi never did, nothing reported
+// anything wrong, and the answer went on to list Kimi as still outstanding. A
+// tool that quietly runs a different job than the one it was given is worse
+// than one that fails.
+type DuplicateArgumentError struct{ Key string }
+
+func (e *DuplicateArgumentError) Error() string {
+	return "argument " + strconv.Quote(e.Key) + " was given twice in one call"
+}
+
+// duplicateArgument returns the first argument name that appears more than once
+// at the top level of a tool call's arguments, or "" when none does.
+//
+// Top level only, deliberately. That is where a tool's own parameters live, so
+// it is where a collision changes what runs; a repeat inside a value the model
+// is passing through (a JSON document being written to a file, say) is that
+// document's business and not a reason to refuse the call.
+func duplicateArgument(raw string) string {
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
+		return ""
+	}
+	seen := make(map[string]bool)
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return ""
+		}
+		key, ok := token.(string)
+		if !ok {
+			return ""
+		}
+		if seen[key] {
+			return key
+		}
+		seen[key] = true
+		// Consumed whole, however deep it goes, so the next token read is the
+		// following key rather than something inside this value.
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return ""
+		}
+	}
+	return ""
 }
 
 func maxInt(a, b int) int {
@@ -395,6 +451,21 @@ func modelOr(value string, fallback string) string {
 	return value
 }
 
+// ErrEmptyCompletion is the identity of "the provider answered with nothing".
+//
+// It exists so the engine can recognise the case without matching prose (the
+// §27 lesson): a round that comes back empty is replayed rather than allowed to
+// kill a turn that has already run twenty tools. errors.Is finds it through the
+// wrapping done below.
+var ErrEmptyCompletion = errors.New("response has empty text")
+
+// IsEmptyCompletion reports whether err is a provider that answered with
+// nothing at all. Nothing about the request was wrong, so the same bytes sent
+// again are a fair question rather than a repeat of a mistake.
+func IsEmptyCompletion(err error) bool {
+	return errors.Is(err, ErrEmptyCompletion)
+}
+
 // errEmptyCompletion is the error a runtime returns when a provider answered
 // with nothing at all — no text, no reasoning, no tool call.
 //
@@ -404,15 +475,27 @@ func modelOr(value string, fallback string) string {
 // want an answer, only proof that the endpoint is alive. Reporting that as
 // "response has empty text" told users their working provider was broken.
 //
+// The finish reason and any extra notes are stated in the message because this
+// error used to arrive with nothing to go on: a turn died after 350 seconds and
+// eighteen tool calls with "opencode-go response has empty text" and no way to
+// tell a gateway that closed a stream without sending a frame from a model that
+// genuinely chose to say nothing. Two different bugs, one sentence.
+//
 // Returns nil when there is nothing to complain about, so call sites read:
 //
 //	if err := errEmptyCompletion(name, finishReason, text, reasoning, calls); err != nil {
-func errEmptyCompletion(provider, finishReason, text, reasoning string, toolCalls int) error {
+func errEmptyCompletion(provider, finishReason, text, reasoning string, toolCalls int, notes ...string) error {
 	if text != "" || reasoning != "" || toolCalls > 0 {
 		return nil
 	}
 	if finishReason == FinishReasonLength {
 		return nil
 	}
-	return fmt.Errorf("%s response has empty text", provider)
+	detail := "finish_reason=" + strconv.Quote(finishReason)
+	for _, note := range notes {
+		if note = strings.TrimSpace(note); note != "" {
+			detail += ", " + note
+		}
+	}
+	return fmt.Errorf("%s %w (%s)", provider, ErrEmptyCompletion, detail)
 }

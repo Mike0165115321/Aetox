@@ -252,6 +252,45 @@ func (a *toolAwareAgent) SupportsToolCalling() bool {
 	return a.supportsTools
 }
 
+// The sibling failure, and the quiet one. `{"query":"Kimi ...","query":"Mistral
+// ..."}` is valid JSON, so nothing failed: encoding/json kept the last value,
+// dropped the first without a word, and the search the model asked for never
+// ran (owner's log, 13:13:43 on 23 ส.ค.). It must be refused like the truncated
+// one — and worded from its own cause, because sending the model off to shorten
+// its output would be a fix for a problem it does not have.
+func TestExecuteToolCallWithOutcome_DuplicateArgumentIsRefused(t *testing.T) {
+	dispatcher := &toolDispatcher{root: t.TempDir(), t: t}
+	executor := NewExecutor(ExecutorOptions{
+		Agent:        &toolAwareAgent{supportsTools: true},
+		Dispatcher:   dispatcher,
+		ApprovalMode: safety.ApprovalFullAccess,
+	})
+
+	_, _, success, err := executor.executeToolCallWithOutcome(context.Background(), model.ToolCall{
+		ID:   "call_dupe",
+		Type: "function",
+		Function: model.FunctionCall{
+			Name:      "web_search",
+			Arguments: `{"query":"Kimi K3 pricing","query":"Mistral Large 3 pricing"}`,
+		},
+	})
+	if err == nil {
+		t.Fatal("a call that would have run a different job than it was given was accepted")
+	}
+	if success {
+		t.Fatal("a collapsed call must not be reported as success")
+	}
+	if !strings.Contains(err.Error(), `"query"`) {
+		t.Fatalf("the model cannot fix an argument it is not told the name of, got %q", err.Error())
+	}
+	if strings.Contains(err.Error(), "truncated") {
+		t.Fatalf("wrong cause: this is not a size problem, got %q", err.Error())
+	}
+	if dispatcher.toolExecutions != 0 {
+		t.Fatalf("dispatcher ran on a call that had already lost half its meaning, %d times", dispatcher.toolExecutions)
+	}
+}
+
 // Truncated tool-call JSON (max_tokens cut it mid-content) must fail loudly
 // with a message that names truncation — and must never reach the dispatcher.
 // The old salvage path here mangled the path into ":" and doom-looped the model.
