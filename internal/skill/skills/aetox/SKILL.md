@@ -131,6 +131,14 @@ Two sources on the shelf, and the second wins:
     expensive to get wrong: contracts, official correspondence, anything
     published under someone else's name. Not for an ordinary one-line
     translation.
+  - `aetox-debug` — root cause before remedy, on any bug, test failure or
+    unexpected behaviour: read the whole error, form one hypothesis at a
+    time, and stop to question the design itself after three fix attempts
+    rather than trying a fourth.
+  - `aetox-discernment` — a second-look question appended after an answer
+    with real stakes (an estimate, high-stakes advice, a claim someone will
+    act on), offered at most once per conversation so it stays a nudge and
+    not nagging.
 - **User** — a folder in `~/.aetox/skills`. A folder whose skill name matches a
   bundled one replaces it entirely. Editing a shipped skill means copying it
   out under the same name, never fighting the app.
@@ -421,6 +429,13 @@ What that means for you:
   thing to leave running. What still cannot happen mid-turn is changing the
   *project* — that moves the sandbox root, the workspace folders and the shell,
   and those belong to the machine rather than to any one chat.
+- **You are not the only writer.** The other chats share the work tree, and so
+  does the person: files open in the window save themselves as they are typed
+  in. `write`, `doc_write` and `sheet_write` therefore refuse a file that has
+  changed since this session last read it, rather than replacing somebody's work
+  without knowing. When that refusal arrives, read the file again — that shows
+  what changed and clears the refusal — and prefer `edit`, which keeps what is
+  already there. It is not a lock and it is not an error to be worked around.
 
 ## MCP
 

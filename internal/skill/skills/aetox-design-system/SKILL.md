@@ -166,16 +166,20 @@ Premium decks alternate between emotions for engagement:
 
 System calculates pattern breaks at 1/3 and 2/3 positions.
 
-### Checking a finished deck without a render tool
+### Checking a finished deck before calling it done
 
-There is no tool here that renders a slide and looks at it — verify by reading
-values, not by eyeballing an image that does not exist yet. Two checks that
-work without one: count characters against the layout's stated max-width per
-line (a `slide-layouts.csv` row that says "short headline, 2-line max body" is
-a budget to check text against, not a suggestion), and re-read every
-`css_implementation` route for a chart against what the file actually carries
-— a chart drawn by a CDN-fetched library is the specific failure the export
-already warns about elsewhere in this document.
+The `browser` tool's `capture` action photographs a page — open the deck (or
+the slides room showing it), `capture` (`full: true` for the whole document,
+not just the visible part), then look at what came back. Run this before
+saying a deck is finished, the same way any UI change gets verified in a live
+preview rather than trusted from the source alone.
+
+Two cheaper checks worth running even before that: count characters against
+the layout's stated max-width per line (a `slide-layouts.csv` row that says
+"short headline, 2-line max body" is a budget to check text against, not a
+suggestion), and re-read every `css_implementation` route for a chart against
+what the file actually carries — a chart drawn by a CDN-fetched library is the
+specific failure the export already warns about elsewhere in this document.
 
 ### What every slide owes the room
 
