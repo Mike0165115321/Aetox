@@ -53,6 +53,20 @@ a terminal tab you can watch, reads the failure, and edits the file.
 both; the language switch is in Settings and in the first-run wizard. This README is in English;
 [ภาษาไทย is here](README.th.md).
 
+## Highlights
+
+- **A browser we built into the app ourselves** — not a headless scrape: a WebView2 window
+  actually composited into the app, with an address bar, back/forward, DevTools, and eight device
+  presets that resize the native window so CSS media queries genuinely fire. The agent opens,
+  reads, clicks and types into the same tab you're watching ([see it](#what-you-can-do-with-it)).
+- **Capability is built into the app, not borrowed from model parameters** — Thai/English OCR,
+  offline speech-to-text, and real Office file writing are built in-house and shipped inside the
+  one binary, so a 9B/35B model running on your own GPU does these jobs as well as a frontier one.
+  The app does the work; the model does not have to.
+- **22 model providers** — cloud (OpenAI, Anthropic, Gemini, DeepSeek, Groq, and more) and local
+  (LM Studio, Ollama), switchable mid-conversation with context intact. Full list under
+  [Everything it can do](#everything-it-can-do).
+
 ## Install
 
 Windows 10 or later, x64. **You do not need an API key to start** — a built-in `aetox` provider
@@ -286,6 +300,7 @@ rather than as a confusing tool error later.
 |  | Where it stands |
 |:---|:---|
 | Chat history, tool runs, produced files | On your disk, in local SQLite and plain folders |
+| Browser data (history, cookies, session) | Stays on your machine only — no server of ours sits in between |
 | Cutting the cloud off entirely | Your data stays on your machine and in your country — run through LM Studio or Ollama and not a single byte leaves |
 | API keys | Their own file, 0600, DPAPI-wrapped against your Windows account. Off Windows there is no encryption at rest — that is stated rather than implied |
 | Secrets in logs | Stripped through one registry into all three sinks: debug log, shell audit log, and the buffer the bug-report form reads |
