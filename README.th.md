@@ -425,7 +425,7 @@ Aetox ใช้ WebView2 ที่ Windows มีอยู่แล้ว — �
 
 </details>
 
-## สถานะ — v1.5.4
+## สถานะ — v1.5.5
 
 แกนหลักเข้าที่แล้ว [บันทึกการปล่อยรุ่น](docs/release-notes/v1.5.3.md) ·
 [แผนงาน](ROADMAP.md) · [สถาปัตยกรรม](ARCHITECTURE.md)

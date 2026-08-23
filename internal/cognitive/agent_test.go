@@ -1542,3 +1542,54 @@ func TestRespondWithToolsKeepsTruncatedArgumentsOutOfHistory(t *testing.T) {
 		t.Fatalf("the assistant message must keep its one tool call, saw %d", seen)
 	}
 }
+
+// The row is drawn while the arguments stream, so a call the loop refuses has a
+// live row and no executor behind it. The owner watched a write sit at "+237"
+// forever while its retry finished underneath (23 ส.ค. 2026).
+func TestRespondWithToolsClosesTheRowOfARefusedCall(t *testing.T) {
+	provider := &toolLoopProvider{
+		responses: []model.Response{
+			{
+				FinishReason: model.FinishReasonLength,
+				ToolCalls: []model.ToolCall{{
+					ID:   "call_write_1",
+					Type: "function",
+					Function: model.FunctionCall{
+						Name:      "write",
+						Arguments: `{"path": "promo.html", "content": "<!DOCTYPE html>\n<html`,
+					},
+				}},
+			},
+			{Text: "wrote a shorter one"},
+		},
+	}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model", MaxToolCalls: 4})
+
+	var refused []string
+	var subjects []string
+	agent.SetToolCallRefusedReporter(func(id, name, subject string) {
+		refused = append(refused, id)
+		subjects = append(subjects, subject)
+	})
+
+	if _, _, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "write", Parameters: []byte(`{"type":"object"}`)}}},
+		"make me a promo page",
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) {
+			return "should never run", nil, nil
+		},
+		nil,
+		turn.TurnOptions{},
+	); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(refused) != 1 || refused[0] != "call_write_1" {
+		t.Fatalf("the refused call must be reported once by id, got %v", refused)
+	}
+	// Keyed by ref, but the label is what a reader sees on the row.
+	if subjects[0] != "promo.html" {
+		t.Errorf("the row should still name its file, got %q", subjects[0])
+	}
+}

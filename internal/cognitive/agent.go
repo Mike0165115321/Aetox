@@ -245,7 +245,14 @@ type Agent struct {
 	// still streaming — the UI's only signal during the long silence of a
 	// model writing a large file. nil = off.
 	onToolCallProgress func(id, name, subject string, lines int)
-	maxToolCalls       int
+	// onToolCallRefused closes a row onToolCallProgress opened. A call the tool
+	// loop refuses never reaches the executor, so the "result" event that would
+	// end its live row is never sent and the row spins for the rest of the
+	// session — the owner watched a write sit at "+237" forever while the retry
+	// completed underneath it (23 ส.ค. 2026). Drawing a call as it is written
+	// means owning the case where it is never run.
+	onToolCallRefused func(id, name, subject string)
+	maxToolCalls      int
 
 	// interjections are messages the user typed while a turn was already
 	// running. Guarded because they arrive from the UI's goroutine while the
@@ -311,6 +318,16 @@ func (a *Agent) SetToolCallProgressReporter(fn func(id, name, subject string, li
 		return
 	}
 	a.onToolCallProgress = fn
+}
+
+// SetToolCallRefusedReporter wires the "that call will never run" signal — see
+// the onToolCallRefused field. Wired alongside the progress reporter, because a
+// caller that draws the row is the caller that has to be told to stop.
+func (a *Agent) SetToolCallRefusedReporter(fn func(id, name, subject string)) {
+	if a == nil {
+		return
+	}
+	a.onToolCallRefused = fn
 }
 
 // recordUsage is the one place a response's usage is taken in: it keeps
@@ -725,6 +742,13 @@ func (a *Agent) RespondWithTools(
 					ToolCallID: toolCall.ID,
 					Content:    content,
 				})
+				// The row was drawn while the arguments streamed. Nothing below
+				// will run this call, so this is the only place left that can
+				// say so.
+				if a.onToolCallRefused != nil {
+					subject, _ := model.SubjectFromPartialArgs(toolCall.Function.Arguments)
+					a.onToolCallRefused(toolCall.ID, toolCall.Function.Name, subject)
+				}
 			}
 			continue
 		}

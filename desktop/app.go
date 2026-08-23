@@ -3449,6 +3449,13 @@ func (a *App) applyConfig(conv *conversation, cfg config.Config) {
 		conv.agent.SetToolCallProgressReporter(func(id, name, subject string, lines int) {
 			a.recordToolAction(conv, turn.ToolEvent{Action: "call", Ref: id, Name: name, Subject: subject, Added: lines})
 		})
+		// And close it when the loop refuses the call instead of running it.
+		// The row above is drawn from the arguments as they stream, so a call
+		// cut off mid-write has a row and no executor behind it; without this
+		// the spinner outlives the turn.
+		conv.agent.SetToolCallRefusedReporter(func(id, name, subject string) {
+			a.recordToolAction(conv, turn.ToolEvent{Action: "result", Ref: id, Name: name, Subject: subject, OK: false})
+		})
 	}
 	// A re-bootstrap (model/provider switch) creates a fresh agent — replay the
 	// old agent's context (minus its system prompt; the new agent builds its
