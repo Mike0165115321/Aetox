@@ -3,6 +3,7 @@ package skill
 import (
 	"context"
 	"io/fs"
+	"os/exec"
 	"path"
 	"regexp"
 	"strings"
@@ -247,5 +248,60 @@ func TestTheAetoxSkillNamesEveryBundledSkill(t *testing.T) {
 		if !bundled[m[1]] {
 			t.Errorf("the aetox skill names %s and nothing ships it", m[1])
 		}
+	}
+}
+
+// A file beside a bundled skill only ships if git carries it, and git is the
+// one authority no in-process check can stand in for.
+//
+// This is the guard the two above could not be: both read the embedded FS, and
+// go:embed reads the working tree, so on the machine where a skill is written
+// they agree with each other and with the author no matter what git thinks. The
+// build that installs Aetox starts from a clone, and a clone has only what is
+// tracked. On 2026-08-23 a bare `data/` in .gitignore had swallowed sixteen
+// decision tables that way: present here, embedded here, tracked nowhere, and
+// absent from every installed copy, so `skill_view` handed out a body whose own
+// table named eight files the binary could not serve.
+//
+// Only ignored files fail it. Untracked is the ordinary state of a file that
+// was written a minute ago; ignored is the state no `git add` will lift, which
+// is what makes it a shipping fact rather than a moment in the author's day.
+func TestNoFileBesideABundledSkillIsIgnoredByGit(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git on PATH")
+	}
+	out, err := exec.Command("git", "status", "--porcelain", "--ignored", "--", "skills").CombinedOutput()
+	if err != nil {
+		t.Skipf("not a git work tree: %v", err)
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "!! ") {
+			t.Errorf("%s is ignored by git, so it ships from this machine and from no clone: check .gitignore",
+				strings.TrimPrefix(line, "!! "))
+		}
+	}
+}
+
+// The refusal a model actually reads when it asks for a file that is not there.
+// Pointing it back at the document it is already holding is what turned one
+// missing file into three rounds of asking; the files it can have are the only
+// thing that ends the exchange.
+func TestAMissingPathIsRefusedByNamingWhatTheSkillDoesCarry(t *testing.T) {
+	view := shippedView(t)
+	_, err := view.ExecuteTool(context.Background(), map[string]any{"name": "architect", "path": "data/nope.csv"})
+	if err == nil {
+		t.Fatal("a file the skill does not carry was served")
+	}
+	for _, want := range []string{"references/inspect.md", "templates/module-map.md"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal never names %q, so the model has to guess again: %v", want, err)
+		}
+	}
+
+	// And a skill that really carries nothing says that, rather than offering
+	// an empty list.
+	_, err = view.ExecuteTool(context.Background(), map[string]any{"name": "onedoc", "path": "references/anything.md"})
+	if err == nil || !strings.Contains(err.Error(), "no files beside its own document") {
+		t.Errorf("a one-document skill gave a listing instead of saying it has none: %v", err)
 	}
 }

@@ -181,6 +181,25 @@ func endMarker(d DiscoveredSkill, carries int) string {
 	return m
 }
 
+// notInSkill refuses a path the skill does not carry, and names what it does.
+//
+// The old text was "the skill body lists what it has". That was true of the
+// listing skill_view appends and not of the body, and the difference is the
+// whole failure: on 2026-08-23 the aetox-design-system body's own table named
+// eight data/*.csv files the binary was not shipping, because a bare `data/`
+// line in .gitignore had swallowed every one of them. So the document promised
+// a file, the refusal pointed back at the document, and the model asked three
+// times for three different rows of the same table. Naming the files that can
+// actually be served ends that on the first try, and it is the same move the
+// unknown-name branch below already makes with the list of skills.
+func notInSkill(d DiscoveredSkill, sub string) error {
+	files := supportingFiles(d)
+	if len(files) == 0 {
+		return fmt.Errorf("%q is not in this skill; it carries no files beside its own document", sub)
+	}
+	return fmt.Errorf("%q is not in this skill. It carries: %s", sub, strings.Join(files, ", "))
+}
+
 // readSkillFile returns one supporting file from inside a skill's folder.
 //
 // The containment check is the point. `path` is a string the model wrote, and
@@ -200,7 +219,7 @@ func readSkillFile(d DiscoveredSkill, sub string) (string, error) {
 	// judgement this has to make: fs.Sub already refused to hand out a root
 	// above it, and cleanPath below refuses a name that climbs.
 	if d.files != nil {
-		return readEmbeddedSkillFile(d.files, sub)
+		return readEmbeddedSkillFile(d, sub)
 	}
 	dir := d.Dir
 	// No folder and nothing embedded. Without this, filepath.Abs("") returns
@@ -224,7 +243,7 @@ func readSkillFile(d DiscoveredSkill, sub string) (string, error) {
 	}
 	info, err := os.Stat(full)
 	if err != nil {
-		return "", fmt.Errorf("%q is not in this skill — the skill body lists what it has", sub)
+		return "", notInSkill(d, sub)
 	}
 	if info.IsDir() {
 		return "", fmt.Errorf("%q is a folder; name a file inside it", sub)
@@ -251,14 +270,15 @@ func readSkillFile(d DiscoveredSkill, sub string) (string, error) {
 // cannot express one. What is left is the spelling: `path.Clean` folds a "../"
 // into a name that leaves the root, and fs.ValidPath is what rejects it, which
 // is why the clean happens before the check rather than after.
-func readEmbeddedSkillFile(fsys fs.FS, sub string) (string, error) {
+func readEmbeddedSkillFile(d DiscoveredSkill, sub string) (string, error) {
+	fsys := d.files
 	name := path.Clean(strings.TrimPrefix(filepath.ToSlash(sub), "./"))
 	if name == "" || name == "." || !fs.ValidPath(name) {
 		return "", fmt.Errorf("%q is outside the skill's own folder", sub)
 	}
 	info, err := fs.Stat(fsys, name)
 	if err != nil {
-		return "", fmt.Errorf("%q is not in this skill — the skill body lists what it has", sub)
+		return "", notInSkill(d, sub)
 	}
 	if info.IsDir() {
 		return "", fmt.Errorf("%q is a folder; name a file inside it", sub)

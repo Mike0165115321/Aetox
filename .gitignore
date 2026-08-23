@@ -33,8 +33,14 @@ node_modules/
 *.out
 *.prof
 
-# AetoxOS Data & Memory
-data/
+# AetoxOS Data & Memory. Anchored to the repo root, and that leading slash
+# is load-bearing: a bare `data/` matches a folder of that name at every
+# depth, and on 2026-08-23 it was quietly swallowing the sixteen decision
+# tables under internal/skill/skills/*/data/. Those ship inside the binary,
+# so they existed on the machine that wrote them and on no machine that
+# installed Aetox: skill_view served a document whose own table pointed at
+# eight files the build had never seen.
+/data/
 aetox_memory.db
 config/preferences.json
 
