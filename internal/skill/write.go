@@ -120,6 +120,17 @@ func (*writeSkill) ToolDefinition() model.ToolDefinition {
 	}
 }
 
+// Guidance states the cap, because the cap only works if the model knows the
+// number before it starts writing. It cannot go in the block entry: write is
+// already over the standard at 141 tokens and may shrink, not grow.
+func (*writeSkill) Guidance(map[string]any) string {
+	return "One write carries at most 300 lines. A longer file is written in several calls: the first 300 " +
+		"lines here, the rest with edit mode=append, which does not re-send what is already on disk.\n" +
+		"This is not a style rule. A tool call bigger than the round's output limit is cut off mid-JSON and " +
+		"cannot run at all, and that limit varies by provider and shrinks as the conversation grows. Lines " +
+		"are the one unit you can count while writing."
+}
+
 func (s *writeSkill) Execute(_ context.Context, input Input) (Output, error) {
 	start := time.Now()
 	if s == nil {
@@ -149,6 +160,13 @@ func (s *writeSkill) Execute(_ context.Context, input Input) (Output, error) {
 		err := errors.New("usage: write <path> <content>")
 		return newToolOutput("write", "write", "", start, false, err), err
 	}
+	// Before the path is resolved and long before anything is opened: a call
+	// over the cap must leave nothing behind, which is the whole reason a cap
+	// beats catching the same content after it was truncated.
+	if err := checkContentLineCap("content", content); err != nil {
+		return newToolOutput("write", "write "+requestPath, "", start, false, err), err
+	}
+
 	original := requestPath
 	requestPath = s.placed(requestPath)
 

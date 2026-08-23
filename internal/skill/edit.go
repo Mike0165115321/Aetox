@@ -38,31 +38,50 @@ func (*editSkill) ToolDefinition() model.ToolDefinition {
 			},
 			"old_string": map[string]any{
 				"type":        "string",
-				"description": "Exact text to replace. Must appear exactly once in the file; include surrounding lines to make it unique.",
+				"description": "Exact text to replace, unique in the file. Unused by mode=append.",
 			},
 			"new_string": map[string]any{
 				"type":        "string",
-				"description": "Replacement text. Empty string deletes old_string.",
+				"description": "Replacement text, or the text to add in mode=append. Empty deletes old_string.",
 			},
 			"replace_all": map[string]any{
 				"type":        "boolean",
-				"description": "Replace every occurrence instead of requiring exactly one. This is how you rename a symbol throughout a file in one call.",
+				"description": "Replace every occurrence instead of requiring exactly one.",
+			},
+			"mode": map[string]any{
+				"type":        "string",
+				"enum":        []string{"replace", "append"},
+				"description": "replace (default), or append to add new_string at the end of the file.",
 			},
 		},
-		"required":             []string{"path", "old_string", "new_string"},
+		"required":             []string{"path", "new_string"},
 		"additionalProperties": false,
 	}
 	payload, _ := json.Marshal(schema)
 	return model.ToolDefinition{
 		Type: "function",
 		Function: model.ToolFunction{
-			Name: "edit",
-			Description: "Replace an exact string in an existing file. Safer than write for changing part of a file. " +
-				"The text must appear exactly once unless replace_all is set. " +
-				"read prefixes every line with its number and a tab — strip that prefix before matching, it is not in the file.",
-			Parameters: payload,
+			Name:        "edit",
+			Description: "Change part of an existing file: replace an exact string, or append to its end.",
+			Parameters:  payload,
 		},
 	}
+}
+
+// Guidance carries what the signature above deliberately does not. The block
+// entry was already over the standard before append was added, so the way to
+// pay for a new parameter was to move the prose that was never needed twice.
+func (*editSkill) Guidance(map[string]any) string {
+	return "edit changes part of a file; write re-sends all of it. On anything large edit is the cheaper act, " +
+		"and the only one that survives an output token limit: a write whose content does not fit the round " +
+		"is cut mid-JSON and cannot run at all.\n" +
+		"mode=append carries on a file that was cut off. Send only what follows the last byte already on disk. " +
+		"No separator is added for you, so a file cut mid-word is continued mid-word. An append carries at " +
+		"most 300 lines, the same cap write has, so a long continuation is several appends. Replacing is " +
+		"not capped: one substitution cannot be split in half.\n" +
+		"read prefixes every line with its number and a tab. Strip that prefix before matching: it is not in the file. " +
+		"Line endings are matched for you, so a failed match is about the text, not invisible characters, and " +
+		"re-reading will show the same bytes again."
 }
 
 func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
@@ -89,13 +108,46 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 		err := errors.New("usage: edit <path> <old_string> <new_string>")
 		return newToolOutput("edit", command, "", start, false, err), err
 	}
-	if oldString == "" {
-		err := errors.New("old_string is empty; use write to create a file")
+
+	// Appending is the same skill because it is the same act: changing part of
+	// a file without re-sending the rest. It earns its place on the truncation
+	// path — a write cut off at the output ceiling leaves a file that needs
+	// carrying on, and the alternative was making the model quote the tail
+	// back as old_string, which is the very content the limit already proved
+	// it cannot afford to repeat.
+	appendMode := strings.EqualFold(strings.TrimSpace(stringArg(input["mode"])), "append")
+	switch {
+	case appendMode && oldString != "":
+		err := errors.New("mode=append adds to the end of the file, so it takes no old_string; drop it, or use the default replace mode")
 		return newToolOutput("edit", command, "", start, false, err), err
-	}
-	if oldString == newString {
+	case appendMode && newString == "":
+		err := errors.New("new_string is empty; mode=append needs the text to add")
+		return newToolOutput("edit", command, "", start, false, err), err
+	case !appendMode && oldString == "":
+		err := errors.New("old_string is empty; use mode=append to add to the end of the file, or write to create one")
+		return newToolOutput("edit", command, "", start, false, err), err
+	case !appendMode && oldString == newString:
 		err := errors.New("old_string and new_string are identical")
 		return newToolOutput("edit", command, "", start, false, err), err
+	}
+
+	// Append is capped, replace is not, and the difference is whether the act
+	// can be split at all. An append is a file being written a piece at a time,
+	// so capping it only decides how many pieces; refusing it costs nothing but
+	// one more call. A replace is one substitution — a 400-line block swapped
+	// for another — and there is no honest way to cut that in half. Capping it
+	// would refuse correct work and offer no way to do it.
+	//
+	// The hole that leaves is narrow: replace cannot create a file, only change
+	// one that exists, and a replace too large for the round is refused by the
+	// truncation guard with the file untouched. What the cap is protecting
+	// against is spending a whole round's output on something that cannot run,
+	// and append is the door that would otherwise take the traffic write no
+	// longer accepts.
+	if appendMode {
+		if err := checkContentLineCap("new_string", newString); err != nil {
+			return newToolOutput("edit", command, "", start, false, err), err
+		}
 	}
 
 	targetPath, err := resolveSandboxPath(s.root, requestPath)
@@ -125,6 +177,22 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 	replaceAll, _ := input["replace_all"].(bool)
 
 	content := string(data)
+
+	// Appended verbatim, with only the file's own line endings applied. No
+	// separator is inserted: the caller is continuing a file from the exact
+	// byte it stopped at, and a newline we add on its behalf lands inside the
+	// content rather than between two of its parts.
+	if appendMode {
+		addition := newlinesLike(content, newString)
+		updated := content + addition
+		if err := os.WriteFile(targetPath, []byte(updated), 0o644); err != nil {
+			return newToolOutput("edit", command, "", start, false, err), err
+		}
+		out := newToolOutput("edit", command, "edit done: appended to "+requestPath, start, false, nil)
+		out.LinesAdded, _ = LineDelta("", addition)
+		out.Diff = UnifiedDiff(content, updated)
+		return out, nil
+	}
 	// What the file actually holds for what the caller asked for, and the
 	// replacement in the file's own line endings. See lineendings.go: on the
 	// reference platform every checked-out file is CRLF and a model cannot see
@@ -178,16 +246,20 @@ func (s *editSkill) ExecuteTool(ctx context.Context, args map[string]any) (Outpu
 	path, pathOK := args["path"].(string)
 	oldString, oldOK := args["old_string"].(string)
 	newString, _ := args["new_string"].(string)
+	mode, _ := args["mode"].(string)
 	if !pathOK || strings.TrimSpace(path) == "" {
 		err := errors.New("path is required")
 		return newToolOutput("edit", "edit", "", time.Now(), false, err), err
 	}
-	if !oldOK || oldString == "" {
-		err := errors.New("old_string is required")
-		return newToolOutput("edit", "edit "+path, "", time.Now(), false, err), err
+	// old_string stopped being unconditionally required when append arrived,
+	// so the check moved into Execute where the mode is known. Both entry
+	// points now refuse the same combinations, worded from the same place.
+	if !oldOK {
+		oldString = ""
 	}
 	return s.Execute(ctx, Input{
 		"args":        []string{path, oldString, newString},
 		"replace_all": args["replace_all"],
+		"mode":        mode,
 	})
 }

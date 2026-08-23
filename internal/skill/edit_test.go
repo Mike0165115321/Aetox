@@ -297,3 +297,109 @@ func TestEditSkillExecuteToolMissingArgs(t *testing.T) {
 		t.Fatal("expected error for missing old_string, got nil")
 	}
 }
+
+// Append exists for the file a write left half-finished: the model carries on
+// from the byte it stopped at, and nothing already on disk is re-sent.
+func TestEditSkillAppendContinuesAFile(t *testing.T) {
+	root := t.TempDir()
+	path := writeEditFixture(t, root, "report.html", "<!DOCTYPE html>\n<html lang=\"th\">\n<body>\n")
+	s := &editSkill{root: root}
+
+	out, err := s.ExecuteTool(context.Background(), map[string]any{
+		"path":       "report.html",
+		"new_string": "<h1>สรุป</h1>\n</body>\n</html>\n",
+		"mode":       "append",
+	})
+	if err != nil {
+		t.Fatalf("ExecuteTool: unexpected error: %v", err)
+	}
+	if !out.Success {
+		t.Error("Success = false, want true")
+	}
+	data, _ := os.ReadFile(path)
+	want := "<!DOCTYPE html>\n<html lang=\"th\">\n<body>\n<h1>สรุป</h1>\n</body>\n</html>\n"
+	if string(data) != want {
+		t.Errorf("content = %q, want %q", string(data), want)
+	}
+}
+
+// No separator of our own. The caller is resuming mid-line as often as not,
+// and a newline inserted on its behalf lands inside the content rather than
+// between two parts of it.
+func TestEditSkillAppendJoinsWithoutInventingASeparator(t *testing.T) {
+	root := t.TempDir()
+	path := writeEditFixture(t, root, "cut.txt", "the sentence was cut in ha")
+	s := &editSkill{root: root}
+
+	if _, err := s.ExecuteTool(context.Background(), map[string]any{
+		"path":       "cut.txt",
+		"new_string": "lf",
+		"mode":       "append",
+	}); err != nil {
+		t.Fatalf("ExecuteTool: unexpected error: %v", err)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != "the sentence was cut in half" {
+		t.Errorf("content = %q, want %q", string(data), "the sentence was cut in half")
+	}
+}
+
+// A file checked out with CRLF keeps CRLF, the same rule replace already
+// follows. The reference platform is Windows and a model cannot see a \r.
+func TestEditSkillAppendKeepsTheFilesLineEndings(t *testing.T) {
+	root := t.TempDir()
+	path := writeEditFixture(t, root, "crlf.txt", "first\r\nsecond\r\n")
+	s := &editSkill{root: root}
+
+	if _, err := s.ExecuteTool(context.Background(), map[string]any{
+		"path":       "crlf.txt",
+		"new_string": "third\nfourth\n",
+		"mode":       "append",
+	}); err != nil {
+		t.Fatalf("ExecuteTool: unexpected error: %v", err)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != "first\r\nsecond\r\nthird\r\nfourth\r\n" {
+		t.Errorf("content = %q, want CRLF throughout", string(data))
+	}
+}
+
+// Passing both is a model hedging between two different acts. Guessing which
+// one it meant is how an append silently becomes a replace.
+func TestEditSkillAppendRefusesAnOldString(t *testing.T) {
+	root := t.TempDir()
+	writeEditFixture(t, root, "a.txt", "hello old world")
+	s := &editSkill{root: root}
+
+	_, err := s.ExecuteTool(context.Background(), map[string]any{
+		"path":       "a.txt",
+		"old_string": "old",
+		"new_string": "new",
+		"mode":       "append",
+	})
+	if err == nil {
+		t.Fatal("expected a refusal when append is given an old_string")
+	}
+	if !strings.Contains(err.Error(), "no old_string") {
+		t.Errorf("the refusal must say which argument to drop, got %q", err.Error())
+	}
+}
+
+// The old wording sent the model to write, which re-sends the whole file. That
+// is the exact cost the truncation path cannot pay, so the way out is named.
+func TestEditSkillMissingOldStringPointsAtAppend(t *testing.T) {
+	root := t.TempDir()
+	writeEditFixture(t, root, "a.txt", "hello")
+	s := &editSkill{root: root}
+
+	_, err := s.ExecuteTool(context.Background(), map[string]any{
+		"path":       "a.txt",
+		"new_string": "more",
+	})
+	if err == nil {
+		t.Fatal("expected a refusal for replace without old_string")
+	}
+	if !strings.Contains(err.Error(), "append") {
+		t.Errorf("refusal must offer append, got %q", err.Error())
+	}
+}
