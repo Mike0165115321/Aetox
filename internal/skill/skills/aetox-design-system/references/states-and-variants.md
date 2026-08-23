@@ -14,6 +14,11 @@ Component state definitions and variant patterns.
 | active | Mouse down | Darkest color |
 | disabled | disabled attr | Reduced opacity |
 | loading | Async action | Spinner + opacity |
+| error | Validation fails | See Error States below |
+| selected | User marks it chosen | Persistent accent treatment, distinct from hover/active |
+
+Every row above needs the matching ARIA attribute, not just the visual
+treatment — see `accessibility.md` for the full state-to-ARIA table.
 
 ### State Priority
 

@@ -123,6 +123,14 @@ Two sources on the shelf, and the second wins:
     tables that decide a deck's structure, layout, typography and charts.
   - `aetox-brand` — voice, messaging, logo and typography rules, and the
     checklists a piece of work passes before it goes out.
+  - `aetox-th-locale` — where Thai-looking data has one correct answer that
+    is not about fluency: the Buddhist-era/Gregorian year, a national ID
+    checksum, a PromptPay QR payload, an address's 77-province postcode,
+    VAT/WHT rates, a PDPA checklist.
+  - `aetox-translate` — a self-checking team for translation that would be
+    expensive to get wrong: contracts, official correspondence, anything
+    published under someone else's name. Not for an ordinary one-line
+    translation.
 - **User** — a folder in `~/.aetox/skills`. A folder whose skill name matches a
   bundled one replaces it entirely. Editing a shipped skill means copying it
   out under the same name, never fighting the app.

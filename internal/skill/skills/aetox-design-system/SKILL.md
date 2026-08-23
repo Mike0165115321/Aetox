@@ -67,6 +67,12 @@ outside the primitive layer is the defect this system exists to prevent, and
 | Component Specs | `references/component-specs.md` |
 | States & Variants | `references/states-and-variants.md` |
 | Tailwind Integration | `references/tailwind-integration.md` |
+| Typography & fonts | `references/typography.md` |
+| Color & contrast, light/dark | `references/color-and-contrast.md` |
+| Accessibility (keyboard, ARIA) | `references/accessibility.md` |
+| Motion for generated work | `references/motion.md` |
+| Avoiding the generic AI look | `references/anti-generic-look.md` |
+| Dense UI & dashboards | `references/dense-ui.md` |
 
 ## Component Spec Pattern
 
@@ -77,16 +83,6 @@ outside the primitive layer is the defect this system exists to prevent, and
 | Border | none | none | none | muted-border |
 | Shadow | sm | md | none | none |
 
-## Scripts
-
-| Script | Purpose |
-|--------|---------|
-| `generate-tokens.cjs` | Generate CSS from JSON token config |
-| `validate-tokens.cjs` | Check for hardcoded values in code |
-| `search-slides.py` | BM25 search + contextual recommendations |
-| `slide-token-validator.py` | Validate slide HTML for token compliance |
-| `fetch-background.py` | Fetch images from Pexels/Unsplash |
-
 ## Templates
 
 | Template | Purpose |
@@ -95,11 +91,12 @@ outside the primitive layer is the defect this system exists to prevent, and
 
 ## Integration
 
-**With brand:** Extract primitives from brand colors/typography
-**With ui-styling:** Component tokens → Tailwind config
+**With `aetox-brand`:** extract primitives from brand colors/typography.
 
-**Skill Dependencies:** brand, ui-styling
-**Primary Agents:** ui-ux-designer, frontend-developer
+No scripts ship with this skill: a bundled skill has no folder on disk (it
+lives inside the binary), so there is nothing for `shell` to execute even if
+one were written here. A script only works for a skill installed on a real
+disk, under `~/.aetox/skills`.
 
 ## Slide System
 
@@ -169,6 +166,17 @@ Premium decks alternate between emotions for engagement:
 
 System calculates pattern breaks at 1/3 and 2/3 positions.
 
+### Checking a finished deck without a render tool
+
+There is no tool here that renders a slide and looks at it — verify by reading
+values, not by eyeballing an image that does not exist yet. Two checks that
+work without one: count characters against the layout's stated max-width per
+line (a `slide-layouts.csv` row that says "short headline, 2-line max body" is
+a budget to check text against, not a suggestion), and re-read every
+`css_implementation` route for a chart against what the file actually carries
+— a chart drawn by a CDN-fetched library is the specific failure the export
+already warns about elsewhere in this document.
+
 ### What every slide owes the room
 
 1. **Its own tokens.** A deck is one self-contained file, so the CSS variables
@@ -200,12 +208,6 @@ color: #FF6B6B;
 font-family: 'Space Grotesk';
 ```
 
-
-### Command
-
-```bash
-/slides:create "10-slide investor pitch for ClaudeKit Marketing"
-```
 
 ## Best Practices
 
