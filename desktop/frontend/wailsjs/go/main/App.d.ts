@@ -215,6 +215,7 @@ export function ListDecidedChanges(arg1:number):Promise<Array<main.PendingChange
 export function ListDecidedIssues(arg1:number):Promise<Array<main.PendingChange>>;
 
 export function ListDecks():Promise<Array<main.Deck>>;
+export function ListDecksIn(arg1:string):Promise<main.DeckPage>;
 
 export function ListExternalSkills():Promise<Array<skill.DiscoveredSkill>>;
 

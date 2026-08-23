@@ -161,13 +161,10 @@ func widenFrom(want string) []string {
 // places deciding "which day" differently is the drift dayBucket's own comment
 // was written to prevent, and this is the third caller of that question.
 func within(all []Artifact, name string) []Artifact {
-	days, bounded := rangeDays(name)
+	cutoff, bounded := rangeCutoff(name)
 	if !bounded {
 		return all
 	}
-	today := time.Now()
-	midnight := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
-	cutoff := midnight.AddDate(0, 0, -days)
 	out := make([]Artifact, 0, len(all))
 	for _, art := range all {
 		when, err := time.Parse(time.RFC3339, art.Modified)
@@ -178,6 +175,20 @@ func within(all []Artifact, name string) []Artifact {
 		}
 	}
 	return out
+}
+
+// rangeCutoff is the moment a range begins: midnight this morning minus its
+// span. Shared with the slides room (decks.go), which cuts its walk by the same
+// line before it opens anything, so "this week" means one thing across both
+// rooms and across the day headings the rows are grouped under.
+func rangeCutoff(name string) (time.Time, bool) {
+	days, bounded := rangeDays(name)
+	if !bounded {
+		return time.Time{}, false
+	}
+	today := time.Now()
+	midnight := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
+	return midnight.AddDate(0, 0, -days), true
 }
 
 func rangeDays(name string) (int, bool) {

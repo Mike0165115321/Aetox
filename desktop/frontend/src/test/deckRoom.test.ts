@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/svelte'
 import DeckRoom from '../lib/workbench/DeckRoom.svelte'
 import { setLocale } from '../lib/i18n.svelte'
-import { ListDecks, ReadFile, ExportDeck, OpenExport } from './mocks/wailsApp'
+import { ListDecksIn, ReadFile, ExportDeck, OpenExport } from './mocks/wailsApp'
 
 const deckHTML = '<html><body><section class="slide"><h1>ยอดขาย</h1></section></body></html>'
 
@@ -20,7 +20,7 @@ const rows = [
 beforeEach(() => {
   vi.clearAllMocks()
   setLocale('en')
-  vi.mocked(ListDecks).mockResolvedValue(rows as any)
+  vi.mocked(ListDecksIn).mockResolvedValue({ decks: rows, range: 'week', total: rows.length } as any)
   vi.mocked(ReadFile).mockResolvedValue(deckHTML as any)
 })
 
@@ -51,9 +51,71 @@ describe('the slides room', () => {
     )
   })
 
+  // ห้องนี้โหลดใหม่ทุกครั้งที่เทิร์นจบ และแถวหนึ่งแถวคือการอ่านไฟล์ทั้งไฟล์
+  // แล้วแจงเป็น HTML การเปิดมาที่ "สัปดาห์นี้" จึงไม่ใช่รสนิยม แต่คือเพดาน
+  it('opens on this week rather than on everything', async () => {
+    render(DeckRoom)
+    await waitFor(() => expect(vi.mocked(ListDecksIn).mock.calls.length).toBeGreaterThan(0))
+    expect(vi.mocked(ListDecksIn).mock.calls[0][0]).toBe('week')
+  })
+
+  // ปุ่มช่วงเวลาผูกกับช่วงที่ฝั่งโกตอบมา ไม่ใช่ช่วงที่กด สัปดาห์ที่ว่างถูกขยาย
+  // ให้เองฝั่งโน้น ปุ่มที่ยังค้างอยู่ที่ "สัปดาห์นี้" ทั้งที่จอแสดงทั้งหมด คือปุ่มโกหก
+  it('the range control says what is on screen, not what was clicked', async () => {
+    vi.mocked(ListDecksIn).mockResolvedValue({ decks: rows, range: 'all', total: rows.length } as any)
+    render(DeckRoom)
+    await waitFor(() => expect(screen.getByText('ใหม่.html')).toBeTruthy())
+    expect(screen.getByRole('button', { name: 'All' }).className).toContain('on')
+    expect(screen.getByRole('button', { name: 'This week' }).className).not.toContain('on')
+  })
+
+  it('asks Go for the range the user picks', async () => {
+    render(DeckRoom)
+    await waitFor(() => expect(screen.getByText('ใหม่.html')).toBeTruthy())
+    await fireEvent.click(screen.getByRole('button', { name: 'This month' }))
+    await waitFor(() =>
+      expect(vi.mocked(ListDecksIn).mock.calls.some((c) => c[0] === 'month')).toBe(true),
+    )
+  })
+
+  // หัววันมาจาก dayBucket ตัวเดียวกับประวัติแชทและหน้าผลงาน หัวจะโผล่เฉพาะตอน
+  // วันเปลี่ยน รายการจึงอ่านเป็นไทม์ไลน์
+  it('groups the rows under day headings', async () => {
+    const today = new Date().toISOString()
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString()
+    vi.mocked(ListDecksIn).mockResolvedValue({
+      decks: [
+        { path: 'a.html', name: 'a.html', slides: 2, modified: today },
+        { path: 'b.html', name: 'b.html', slides: 2, modified: today },
+        { path: 'c.html', name: 'c.html', slides: 2, modified: yesterday },
+      ],
+      range: 'week',
+      total: 3,
+    } as any)
+    render(DeckRoom)
+    await waitFor(() => expect(screen.getByText('c.html')).toBeTruthy())
+    expect(screen.getAllByText('Today')).toHaveLength(1)
+    expect(screen.getAllByText('Yesterday')).toHaveLength(1)
+  })
+
+  // ทุกแถวในช่วงมาถึงแล้ว ปุ่มนี้คุมแค่ว่าวาดกี่แถว และต้องบอกจำนวนที่ซ่อนอยู่
+  // "แสดงเพิ่ม" เฉย ๆ ไม่บอกว่าเหลือสี่แถวหรือสี่ร้อย
+  it('draws a screenful and says how many it is holding back', async () => {
+    const many = Array.from({ length: 34 }, (_, i) => ({
+      path: `d${i}.html`, name: `d${i}.html`, slides: 2, modified: '2026-08-19T02:00:00Z',
+    }))
+    vi.mocked(ListDecksIn).mockResolvedValue({ decks: many, range: 'all', total: 34 } as any)
+    render(DeckRoom)
+    await waitFor(() => expect(screen.getByText('d0.html')).toBeTruthy())
+    expect(screen.queryByText('d33.html')).toBeNull()
+
+    await fireEvent.click(screen.getByText(/Show 4 more/))
+    await waitFor(() => expect(screen.getByText('d33.html')).toBeTruthy())
+  })
+
   // ห้องว่างที่บอกแค่ว่าว่าง อ่านเหมือนฟีเจอร์พัง ต้องบอกด้วยว่าทำยังไงถึงจะมี
   it('an empty room says how to fill it', async () => {
-    vi.mocked(ListDecks).mockResolvedValue([] as any)
+    vi.mocked(ListDecksIn).mockResolvedValue({ decks: [], range: 'all', total: 0 } as any)
     render(DeckRoom)
     await waitFor(() => expect(screen.getByText(/Ask the agent for a presentation/i)).toBeTruthy())
     expect(vi.mocked(ReadFile)).not.toHaveBeenCalled()
@@ -121,7 +183,7 @@ describe('the slides room', () => {
   })
 
   it('survives a listing that fails without going blank', async () => {
-    vi.mocked(ListDecks).mockRejectedValue(new Error('no project open'))
+    vi.mocked(ListDecksIn).mockRejectedValue(new Error('no project open'))
     render(DeckRoom)
     await waitFor(() => expect(screen.getByText(/no project open/)).toBeTruthy())
   })

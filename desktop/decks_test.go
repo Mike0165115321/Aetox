@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
 )
@@ -84,6 +85,95 @@ func TestDeckLooseInOutputHasNoSession(t *testing.T) {
 	}
 	if decks[0].SessionID != "" {
 		t.Errorf("sessionId = %q, want empty", decks[0].SessionID)
+	}
+}
+
+// aged writes a deck and dates it, because every assertion about a range is an
+// assertion about when the file was written.
+func aged(t *testing.T, root, rel string, daysAgo int, slides ...string) {
+	t.Helper()
+	full := writeUnder(t, root, rel, deckHTML("ก", slides...))
+	when := time.Now().AddDate(0, 0, -daysAgo).Add(-time.Hour)
+	if err := os.Chtimes(full, when, when); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The room reloads on every finished turn, so listing without a bound charged a
+// full read and a full HTML parse of every deck the workspace had ever produced
+// to every one of those turns. The range is that bound, and this is the guard
+// on it: what is outside the range must not be opened at all.
+//
+// Counted by what came back *and* by the fact that the old deck is not in it —
+// a listing that read everything and then filtered would pass an assertion
+// about rows and be the exact cost this replaced. The read is what the filter
+// has to come before, which is why candidatesWithin takes deckFile and not Deck.
+func TestTheWeekRangeLeavesOlderDecksUnopened(t *testing.T) {
+	a, root := deckApp(t)
+	aged(t, root, "output/s-new/สัปดาห์นี้.html", 1, "หนึ่ง", "สอง")
+	aged(t, root, "output/s-mid/เดือนนี้.html", 14, "หนึ่ง")
+	aged(t, root, "output/s-old/นานแล้ว.html", 200, "หนึ่ง")
+
+	week := a.ListDecksIn(RangeWeek)
+	if week.Range != RangeWeek {
+		t.Errorf("range = %q, want %q", week.Range, RangeWeek)
+	}
+	if len(week.Decks) != 1 || week.Decks[0].Name != "สัปดาห์นี้.html" {
+		t.Fatalf("week = %+v, want only this week's deck", week.Decks)
+	}
+	if week.Total != 1 {
+		t.Errorf("total = %d, want 1 — with no cap it is exactly what is in range", week.Total)
+	}
+
+	month := a.ListDecksIn(RangeMonth)
+	if len(month.Decks) != 2 {
+		t.Fatalf("month = %+v, want two decks", month.Decks)
+	}
+	// Newest first, the order the room draws and the day headings depend on.
+	if month.Decks[0].Name != "สัปดาห์นี้.html" {
+		t.Errorf("month is not newest first: %+v", month.Decks)
+	}
+
+	if all := a.ListDecksIn(RangeAll); len(all.Decks) != 3 {
+		t.Errorf("all = %d decks, want 3", len(all.Decks))
+	}
+}
+
+// An empty week is indistinguishable from a broken room, so it widens — and it
+// has to widen on the number of *decks*, not on the number of .html files the
+// walk found. A week holding nothing but web pages is an empty week.
+func TestAWeekOfNonDecksWidensRatherThanShowingNothing(t *testing.T) {
+	a, root := deckApp(t)
+	page := writeUnder(t, root, "output/s-new/หน้าเว็บ.html",
+		"<html><body><section><h1>ไม่ใช่เด็ค</h1></section></body></html>")
+	when := time.Now().AddDate(0, 0, -1)
+	if err := os.Chtimes(page, when, when); err != nil {
+		t.Fatal(err)
+	}
+	aged(t, root, "output/s-old/เด็คเก่า.html", 120, "หนึ่ง")
+
+	got := a.ListDecksIn(RangeWeek)
+	if len(got.Decks) != 1 || got.Decks[0].Name != "เด็คเก่า.html" {
+		t.Fatalf("did not widen past a week of non-decks: %+v", got.Decks)
+	}
+	if got.Range != RangeAll {
+		t.Errorf("range = %q, want %q — the picker has to say what is on screen", got.Range, RangeAll)
+	}
+}
+
+// The widening chain must not pay for the same file twice. Without the memo,
+// a week that widens to the month and then to everything reads the oldest decks
+// three times over.
+func TestWideningDoesNotRereadWhatItAlreadyOpened(t *testing.T) {
+	a, root := deckApp(t)
+	aged(t, root, "output/s-old/เก่า.html", 300, "หนึ่ง")
+
+	got := a.ListDecksIn(RangeWeek)
+	if len(got.Decks) != 1 || got.Range != RangeAll {
+		t.Fatalf("got %+v range=%q", got.Decks, got.Range)
+	}
+	if got.Total != 1 {
+		t.Errorf("total = %d, want 1", got.Total)
 	}
 }
 

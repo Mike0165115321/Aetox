@@ -351,6 +351,8 @@ export const th = {
   'deckRoom.none': 'ยังไม่มีเด็คในโปรเจกต์นี้ ลองบอกเอเจนให้ทำงานนำเสนอสักชุด แล้วมันจะมาโผล่ตรงนี้',
   'deckRoom.pick': 'เลือกเด็คจากรายการทางซ้าย',
   'deckRoom.slideCount': '{n} สไลด์',
+  'deckRoom.count': '{n} เด็ค',
+  'deckRoom.more': 'แสดงเพิ่มอีก {n} เด็ค',
   'workbench.dropHere': 'วางตรงนี้ได้เลย',
  'workbench.dropHint': 'ไฟล์ หรือหน้าเว็บที่ลากมาจากเบราว์เซอร์ วางแล้วขึ้นบนโต๊ะทันที',
   'workbench.dropFailed': 'เอาไฟล์นี้เข้ามาไม่ได้',

@@ -406,6 +406,10 @@ export function ListDecks() {
   return window['go']['main']['App']['ListDecks']();
 }
 
+export function ListDecksIn(arg1) {
+  return window['go']['main']['App']['ListDecksIn'](arg1);
+}
+
 export function ListExternalSkills() {
   return window['go']['main']['App']['ListExternalSkills']();
 }

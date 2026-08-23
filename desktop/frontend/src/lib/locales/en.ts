@@ -356,6 +356,8 @@ export const en: Record<keyof typeof th, string> = {
   'deckRoom.none': 'No decks in this project yet. Ask the agent for a presentation and it will show up here.',
   'deckRoom.pick': 'Pick a deck from the list',
   'deckRoom.slideCount': '{n} slides',
+  'deckRoom.count': '{n} decks',
+  'deckRoom.more': 'Show {n} more',
   'workbench.dropHere': 'Drop it here',
   'workbench.dropHint': 'A file, or a page dragged from a browser. It opens on the desk right away',
   'workbench.dropFailed': 'This file couldn’t be brought in.',

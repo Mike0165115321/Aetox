@@ -235,6 +235,12 @@ export const ListSessionsAt = arr()
 export const ListArtifacts = arr()
 export const OpenExport = noop()
 export const ListDecks = arr()
+// The slides room asks for one range at a time and gets back {decks, range,
+// total}, the same shape ListArtifactsIn answers with. Empty by default;
+// `range` echoes what was asked, so a test that does not widen reads straight.
+export const ListDecksIn = vi.fn(async (want: string = 'week') => ({
+  decks: [] as any[], range: want, total: 0,
+}))
 export const ExportDeck = str()
 // Deliberately NOT a mirror of desktop/decks.go's list, and it must not become
 // one. What the pane has to get right is drawing both states, so this fixes one

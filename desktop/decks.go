@@ -52,24 +52,43 @@ type Deck struct {
 	Modified  string `json:"modified"` // RFC3339
 }
 
-// ListDecks returns every deck under this workspace's output folder, newest
-// first.
+// DeckPage is one range of the room's list.
 //
-// Scoped to the open workspace rather than to every root the gallery sweeps,
-// and that is the file-host constraint above rather than a product decision:
-// a deck from another project cannot be rendered here, so offering it would be
-// a row that opens onto nothing.
-func (a *App) ListDecks() []Deck {
-	root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
-	if root == "" {
-		// No project open reads as no decks, which is the truth about it. The
-		// unfocused workspace has its own SandboxRoot when it is the one open,
-		// so this is genuinely "nowhere to look" rather than a missed case.
-		return []Deck{}
-	}
+// The same three fields ArtifactPage carries, and deliberately the same: ผลงาน
+// and this room are one question asked about two kinds of produced file, and a
+// second shape for the answer is a second set of edge cases to get right.
+// Range is the range actually served, which is not always the one asked for.
+type DeckPage struct {
+	Decks []Deck `json:"decks"`
+	Range string `json:"range"`
+	Total int    `json:"total"`
+}
 
-	out := []Deck{}
+// deckFile is a candidate: everything the walk can know without opening it.
+type deckFile struct {
+	full     string
+	rel      string
+	name     string
+	session  string
+	modified time.Time
+}
+
+// deckCandidates is the half of the listing that costs a directory entry each.
+//
+// Name, size and modification time come off the walk; whether the file is a
+// deck and how many slides are in it do not, and that split is the whole reason
+// this is its own pass. Deciding costs a full read *and* an HTML parse — the
+// package that does it says so and leaves the bound to this caller
+// (internal/deck) — and the contract for pictures is that they are embedded, so
+// a deck with a dozen screenshots in it is megabytes where a text deck is
+// twenty kilobytes. Answering "which decks are recent" out of the walk means
+// the reads are spent only on the ones about to be shown.
+//
+// Newest first, tie broken by path, so two decks written in the same second
+// come back in the same order on every call.
+func deckCandidates(root string) []deckFile {
 	base := filepath.Join(root, outputDir)
+	var out []deckFile
 	_ = filepath.WalkDir(base, func(path string, entry os.DirEntry, err error) error {
 		if err != nil || entry.IsDir() {
 			return nil //lint:ignore nilerr an unreadable entry is skipped, not fatal
@@ -81,33 +100,140 @@ func (a *App) ListDecks() []Deck {
 		if statErr != nil || info.Size() > maxDeckBytes {
 			return nil
 		}
-		source, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return nil
-		}
-		// The marker is counted rather than matched, so the row can say how
-		// many slides are in there without the caller opening it. A page that
-		// is not a deck costs one parse and is dropped.
-		n := deck.Count(source)
-		if n == 0 {
-			return nil
-		}
 		rel, relErr := filepath.Rel(root, path)
 		if relErr != nil {
 			return nil
 		}
-		out = append(out, Deck{
-			Path:      filepath.ToSlash(rel),
-			Name:      entry.Name(),
-			Slides:    n,
-			SessionID: sessionOfOutputPath(base, path),
-			Modified:  info.ModTime().Format(time.RFC3339),
+		out = append(out, deckFile{
+			full:     path,
+			rel:      filepath.ToSlash(rel),
+			name:     entry.Name(),
+			session:  sessionOfOutputPath(base, path),
+			modified: info.ModTime(),
 		})
 		return nil
 	})
-
-	sort.Slice(out, func(i, j int) bool { return out[i].Modified > out[j].Modified })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].modified.Equal(out[j].modified) {
+			return out[i].rel < out[j].rel
+		}
+		return out[i].modified.After(out[j].modified)
+	})
 	return out
+}
+
+// candidatesWithin cuts the walk down to one range before anything is opened.
+//
+// The cutoff comes from rangeCutoff, which within() uses for ผลงาน, so the line
+// between "this week" and older is drawn once for both rooms and for the day
+// headings the rows are then grouped under.
+func candidatesWithin(all []deckFile, name string) []deckFile {
+	cutoff, bounded := rangeCutoff(name)
+	if !bounded {
+		return all
+	}
+	out := make([]deckFile, 0, len(all))
+	for _, c := range all {
+		if !c.modified.Before(cutoff) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// ListDecks returns every deck in this workspace, for a caller that wants the
+// whole list and is prepared to pay for it.
+func (a *App) ListDecks() []Deck { return a.ListDecksIn(RangeAll).Decks }
+
+// ListDecksIn returns the decks inside one time range, newest first.
+//
+// Scoped to the open workspace rather than to every root the gallery sweeps,
+// and that is the file-host constraint above rather than a product decision:
+// a deck from another project cannot be rendered here, so offering it would be
+// a row that opens onto nothing.
+//
+// **A range rather than everything**, which is ผลงาน's shape (artifacts.go) and
+// matters more here than it does there. A row in the gallery costs a readdir
+// entry and a stat; a row here costs the whole file read and parsed. The room
+// reloads on every `agent:done` while it is open, so listing without a bound
+// charged a full read of every deck the workspace had ever produced to every
+// turn that finished — a cost with no ceiling, growing fastest for whoever uses
+// the feature most. A week of decks is what the room opens on now.
+//
+// **It widens when the range it was given is empty**, on the deck count and not
+// on the candidate count: a week holding three .html files that turn out to be
+// web pages is an empty week, and a room that answered it with nothing would be
+// indistinguishable from the feature being broken. Range comes back saying
+// which one answered, so the picker can keep telling the truth.
+//
+// **No cap on top of the range.** ผลงาน has one because its rows are cheap
+// enough to sweep in full and the cap is a backstop on drawing; here a cap
+// would have to be applied before the reads to save anything, and a count taken
+// before the reads counts .html files rather than decks. So the range is the
+// only bound, Total is exactly how many decks are in it, and "ทั้งหมด" costs
+// what it says it costs — asked for by name, not paid by default.
+func (a *App) ListDecksIn(want string) DeckPage {
+	root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
+	if root == "" {
+		// No project open reads as no decks, which is the truth about it. The
+		// unfocused workspace has its own SandboxRoot when it is the one open,
+		// so this is genuinely "nowhere to look" rather than a missed case.
+		return DeckPage{Decks: []Deck{}, Range: RangeAll}
+	}
+
+	candidates := deckCandidates(root)
+	// Memo across the widening chain. A week that turns out to be empty falls
+	// through to the month, and without this the files it already opened would
+	// be opened again on the way past.
+	read := map[string]*Deck{}
+	rows := func(in []deckFile) []Deck {
+		out := []Deck{}
+		for _, c := range in {
+			d, done := read[c.rel]
+			if !done {
+				d = readDeckRow(c)
+				read[c.rel] = d
+			}
+			if d != nil {
+				out = append(out, *d)
+			}
+		}
+		return out
+	}
+
+	for _, name := range widenFrom(want) {
+		found := rows(candidatesWithin(candidates, name))
+		if len(found) == 0 && name != RangeAll {
+			continue
+		}
+		return DeckPage{Decks: found, Range: name, Total: len(found)}
+	}
+	return DeckPage{Decks: []Deck{}, Range: RangeAll}
+}
+
+// readDeckRow opens one candidate and returns its row, or nil if the file is
+// not a deck. nil rather than a zero Deck because the caller remembers the
+// answer, and "already looked, it is not one" has to be tellable from "not
+// looked at yet".
+func readDeckRow(c deckFile) *Deck {
+	source, err := os.ReadFile(c.full)
+	if err != nil {
+		return nil
+	}
+	// The marker is counted rather than matched, so the row can say how many
+	// slides are in there without the caller opening it. A page that is not a
+	// deck costs one parse and is dropped.
+	n := deck.Count(source)
+	if n == 0 {
+		return nil
+	}
+	return &Deck{
+		Path:      c.rel,
+		Name:      c.name,
+		Slides:    n,
+		SessionID: c.session,
+		Modified:  c.modified.Format(time.RFC3339),
+	}
 }
 
 // fileURLForPath turns an absolute OS path into a file:// URL.
