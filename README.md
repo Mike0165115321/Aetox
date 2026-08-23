@@ -434,9 +434,9 @@ date-stamped, because the rule above does not have an exception for numbers we w
 
 </details>
 
-## Status — v1.5.5
+## Status — v1.5.6
 
-The core is in place. [Release notes](docs/release-notes/v1.5.3.md) ·
+The core is in place. [Release notes](docs/release-notes/v1.5.6.md) ·
 [roadmap](ROADMAP.md) · [architecture](ARCHITECTURE.md).
 
 Three things it does today that are worth knowing about:
