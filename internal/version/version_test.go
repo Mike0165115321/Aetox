@@ -66,6 +66,10 @@ func TestScoopManifestCarriesCurrent(t *testing.T) {
 func TestPublishedDocsCarryCurrent(t *testing.T) {
 	for _, c := range []struct{ file, marker, what string }{
 		{"README.md", "## Status — v" + Current, "status heading"},
+		// The Thai README sat four releases behind before it joined this list
+		// (v1.1.0 while the app shipped v1.5.2) — a translation is still a
+		// place a reader is told which release this is.
+		{"README.th.md", "## สถานะ — v" + Current, "status heading"},
 		{"docs/index.html", ">v" + Current + " · Windows<", "version badge"},
 	} {
 		if !strings.Contains(repoFile(t, c.file), c.marker) {

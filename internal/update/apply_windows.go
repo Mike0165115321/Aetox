@@ -55,6 +55,12 @@ func runHiddenPS(script string) error {
 	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive",
 		"-WindowStyle", "Hidden", "-EncodedCommand", encodePS(script))
 	proc.HideConsole(cmd)
+	// Breakaway is what makes the line above true, not just intended: every
+	// child normally joins the app's KILL_ON_JOB_CLOSE job, and a waiter
+	// inside the job is killed by the OS at the exact moment Wait-Process
+	// would have returned — the installer never runs, the app never comes
+	// back, and the whole thing looks like the update simply didn't happen.
+	proc.Breakaway(cmd)
 	// Start, never Run: this process is about to exit, and the waiter's whole
 	// job begins at that moment.
 	return cmd.Start()

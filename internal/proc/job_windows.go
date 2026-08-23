@@ -24,7 +24,12 @@ func KillTreeOnExit() bool {
 	}
 	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{
 		BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{
-			LimitFlags: windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+			// BREAKAWAY_OK does not exempt anyone by itself — a child leaves
+			// the job only if its spawn site also asks with Breakaway. One
+			// site does: the update waiter, which exists precisely to outlive
+			// this process. Everything else still dies with the app.
+			LimitFlags: windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE |
+				windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK,
 		},
 	}
 	if _, err := windows.SetInformationJobObject(
