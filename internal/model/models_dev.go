@@ -84,16 +84,77 @@ type ModelFacts struct {
 	Price     ModelPrice `json:"price"`
 	Context   int        `json:"context"`
 	MaxOutput int        `json:"maxOutput"`
-	// ToolCall and TextOut are carried only so DefaultFor can tell a chat model
-	// from the rest of a provider's shelf. Without them the rule picked Groq's
-	// llama-prompt-guard (a safety classifier) and Qwen's asr-flash (speech
-	// recognition), because both are cheap and neither can hold a conversation.
-	// An agent needs tools; a model that cannot call one is not a candidate.
+	// Input and Output are the modalities this model takes and produces, in
+	// the catalog's own vocabulary: text, image, pdf, audio, video.
+	//
+	// Lists rather than a boolean per modality, which is the shape opencode
+	// settled on and the reason to copy it: audio, video and pdf are already in
+	// the table (591, 1,007 and 1,608 models), so every boolean added here
+	// would have been a fifth ResolveX function to write, a fifth fallback
+	// philosophy to invent, and a fifth place for the answer to drift.
+	//
+	// This replaced `ImageIn bool` and `TextOut bool`, which were the same fact
+	// spelled twice in one struct.
+	//
+	// It was the last thing in this struct's neighbourhood to be answered by a
+	// hand-written list. visionModelMarkers matched substrings of the model id
+	// ("gpt-4o", "claude-3", "sonnet", "vision"), which works right up until a
+	// company names a sighted model something the list never anticipated:
+	// measured 2026-08-23, that list called 13 of opencode-go's 28 models blind
+	// when they can see, 18 of 93 on opencode and 99 of 360 on openrouter. The
+	// owner met it as a screenshot going to image_ocr instead of to qwen3.7-plus,
+	// which takes text, image and video.
+	//
+	// The galling part is that this was never missing data. `modalities` was
+	// already parsed here and only its Output half was read.
+	Input  []string `json:"input,omitempty"`
+	Output []string `json:"output,omitempty"`
+	// ToolCall is carried, with Output above, so DefaultFor can tell a chat
+	// model from the rest of a provider's shelf. Without them the rule picked
+	// Groq's llama-prompt-guard (a safety classifier) and Qwen's asr-flash
+	// (speech recognition), because both are cheap and neither can hold a
+	// conversation. An agent needs tools; a model that cannot call one is not a
+	// candidate.
 	ToolCall bool `json:"toolCall"`
-	TextOut  bool `json:"textOut"`
 	// Released is the vendor's date for the model, used to prefer something
 	// current over something merely cheap. Empty when the catalog omits it.
 	Released string `json:"released"`
+	// NoTemperature is set only where the catalog states outright that the
+	// model refuses a temperature. Written in the negative on purpose: 475 of
+	// the 7,248 models it describes omit the field entirely, and a plain
+	// `Temperature bool` would read every one of those absences as a refusal
+	// and strip a setting those models accept. Absent stays false here, the
+	// temperature is sent, and temperatureRefused is what catches a model the
+	// catalog was silent or wrong about.
+	NoTemperature bool `json:"noTemperature"`
+	// ReasoningToggle is whether the thinking can be switched off, and
+	// ReasoningLevels are the effort rungs the model accepts, shallowest first.
+	//
+	// Separate fields because a model can have either, both or neither:
+	// deepseek-v4-flash carries a toggle AND [low, high, max], claude-opus-5
+	// carries the rungs with no way to stop it, kimi-k2.6 is a plain on/off.
+	// One field would have to invent a rung for the toggle-only case and lose
+	// the off position on the models that have both.
+	//
+	// Only openrouter reads these today. The other nine providers still answer
+	// from the prefix tables in thinking_capabilities.go, on purpose: those are
+	// one company per row, where a table ages slowly, and each carries measured
+	// decisions worth moving one at a time rather than in one sweep.
+	ReasoningToggle bool     `json:"reasoningToggle"`
+	ReasoningLevels []string `json:"reasoningLevels,omitempty"`
+	// Reasoning is whether the model has a thinking dial at all.
+	//
+	// Read per model rather than per provider because of the gateways: one
+	// OpenCode base URL serves 64 ids from nine vendors, and 88 of the 93 the
+	// catalog describes reason while the rest do not. The alternative is the
+	// shape `openrouter` still uses — a list of model ids compiled by hand,
+	// which for a gateway is nine companies' release schedules copied into
+	// this repo and wrong the week any of them ships.
+	//
+	// False on a catalog file written before this field existed, which reads
+	// as "no dial" until the next refresh. That is the safe direction: a
+	// missing menu is recoverable, a menu whose levels go nowhere is not.
+	Reasoning bool `json:"reasoning"`
 }
 
 // ModelCatalog is the distilled table plus the moment it was fetched.
@@ -183,11 +244,38 @@ func (c *ModelCatalog) ForModel(modelName string) (ModelFacts, bool) {
 			found, seen = facts, true
 			continue
 		}
-		if facts != found {
+		if !sameFacts(facts, found) {
 			return ModelFacts{}, false // several providers, several answers
 		}
 	}
 	return found, seen
+}
+
+// sameFacts is == written out, because ModelFacts carries a slice now and Go
+// will not compare a struct that does. Spelled out rather than reflect.DeepEqual
+// so that adding a field is a compile error here instead of a silent change to
+// the "several providers disagree" rule above.
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func sameFacts(a, b ModelFacts) bool {
+	if a.Price != b.Price || a.Context != b.Context || a.MaxOutput != b.MaxOutput ||
+		a.ToolCall != b.ToolCall || a.Released != b.Released ||
+		a.NoTemperature != b.NoTemperature || a.Reasoning != b.Reasoning ||
+		a.ReasoningToggle != b.ReasoningToggle {
+		return false
+	}
+	return sameStrings(a.ReasoningLevels, b.ReasoningLevels) &&
+		sameStrings(a.Input, b.Input) && sameStrings(a.Output, b.Output)
 }
 
 // DefaultFor picks a provider's cold-start model out of the catalog.
@@ -243,7 +331,7 @@ func (c *ModelCatalog) DefaultFor(providerName string) string {
 		if !strings.HasPrefix(key, prefix) {
 			continue
 		}
-		if !facts.TextOut || facts.Price.Input <= 0 || facts.Price.Output <= 0 || facts.Context <= 0 {
+		if !facts.Produces("text") || facts.Price.Input <= 0 || facts.Price.Output <= 0 || facts.Context <= 0 {
 			continue
 		}
 		pool = append(pool, candidate{strings.TrimPrefix(key, prefix), facts})
@@ -341,6 +429,22 @@ func SetModelCatalog(c *ModelCatalog) {
 	installedCatalog = c
 }
 
+// catalogRefusesTemperature reports whether the installed catalog states that
+// this model rejects a temperature.
+//
+// It exists so the first attempt is already correct on a model that is known to
+// refuse one, rather than spending a round trip to be told. The replay in
+// openai_compatible.go stays regardless: this table is a third party's, and the
+// `nvidia` row is the standing proof that it can be wrong about an endpoint
+// (43 of 100 ids). Measured refusal outranks it; this only saves the first hit.
+func catalogRefusesTemperature(provider, modelName string) bool {
+	installedCatalogMu.RLock()
+	c := installedCatalog
+	installedCatalogMu.RUnlock()
+	facts, ok := c.For(provider, modelName)
+	return ok && facts.NoTemperature
+}
+
 // catalogContextWindow reports the window the installed catalog states, or 0.
 func catalogContextWindow(provider, modelName string) int {
 	installedCatalogMu.RLock()
@@ -366,7 +470,13 @@ type modelsDevDocument map[string]struct {
 			Context int `json:"context"`
 			Output  int `json:"output"`
 		} `json:"limit"`
-		ToolCall   bool `json:"tool_call"`
+		ToolCall         bool  `json:"tool_call"`
+		Reasoning        bool  `json:"reasoning"`
+		Temperature      *bool `json:"temperature"`
+		ReasoningOptions []struct {
+			Type   string   `json:"type"`
+			Values []string `json:"values"`
+		} `json:"reasoning_options"`
 		Modalities *struct {
 			Input  []string `json:"input"`
 			Output []string `json:"output"`
@@ -401,12 +511,26 @@ func distill(raw []byte, now time.Time) (*ModelCatalog, error) {
 				facts.Context, facts.MaxOutput = m.Limit.Context, m.Limit.Output
 			}
 			facts.ToolCall, facts.Released = m.ToolCall, m.ReleaseDate
-			if m.Modalities != nil {
-				for _, out := range m.Modalities.Output {
-					if out == "text" {
-						facts.TextOut = true
+			facts.Reasoning = m.Reasoning
+			facts.NoTemperature = m.Temperature != nil && !*m.Temperature
+			for _, opt := range m.ReasoningOptions {
+				switch opt.Type {
+				case "toggle":
+					facts.ReasoningToggle = true
+				case "effort":
+					for _, v := range opt.Values {
+						if knownThinkingLevel(v) {
+							facts.ReasoningLevels = append(facts.ReasoningLevels, v)
+						}
 					}
 				}
+				// "budget_tokens" is read and dropped: no runtime here can put
+				// a token budget on the wire, so storing it would be storing a
+				// control nothing can draw.
+			}
+			if m.Modalities != nil {
+				facts.Input = knownModalities(m.Modalities.Input)
+				facts.Output = knownModalities(m.Modalities.Output)
 			}
 			// A row stating neither a price nor a window says nothing worth
 			// storing, and keeping it would make "known to the catalog" mean
@@ -497,6 +621,34 @@ func FetchModelCatalog(ctx context.Context, endpoint string) (*ModelCatalog, err
 		return nil, err
 	}
 	return distill(raw, time.Now())
+}
+
+// InstallCachedCatalog reads the cached table off disk and installs it, so that
+// everything asking what a model can do has an answer before the first turn.
+//
+// It exists because that was not true and nobody noticed until the CLI went
+// red. Capabilities are resolved from this catalog now — thinking depths,
+// vision, documents, tool calling — and with none installed every one of them
+// is "unknown", which is the honest answer and the wrong one to ship: the
+// desktop happened to install a catalog only when its usage panel ran, and the
+// CLI never installed one at all, so a user's thinking picker existed or did
+// not depending on which screen they had opened.
+//
+// Deliberately silent and networkless. A missing cache is a first run, not a
+// failure, and the fetch belongs to RefreshModelCatalog on its own schedule —
+// startup must not wait on models.dev.
+//
+// One function rather than four lines at each entry point, because two entry
+// points spelling the same startup step differently is how they drift.
+func InstallCachedCatalog(dataRoot string) {
+	if strings.TrimSpace(dataRoot) == "" {
+		return
+	}
+	catalog, err := LoadModelCatalog(dataRoot)
+	if err != nil || catalog == nil || len(catalog.Models) == 0 {
+		return
+	}
+	SetModelCatalog(catalog)
 }
 
 // RefreshModelCatalog fetches, stores, and installs, returning what is now

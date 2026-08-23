@@ -103,16 +103,18 @@ outside the primitive layer is the defect this system exists to prevent, and
 
 ## Slide System
 
-Brand-compliant presentations using design tokens + Chart.js + contextual decision system.
+Brand-compliant presentations: design tokens, a contextual decision system, and
+charts drawn by whatever already travels inside the file.
 
-### Source of Truth
+### There is no stylesheet to import
 
-| File | Purpose |
-|------|---------|
-| `docs/brand-guidelines.md` | Brand identity, voice, colors |
-| `assets/design-tokens.json` | Token definitions (primitive→semantic→component) |
-| `assets/design-tokens.css` | CSS variables (import in slides) |
-| `assets/css/slide-animations.css` | CSS animation library |
+A deck in Aetox is one self-contained `.html` file — nothing is linked in beside
+it, so every token and every `@keyframes` a slide uses is written into that
+file. The rows below name what a slide should *be*; you write the CSS that makes
+it so. `animation_class` in particular is the entrance a layout wants, not a
+class waiting in a library: read it as the intent, spell it however the deck
+spells everything else, and follow the resting-state rule in `aetox-slides` so
+it survives the export.
 
 ### Reading the decision tables
 
@@ -137,7 +139,7 @@ where those facts live; this skill decides what goes *on* the slides.
 | `data/slide-color-logic.csv` | Emotion → Color treatment |
 | `data/slide-backgrounds.csv` | Slide type → Image category (Pexels/Unsplash) |
 | `data/slide-copy.csv` | 25 copywriting formulas (PAS, AIDA, FAB) |
-| `data/slide-charts.csv` | 25 chart types with Chart.js config |
+| `data/slide-charts.csv` | 25 chart types, each with a CSS/SVG route and a library route |
 
 ### Contextual Decision Flow
 
@@ -167,38 +169,22 @@ Premium decks alternate between emotions for engagement:
 
 System calculates pattern breaks at 1/3 and 2/3 positions.
 
-### Slide Requirements
+### What every slide owes the room
 
-**ALL slides MUST:**
-1. Import `assets/design-tokens.css` - single source of truth
-2. Use CSS variables: `var(--color-primary)`, `var(--slide-bg)`, etc.
-3. Use Chart.js for charts (NOT CSS-only bars)
-4. Include navigation (keyboard arrows, click, progress bar)
-5. Center align content
-6. Focus on persuasion/conversion
-
-### Chart.js Integration
-
-```html
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-
-<canvas id="revenueChart"></canvas>
-<script>
-new Chart(document.getElementById('revenueChart'), {
-    type: 'line',
-    data: {
-        labels: ['Sep', 'Oct', 'Nov', 'Dec'],
-        datasets: [{
-            data: [5, 12, 28, 45],
-            borderColor: '#FF6B6B',  // Use brand coral
-            backgroundColor: 'rgba(255, 107, 107, 0.1)',
-            fill: true,
-            tension: 0.4
-        }]
-    }
-});
-</script>
-```
+1. **Its own tokens.** A deck is one self-contained file, so the CSS variables
+   go in its `<style>` block. There is nothing to import.
+2. **Variables rather than literal colours**, so changing the accent is one edit
+   and not twenty.
+3. **A chart drawn by something already inside the file.** The export prints
+   without waiting for a third-party host, so a chart drawn by a library fetched
+   from a CDN can come out blank. Carry the library into the file, or draw the
+   chart in CSS or SVG. The `css_implementation` column names a route of each
+   kind for most rows — either one satisfies this, and the choice is yours.
+4. **Nothing of its own for navigation.** The room already pages, presents
+   full-screen and exports. A deck that brings its own controls puts two sets in
+   one frame and only the room's survives an export.
+5. **Left-aligned paragraphs and lists.** Centre titles and single statements;
+   centring a paragraph costs the reader the left edge they scan down.
 
 ### Token Compliance
 

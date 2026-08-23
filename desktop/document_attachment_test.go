@@ -33,6 +33,26 @@ func newDocumentApp(t *testing.T, provider, modelName string, size int) *App {
 	}}, newConversation())
 }
 
+// anthropic and openai used to sit in the "leave it on pdf_read" list below,
+// with the note "reads PDFs, but the wire shape is unverified here". Both now
+// send the file itself: Anthropic's document block comes from Anthropic's own
+// API reference and the openai-compatible file part from the AI SDK's chat
+// converter, and a gateway that still refuses one costs a single extra call
+// before landing back on pdf_read (documentPartRefused, internal/model).
+func TestDocumentAttachmentsSendsThePDFToEveryEndpointThatCarriesOne(t *testing.T) {
+	for _, tc := range []struct{ provider, model string }{
+		{"codex", "gpt-5.5"},
+		{"anthropic", "claude-sonnet-5"},
+		{"openai", "gpt-4o"},
+	} {
+		app := newDocumentApp(t, tc.provider, tc.model, 64)
+		_, docs := app.documentAttachments("summarise this" + composerDocLine)
+		if len(docs) != 1 {
+			t.Errorf("%s/%s attached %d documents, want the file itself", tc.provider, tc.model, len(docs))
+		}
+	}
+}
+
 func TestDocumentAttachmentsSendsThePDFToAModelThatReads(t *testing.T) {
 	app := newDocumentApp(t, "codex", "gpt-5.5", 64)
 
@@ -64,9 +84,13 @@ func TestDocumentAttachmentsSendsThePDFToAModelThatReads(t *testing.T) {
 // cannot take a file — so nothing about it may change.
 func TestDocumentAttachmentsLeavesOtherModelsOnPDFRead(t *testing.T) {
 	for _, tc := range []struct{ provider, model string }{
-		{"anthropic", "claude-sonnet-5"}, // reads PDFs, but the wire shape is unverified here
-		{"openai", "gpt-4o"},
+		// Ollama's native API has no file part at all, and a model somebody
+		// pulled onto their own GPU is described by no catalog either — so this
+		// row is not "unproven", it is the case the fallback exists for.
 		{"ollama", "llava:13b"},
+		{"lmstudio", "some-local-build"},
+		// A model that cannot look at a page cannot read a document.
+		{"codex", "codex-auto-review"},
 	} {
 		app := newDocumentApp(t, tc.provider, tc.model, 64)
 		original := "summarise this" + composerDocLine

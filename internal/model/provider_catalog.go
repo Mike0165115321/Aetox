@@ -277,7 +277,7 @@ func usableFirst(providerName string, models []string) []string {
 	rest := make([]string, 0, len(models))
 	for _, id := range models {
 		facts, ok := c.For(providerName, id)
-		if ok && facts.ToolCall && facts.TextOut {
+		if ok && facts.ToolCall && facts.Produces("text") {
 			vouched = append(vouched, id)
 			continue
 		}

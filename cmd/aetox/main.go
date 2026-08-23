@@ -100,6 +100,15 @@ func main() {
 		os.Exit(code)
 	}
 
+	// Install the cached model table before anything asks what a model can do.
+	// Thinking depths, vision, documents and tool calling are all resolved from
+	// it, and with none installed every answer is "unknown" — which is how the
+	// CLI came to report no thinking level at all for a model that has one.
+	// Reads a file, never the network: the fetch is RefreshModelCatalog's job.
+	if root, err := config.DataRoot(); err == nil {
+		model.InstallCachedCatalog(root)
+	}
+
 	providerUsageHint := "model provider (" + strings.Join(model.SupportedProviders(), "|") + ")"
 
 	var rootPath string
@@ -374,8 +383,8 @@ func main() {
 		ShellRoot:   cfg.SandboxRoot,
 		ShellChoice: shells,
 		Title:       "Aetox CLI",
-		Version:  version.Current,
-		UserInfo: resolveDisplayUser(),
+		Version:     version.Current,
+		UserInfo:    resolveDisplayUser(),
 		ModelStatus: resolveModelStatus(config.Config{
 			ModelProvider: modelProvider,
 			ModelName:     currentConfig.ModelName,

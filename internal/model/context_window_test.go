@@ -17,7 +17,11 @@ import "testing"
 // filing codex under openai there would inherit OpenAI's per-token rates onto a
 // flat monthly plan. The window travels; the price must not.
 func TestCodexResolvesOpenAIsWindowsWithoutInheritingItsPrices(t *testing.T) {
-	t.Cleanup(func() { SetModelCatalog(nil) })
+	// Restore what was installed, not nil. TestMain seeds a catalog for the
+	// package now, and a cleanup that wipes it leaves every test running
+	// after this one in a world with none.
+	prev := installedCatalog
+	t.Cleanup(func() { SetModelCatalog(prev) })
 	SetModelCatalog(nil)
 
 	// Curated tables alone: whatever openai answers, codex answers.
@@ -51,6 +55,18 @@ func TestCodexResolvesOpenAIsWindowsWithoutInheritingItsPrices(t *testing.T) {
 }
 
 func TestContextWindowTokensCuratedModels(t *testing.T) {
+	// These are the CURATED tables, which only answer when the fetched catalog
+	// does not. TestMain seeds a catalog for the package, and the catalog wins
+	// by design — so this test has to say which of the two worlds it is in
+	// rather than depending on which one it happened to get.
+	//
+	// It matters more than it reads: with the catalog installed, deepseek-chat
+	// answers 1,000,000 here instead of the 128,000 written below, because the
+	// table is older than the model. That is the catalog doing its job.
+	prev := installedCatalog
+	t.Cleanup(func() { SetModelCatalog(prev) })
+	SetModelCatalog(nil)
+
 	cases := []struct {
 		provider string
 		model    string

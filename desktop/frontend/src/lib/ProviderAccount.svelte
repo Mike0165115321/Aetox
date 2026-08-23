@@ -109,8 +109,15 @@
 
     {#if !compact}
       {#if quotas.length}
-        <!-- Never presented as live: this is whatever the last real turn said. -->
-        <div class="acct-stamp">{t('account.fromLastTurn', { time: clock(quotas[0].observedAt) })}</div>
+        <!-- Never presented as live. Which sentence depends on where the
+             numbers came from: a header dialect overhears them on a turn that
+             happened, while OpenRouter and OpenCode Go are asked outright and
+             can answer before any turn exists. -->
+        <div class="acct-stamp">
+          {account.quotaFetched
+            ? t('account.quotaAsOf', { time: clock(quotas[0].observedAt) })
+            : t('account.fromLastTurn', { time: clock(quotas[0].observedAt) })}
+        </div>
       {/if}
       {#if hasMoney}
         <div class="acct-stamp">{t('account.fetchedAt', { time: clock(balance.fetchedAt) })}</div>

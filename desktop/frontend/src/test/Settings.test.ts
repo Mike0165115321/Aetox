@@ -12,7 +12,7 @@ import {
   AgentSkills, AgentNeeds, PlacementTargets, SetMCPServerTargets,
   ChairStarters, SaveChairStarters,
   Connections, ConnectAccount, SetConnectionTargets, VerifyConnection, DisconnectAccount,
-  AcceptsAPIKey, ProviderAPIKeyURL, ProviderReady, PriceModels, TestProviderConnection,
+  AcceptsAPIKey, APIKeyHint, HasAPIKey, ProviderAPIKeyURL, ProviderReady, PriceModels, TestProviderConnection,
 } from './mocks/wailsApp'
 import { BrowserOpenURL } from './mocks/wailsRuntime'
 import { applyTypeScale } from '../lib/typeScale.svelte'
@@ -1356,6 +1356,49 @@ describe('Settings pages', () => {
     })
     await fireEvent.click(link)
     expect(vi.mocked(BrowserOpenURL)).toHaveBeenCalledWith('https://aistudio.google.com/apikey')
+  })
+
+  // Once a key was saved the field went blank and the placeholder said only
+  // "already set", which is true of every row that has one. Two providers from
+  // the same account (opencode / opencode-go) made that a real problem: a key
+  // pasted into the wrong row looked exactly like a key pasted into the right
+  // one, and the only way to tell was to spend a turn.
+  it('a saved key shows its masked tail so the field is not blank', async () => {
+    seedSignIn({ provider: 'opencode', label: 'OpenCode', kind: 'browser' })
+    vi.mocked(AcceptsAPIKey).mockResolvedValue(true as any)
+    vi.mocked(HasAPIKey).mockResolvedValue(true as any)
+    vi.mocked(APIKeyHint).mockResolvedValue('••••a3f9' as any)
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การตั้งค่าโมเดล')
+
+    const field = await waitFor(() => {
+      const el = container.querySelector('input[type="password"].key-input') as HTMLInputElement
+      if (!el) throw new Error('no key field')
+      return el
+    })
+    expect(field.placeholder).toContain('••••a3f9')
+  })
+
+  // The hint is the only thing that changes the sentence. A backend that
+  // cannot produce one — a signed-in provider, or a key too short to reveal
+  // four of safely — must fall back to the plain wording rather than print an
+  // empty pair of separators.
+  it('a saved key with no hint keeps the plain already-set wording', async () => {
+    seedSignIn({ provider: 'opencode', label: 'OpenCode', kind: 'browser' })
+    vi.mocked(AcceptsAPIKey).mockResolvedValue(true as any)
+    vi.mocked(HasAPIKey).mockResolvedValue(true as any)
+    vi.mocked(APIKeyHint).mockResolvedValue('' as any)
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การตั้งค่าโมเดล')
+
+    const field = await waitFor(() => {
+      const el = container.querySelector('input[type="password"].key-input') as HTMLInputElement
+      if (!el) throw new Error('no key field')
+      return el
+    })
+    expect(field.placeholder).toBe('ตั้งค่าแล้ว วางคีย์ใหม่เพื่อแทนที่')
   })
 
   // A local runtime has no account and a sign-in provider has no key to issue.

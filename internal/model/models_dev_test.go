@@ -247,6 +247,14 @@ func TestLoadModelCatalogIsSilentWhenThereIsNothingGood(t *testing.T) {
 // A refresh that cannot reach the network must leave the user with the prices
 // they already had, not with none.
 func TestRefreshFallsBackToTheCachedTable(t *testing.T) {
+	// RefreshModelCatalog INSTALLS what it resolves — that is its job — so this
+	// test replaces the package catalog as a side effect and has to put it
+	// back. It was harmless while nothing read the installed catalog; once
+	// TestMain began seeding one, every test ordered after this one silently
+	// ran against the cached fixture this test wrote instead.
+	prev := installedCatalog
+	t.Cleanup(func() { SetModelCatalog(prev) })
+
 	dir := t.TempDir()
 	if err := SaveModelCatalog(dir, fixtureCatalog(t)); err != nil {
 		t.Fatal(err)
@@ -295,7 +303,11 @@ func writeFileForTest(path, content string) error {
 //
 // Installed state is global, so every case here restores it.
 func TestContextWindowPrefersTheCatalogAndFallsBackToTheTables(t *testing.T) {
-	t.Cleanup(func() { SetModelCatalog(nil) })
+	// Restore what was installed, not nil. TestMain seeds a catalog for the
+	// package now, and a cleanup that wipes it leaves every test running
+	// after this one in a world with none.
+	prev := installedCatalog
+	t.Cleanup(func() { SetModelCatalog(prev) })
 
 	// Nothing installed: exactly the behaviour that shipped before this.
 	SetModelCatalog(nil)
@@ -340,28 +352,28 @@ func TestDefaultForPicksTheCheapCurrentWorkhorse(t *testing.T) {
 		// The flagship: newest, but nobody's sensible cold-start default.
 		"acme/acme-max-2": {
 			Price: ModelPrice{Input: 9, Output: 30}, Context: 200_000,
-			ToolCall: true, TextOut: true, Released: "2026-08-01",
+			ToolCall: true, Output: []string{"text"}, Released: "2026-08-01",
 		},
 		// The small current model beside it. This is the answer.
 		"acme/acme-flash-2": {
 			Price: ModelPrice{Input: 0.2, Output: 0.8}, Context: 200_000,
-			ToolCall: true, TextOut: true, Released: "2026-07-20",
+			ToolCall: true, Output: []string{"text"}, Released: "2026-07-20",
 		},
 		// Cheaper still, but two generations old — the leftovers a price-only
 		// rule reaches for.
 		"acme/acme-tiny-1": {
 			Price: ModelPrice{Input: 0.01, Output: 0.02}, Context: 8_000,
-			ToolCall: true, TextOut: true, Released: "2023-01-01",
+			ToolCall: true, Output: []string{"text"}, Released: "2023-01-01",
 		},
 		// Cheapest of all and useless: a classifier that cannot call a tool.
 		"acme/acme-guard": {
 			Price: ModelPrice{Input: 0.001, Output: 0.002}, Context: 8_000,
-			ToolCall: false, TextOut: true, Released: "2026-07-25",
+			ToolCall: false, Output: []string{"text"}, Released: "2026-07-25",
 		},
 		// An embedding model: no output price at all.
 		"acme/acme-embed": {
 			Price: ModelPrice{Input: 0.01}, Context: 8_000,
-			ToolCall: true, TextOut: true, Released: "2026-07-25",
+			ToolCall: true, Output: []string{"text"}, Released: "2026-07-25",
 		},
 	}}
 	if got := catalog.DefaultFor("acme"); got != "acme-flash-2" {
@@ -376,11 +388,11 @@ func TestDefaultForRelaxesToolCallingWhenNobodyOffersIt(t *testing.T) {
 	catalog := &ModelCatalog{Models: map[string]ModelFacts{
 		"search-co/search-basic": {
 			Price: ModelPrice{Input: 1, Output: 1}, Context: 128_000,
-			ToolCall: false, TextOut: true, Released: "2026-05-01",
+			ToolCall: false, Output: []string{"text"}, Released: "2026-05-01",
 		},
 		"search-co/search-deep": {
 			Price: ModelPrice{Input: 2, Output: 8}, Context: 128_000,
-			ToolCall: false, TextOut: true, Released: "2026-05-01",
+			ToolCall: false, Output: []string{"text"}, Released: "2026-05-01",
 		},
 	}}
 	if got := catalog.DefaultFor("search-co"); got != "search-basic" {

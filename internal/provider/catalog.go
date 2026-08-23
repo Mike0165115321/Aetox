@@ -105,7 +105,26 @@ const (
 	// QuotaOpenRouter: returned as JSON by GET /key alongside the credits,
 	// so this is the one quota that can be fetched on demand.
 	QuotaOpenRouter QuotaSource = "openrouter"
+	// QuotaOpencodeGo: GET /zen/go/v1/usage, which answers all three of the
+	// plan's windows at once. Fetched rather than read off headers — the
+	// gateway sends no x-ratelimit-* family at all (measured 2026-08-23), and
+	// the plan it bills against is stated nowhere else on the wire.
+	QuotaOpencodeGo QuotaSource = "opencode-go"
 )
+
+// Fetched separates the two kinds of quota this registry names.
+//
+// Most sources are a header dialect: the window rides along on turns that were
+// going to happen anyway, so nothing is spent to learn it. These two are an
+// endpoint that has to be asked, which is why the balance path (which already
+// makes a request per card) carries them instead of NoteQuotas.
+//
+// It lives here rather than as a list in internal/model because it is a fact
+// about the provider, and a second copy over there could disagree with this
+// one about a row — the exact shape of debt this package exists to prevent.
+func (q QuotaSource) Fetched() bool {
+	return q == QuotaOpenRouter || q == QuotaOpencodeGo
+}
 
 // Spec is the canonical metadata for one supported provider.
 type Spec struct {
@@ -722,6 +741,102 @@ var catalog = map[string]*entry{
 		// reasoning is baked into the checkpoint, and Ollama's OpenAI-compatible
 		// surface documents no effort field to turn it with.
 		capabilities: Capabilities{ToolCalling: true},
+	},
+	// OpenCode Zen, and the first row Aetox has that is a *gateway* rather than
+	// a lab: one account and one key reaching Anthropic, OpenAI, Google, xAI,
+	// DeepSeek, Z.ai, MiniMax, Moonshot and Alibaba through a single endpoint.
+	// The draw is not any one model, it is not having to hold nine bills.
+	//
+	// Measured from this machine on 2026-08-23, not read off the docs:
+	// GET /zen/v1/models answers 200 with no token at all and lists 93 ids;
+	// POST /zen/v1/chat/completions answers 401 without one. So the standard
+	// bearer header is read and nothing is geo-walled from a Thai IP.
+	//
+	// Worth writing down because it is the one thing here that is not standard:
+	// the error body is Anthropic's envelope
+	// (`{"type":"error","error":{"type":"AuthError","message":"Invalid API key."}}`)
+	// served as text/plain, on an endpoint that is otherwise OpenAI's in every
+	// other respect. If a bad key ever surfaces in the UI as a blank reason
+	// rather than a sentence, that mismatch is where to look first.
+	//
+	// On the question a gateway always raises — whether pointing a third-party
+	// client at it is allowed: opencode publishes these endpoints in its own
+	// documentation and states the goal as "no lock-in by allowing you to use
+	// it with any other coding agent". This is nothing like the ChatGPT/Claude
+	// subscription rows, which are reached by impersonating somebody's CLI.
+	// Here a key issued for API use is sent to a URL its owner printed.
+	"opencode": {
+		canonical: "opencode",
+		// Prepaid credits that only their own dashboard can total. There is no
+		// balance endpoint documented and none found; BalanceMoney would put a
+		// figure on a card that nothing can ever fill.
+		balanceKind: BalanceWebOnly,
+		// QuotaNone, measured the same way gemini's correction was: the 401
+		// carries six headers and not one of them is x-ratelimit-*. If an
+		// authenticated 200 turns out to send them, this becomes
+		// QuotaOpenAIStd and the UI gains a window for free.
+		quotaSource:    QuotaNone,
+		aliases:        []string{"opencode", "opencode-zen", "zen"},
+		requiresAPIKey: true,
+		runtime:        RuntimeOpenAICompatible,
+		baseURL:        "https://opencode.ai/zen/v1",
+		envKeys:        []string{"OPENCODE_API_KEY"},
+		apiKeyURL:      "https://opencode.ai/auth",
+		// No FallbackModel, for the reason the `nvidia` and `ollama-cloud` rows
+		// have none: /v1/models answers 200 here without a token, so the
+		// endpoint is always the authority and always fresher than a name typed
+		// in. It matters more on a gateway than anywhere else — the served list
+		// is nine vendors' release schedules at once, and any id written here
+		// would be stale the week one of them ships.
+		modelDefaults: ModelDefaults{},
+		// Reasoning is true, and it was settled by reading the gateway rather
+		// than by a successful call: parseOpenAiVariant
+		// (routes/zen/util/variant.ts) looks for `reasoning_effort` at the top
+		// level, which is the dialect usesPlainReasoningEffort already sends.
+		//
+		// This flag only says the ROW can carry an effort. Which of the 64
+		// served models actually has a dial is a different question, and on a
+		// gateway it has to be — nine vendors, and the catalog marks 88 of 93
+		// as reasoning models. ResolveThinkingCapabilities answers it per model
+		// from the fetched catalog, so a model with no dial still gets no menu.
+		capabilities: Capabilities{ToolCalling: true, Reasoning: true},
+	},
+	// The same gateway on a flat monthly plan instead of a wallet, and its own
+	// row rather than a setting on `opencode` for the reason `ollama-cloud` is
+	// separate from `ollama`: a different base URL, a different bill, and a
+	// different served list. 28 ids here against 93 there, and no Claude among
+	// them — picking the wrong row is picking a model that does not exist.
+	//
+	// Measured 2026-08-23: GET /zen/go/v1/models answers 200 with no token,
+	// POST /zen/go/v1/chat/completions answers 401 with the same Anthropic-shaped
+	// body as the row above. models.dev files this separately as `opencode-go`
+	// and gives both the same env key, which is the only evidence available that
+	// one key opens both doors — it is not proof, and a key that works on one
+	// and 401s the other means these two rows need separate keys pasted.
+	"opencode-go": {
+		canonical: "opencode-go",
+		// BalanceSubscription, not BalanceWebOnly: there is no wallet here to
+		// show a figure from. What exists is a ceiling — the plan documents
+		// $12 per 5 hours, $30 weekly and $60 monthly — and a ceiling is a
+		// quota, which is the next field's business.
+		balanceKind: BalanceSubscription,
+		// The plan documents three windows ($12 per 5 hours, $30 weekly, $60
+		// monthly) and no header on any response states one. They are served by
+		// GET /zen/go/v1/usage instead, which answers all three as percentages
+		// with reset stamps — so this row reports a real quota after all, just
+		// not the way every other row does.
+		quotaSource:    QuotaOpencodeGo,
+		aliases:        []string{"opencode-go", "opencodego"},
+		requiresAPIKey: true,
+		runtime:        RuntimeOpenAICompatible,
+		baseURL:        "https://opencode.ai/zen/go/v1",
+		envKeys:        []string{"OPENCODE_API_KEY"},
+		apiKeyURL:      "https://opencode.ai/auth",
+		modelDefaults: ModelDefaults{},
+		// True for the same reason as the row above, and from the same source:
+		// routes/zen/go/v1/chat/completions.ts hands the body to the identical
+		// handler with the identical parseOpenAiVariant.
+		capabilities: Capabilities{ToolCalling: true, Reasoning: true},
 	},
 }
 

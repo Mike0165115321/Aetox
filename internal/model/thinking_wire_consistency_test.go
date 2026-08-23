@@ -34,6 +34,11 @@ var thinkingProviders = []struct{ provider, model string }{
 // "off" is exempt: it is carried by the thinking block (type: disabled), not by
 // an effort value, so it correctly has no wire entry.
 func TestEveryOfferedLevelHasAWireValue(t *testing.T) {
+	// The openrouter entry in thinkingProviders is answered from the catalog
+	// now. Without one installed it resolves to "no dial" and every check
+	// below skips it on !Supported — the row would still be listed and
+	// silently never tested, which is worse than not listing it.
+	withOpenRouterCatalog(t)
 	for _, tc := range thinkingProviders {
 		caps := ResolveThinkingCapabilities(tc.provider, tc.model)
 		if !caps.Supported {
@@ -54,6 +59,7 @@ func TestEveryOfferedLevelHasAWireValue(t *testing.T) {
 // The default has to be a level the provider actually offers. A default outside
 // its own list is how a picker ends up showing a value that is not in its menu.
 func TestEveryDefaultIsAnOfferedLevel(t *testing.T) {
+	withOpenRouterCatalog(t)
 	for _, tc := range thinkingProviders {
 		caps := ResolveThinkingCapabilities(tc.provider, tc.model)
 		if !caps.Supported {
@@ -69,6 +75,7 @@ func TestEveryDefaultIsAnOfferedLevel(t *testing.T) {
 // An alias must land on a real level, and must never shadow one. An alias
 // sharing a name with an offered level would silently rewrite a valid choice.
 func TestAliasesResolveToOfferedLevels(t *testing.T) {
+	withOpenRouterCatalog(t)
 	for _, tc := range thinkingProviders {
 		caps := ResolveThinkingCapabilities(tc.provider, tc.model)
 		for from, to := range caps.Aliases {
@@ -86,6 +93,7 @@ func TestAliasesResolveToOfferedLevels(t *testing.T) {
 // Round trip: what the picker shows, normalized the way a host normalizes it,
 // still reaches the wire as itself. This is the path a user's click takes.
 func TestOfferedLevelsSurviveNormalizationToTheWire(t *testing.T) {
+	withOpenRouterCatalog(t)
 	for _, tc := range thinkingProviders {
 		caps := ResolveThinkingCapabilities(tc.provider, tc.model)
 		if !caps.Supported {

@@ -1157,10 +1157,23 @@ async function turnEndedBubble(err: unknown, sentText: string, turn: LiveTurnRef
  * error's type.
  */
 const DROPPED_CONNECTION = 'aetox: connection dropped'
+/**
+ * The provider answered and there was nothing in it, through two replays and a
+ * nudge (cognitive.askAgainAfterEmpty). Same split as the line above: Go decides
+ * that this is what happened, the window decides what words to use for it.
+ *
+ * This one is not a marker Go adds but the sentinel's own text — the error is
+ * built as `fmt.Errorf("%s %w (...)", provider, model.ErrEmptyCompletion)`, so
+ * the phrase IS the identity rather than a description of it. Anything before it
+ * names the provider and anything after says what arrived, and both belong in a
+ * bug report rather than in the sentence the user reads.
+ */
+const EMPTY_COMPLETION = 'response has empty text'
 function endingFor(err: unknown): string {
   const text = String(err)
   if (/context canceled/i.test(text)) return t('cockpit.turnStopped')
   if (text.includes(DROPPED_CONNECTION)) return t('cockpit.connectionLost')
+  if (text.includes(EMPTY_COMPLETION)) return t('cockpit.emptyAnswer')
   return t('cockpit.sendError', { err: text })
 }
 

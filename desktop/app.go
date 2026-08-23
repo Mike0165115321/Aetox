@@ -1375,6 +1375,14 @@ var desktopProviders = []string{
 	// standard bearer header. They are the free-and-cheap end of the picker —
 	// the rows that let someone start without a card.
 	"modelscope", "nvidia", "ollama-cloud",
+	// Added 2026-08-23, probed the same way and from the same Thai IP:
+	// opencode.ai/zen/v1/models and opencode.ai/zen/go/v1/models each answered
+	// 200 with no token, and both /chat/completions answered 401, so the
+	// standard bearer header is read on each and neither is geo-walled. These
+	// two are gateways rather than labs — one key reaching nine vendors — which
+	// is a different reason to be here than any row above: not a cheaper model,
+	// but one bill instead of nine.
+	"opencode", "opencode-go",
 	"aetox",
 }
 
@@ -1390,6 +1398,14 @@ func NewApp() *App {
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	// Install the cached model table first. Everything that asks what a model
+	// can do reads it — thinking depths, vision, documents, tool calling — and
+	// until this line the only thing that installed one was the usage panel, so
+	// a user's thinking picker existed or did not depending on which screen
+	// they had opened. Reads a file, never the network.
+	if root, err := config.DataRoot(); err == nil {
+		model.InstallCachedCatalog(root)
+	}
 	// Before anything else on this path: the window is created and centred by
 	// the time startup runs, and shown only once the webview has content, so a
 	// window bigger than the screen is corrected while nobody can see it move.
@@ -2685,6 +2701,13 @@ type ProviderAccount struct {
 	// no window and never will.
 	ExpectsQuota bool `json:"expectsQuota"`
 
+	// QuotaFetched says these windows were asked for rather than overheard.
+	// The card stamps every quota "from the last turn", which is true of the
+	// header dialects and a lie about the two that serve an endpoint — most
+	// visibly on a fresh OpenCode Go subscription, whose three bars are
+	// readable before the user has taken a single turn to attribute them to.
+	QuotaFetched bool `json:"quotaFetched"`
+
 	// Error is why Balance carries no figure. Empty when there was nothing to
 	// fetch (a local runtime, a subscription) — that is not a failure, and the
 	// UI says so with Balance.Kind instead.
@@ -2726,11 +2749,14 @@ func (a *App) providerAccount(providerName string) ProviderAccount {
 	a.quotasMu.RUnlock()
 	account.Quotas, account.QuotaKnown = quotas, known
 
-	// OpenRouter is the one provider that states its window in the same
-	// response as the credits, so it has an answer before any turn has run.
-	if balance.Quota != nil {
-		account.Quotas = []model.Quota{*balance.Quota}
-		account.QuotaKnown = true
+	// Two providers serve their window from an endpoint rather than on the
+	// headers of turns: OpenRouter states it beside the credits, and the
+	// OpenCode Go plan answers all three of its windows at /usage. Both have
+	// an answer before any turn has run, which is the whole point — a fresh
+	// subscription should not have to spend a turn to show what is left.
+	if len(balance.Quotas) > 0 {
+		account.Quotas = balance.Quotas
+		account.QuotaKnown, account.QuotaFetched = true, true
 	}
 	return account
 }
@@ -2873,6 +2899,38 @@ func (a *App) HasAPIKey(providerName string) bool {
 		return true
 	}
 	return resolveAPIKeyForProvider(canonical) != ""
+}
+
+// APIKeyHint is the last few characters of the key this provider would
+// actually be called with, for a field that is otherwise blank once a key is
+// saved. The row went green, the placeholder said "already set", and neither
+// told the owner *which* key was sitting there — so a key pasted into the
+// wrong row looked exactly like a key pasted into the right one.
+//
+// It reads through resolveAPIKeyForProvider rather than the credential store
+// alone, so what is shown is what would be sent: a pasted key shadows an
+// environment one, and the hint follows that precedence instead of describing
+// a key the engine would not use.
+//
+// Four characters, and only from a key long enough that four is a small part
+// of it. Below that the whole string is dots — a hint is meant to distinguish
+// two keys the owner already holds, not to reconstruct one over someone's
+// shoulder. Signed-in providers return "" because there is no key to hint at.
+func (a *App) APIKeyHint(providerName string) string {
+	canonical := model.NormalizeProvider(providerName)
+	if oauth.Has(canonical) {
+		return ""
+	}
+	key := strings.TrimSpace(resolveAPIKeyForProvider(canonical))
+	if key == "" {
+		return ""
+	}
+	const reveal = 4
+	r := []rune(key)
+	if len(r) < reveal*3 {
+		return strings.Repeat("•", 8)
+	}
+	return strings.Repeat("•", 4) + string(r[len(r)-reveal:])
 }
 
 // ProviderReady answers the question the sidebar dot is actually asking: can

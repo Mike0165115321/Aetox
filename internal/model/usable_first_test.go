@@ -21,11 +21,11 @@ func TestUsableFirstFloatsWhatTheCatalogVouchesFor(t *testing.T) {
 	t.Cleanup(func() { SetModelCatalog(prev) })
 
 	SetModelCatalog(&ModelCatalog{Models: map[string]ModelFacts{
-		"nvidia/openai/gpt-oss-120b":   {ToolCall: true, TextOut: true, Context: 128_000},
-		"nvidia/google/gemma-3-12b-it": {ToolCall: true, TextOut: true, Context: 131_072},
+		"nvidia/openai/gpt-oss-120b":   {ToolCall: true, Output: []string{"text"}, Context: 128_000},
+		"nvidia/google/gemma-3-12b-it": {ToolCall: true, Output: []string{"text"}, Context: 131_072},
 		// Described, and described as unable to do the job: an embedding model
 		// must stay behind the chat models even though the catalog knows it.
-		"nvidia/nvidia/nv-embed-v1": {ToolCall: false, TextOut: false},
+		"nvidia/nvidia/nv-embed-v1": {ToolCall: false, Output: nil},
 	}})
 
 	// As discovery returns it: alphabetical, everything the shelf holds.

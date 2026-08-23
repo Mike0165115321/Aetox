@@ -8,7 +8,8 @@ const balance = (over: Record<string, unknown> = {}) => ({
 })
 
 const account = (over: Record<string, unknown> = {}) => ({
-  provider: 'deepseek', balance: balance(), quotas: [], quotaKnown: false, expectsQuota: false, error: '', ...over,
+  provider: 'deepseek', balance: balance(), quotas: [], quotaKnown: false, expectsQuota: false,
+  quotaFetched: false, error: '', ...over,
 })
 
 describe('provider account line', () => {
@@ -125,4 +126,49 @@ describe('provider account line', () => {
     expect(container.textContent).toContain('อ่านยอดไม่ได้')
     expect(container.textContent).not.toContain('$0.00')
   })
+
+  // The OpenCode Go plan answers all three of its windows from an endpoint,
+  // so the card can draw them before the user has taken a single turn. Order
+  // is part of the contract: shortest window first, because that is the one
+  // about to bite.
+  it('draws every window a fetched quota states, shortest first', () => {
+    const now = new Date().toISOString()
+    const { container } = render(ProviderAccount, {
+      account: account({
+        provider: 'opencode-go',
+        balance: balance({ kind: 'subscription', hasAmount: false, amount: 0 }),
+        expectsQuota: true, quotaKnown: true, quotaFetched: true,
+        quotas: [
+          { window: '5h', remainingPercent: 88, resetAt: '', observedAt: now },
+          { window: 'week', remainingPercent: 60, resetAt: '', observedAt: now },
+          { window: 'month', remainingPercent: 100, resetAt: '', observedAt: now },
+        ],
+      }),
+    })
+    const labels = [...container.querySelectorAll('.acct-window')].map((e) => e.textContent)
+    expect(labels).toEqual(['5 ชั่วโมงนี้', 'สัปดาห์นี้', 'เดือนนี้'])
+    // A subscription has no figure, and a percentage must never become one.
+    expect(container.textContent).not.toContain('$')
+  })
+
+  // The stamp used to say "from the last turn" under every quota. That is true
+  // of the header dialects and a lie about the two that serve an endpoint —
+  // most visibly on a fresh subscription, whose bars are readable before any
+  // turn exists to attribute them to.
+  it('says where a quota came from, and does not claim a turn that never ran', () => {
+    const now = new Date().toISOString()
+    const quotas = [{ window: '5h', remainingPercent: 88, resetAt: '', observedAt: now }]
+
+    const fetched = render(ProviderAccount, {
+      account: account({ expectsQuota: true, quotaKnown: true, quotaFetched: true, quotas }),
+    })
+    expect(fetched.container.textContent).toContain('อ่านจากผู้ให้บริการเมื่อ')
+    expect(fetched.container.textContent).not.toContain('จากการคุยครั้งล่าสุด')
+
+    const overheard = render(ProviderAccount, {
+      account: account({ expectsQuota: true, quotaKnown: true, quotaFetched: false, quotas }),
+    })
+    expect(overheard.container.textContent).toContain('จากการคุยครั้งล่าสุด')
+  })
+
 })

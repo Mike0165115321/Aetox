@@ -20,7 +20,7 @@
   import { setShell } from './shell.svelte'
   import type { IconName } from './icons'
   import {
-    SupportedProviders, HasAPIKey, RequiresAPIKey, AcceptsAPIKey, ProviderAccountFor, TerminalShells,
+    SupportedProviders, HasAPIKey, APIKeyHint, RequiresAPIKey, AcceptsAPIKey, ProviderAccountFor, TerminalShells,
     ListModelsForProvider, ProviderBaseURL, ProviderBaseURLIsCustom, ProviderAPIKeyURL, ProviderReady, PriceModels,
     ProviderWireFormats, TestProviderConnection,
     EnabledProviders, SetProviderEnabled,
@@ -184,6 +184,10 @@
   // card that said no models were found. Unknown must look like unknown.
   type ProviderRow = {
     name: string; requiresKey: boolean; acceptsKey: boolean; hasKey: boolean
+    // The masked tail of the key that would actually be sent, or "" when
+    // there is none. hasKey answers whether one exists; this answers which
+    // one, which is the question a blank field could not.
+    keyHint: string
     ready: boolean | null
   }
 
@@ -709,6 +713,7 @@
       requiresKey: await RequiresAPIKey(name),
       acceptsKey: await AcceptsAPIKey(name),
       hasKey: await HasAPIKey(name),
+      keyHint: await APIKeyHint(name),
       ready: null,
     })))
     // Readiness is asked for separately and not awaited with the rest: proving
@@ -4456,7 +4461,11 @@
                 <div class="mset-keyrow">
                   <input
                     class="ctrl key-input" type={showKey ? 'text' : 'password'}
-                    placeholder={selectedRow.hasKey ? t('settings.keySetPlaceholder') : t('settings.pasteKeyPlaceholder')}
+                    placeholder={selectedRow.hasKey
+                      ? (selectedRow.keyHint
+                          ? t('settings.keySetHintPlaceholder', { hint: selectedRow.keyHint })
+                          : t('settings.keySetPlaceholder'))
+                      : t('settings.pasteKeyPlaceholder')}
                     bind:value={keyDraft}
                     onkeydown={(e) => e.key === 'Enter' && saveKey()}
                   />

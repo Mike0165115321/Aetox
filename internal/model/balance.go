@@ -53,10 +53,15 @@ type Balance struct {
 	// zero: a subscription has no amount and is perfectly usable.
 	Sufficient bool `json:"sufficient"`
 
-	// Quota rides along when the same request also answered the window.
-	// Only OpenRouter does; everyone else reports quota through headers on
-	// real turns. Nil when there is none.
-	Quota *Quota `json:"quota,omitempty"`
+	// Quotas are the windows this same request also answered. Most providers
+	// state theirs in the headers of real turns instead and leave this empty;
+	// the two that serve an endpoint (QuotaSource.Fetched) fill it here.
+	//
+	// A slice rather than the single pointer this used to be, because the
+	// second provider to use it answers three windows at once and one field
+	// that sometimes means "the window" and sometimes means "the first of
+	// three" is two questions wearing one name.
+	Quotas []Quota `json:"quotas,omitempty"`
 
 	FetchedAt time.Time `json:"fetchedAt"`
 }
@@ -82,7 +87,11 @@ func FetchBalance(ctx context.Context, providerName, baseURL, apiKey string) (Ba
 	kind := provider.BalanceKindFor(canonical)
 	base := Balance{Kind: string(kind), Sufficient: true, FetchedAt: time.Now()}
 
-	if kind != provider.BalanceMoney {
+	// A subscription has no figure to fetch, but it can still have a window,
+	// and asking for it is what this request already costs. Gating on money
+	// alone is what kept the Go plan's three windows off its card.
+	fetchesQuota := provider.QuotaSourceFor(canonical).Fetched()
+	if kind != provider.BalanceMoney && !fetchesQuota {
 		return base, nil
 	}
 	if strings.TrimSpace(apiKey) == "" {
@@ -102,6 +111,8 @@ func FetchBalance(ctx context.Context, providerName, baseURL, apiKey string) (Ba
 		return fetchKimiBalance(ctx, base, baseURL, apiKey)
 	case "openrouter":
 		return fetchOpenRouterBalance(ctx, base, baseURL, apiKey)
+	case "opencode-go":
+		return fetchOpencodeGoUsage(ctx, base, baseURL, apiKey)
 	default:
 		// The catalog says this provider has money to report but nobody here
 		// knows how to ask. Better to say so than to return a confident zero.
@@ -129,8 +140,17 @@ func getJSON(ctx context.Context, endpoint, apiKey string, into any) error {
 		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("balance endpoint failed with status %d: %s",
-			resp.StatusCode, strings.TrimSpace(string(body)))
+		// The provider's own sentence wherever it has one, for the reason
+		// statusError gives on the turn path: the JSON around it is never the
+		// actionable part and it used to be what the card printed. It matters
+		// most on the newest caller — a good key with no Go plan behind it gets
+		// 403 "OpenCode Go subscription required.", which is the whole answer,
+		// and it was arriving wrapped in an envelope.
+		said := providerErrorMessage(body)
+		if said == "" {
+			said = strings.TrimSpace(string(body))
+		}
+		return fmt.Errorf("balance endpoint failed with status %d: %s", resp.StatusCode, said)
 	}
 	return json.Unmarshal(body, into)
 }
@@ -287,11 +307,80 @@ func fetchOpenRouterBalance(ctx context.Context, out Balance, baseURL, apiKey st
 
 	if limit := payload.Data.Limit; limit != nil && *limit > 0 && payload.Data.LimitRemaining != nil {
 		now := time.Now()
-		out.Quota = &Quota{
+		out.Quotas = []Quota{{
 			Window:           "key",
 			RemainingPercent: clampPercent(*payload.Data.LimitRemaining / *limit * 100),
 			ResetAt:          parseResetInstant(payload.Data.LimitReset, now),
 			ObservedAt:       now,
+		}}
+	}
+	return out, nil
+}
+
+// opencodeGoUsage is GET /zen/go/v1/usage, the only endpoint the OpenCode
+// gateway serves besides the model list and the three chat formats.
+//
+// The shape is not inferred from a sample. It is the response the route
+// builds in the open: packages/console/app/src/routes/zen/go/v1/usage.ts,
+// whose formatUsage emits exactly {status, percent, resetsAt} for each of
+// rolling, weekly and monthly. Reading it there rather than from one captured
+// body is the difference between knowing the contract and knowing one call.
+//
+// Percent is the share USED, so it is flipped on the way in — Quota stores
+// what is left, because that is the direction the bar and the sentence read.
+//
+// There is deliberately no money here. The plan states its ceilings in dollars
+// ($12 per 5 hours, $30 weekly, $60 monthly) and this endpoint reports none of
+// them, only the fraction consumed. Converting a percentage back into dollars
+// would mean writing those three figures down and calling the product of a
+// guess and a stale constant a balance.
+type opencodeGoUsage struct {
+	Usage map[string]struct {
+		Status   string  `json:"status"`
+		Percent  float64 `json:"percent"`
+		ResetsAt string  `json:"resetsAt"`
+	} `json:"usage"`
+}
+
+// opencodeGoWindows fixes the order the card draws them in — shortest window
+// first, which is the one about to bite — and maps each onto the stable key
+// the UI translates. A map alone would draw them in whatever order Go felt
+// like, and the three bars would swap places between refreshes.
+var opencodeGoWindows = []struct{ key, window string }{
+	{"rolling", "5h"},
+	{"weekly", "week"},
+	{"monthly", "month"},
+}
+
+func fetchOpencodeGoUsage(ctx context.Context, out Balance, baseURL, apiKey string) (Balance, error) {
+	// Relative to the configured base URL, not to its origin: the other three
+	// fetchers hang their path off the host because the vendor puts billing
+	// outside the API prefix, and this one does not — /usage sits beside
+	// /chat/completions under the same /zen/go/v1. Rebuilding from the origin
+	// here would send a self-hosted proxy user's key to opencode.ai.
+	var payload opencodeGoUsage
+	if err := getJSON(ctx, strings.TrimRight(baseURL, "/")+"/usage", apiKey, &payload); err != nil {
+		return out, err
+	}
+
+	now := time.Now()
+	for _, w := range opencodeGoWindows {
+		stated, ok := payload.Usage[w.key]
+		if !ok {
+			continue
+		}
+		out.Quotas = append(out.Quotas, Quota{
+			Window:           w.window,
+			RemainingPercent: clampPercent(100 - stated.Percent),
+			ResetAt:          parseResetInstant(stated.ResetsAt, now),
+			ObservedAt:       now,
+		})
+		// "rate-limited" on any window is the plan saying this key cannot
+		// spend right now. Sufficient is the flag the card reads to say so
+		// out loud, and a subscription that has hit a ceiling is exactly the
+		// case it was added for.
+		if stated.Status == "rate-limited" {
+			out.Sufficient = false
 		}
 	}
 	return out, nil

@@ -371,6 +371,7 @@ export const en: Record<keyof typeof th, string> = {
   // and the running turn is using it.
   'cockpit.turnBusy': 'The agent is still working. Wait for it to finish, or press stop.',
   'cockpit.turnStopped': 'Stopped',
+  'cockpit.emptyAnswer': 'The provider answered with nothing several times in a row, through the retries and a nudge. The work done before that is still in this chat, so press retry to carry on. If it keeps happening, try another model or provider.',
   'cockpit.connectionLost': 'The connection to the provider dropped while the model was answering, and reconnecting did not get it back. Try again, and if it keeps happening check your network or switch provider.',
   // Reading another chat mid-turn is allowed; typing in it is not, because the
   // engine is still sitting in the conversation the turn belongs to.
@@ -597,9 +598,11 @@ export const en: Record<keyof typeof th, string> = {
   'account.inDays': 'resets in {n} d',
   'account.fetchedAt': 'fetched at {time}',
   'account.fromLastTurn': 'from the last turn at {time}',
+  'account.quotaAsOf': 'read from the provider at {time}',
   'settings.apiKeyLabel': 'API key',
   'settings.getKey': 'get a key',
   'settings.keySetPlaceholder': 'Already set. Paste a new key to replace it.',
+  'settings.keySetHintPlaceholder': 'Already set: {hint} · paste a new key to replace it',
   'settings.pasteKeyPlaceholder': 'Paste API key…',
   'settings.showKey': 'Show key',
   'settings.saving': 'Saving…',

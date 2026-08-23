@@ -1,6 +1,6 @@
 ---
 name: aetox-slides
-description: สไลด์และงานนำเสนอในแอตทอกซ์ — เด็คคือไฟล์ .html เดียวที่เปิดในห้องสไลด์ แล้วเปิดหน้า นำเสนอเต็มจอ ส่งออก .pptx .pdf รูป ได้จากตรงนั้น. อ่านตัวนี้ก่อนเขียนเด็คเสมอ ถึงจะมีสกิลสไลด์หรือสกิลดีไซน์ตัวอื่นติดตั้งอยู่ก็ตาม เพราะพวกนั้นเขียนไว้สำหรับไฟล์ที่เปิดเดี่ยว ๆ ในเบราว์เซอร์ ส่วนนี่คือข้อเท็จจริงของห้องนี้ที่อ่านจากไฟล์เองไม่ได้
+description: สไลด์และงานนำเสนอในแอตทอกซ์ — เด็คคือไฟล์ .html เดียวที่เปิดในห้องสไลด์ แล้วเปิดหน้า นำเสนอเต็มจอ ส่งออก .pptx .pdf รูป ได้จากตรงนั้น. อ่านตัวนี้ก่อนเขียนเด็คเสมอ ถึงจะมีสกิลสไลด์ตัวอื่นติดตั้งอยู่ก็ตาม เพราะพวกนั้นเขียนไว้สำหรับไฟล์ที่เปิดเดี่ยว ๆ ในเบราว์เซอร์ ส่วนนี่คือข้อเท็จจริงของห้องนี้ที่อ่านจากไฟล์เองไม่ได้. ตัวนี้บอกว่าเด็คประกอบขึ้นยังไง ส่วนว่าจะวางอะไรลงบนสไลด์ — โครงเด็ค เลย์เอาต์ กราฟ ถ้อยคำ — อยู่ที่ aetox-design-system
 ---
 
 A deck here is one `.html` file that opens in the slides room. Everything about
@@ -45,19 +45,23 @@ in the room and in the export both), or inline small ones as `data:`. Same for
 fonts: `"Kanit", "Noto Sans Thai", "Leelawadee UI", Tahoma, sans-serif` is on a
 plain Windows machine; a Google Fonts link is a CDN.
 
-**An animation prints wherever it comes to rest.** The flattener forces
-`opacity:1` on a *slide* that computes to zero, and does nothing to what is
-inside it — so an element waiting at `opacity:0` for something to reveal it
-prints at `opacity:0`. An entrance built from `@keyframes` with
-`animation-fill-mode: forwards` runs at load and has finished by then; one that
-waits for a class an `IntersectionObserver` adds waits forever, because in an
-export nothing scrolls.
+**An animation prints wherever it comes to rest.** Before it prints, the export
+walks the deck: it scrolls every slide into view, collapses animations and
+transitions to their last frame, and pins the `opacity` and `transform` each
+element computed to at that moment. So an entrance is seen and kept, whatever
+started it — a `@keyframes` run with `animation-fill-mode: forwards`, or a class
+an `IntersectionObserver` adds when its slide arrives.
+
+What the walk cannot rescue is an element whose *resting* state is invisible. It
+pins what it finds, so a trigger that never fires leaves `opacity:0` and that is
+what prints. **Put the hidden half inside the `@keyframes` and never in the base
+rule.** An entrance written that way survives a trigger that missed, a reader
+with reduced motion on, and the export, without any of the three being a special
+case.
 
 ```css
 @keyframes rise { from{ opacity:0; transform:translateY(24px) } to{ opacity:1; transform:none } }
-.rise { animation:rise .7s ease both; }
-.rise:nth-child(2){ animation-delay:.10s }
-.rise:nth-child(3){ animation-delay:.18s }
+.rise { animation:rise .7s ease both; }   /* rests visible; only the keyframe hides it */
 ```
 
 Animate freely otherwise. An ambient loop is a screen effect: the export freezes
@@ -161,12 +165,19 @@ shape that tends to come with navigation attached.
 
 ## Making one
 
-1. Find and download the pictures first — `aetox-design` has the recipe
+1. Decide the shape of the deck before writing any of it. `aetox-design-system`
+   carries the tables for that — `data/slide-strategies.csv` for the running
+   order of a whole deck, `data/slide-layouts.csv` for what each slide is made
+   of, and the rest of `data/` for charts, typography and copy. Read them with
+   `skill_view`. They are where the variety comes from: a deck that reaches for
+   the skeleton below on every slide reads as one long page, which is the one
+   thing this room makes obvious.
+2. Find and download the pictures — `aetox-design` has the recipe
    (search the page, not the file; `web_fetch` lists the image URLs it found;
    `shell` downloads the bytes) and the rule about licences.
-2. `write` the `.html`; the receipt says where it landed. Reference the pictures
+3. `write` the `.html`; the receipt says where it landed. Reference the pictures
    relatively.
-3. `desk open` that path, so the user sees it in the room.
+4. `desk open` that path, so the user sees it in the room.
 
 The room's export bar writes `.pptx` (editable), `.pptx` as pictures, `.pdf`,
 and `.png`/`.jpg`/`.webp`. There is no tool for it: the user is already looking

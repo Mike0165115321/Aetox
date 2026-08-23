@@ -331,9 +331,9 @@ for video work is absent from an ordinary conversation — not hidden from the m
 writers reach only the specialized desk, so the assistant delegates for a `.pptx` rather than
 carrying three tools it rarely needs.
 
-**20 providers, and the window shows every one** — OpenAI · Anthropic · Gemini · DeepSeek ·
+**22 providers, and the window shows every one** — OpenAI · Anthropic · Gemini · DeepSeek ·
 Qwen · Z.ai · OpenRouter · Codex · Groq · Mistral · Kimi · MiniMax · xAI · ThaiLLM ·
-ModelScope · NVIDIA · Ollama Cloud · LM Studio · Ollama · and the built-in `aetox`. OpenRouter and Codex sign in; the rest take an
+ModelScope · NVIDIA · Ollama Cloud · OpenCode Zen · OpenCode Go · LM Studio · Ollama · and the built-in `aetox`. OpenRouter and Codex sign in; the rest take an
 API key or a local server address. The catalogue and the picker used to disagree; they no longer
 do, because a provider the engine knows and the window hides is one nobody can reach.
 

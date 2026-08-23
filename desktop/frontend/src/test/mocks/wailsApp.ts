@@ -98,6 +98,9 @@ export const GitCreateBranch = vi.fn(async (name: string) => name)
 export const GitSwitchBranch = vi.fn(async (name: string) => name)
 export const GuideTopics = arr()
 export const HasAPIKey = boolFn(false)
+// Empty by default, which is what a provider with no key stored returns. A
+// test that wants the masked-tail placeholder opts in by mocking it.
+export const APIKeyHint = strFn('')
 // Sign-in: the default is "this provider offers none", so Settings renders the
 // API-key path unless a test opts a provider into a sign-in.
 export const SignInMethods = arr()
@@ -309,6 +312,7 @@ export const ProviderAccountFor = vi.fn(async (provider: string) => ({
   quotas: [],
   quotaKnown: false,
   expectsQuota: false,
+  quotaFetched: false,
   error: '',
 }))
 export const SaveChatFile = str()

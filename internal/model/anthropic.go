@@ -298,11 +298,31 @@ func convertMessagesToAnthropic(msgs []Message) (string, []anthropicMessage) {
 			})
 		default: // RoleUser and anything unrecognized
 			role = "user"
-			if m.Content != "" || len(m.Images) == 0 {
-				// The empty-text block is kept when there is no image, because
-				// dropping it would silently delete a message the caller sent;
-				// with an image the picture is the message and an empty text
-				// block beside it is rejected by the API.
+			// Documents before the text, which is Anthropic's own instruction
+			// and not a preference: a document block placed after the question
+			// measurably degrades the answer about it. Images keep going after
+			// the text, where the same guidance puts them.
+			for _, doc := range m.Documents {
+				mediaType := strings.TrimSpace(doc.MediaType)
+				if mediaType == "" {
+					mediaType = "application/pdf"
+				}
+				blocks = append(blocks, anthropicContentBlock{
+					Type: "document",
+					Source: &anthropicSource{
+						Type:      "base64",
+						MediaType: mediaType,
+						// StdEncoding, never the wrapped encoders: the API
+						// rejects base64 carrying newlines.
+						Data: base64.StdEncoding.EncodeToString(doc.Data),
+					},
+				})
+			}
+			if m.Content != "" || (len(m.Images) == 0 && len(m.Documents) == 0) {
+				// The empty-text block is kept when there is no attachment,
+				// because dropping it would silently delete a message the
+				// caller sent; with one, the attachment is the message and an
+				// empty text block beside it is rejected by the API.
 				blocks = append(blocks, anthropicContentBlock{Type: "text", Text: m.Content})
 			}
 			for _, img := range m.Images {

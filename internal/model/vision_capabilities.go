@@ -1,7 +1,5 @@
 package model
 
-import "strings"
-
 // Which models can look at an image.
 //
 // This is a gate, not a preference: a text-only model handed an image part gets
@@ -16,11 +14,23 @@ import "strings"
 // safe side rather than a guess. Safe here means "no" — the fallback is
 // image_ocr, which works everywhere and loses only the picture.
 
-// visionModelMarkers are substrings that identify a vision-capable model across
-// providers. Matching on the name rather than keeping a table of exact ids
-// because ids churn weekly (dated snapshots, ":free" and ":nitro" suffixes on
-// OpenRouter, ":q4_K_M" quantization tags on Ollama) and a table of exact
-// matches is a table that is wrong a week after it is written.
+// visionModelMarkers is the answer of last resort, for the models no catalog
+// describes.
+//
+// It used to be the whole answer, and matching substrings of an id was already
+// the better half of a bad choice — a table of exact ids would have been wrong
+// faster. It was still wrong: measured against models.dev on 2026-08-23 it
+// called 13 of opencode-go's 28 models blind when they can see, 18 of 93 on
+// opencode, and 99 of 360 on openrouter. The owner met it as a screenshot going
+// to image_ocr instead of to qwen3.7-plus, a model that takes text, image and
+// video. No name in that list resembles "qwen3.7-plus", and none ever could:
+// a company names its models before this file hears about them.
+//
+// It stays because it is the only answer for a local runtime. models.dev
+// describes what providers serve, not what somebody pulled onto their own GPU,
+// so llava and moondream on Ollama have nothing else to be recognised by. The
+// order in ResolveVision is what matters now: the catalog first where it knows
+// the model, this list only where it does not.
 var visionModelMarkers = []string{
 	"gpt-4o", "gpt-4.1", "gpt-5", "o3", "o4-mini", // OpenAI
 	"claude-3", "claude-4", "claude-5", "sonnet", "opus", "haiku", // Anthropic
@@ -61,26 +71,31 @@ var textOnlyRoleMarkers = []string{
 
 // ResolveVision reports whether the named model accepts image input.
 //
-// provider is Aetox's own provider key, not the wire vendor: it matters only
-// for the cases where the same model name means different things, so most of
-// the decision is made on the model id.
+// Three answers are consulted, in descending order of how much they know:
+//
+//  1. The role markers, which outrank everything. An embedder that takes images
+//     is still not a chat model, and no catalog entry changes that.
+//  2. The fetched catalog, per model. This is the authority wherever it has
+//     heard of the pair — it is the provider's own published modality list,
+//     refreshed, rather than a guess from the shape of a name.
+//  3. The name markers, for the models nothing published describes: whatever
+//     the user pulled onto their own machine.
+//
+// Catalog above markers rather than beside them, because the two disagree in
+// exactly one direction that matters. A model the catalog says cannot see and
+// whose name happens to contain "vision" is the deepseek-v4-flash-vision-exp
+// case in reverse, and believing the name there sends an image part to a
+// backend that will 400 or, worse, drop it and answer about a picture it never
+// received.
+// One question asked of the one record, rather than a fourth resolver with a
+// fourth idea of what to do when the answer is not known. The precedence it
+// used to spell out for itself now lives in capabilities.go, stated once for
+// every modality — which is the point: pdf, audio and video are already in the
+// catalog, and none of them should need a function of its own.
+//
+// An unknown model is still treated as blind. That costs a working OCR path;
+// the other way costs an image silently discarded and an answer invented from
+// the caption.
 func ResolveVision(provider, modelName string) bool {
-	name := strings.ToLower(strings.TrimSpace(modelName))
-	if name == "" {
-		return false
-	}
-	for _, marker := range textOnlyRoleMarkers {
-		if strings.Contains(name, marker) {
-			return false
-		}
-	}
-	for _, marker := range visionModelMarkers {
-		if strings.Contains(name, marker) {
-			return true
-		}
-	}
-	// An unknown model is treated as blind. It costs a working OCR path; the
-	// other way costs an image silently discarded and an answer invented from
-	// the caption.
-	return false
+	return resolveModalities(provider, modelName).Accepts("image")
 }

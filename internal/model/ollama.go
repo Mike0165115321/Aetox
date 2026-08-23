@@ -256,8 +256,9 @@ func (p *OllamaProvider) Complete(ctx context.Context, req Request) (Response, e
 	if !parsed.Done && reply == "" && len(parsed.Message.ToolCalls) == 0 {
 		return Response{}, fmt.Errorf("ollama streaming mode is unsupported in this adapter")
 	}
-	if reply == "" && len(parsed.Message.ToolCalls) == 0 {
-		return Response{}, fmt.Errorf("ollama response has empty text")
+	if err := errEmptyCompletion("ollama", strings.TrimSpace(parsed.DoneReason),
+		reply, strings.TrimSpace(parsed.Message.Thinking), len(parsed.Message.ToolCalls)); err != nil {
+		return Response{}, err
 	}
 
 	toolCalls := convertOllamaToolCalls(parsed.Message.ToolCalls)
@@ -405,8 +406,8 @@ func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChun
 
 	reply := strings.TrimSpace(builder.String())
 	toolCalls := finalizeStreamToolCalls(toolCallBuilders)
-	if reply == "" && len(toolCalls) == 0 {
-		return Response{}, fmt.Errorf("ollama stream response has empty text")
+	if err := errEmptyCompletion("ollama", strings.TrimSpace(doneReason), reply, "", len(toolCalls)); err != nil {
+		return Response{}, err
 	}
 
 	return Response{

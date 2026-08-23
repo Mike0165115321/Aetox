@@ -9,7 +9,10 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/Mike0165115321/Aetox/internal/debuglog"
 )
 
 // openAIMessage mirrors Message field for field, tag for tag and — this is the
@@ -33,6 +36,22 @@ type openAIContentPart struct {
 	Type     string          `json:"type"`
 	Text     string          `json:"text,omitempty"`
 	ImageURL *openAIImageURL `json:"image_url,omitempty"`
+	File     *openAIFilePart `json:"file,omitempty"`
+}
+
+// openAIFilePart is how this wire format takes a document inline. The shape is
+// not inferred from the image part beside it: it is what the AI SDK builds in
+// packages/openai-compatible/src/chat/convert-to-openai-compatible-chat-messages.ts,
+// which is the code most of this ecosystem actually talks to these endpoints
+// with — `{type: "file", file: {filename, file_data}}`, file_data being a data:
+// URL rather than bare base64.
+//
+// documentDataURL and documentFilename already produced exactly those two
+// values. They were written for this and then never wired to anything: the
+// only provider that has ever sent a document is the Responses one.
+type openAIFilePart struct {
+	Filename string `json:"filename"`
+	FileData string `json:"file_data"`
 }
 
 // openAIImageURL is a struct rather than a bare string because the field is an
@@ -55,8 +74,8 @@ func convertMessagesToOpenAI(msgs []Message) []openAIRequestMessage {
 			ToolCallID:       m.ToolCallID,
 			ToolCalls:        m.ToolCalls,
 		}
-		if len(m.Images) > 0 {
-			parts := make([]openAIContentPart, 0, len(m.Images)+1)
+		if len(m.Images) > 0 || len(m.Documents) > 0 {
+			parts := make([]openAIContentPart, 0, len(m.Images)+len(m.Documents)+1)
 			// Text first: the question about the picture reads as a caption
 			// under it otherwise, and several providers weight the last part
 			// most heavily.
@@ -67,6 +86,15 @@ func convertMessagesToOpenAI(msgs []Message) []openAIRequestMessage {
 				parts = append(parts, openAIContentPart{
 					Type:     "image_url",
 					ImageURL: &openAIImageURL{URL: dataURL(img)},
+				})
+			}
+			for _, doc := range m.Documents {
+				parts = append(parts, openAIContentPart{
+					Type: "file",
+					File: &openAIFilePart{
+						Filename: documentFilename(doc),
+						FileData: documentDataURL(doc),
+					},
 				})
 			}
 			converted.Content = parts
@@ -284,8 +312,56 @@ func (p *OpenAICompatibleProvider) Name() string {
 	return p.provider
 }
 
+// SupportsToolCalling narrows a provider-wide yes to the one model in use.
+//
+// `return true` was this method's whole body, and tool_support.go had already
+// written down what that costs: "OpenAICompatibleProvider claims tool support
+// for every row it serves, so a model that turns out not to have it has nothing
+// else to catch it." Measured against the catalog on 2026-08-23, the rows this
+// client serves carry 117 models that cannot call a tool and were being sent
+// tool definitions anyway — 69 of OpenRouter's 360, 39 of NVIDIA's 102, and 9
+// of Groq's 15.
+//
+// This is the opposite error from the vision one. There Aetox called sighted
+// models blind; here it calls toolless models capable. Both came from answering
+// a per-model question at a level that cannot see the model.
+//
+// Only ever narrows. A catalog that has never heard of the model leaves the
+// provider's answer alone, which is what keeps every local runtime and every id
+// no table describes working exactly as before. The asymmetry is deliberate:
+// wrongly withholding tools turns a coding agent into a chat window, so that
+// answer is given only where the catalog names the model outright.
+//
+// It does not replace IsToolBlockRejection. That catches the model the catalog
+// was wrong about, at the cost of one failed call; this stops the call from
+// being made at all for the ones it has right.
 func (p *OpenAICompatibleProvider) SupportsToolCalling() bool {
-	return true
+	return resolveModalities(p.provider, p.model).Tools
+}
+
+// modelToolCalling is the shared rule, written once so that a second provider
+// adopting it cannot answer the same question differently.
+func modelToolCalling(provider, modelName string, providerAnswer bool) bool {
+	if !providerAnswer {
+		return false
+	}
+	name := strings.ToLower(strings.TrimSpace(modelName))
+	if name == "" {
+		return providerAnswer
+	}
+	installedCatalogMu.RLock()
+	c := installedCatalog
+	installedCatalogMu.RUnlock()
+	facts, known := c.For(provider, name)
+	if !known {
+		return providerAnswer
+	}
+	if !facts.ToolCall {
+		// Worth a line in the log: from the outside this looks like the agent
+		// choosing not to use its tools, and the reason is two files away.
+		debuglog.Msg("tools: %s/%s is listed as not tool-calling; sending none", provider, name)
+	}
+	return facts.ToolCall
 }
 
 func (p *OpenAICompatibleProvider) SupportsReasoning() bool {
@@ -399,30 +475,74 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 	} else if p.SupportsReasoning() {
 		payload.Reasoning = req.Reasoning
 	}
-	body, err := json.Marshal(payload)
+	// Whether this request is carrying a document at all. The replay below is
+	// gated on it so that a 400 mentioning "file" for some unrelated reason
+	// cannot cost a second call.
+	sentDocuments := false
+	for _, m := range req.Messages {
+		if len(m.Documents) > 0 {
+			sentDocuments = true
+			break
+		}
+	}
+
+	if p.dropTemperature(model) {
+		payload.Temperature = 0
+	}
+
+	send := func() (*http.Response, error) {
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/chat/completions", bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		if err := p.applyAuth(ctx, httpReq); err != nil {
+			return nil, err
+		}
+		httpResp, err := p.httpClient.Do(httpReq)
+		if err != nil {
+			return nil, err
+		}
+		NoteQuotas(p.Name(), httpResp)
+		return httpResp, nil
+	}
+	httpResp, err := send()
 	if err != nil {
 		return Response{}, err
 	}
-
-	requestURL := p.baseURL + "/chat/completions"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(body))
-	if err != nil {
-		return Response{}, err
-	}
-	if err := p.applyAuth(ctx, httpReq); err != nil {
-		return Response{}, err
-	}
-
-	httpResp, err := p.httpClient.Do(httpReq)
-	if err != nil {
-		return Response{}, err
-	}
-	defer httpResp.Body.Close()
-	NoteQuotas(p.Name(), httpResp)
-
 	responseBody, err := io.ReadAll(httpResp.Body)
+	httpResp.Body.Close()
 	if err != nil {
 		return Response{}, err
+	}
+
+	if documentPartRefused(httpResp.StatusCode, responseBody, sentDocuments) {
+		payload.Messages = convertMessagesToOpenAI(stripDocuments(req.Messages))
+		sentDocuments = false
+		if httpResp, err = send(); err != nil {
+			return Response{}, err
+		}
+		responseBody, err = io.ReadAll(httpResp.Body)
+		httpResp.Body.Close()
+		if err != nil {
+			return Response{}, err
+		}
+	}
+
+	if temperatureRefused(httpResp.StatusCode, responseBody) && payload.Temperature != 0 {
+		p.rememberTemperatureRefusal(model)
+		payload.Temperature = 0
+		if httpResp, err = send(); err != nil {
+			return Response{}, err
+		}
+		responseBody, err = io.ReadAll(httpResp.Body)
+		httpResp.Body.Close()
+		if err != nil {
+			return Response{}, err
+		}
 	}
 
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
@@ -553,37 +673,81 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		payload.Reasoning = req.Reasoning
 	}
 
-	body, err := json.Marshal(payload)
+	// Whether this request is carrying a document at all. The replay below is
+	// gated on it so that a 400 mentioning "file" for some unrelated reason
+	// cannot cost a second call.
+	sentDocuments := false
+	for _, m := range req.Messages {
+		if len(m.Documents) > 0 {
+			sentDocuments = true
+			break
+		}
+	}
+
+	if p.dropTemperature(model) {
+		payload.Temperature = 0
+	}
+
+	send := func() (*http.Response, error) {
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/chat/completions", bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		if err := p.applyAuth(ctx, httpReq); err != nil {
+			return nil, err
+		}
+		httpResp, err := p.httpClient.Do(httpReq)
+		if err != nil {
+			return nil, err
+		}
+		NoteQuotas(p.Name(), httpResp)
+		return httpResp, nil
+	}
+	httpResp, err := send()
 	if err != nil {
 		return Response{}, err
 	}
-
-	requestURL := p.baseURL + "/chat/completions"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(body))
-	if err != nil {
-		return Response{}, err
-	}
-	if err := p.applyAuth(ctx, httpReq); err != nil {
-		return Response{}, err
-	}
-
-	httpResp, err := p.httpClient.Do(httpReq)
-	if err != nil {
-		return Response{}, err
-	}
-	defer httpResp.Body.Close()
-	NoteQuotas(p.Name(), httpResp)
-
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		responseBody, _ := io.ReadAll(httpResp.Body)
-		return Response{}, p.statusError(httpResp, responseBody)
+		httpResp.Body.Close()
+		if !documentPartRefused(httpResp.StatusCode, responseBody, sentDocuments) &&
+			(!temperatureRefused(httpResp.StatusCode, responseBody) || payload.Temperature == 0) {
+			return Response{}, p.statusError(httpResp, responseBody)
+		}
+		// Safe to replay: the refusal arrives before the first SSE frame, so
+		// nothing has been streamed to the user to take back.
+		if documentPartRefused(httpResp.StatusCode, responseBody, sentDocuments) {
+			payload.Messages = convertMessagesToOpenAI(stripDocuments(req.Messages))
+			sentDocuments = false
+		} else {
+			p.rememberTemperatureRefusal(model)
+			payload.Temperature = 0
+		}
+		if httpResp, err = send(); err != nil {
+			return Response{}, err
+		}
+		if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
+			retryBody, _ := io.ReadAll(httpResp.Body)
+			httpResp.Body.Close()
+			return Response{}, p.statusError(httpResp, retryBody)
+		}
 	}
+	defer httpResp.Body.Close()
 
 	scanner := newStreamScanner(httpResp.Body)
 	var builder strings.Builder
 	var reasoningBuilder strings.Builder
 	var lastUsage *Usage
 	var finishReason string
+	// Counted only to be said out loud if this stream turns out to be empty.
+	// "0 frames" is a gateway that opened a stream and closed it; a stream with
+	// frames that still says nothing is the model. The error used to name
+	// neither, which is why an empty answer from a gateway was unreadable.
+	dataFrames := 0
 	toolAcc := newStreamToolAccumulator(req.OnToolCallProgress)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -597,6 +761,7 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		if data == "[DONE]" {
 			break
 		}
+		dataFrames++
 		// OpenAI-style streaming delivers tool_calls in fragments keyed by
 		// index (arguments arrive char-by-char across deltas); toolAcc stitches
 		// them back together. DeepSeek instead leaks DSML markup into content —
@@ -661,7 +826,8 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 			toolCalls = calls
 		}
 	}
-	if err := errEmptyCompletion(p.provider, strings.TrimSpace(finishReason), reply, reasoning, len(toolCalls)); err != nil {
+	if err := errEmptyCompletion(p.provider, strings.TrimSpace(finishReason), reply, reasoning, len(toolCalls),
+		fmt.Sprintf("%d stream frames", dataFrames)); err != nil {
 		return Response{}, err
 	}
 	return Response{
@@ -809,6 +975,104 @@ func supportsNativeReasoning(provider string) bool {
 	return canReason
 }
 
+// temperatureRefused reports the one 400 that is a statement about the request
+// rather than about the account, and the only one worth replaying.
+//
+// Aetox puts a temperature on every call (0.2, from the agent). A growing set
+// of models accept exactly one value and reject the field outright:
+//
+//	OpenAI:   "Unsupported value: 'temperature' does not support 0.2 with this model"
+//	Zen:      "[invalid_request_error] invalid temperature: only 1 is allowed for this model"
+//
+// The `openai` row already handles its own case by provider name, and that
+// approach cannot be extended here: a gateway serves nine vendors down one
+// base URL, so the rule is per MODEL and changes whenever any of those nine
+// ships. A table of model ids kept in this file would be a copy of nine
+// release schedules and wrong the week one of them moved.
+//
+// So it is read off what the server said instead. A 400 that names the
+// temperature is the endpoint refusing the request shape, which is exactly the
+// case where sending it again without the field is both safe and correct —
+// dropping it (omitempty) leaves the model on its own default, which is the
+// value it just said was the only one allowed.
+// documentPartRefused reports the 400 that is a refusal of the FILE part
+// carried with the request rather than of anything else about it.
+//
+// It exists because document_capabilities.go had written down its own blocker:
+// "an unverified wire shape here is a 400 on a turn that works fine today, and
+// the fallback it would replace is not broken." That was the reason only one
+// provider had ever been allowed to send a document, and why the note beside it
+// said each of the others should be added "as it is proven, not as it is read
+// about."
+//
+// This is what makes the rest of them addable. The `file` part is read from a
+// real implementation (the AI SDK's openai-compatible chat converter, which is
+// what most of this ecosystem actually talks to these endpoints with) but it is
+// not verified against every gateway that speaks this dialect, and there are
+// fourteen. So a refusal is caught, the documents are dropped, and the turn is
+// replayed without them — which lands the user exactly where they were before
+// this path existed, on pdf_read, having spent one extra call rather than a
+// whole turn.
+//
+// Narrower than temperatureRefused on purpose: it only fires when documents
+// were actually sent, so a 400 that merely happens to contain the word "file"
+// cannot cost anybody a second request.
+func documentPartRefused(status int, body []byte, sentDocuments bool) bool {
+	if !sentDocuments || status != http.StatusBadRequest {
+		return false
+	}
+	said := strings.ToLower(string(body))
+	for _, phrase := range []string{
+		"file", "document", "input_file", "file_data", "unsupported content",
+	} {
+		if strings.Contains(said, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+// stripDocuments returns the messages without their document parts, for the
+// replay above. The text and images are untouched: only the part that was
+// refused is withdrawn.
+func stripDocuments(msgs []Message) []Message {
+	out := make([]Message, len(msgs))
+	copy(out, msgs)
+	for i := range out {
+		out[i].Documents = nil
+	}
+	return out
+}
+
+func temperatureRefused(status int, body []byte) bool {
+	return status == http.StatusBadRequest &&
+		strings.Contains(strings.ToLower(string(body)), "temperature")
+}
+
+// refusedTemperature remembers the models that have answered that way, so the
+// replay costs one extra round trip per model per run instead of one per turn.
+// Deliberately not persisted: it is a fact about a deployment, and a provider
+// that widens what it accepts should not have to wait for a file to be cleared.
+var refusedTemperature sync.Map
+
+// dropTemperature answers, before the first attempt, whether this model will
+// refuse one — so the replay below is a safety net rather than a toll.
+//
+// Two sources, in that order of authority: what this process has already been
+// told to its face, then what the fetched catalog claims. The measured one is
+// first because it cannot be stale about this deployment, and the catalog is a
+// third party the `nvidia` row already proves can be wrong about an endpoint.
+func (p *OpenAICompatibleProvider) dropTemperature(modelID string) bool {
+	if _, seen := refusedTemperature.Load(p.provider + "/" + modelID); seen {
+		return true
+	}
+	return catalogRefusesTemperature(p.provider, modelID)
+}
+
+func (p *OpenAICompatibleProvider) rememberTemperatureRefusal(modelID string) {
+	refusedTemperature.Store(p.provider+"/"+modelID, struct{}{})
+}
+
 func (p *OpenAICompatibleProvider) usesDeepSeekThinking() bool {
 	return NormalizeProvider(p.provider) == "deepseek"
 }
@@ -863,7 +1127,24 @@ func (p *OpenAICompatibleProvider) usesGeminiReasoningEffort() bool {
 // this dialect should join the list instead of growing a fourth branch — this
 // chain of provider tests is the same drift the effort tables just came out of.
 func (p *OpenAICompatibleProvider) usesPlainReasoningEffort() bool {
-	return NormalizeProvider(p.provider) == "kimi"
+	switch NormalizeProvider(p.provider) {
+	case "kimi", "opencode", "opencode-go":
+		// The OpenCode rows joined rather than growing a branch, which is what
+		// the note above asked the next provider to do. Not inferred from a
+		// successful call either: parseOpenAiVariant in their own repo
+		// (routes/zen/util/variant.ts) reads
+		// `body.reasoningEffort ?? body.reasoning_effort ?? body.reasoning?.effort`,
+		// so the top-level field is the first spelling it looks for.
+		//
+		// The gateway does nothing else with it — handler.ts passes the value
+		// to logger.metric and forwards the body untouched — so whether an
+		// effort is honoured is the upstream model's business, exactly as if
+		// that vendor had been called directly. Which models have a dial is
+		// therefore a per-model question, answered by the fetched catalog in
+		// ResolveThinkingCapabilities rather than by a list kept here.
+		return true
+	}
+	return false
 }
 
 func (p *OpenAICompatibleProvider) usesMiniMaxThinking() bool {

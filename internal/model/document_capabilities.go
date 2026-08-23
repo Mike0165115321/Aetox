@@ -1,6 +1,10 @@
 package model
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/Mike0165115321/Aetox/internal/provider"
+)
 
 // Which models can be handed a whole document to read.
 //
@@ -10,42 +14,67 @@ import "strings"
 // about a document it never received. The fallback is pdf_read, which works
 // everywhere and loses the layout.
 //
-// It differs from ResolveVision in what it keys on, and the difference is the
-// point. Vision is a property of the *model*, so that resolver matches on the
-// model name across every provider. Accepting a file upload is a property of
-// the *endpoint*: the same gpt-5.5 reached through a third-party
-// OpenAI-compatible gateway has no file part to send it through. So this keys
-// on the provider first, and only then asks whether the model is one that
-// reads.
+// Two questions, and keeping them apart is the standard this package now runs
+// on. Can this ENDPOINT carry a document part at all? That is a wire dialect,
+// so it is answered by runtime, below. Does this MODEL read one? That is the
+// catalog's, per model, and it is why the answer stopped being a list.
 //
-// Deliberately one provider today. codex is the path verified against the real
-// backend (a PDF in, the number drawn inside it back out); anthropic and
-// openai both document a file part and are the obvious next two, but an
-// unverified wire shape here is a 400 on a turn that works fine today, and the
-// fallback it would replace is not broken. Add each one as it is proven, not
-// as it is read about.
-var documentProviders = map[string]bool{
-	"codex": true,
+// The trade against pdf_read runs the opposite way to the usual one and is
+// worth restating: sending the document costs more tokens, not fewer — the
+// model ingests the whole file instead of 220 extracted lines. It buys layout,
+// tables, charts and scanned pages. desktop/app.go caps the size at which that
+// stops being worth it.
+
+// documentRuntimes are the wire dialects that can carry a document, each with
+// the shape it carries one in:
+//
+//	responses           input_file  {filename, file_data}
+//	anthropic           document    {source: {type: base64, media_type, data}}
+//	openai-compatible   file        {filename, file_data}
+//
+// Keyed by runtime rather than by provider name, and that is the change. The
+// list used to read `{"codex": true}` — one name, with a note that anthropic and
+// openai "are the obvious next two" and would be added as each was proven. That
+// is a list that has to be edited every time a provider is added, which is
+// exactly what adding a provider is supposed to stop requiring. There are three
+// dialects and twenty-two rows; the rows do not each need an opinion.
+//
+// Ollama is absent on purpose: its native API has no file part, and a model
+// pulled onto a local GPU is not described by any catalog either.
+var documentRuntimes = map[provider.Runtime]bool{
+	provider.RuntimeResponses:        true,
+	provider.RuntimeAnthropic:        true,
+	provider.RuntimeOpenAICompatible: true,
 }
 
 // documentMediaTypes is what Aetox will hand over. PDF alone: it is the format
 // the attachment picker has always taken, the one `read` cannot open, and the
-// only one the verified backend was checked with.
+// only one every dialect above documents.
 var documentMediaTypes = map[string]bool{
 	"application/pdf": true,
 }
 
 // ResolveDocuments reports whether this provider and model accept a document
-// part. An unknown pair is treated as "no" — that costs the layout and keeps a
-// working pdf_read path, where the other way costs a failed turn.
-func ResolveDocuments(provider, modelName string) bool {
-	if !documentProviders[NormalizeProvider(provider)] {
+// part.
+//
+// Where the catalog knows the model, its answer is used outright — 103 of
+// OpenRouter's models take a pdf, 35 of opencode's, 19 of Gemini's, and every
+// one of them was being handed extracted text instead.
+//
+// Where it does not, the rule that has been serving is kept: a model that can
+// look at a page can read a document. That is what keeps codex working, which
+// is the one path verified against a real backend (a PDF in, the number drawn
+// inside it back out) and which no catalog describes, because "codex" is a
+// subscription rather than a published model list.
+func ResolveDocuments(providerName, modelName string) bool {
+	if !documentRuntimes[provider.RuntimeFor(NormalizeProvider(providerName))] {
 		return false
 	}
-	// Same reading as ResolveVision: a model that cannot look at a page cannot
-	// read a document either, and every model on a document-capable endpoint
-	// that can see is one that reads.
-	return ResolveVision(provider, modelName)
+	caps := resolveModalities(providerName, modelName)
+	if caps.Source == "models.dev" {
+		return caps.Accepts("pdf")
+	}
+	return caps.Accepts("image")
 }
 
 // SupportsDocumentType reports whether Aetox will send this media type as a

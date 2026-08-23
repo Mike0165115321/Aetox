@@ -149,11 +149,11 @@ func TestOpenRouterBalanceReadsKeyEndpointAndQuota(t *testing.T) {
 	if got.Amount != 8.25 {
 		t.Errorf("amount = %v; want 8.25", got.Amount)
 	}
-	if got.Quota == nil {
-		t.Fatal("quota = nil; want the key window alongside the credits")
+	if len(got.Quotas) != 1 {
+		t.Fatalf("quotas = %d; want the one key window alongside the credits", len(got.Quotas))
 	}
-	if got.Quota.RemainingPercent < 82 || got.Quota.RemainingPercent > 83 {
-		t.Errorf("remaining = %v%%; want ~82.5", got.Quota.RemainingPercent)
+	if got.Quotas[0].RemainingPercent < 82 || got.Quotas[0].RemainingPercent > 83 {
+		t.Errorf("remaining = %v%%; want ~82.5", got.Quotas[0].RemainingPercent)
 	}
 }
 

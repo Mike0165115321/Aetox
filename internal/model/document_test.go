@@ -59,11 +59,20 @@ func TestResolveDocuments(t *testing.T) {
 	}{
 		{"codex", "gpt-5.5", true},
 		{"chatgpt-codex", "gpt-5.1-codex", true}, // resolves through the alias
-		// Verified endpoints only. These two document a file part and are the
-		// obvious next candidates, but an unverified wire shape is a 400 on a
-		// turn that works today — they stay on pdf_read until proven.
-		{"anthropic", "claude-sonnet-5", false},
-		{"openai", "gpt-4o", false},
+		// These two used to be false, and the comment here said why: "an
+		// unverified wire shape is a 400 on a turn that works today". That was
+		// the right call while it was true, and it stopped being true when the
+		// refusal replay landed (documentPartRefused in openai_compatible.go).
+		// A shape this endpoint will not take now costs one extra call and
+		// drops the user back on pdf_read, which is exactly where they were
+		// before the path existed — not a dead turn.
+		//
+		// The shapes themselves are not guesses either. Anthropic's document
+		// block is from Anthropic's own API reference; the openai-compatible
+		// file part is from the AI SDK's chat converter, which is the code most
+		// of this ecosystem talks to these endpoints with.
+		{"anthropic", "claude-sonnet-5", true},
+		{"openai", "gpt-4o", true},
 		// A document-capable endpoint still needs a model that reads.
 		{"codex", "codex-auto-review", false},
 		{"ollama", "llava:13b", false},

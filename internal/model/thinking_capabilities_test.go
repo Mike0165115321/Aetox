@@ -98,19 +98,27 @@ func TestResolveThinkingCapabilitiesGroqFamilies(t *testing.T) {
 		t.Fatalf("expected medium default, got %q", gptOSS.Default)
 	}
 
+	// qwen/qwen3-32b used to get a dial from a `qwen/qwen3-` prefix. Groq does
+	// serve it and models.dev does not describe it at all, so the answer is now
+	// "unknown", which is the honest one and a real if small loss: a model with
+	// a dial is offered none until the catalog lists it.
+	//
+	// The alternative is the prefix that produced it, and that prefix is why
+	// llama-3.3-70b was sent an include_reasoning field it answers 400 to. The
+	// assertion is kept, inverted, so the day models.dev adds this id the test
+	// says so instead of staying quietly green.
 	qwen := ResolveThinkingCapabilities("groq", "qwen/qwen3-32b")
-	if !qwen.Supported || qwen.Default != "default" {
-		t.Fatalf("expected qwen default thinking capabilities, got %+v", qwen)
-	}
-	want := []string{"default", "none"}
-	for i := range want {
-		if qwen.Levels[i] != want[i] {
-			t.Fatalf("unexpected qwen levels: %#v", qwen.Levels)
-		}
+	if qwen.Supported {
+		t.Fatalf("qwen3-32b is not in the catalog and reported a dial anyway: %+v", qwen)
 	}
 }
 
 func TestResolveThinkingCapabilitiesOpenRouterKnownReasoningFamilies(t *testing.T) {
+	// OpenRouter's answer comes from the catalog now, not from a prefix list,
+	// so a test with none installed would be testing the no-catalog path.
+	// (openrouter_thinking_test.go covers that path deliberately.)
+	withOpenRouterCatalog(t)
+
 	caps := ResolveThinkingCapabilities("openrouter", "deepseek/deepseek-r1")
 	if !caps.Supported || !caps.Native {
 		t.Fatalf("expected openrouter reasoning capabilities, got %+v", caps)
@@ -216,12 +224,30 @@ func TestResolveThinkingCapabilities_KnownPrefixesResolveToSupported(t *testing.
 		provider string
 		models   []string
 	}{
-		{"deepseek", []string{"deepseek-v4", "deepseek-chat", "deepseek-reasoner"}},
+		// deepseek-v4 and deepseek-chat left this row, and both departures are
+		// the finding. models.dev serves no plain "deepseek-v4" — the real ids
+		// are deepseek-v4-pro and deepseek-v4-flash — and it states
+		// reasoning=false for deepseek-chat, which is the non-thinking sibling
+		// of deepseek-reasoner. The old prefix said every `deepseek-` model
+		// thinks, which is how a chat model came to have a thinking menu.
+		{"deepseek", []string{"deepseek-v4-pro", "deepseek-v4-flash", "deepseek-reasoner"}},
 		{"openai", []string{"gpt-5-pro", "gpt-5.1", "gpt-5.2", "o1", "o3", "o4"}}, // gpt-4o has no effort knob
 		{"gemini", []string{"gemini-2.5-flash-lite", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-pro"}},
-		{"groq", []string{"openai/gpt-oss-20b", "qwen/qwen3-32b"}},
-		{"openrouter", []string{"openai/gpt-4o", "deepseek/deepseek-r1", "google/gemini-2.5-pro", "anthropic/claude-sonnet-4"}},
+		// qwen/qwen3-32b is out for the reason above: Groq serves it, no catalog
+		// describes it, and a prefix is what this change exists to remove.
+		{"groq", []string{"openai/gpt-oss-20b", "openai/gpt-oss-120b"}},
+		// openai/gpt-4o is gone from this row, and its absence is the finding
+		// rather than a convenience. The openai row two lines up already
+		// excludes gpt-4o with the note "gpt-4o has no effort knob" — the same
+		// model, the same question, two answers in one table, because the
+		// OpenRouter side was answered by a prefix that made everything under
+		// openai/ a reasoning model. models.dev states reasoning=false for it.
+		{"openrouter", []string{"deepseek/deepseek-r1", "google/gemini-2.5-pro", "anthropic/claude-sonnet-4"}},
 	}
+	// The whole matrix, not the openrouter slice: every provider in the table
+	// below answers from the catalog now, so a fixture covering one of them
+	// leaves the rest reporting "unknown model" and reads as a broken resolver.
+	withCapabilityMatrix(t)
 	for _, tt := range tests {
 		for _, model := range tt.models {
 			caps := ResolveThinkingCapabilities(tt.provider, model)

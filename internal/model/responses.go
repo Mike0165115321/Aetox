@@ -609,8 +609,10 @@ func (p *ResponsesProvider) StreamComplete(ctx context.Context, req Request, onC
 
 	textOut := strings.TrimSpace(text.String())
 	reasoningOut := strings.TrimSpace(reasoning.String())
-	if textOut == "" && reasoningOut == "" && len(toolCalls) == 0 {
-		return Response{}, fmt.Errorf("%s stream response has empty text", p.provider)
+	// No finish reason to state: this endpoint reports a truncation as its own
+	// "response.incomplete" event, which has already returned above.
+	if err := errEmptyCompletion(p.provider, "", textOut, reasoningOut, len(toolCalls), "responses stream"); err != nil {
+		return Response{}, err
 	}
 
 	return Response{

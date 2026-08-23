@@ -82,7 +82,14 @@ func TestGroqSendsIncludeReasoningOnlyToModelsThatTakeIt(t *testing.T) {
 		{"llama-3.3-70b-versatile", false}, // the catalog's own groq fallback
 		{"llama-3.1-8b-instant", false},
 		{"openai/gpt-oss-120b", true},
-		{"qwen/qwen3-32b", true},
+		{"openai/gpt-oss-20b", true},
+		// qwen/qwen3-32b was here and expected the field. Groq serves it and
+		// models.dev describes it nowhere, so it now resolves to "no dial" and
+		// the field is withheld — which is this test's own rule applied one
+		// model further: include_reasoning is a question about the MODEL, and it
+		// used to be answered by a `qwen/qwen3-` prefix. Withholding it costs
+		// nothing; sending it to a model that refuses it ends the turn.
+		{"qwen/qwen3-32b", false},
 	} {
 		var got map[string]any
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

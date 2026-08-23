@@ -959,6 +959,7 @@ export namespace main {
 	    quotas: model.Quota[];
 	    quotaKnown: boolean;
 	    expectsQuota: boolean;
+	    quotaFetched: boolean;
 	    error: string;
 	
 	    static createFrom(source: any = {}) {
@@ -972,6 +973,7 @@ export namespace main {
 	        this.quotas = this.convertValues(source["quotas"], model.Quota);
 	        this.quotaKnown = source["quotaKnown"];
 	        this.expectsQuota = source["expectsQuota"];
+	        this.quotaFetched = source["quotaFetched"];
 	        this.error = source["error"];
 	    }
 	
@@ -1758,7 +1760,7 @@ export namespace model {
 	    currency: string;
 	    parts: BalancePart[];
 	    sufficient: boolean;
-	    quota?: Quota;
+	    quotas?: Quota[];
 	    // Go type: time
 	    fetchedAt: any;
 	
@@ -1774,7 +1776,7 @@ export namespace model {
 	        this.currency = source["currency"];
 	        this.parts = this.convertValues(source["parts"], BalancePart);
 	        this.sufficient = source["sufficient"];
-	        this.quota = this.convertValues(source["quota"], Quota);
+	        this.quotas = this.convertValues(source["quotas"], Quota);
 	        this.fetchedAt = this.convertValues(source["fetchedAt"], null);
 	    }
 	

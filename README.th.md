@@ -326,9 +326,9 @@ update · activate)* หรือ `windmill` *(workspaces · list · read · cre
 ไม่ใช่ซ่อนจากโมเดล แต่ไม่มีอยู่จริง ส่วนเครื่องมือเขียนเอกสารไปถึงแค่โต๊ะเฉพาะทาง
 ผู้ช่วยจึงส่งงานต่อเพื่อขอ `.pptx` แทนที่จะแบกเครื่องมือสามตัวที่ไม่ค่อยได้ใช้
 
-**20 ผู้ให้บริการ และหน้าต่างแสดงครบทุกราย** — OpenAI · Anthropic · Gemini · DeepSeek ·
+**22 ผู้ให้บริการ และหน้าต่างแสดงครบทุกราย** — OpenAI · Anthropic · Gemini · DeepSeek ·
 Qwen · Z.ai · OpenRouter · Codex · Groq · Mistral · Kimi · MiniMax · xAI · ThaiLLM ·
-ModelScope · NVIDIA · Ollama Cloud · LM Studio · Ollama · และ `aetox` ที่มีในตัว OpenRouter กับ Codex ใช้การลงชื่อเข้าใช้
+ModelScope · NVIDIA · Ollama Cloud · OpenCode Zen · OpenCode Go · LM Studio · Ollama · และ `aetox` ที่มีในตัว OpenRouter กับ Codex ใช้การลงชื่อเข้าใช้
 ที่เหลือใช้ API key หรือที่อยู่เซิร์ฟเวอร์ในเครื่อง เดิมทะเบียนกับหน้าเลือกไม่ตรงกัน ตอนนี้ตรงแล้ว
 เพราะรายที่เครื่องยนต์รู้จักแต่หน้าต่างไม่แสดง คือรายที่ไม่มีใครไปถึงได้
 

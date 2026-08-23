@@ -14,6 +14,8 @@ import {ooxml} from '../models';
 import {config} from '../models';
 import {oauth} from '../models';
 
+export function APIKeyHint(arg1:string):Promise<string>;
+
 export function AcceptsAPIKey(arg1:string):Promise<boolean>;
 
 export function AccountRefresh():Promise<main.AccountState>;
