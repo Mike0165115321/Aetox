@@ -65,10 +65,12 @@ both; the language switch is in Settings and in the first-run wizard. This READM
   file that opens in the slides room, where you page through it, present it full screen, and export
   it as `.pptx`, `.pdf` or images from that same room. Slides are laid out on a 1280x720 box, which
   is exactly PowerPoint's widescreen page, so the deck opens there without shifting.
-- **A real browser inside the app** — not a headless scrape: a WebView2 window actually
-  composited into it, with an address bar, back/forward, DevTools, and eight device
-  presets that resize the native window so CSS media queries genuinely fire. The agent opens,
-  reads, clicks and types into the same tab you're watching ([see it](#what-you-can-do-with-it)).
+- **The browser control layer is ours** — the window is WebView2, composited into the app with an
+  address bar, back/forward, DevTools, and eight device presets that resize the native window so
+  CSS media queries genuinely fire. What we wrote is the layer above it: one read numbers every
+  interactive element on the page, and click and type aim at that number — so a model that cannot
+  see images hits the right control, with no vision model and no guessing at coordinates
+  ([see it](#what-you-can-do-with-it)).
 - **It builds websites and systems, not just code in a chat box** — point it at a folder and you
   get a file tree, a Monaco editor, unlimited real PTY terminal tabs, `git`, `grep` and `glob` over
   the whole tree, plus `diagnostics` and `symbol` backed by language servers the app installs on
@@ -395,6 +397,31 @@ otherwise, and a test exists whose only job is to keep it saying so.
 
 **There is no scheduler, and there will not be one.** Aetox has no cloud, so a schedule would
 silently depend on your laptop never closing. n8n and Windmill are the clock; Aetox is the hands.
+
+## When a turn goes wrong
+
+The engine's job is to finish the turn. These four are failures it absorbs instead of handing you.
+
+**An answer cut off by the output-token limit is continued.** A reply that hits the ceiling used to
+reach you stopped mid-word, with nothing anywhere asking for the rest. The turn now carries on up to
+three times and appends to what is already on screen, so one answer is watched being written rather
+than vanishing and starting over.
+
+**A tool call that names the same argument twice is refused.** A model asking for three searches
+sometimes writes two of them into one object — `{"query":"A","query":"B"}`. That is valid JSON, so a
+parser keeps the last and drops the first without a word: one search never runs, and the answer
+reports on it anyway. Aetox rejects the call and tells the model what was actually wrong with it,
+rather than letting a silent loss reach the answer.
+
+**A provider that returns nothing is an error, not an empty answer.** A turn 350 seconds in with
+eighteen tool results behind it once died on a round that came back without a single frame of text.
+That round is replayed twice — with whatever streamed taken back first — and only then does the turn
+change the question instead of asking a fourth time. Everything the turn had already done stays in
+context either way.
+
+**What a model can do only ever narrows the toolset, never widens it.** A model the catalogue has
+never described keeps every tool; one the catalogue says cannot call tools is narrowed. Wrongly
+withholding tools turns an agent into a chat window, so doubt is resolved in one direction only.
 
 ## Measured, not claimed
 
