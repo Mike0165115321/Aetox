@@ -323,6 +323,39 @@ var errAgentTabClosed = errors.New("the page you were working on was closed whil
 // attached to it.
 var errAgentTabGone = errors.New("the page you were working on is no longer open — open it again and carry on from there")
 
+// browserWhyRefMissed says what is actually wrong with a ref that matched
+// nothing, out of what this tab already knows — rather than naming the one
+// cause somebody thought of first.
+//
+// The cause it used to name, "refs expire when the page changes", is real and
+// was wrong for the miss that actually arrives. Measured on the owner's own
+// session: a full read tagged 150 elements, a second read filtered to "English"
+// tagged three, and `type ref 11` was refused with a sentence about the page
+// changing on a page that had not changed at all. Every read reassigns refs
+// from 1 and clears the ones before it, so the commonest way a ref dies is the
+// next read — and the answer has to say so, because the recovery is different:
+// re-read WITHOUT the filter, not wait for the page to settle.
+func (a *App) browserWhyRefMissed(id AgentTabID, ref int) string {
+	var t *browserTab
+	if a.browsers != nil {
+		t = a.browsers.tab(string(id))
+	}
+	count, filter, read := t.refs()
+	switch {
+	case !read:
+		return " ยังไม่ได้ read หน้านี้เลย ref จึงยังไม่มีอะไรเลย อ่านก่อนแล้วใช้ ref จากรอบนั้น"
+	case count == 0 && filter != "":
+		return fmt.Sprintf(" read ครั้งล่าสุดใส่ filter=%q แล้วไม่เจอ element สักตัว จึงไม่มี ref อะไรอยู่บนหน้านี้เลยตอนนี้ อ่านใหม่โดยไม่ใส่ filter", filter)
+	case count == 0:
+		return " read ครั้งล่าสุดไม่เจอ element ที่กด/พิมพ์ได้เลยบนหน้านี้"
+	case ref > count && filter != "":
+		return fmt.Sprintf(" read ครั้งล่าสุดใส่ filter=%q ซึ่งแท็กไว้แค่ %d ตัว (ref 1-%d) และลบ ref ของรอบก่อนทิ้งไปแล้ว — ref %d เป็นของรอบก่อนหน้านั้น อ่านใหม่โดยไม่ใส่ filter แล้วใช้ ref จากรอบนั้น", filter, count, count, ref)
+	case ref > count:
+		return fmt.Sprintf(" read ครั้งล่าสุดแท็กไว้ %d ตัว (ref 1-%d) ref %d อยู่นอกช่วงนั้น อ่านใหม่แล้วใช้ ref จากรอบนั้น", count, count, ref)
+	}
+	return " ref มาจาก browser_read ครั้งล่าสุด และหมดอายุทันทีที่หน้าเปลี่ยน อ่านหน้าใหม่แล้วใช้ ref จากรอบนั้น"
+}
+
 // browserWhere names the page a tab is on, as a parenthetical to hang off the
 // end of an action's result, or "" when the tab cannot say.
 //
@@ -807,8 +840,8 @@ func (s *browserClickSkill) click(ref int) (skill.Output, error) {
 	// turned a small bug upstream into a six-round loop: a ref matching nothing
 	// used to report a successful click. See aetoxActJS for the turn.
 	if answered && !res.Found {
-		msg := fmt.Sprintf("ไม่มี element ref %d บนหน้านี้ ยังไม่ได้คลิกอะไรเลย%s ref มาจาก browser_read ครั้งล่าสุด และหมดอายุทันทีที่หน้าเปลี่ยน อ่านหน้าใหม่แล้วใช้ ref จากรอบนั้น",
-			ref, s.app.browserWhere(id))
+		msg := fmt.Sprintf("ไม่มี element ref %d บนหน้านี้ ยังไม่ได้คลิกอะไรเลย%s%s",
+			ref, s.app.browserWhere(id), s.app.browserWhyRefMissed(id, ref))
 		out.Content, out.Stderr = msg, msg
 		return out, errors.New(msg)
 	}
@@ -893,8 +926,8 @@ func (s *browserTypeSkill) typeText(ref int, text string, enter bool) (skill.Out
 	// is invisible on the next read, so a false success sends the model looking
 	// for a form it never filled.
 	if answered && !res.Found {
-		msg := fmt.Sprintf("ไม่มี element ref %d บนหน้านี้ ยังไม่ได้พิมพ์อะไรลงไปเลย%s ref มาจาก browser_read ครั้งล่าสุด และหมดอายุทันทีที่หน้าเปลี่ยน อ่านหน้าใหม่แล้วใช้ ref จากรอบนั้น",
-			ref, s.app.browserWhere(id))
+		msg := fmt.Sprintf("ไม่มี element ref %d บนหน้านี้ ยังไม่ได้พิมพ์อะไรลงไปเลย%s%s",
+			ref, s.app.browserWhere(id), s.app.browserWhyRefMissed(id, ref))
 		out.Content, out.Stderr = msg, msg
 		return out, errors.New(msg)
 	}

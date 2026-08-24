@@ -6752,3 +6752,46 @@ Every test was watched failing against the old code first. One of them was a lie
 ### 182.8 The rule this leaves behind
 
 **An event is not an intention.** A component unmounting, a list changing, a window reloading — these say that something happened, never that somebody meant it. The moment a piece of state means "somebody meant this", the only safe place to set it is where the meaning is, and the only safe way to carry it is as an argument the compiler will demand.
+
+## 183. Decision — The Diagnosis Named the Cause Somebody Thought of First (2026-08-25)
+
+Owner, reading the log of his own browser run: *"เออมันมีเออเร่ออยู่ตัวนึงคือไม่ทักกันอ่ะะะ"*.
+
+He is right, and the two halves of "not telling each other" are a rule that arrives too late and an error that points the wrong way.
+
+### 183.1 What the log holds
+
+```
+06:24:17  read                       a full read tags the page
+06:24:24  read filter="English"      tags three, strips the rest
+06:24:24  type ref 11        FAIL    "ref หมดอายุทันทีที่หน้าเปลี่ยน"
+06:24:29  read                       unfiltered again
+06:24:36  type ref 11        ok      the same ref, the same page
+```
+
+The page never changed. A **narrower read** replaced the numbering underneath the model, and the refusal explained a cause that was not operating — so the recovery it described (wait for the page to settle, read again) is not the recovery that works (read again *without the filter*).
+
+One round spent, and the sentence that spent it was confidently wrong.
+
+### 183.2 The rule was true and incomplete
+
+`read`'s guidance listed two ways a ref dies: the page changes, or you select another tab. It did not list the commonest one — **the next read**. Every read renumbers from 1 and strips the tags before it, which is right and always was; nobody had said it out loud, and a filtered read makes it bite hardest because its list is short and its numbers are its own.
+
+Now said once per session, in the same words on `read`, `click` and `type`. One idea, one wording, three doors — the same rule §181.2 asked of parameter names, applied to a sentence.
+
+### 183.3 The engine had the facts and was not using them
+
+`browserTab` now remembers what the last read left behind: how many elements it tagged, and the filter it used. Both were already in hand at the moment of the read and were being thrown away.
+
+So a miss is answered from the tab rather than from a guess:
+
+- **nothing has read this page** — there are no refs at all, which is not a stale ref
+- **the filter matched nothing** — zero refs on a page that may be full of them, and the fix is to drop the filter
+- **the ref is past the end of the last read** — say how many it tagged, and name the filter if there was one
+- **the ref is inside the range and still missed** — *then* the page moved, which is the sentence this used to give everybody
+
+Same shape as `whyNoMatch` in `internal/skill/lineendings.go`: a tool holding the evidence must not answer a failure with a guess, and must never answer it with "go and look again".
+
+### 183.4 The rule this leaves behind
+
+**An error message is a claim about a cause, and a claim can be wrong in a way that costs a round.** The one to distrust is the cause the author already had in mind when they wrote the branch — it gets attached to every miss, including the ones it does not explain, and it reads exactly as authoritative in both cases.

@@ -563,6 +563,21 @@ type browserTab struct {
 	textCh    chan browserSnapshot
 	textToken string // token BrowserGetText is currently waiting on; empty = none pending
 
+	// What the last read left behind for click and type to aim at. Every read
+	// reassigns refs from 1 and strips the ones before it, so "ref 11" means
+	// nothing except in the numbering of the read that produced it — and a
+	// FILTERED read tags only its matches, which is a short list with its own
+	// numbers on a page that never changed.
+	//
+	// Kept because the tool could not otherwise say why a ref missed. It used
+	// to answer every miss with "refs expire when the page changes", which is
+	// true and was the wrong cause: the page was the same, a narrower read had
+	// simply replaced the numbering underneath it.
+	refMu     sync.Mutex
+	refCount  int    // how many elements the last read tagged
+	refFilter string // the filter that read used; "" for none
+	refRead   bool   // whether any read has happened on this page yet
+
 	pickMu sync.Mutex
 	// pickToken is the token the live point-at-the-page mode will answer with;
 	// empty = no mode running. Unlike textToken there is no channel waiting on
@@ -1301,6 +1316,27 @@ func (a *App) BrowserGetText(id string) (string, error) {
 
 // browserSnapshot reads page text plus the interactive elements tagged by
 // textScript, in one round trip. Used by BrowserGetText and browser_read.
+// noteRefs records what a read left for click and type to aim at. Called on
+// every read, including a filtered one, because a filtered read is the case
+// that made this worth keeping.
+func (t *browserTab) noteRefs(count int, filter string) {
+	if t == nil {
+		return
+	}
+	t.refMu.Lock()
+	t.refCount, t.refFilter, t.refRead = count, filter, true
+	t.refMu.Unlock()
+}
+
+func (t *browserTab) refs() (count int, filter string, read bool) {
+	if t == nil {
+		return 0, "", false
+	}
+	t.refMu.Lock()
+	defer t.refMu.Unlock()
+	return t.refCount, t.refFilter, t.refRead
+}
+
 func (a *App) browserSnapshot(id, filter string) (browserSnapshot, error) {
 	host, err := a.browserHostLazy()
 	if err != nil {
@@ -1323,6 +1359,7 @@ func (a *App) browserSnapshot(id, filter string) (browserSnapshot, error) {
 
 	select {
 	case snap := <-ch:
+		t.noteRefs(len(snap.Elements), filter)
 		return snap, nil
 	case <-time.After(5 * time.Second):
 		t.textMu.Lock()

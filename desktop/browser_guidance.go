@@ -89,7 +89,7 @@ var browserGuidance = map[string]string{
 	// guidance attached to the first `wait` arrives only for a model that
 	// already knew. The trigger has to ride on an action that gets used
 	// constantly, and reading an empty page is exactly the moment it matters.
-	"read": "The [n] refs this hands back belong to THIS page as it is now. They go stale the moment it changes or you select another tab, so the loop is read, act, read again — never read once and work from the list.\n" +
+	"read": "The [n] refs this hands back belong to THIS page as it is now, and to THIS read: every read renumbers them from 1 and strips the ones before it, so a ref from an earlier read is dead even on a page that never changed. They also go stale the moment the page changes or you select another tab, so the loop is read, act, read again — never read once and work from the list.\n" +
 		"If a page comes back with less on it than you expected — no results, an empty list, a shell with nothing in it — that is usually not the answer. Most pages fetch their real content after loading, and this read SUCCEEDED on a page that is not finished. Use `wait` for the text you expect, then read again, before you report that something is not there.\n" +
 		// The counterweight to the paragraph above, and it has to travel with
 		// it. That one teaches "less than you expected means wait", which is
@@ -108,9 +108,9 @@ var browserGuidance = map[string]string{
 	"network": "The fetch and XMLHttpRequest calls the page's own code made, oldest first, with status and duration. Use it when a page renders but its data does not: this is what tells a 401 from a 500 from a request that was never made at all.\n" +
 		"Three limits worth knowing before you draw a conclusion. Images, scripts and stylesheets are NOT here — those are the browser's own fetches, not the page's, so their absence from this list says nothing about whether they loaded. A status shown as `-` means the request never came back. And anything in a query string that looks like a credential arrives as <redacted>, which is the tool hiding it and not the page sending it that way.",
 
-	"click": "A ref belongs to the page it was read from and goes stale the moment that page changes, which a click often does. Read, act, read again.\n" +
+	"click": "A ref belongs to the page it was read from AND to the read that produced it: the next read renumbers everything, and a filtered read tags only its own matches, so a short list carries ref 1 upward whatever the full page holds. It also goes stale the moment the page changes, which a click often does. Read, act, read again.\n" +
 		"A click can navigate, raise a dialog, or do nothing visible; read afterwards rather than assuming which.",
 
-	"type": "A ref belongs to the page it was read from. If the page has changed since, read it again before typing into a number that may now mean something else.\n" +
+	"type": "A ref belongs to the page it was read from and to the read that produced it: a later read, filtered or not, renumbers them all. If anything has read this page since, read it again before typing into a number that may now mean something else.\n" +
 		"For a select element the text must match one of the options `read` listed. enter=true submits, which is how a search box with no button is used.",
 }
