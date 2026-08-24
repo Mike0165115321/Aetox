@@ -342,7 +342,7 @@ provider sees what its API normally sees, and nothing is routed through us.
 A tool count is not a reason to use anything, which is why this is down here.
 
 **35 tools reach the model on a fresh install**; a default assistant session carries fewer,
-because a desk narrows the set. They cost about 7,727 tokens on every request before you have
+because a desk narrows the set. They cost about 7,763 tokens on every request before you have
 typed anything, against a ceiling of 10,400 tokens and 48 tools that a test enforces.
 
 | Group | Tools |
@@ -499,6 +499,7 @@ assistant door to the code door; a code-door team with defined roles.
 [Architecture](ARCHITECTURE.md) · [Every decision, and why](docs/DECISIONS.md) ·
 [What this company is](COMPANY.md) · [How a screen is designed](DESIGN.md) ·
 [Benchmark rules](BENCHMARK.md) ·
+[Where every published number lives](docs/PUBLISHED-NUMBERS.md) ·
 [Platform support](PLATFORM-SUPPORT.md) · [Roadmap](ROADMAP.md) ·
 [Automation engines](docs/AUTOMATION-ENGINES.md)
 
