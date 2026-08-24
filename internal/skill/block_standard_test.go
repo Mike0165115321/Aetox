@@ -79,7 +79,7 @@ var overweight = map[string]int{
 	"edit":             234,
 	"web_fetch":        215,
 	"glob":             206,
-	"web_search":       205,
+	"web_search":       198,
 	"read":             185,
 	"symbol":           180,
 	"git":              176,

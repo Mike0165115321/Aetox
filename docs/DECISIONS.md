@@ -6530,3 +6530,59 @@ And one mistake worth recording because it cost a full round of work: a probe pr
 - **Embeddings.** The lexical ceiling is real and written at the head of `passage.go`: a page saying "disable automatic reattempts" will never match a search for "stop the retry loop". That gap is what embeddings buy and what they charge for, and `internal/capability` already knows how to download a model file if it is ever worth it. Ollama and LM Studio both expose embedding endpoints and Aetox already speaks to both, so the cheapest first version costs no download at all.
 - **A guidance line telling the model to retry with the page's own vocabulary.** It already does — the logs show ทางราง then รถไฟ then การขนส่ง, unprompted, at 1 to 7ms each off the cache. Teaching something a model already does is tokens spent on nothing.
 - **Perfect ranking.** The window returns nine passages and the model reads all of them; precision at rank one is not the metric. In both live runs the answer was correct.
+
+## 179. Decision — Two Wordings, One Call (2026-08-24)
+
+The last item off the Perplexity study (§178's sources). They pull about sixty sources per question by decomposing it into sub-questions up front and searching them together. `web_search` sent one wording to one engine and returned eight results.
+
+### 179.1 What was measured before anything was built
+
+Three wordings of one question against DuckDuckGo's HTML endpoint:
+
+| | new | running total |
+|---|---|---|
+| wording 1 | 8 | 8 |
+| wording 2 | **4** | 12 |
+| wording 3 | 1 | 13 |
+
+And two things that killed the obvious alternatives before they were written:
+
+- **Raising the result cap does nothing.** DuckDuckGo returns 10 per page and we kept 8. Raising the ceiling to 30 buys two results, because the ceiling was never the binding constraint — the source was.
+- **Pagination does not work.** `s=10` and `s=20` return the same URLs; the endpoint wants hidden form fields echoed back from the previous page, which is a scraping path that breaks whenever they touch it.
+
+So more wordings is the only lever that reaches, and its value is almost entirely in the second one.
+
+### 179.2 The cap is two
+
+Built at three, cut to two on the owner's call: *"ลดเพดานเหลือ 2 ดีกว่า จะได้ไม่ติดลิมิตไว"*.
+
+The measurement backs him. The third wording bought one source for a full HTTP round trip and half again the rate-limit exposure, against an endpoint this tool cannot do without. **Raising it later is a decision about a rate limit, not about search quality** — the sources past two are a rounding error and the requests are not.
+
+### 179.3 Three things that would have failed quietly
+
+- **Sequential.** Three searches one after another cost three round trips of wall clock for a result the caller waits on, and look identical from the outside. They run together; the test holds it by timing three 250ms responses and failing above 500ms.
+- **No dedupe.** A page both wordings find would take two of the eight slots. Keyed on the URL, first sighting wins — first rather than best, because the same URL is the same page and it is about to be ranked on its own text anyway.
+- **One failure taking the call down.** Doubling the requests doubles the chance of a rate limit. A wording that fails is dropped and the rest are answered; only *every* wording failing is an error.
+
+### 179.4 Ranked before it is cut, and it cost nothing to build
+
+The merge is ordered by the same BM25 that reads a page (§178, `passage.go`), over a corpus of one result each — title plus snippet. Rough scores, but the job is only deciding which eight of twenty-odd survive.
+
+**Nothing is dropped for scoring zero.** A result the engine returned is a result, and a merge that silently deleted half of what it merged would be worse than no ranking at all.
+
+The parser also stopped holding the return cap: it took eight because eight was what came back, which threw away the two DuckDuckGo also sent and would have thrown away most of a merge before the merge happened. It takes what the page gives; the choosing happens at the end. Same shape as `web_fetch` keeping 250,000 characters and handing back 8,000.
+
+### 179.5 It got cheaper
+
+`web_search`'s block entry went from **205 tokens to 198**, while gaining fan-out.
+
+The `queries` array was paid for by deleting two sentences that should never have been in the block: *"Use it when you know where the authoritative answer lives"* and *"Use it to get past a content farm that keeps outranking the real source"*. Both are judgment about when to reach for a parameter, which by this repo's own standard (`block_standard_test.go`) belongs in `Guidance()` and is sent once — not in the entry every request carries.
+
+**Finding the room was the standard working as designed.** The ratchet refused the growth, the refusal sent someone looking, and what they found was prose that had been costing every request for months.
+
+### 179.6 Deliberately not done
+
+- **More engines.** Mojeek and Marginalia were probed on the day. Mojeek returned a 5.5KB page with two footer hosts on it — no results, whatever the 200 said. Marginalia returned the same host count for two unrelated queries, which needs more measurement before it can be believed. Neither is the quick win it looked like, and both are a parser each.
+- **A paid API.** Brave's free tier would roughly double the sources per query, and it costs a key. Aetox does not make people sign up for things.
+- **An index of our own.** A million pages is 10 to 15 GB of index on the user's disk, against a 47.5MB application, and stale within weeks of the last crawl. It is most of why Perplexity is good and none of it is a thing a desktop app builds.
+- **Image search.** There is none, and the question came up the same day. `image_ocr` reads text out of a picture, `web_fetch` collects image URLs off a page it was already reading; neither is a search. DuckDuckGo's image endpoint wants a `vqd` token lifted from the HTML page first, which is a more fragile scrape than the one already here. Its own decision, not a footnote to this one.
