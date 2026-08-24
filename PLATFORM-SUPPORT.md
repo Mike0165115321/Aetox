@@ -144,11 +144,11 @@ docker run --rm -v "E:/Aetox/Aetox:/repo:ro" -v aetox-gomod:/go/pkg/mod golang:1
 
 ## การจัดจำหน่าย — ตัวเลขที่ต้องปกป้อง
 
-[BENCHMARK.md](BENCHMARK.md) §4 ขายว่า Aetox **33 MB** เล็กกว่าคู่แข่ง 4–35 เท่า ด้วยเหตุผลว่า *ใช้ webview ที่ OS มีอยู่แล้ว ไม่ได้แบก Chromium มาเอง* — เหตุผลนั้นยังจริงบน macOS เสมอ แต่**บน Linux ขึ้นกับวิธีแพ็ก**:
+[BENCHMARK.md](BENCHMARK.md) §4 ขายว่า Aetox **48.5 MB** เล็กกว่าคู่แข่ง 3–58 เท่า ด้วยเหตุผลว่า *ใช้ webview ที่ OS มีอยู่แล้ว ไม่ได้แบก Chromium มาเอง* — เหตุผลนั้นยังจริงบน macOS เสมอ แต่**บน Linux ขึ้นกับวิธีแพ็ก**:
 
 | แบบ | ขนาด | สรุป |
 |:---|:---|:---|
-| `.deb`/`.rpm`/tar.gz ประกาศ `Depends: libwebkit2gtk-4.1-0` | ~35 MB | ✅ **เลือกอันนี้** |
+| `.deb`/`.rpm`/tar.gz ประกาศ `Depends: libwebkit2gtk-4.1-0` | ~50 MB | ✅ **เลือกอันนี้** |
 | AppImage บรรจุ WebKitGTK มาด้วย | ~150 MB+ | ❌ ลบจุดขายหลักทิ้ง |
 | Flatpak | ~40 MB | ❌ sandbox ตีกับตัวตนของสินค้า (รัน shell/git/MCP ทั้งเครื่อง) |
 

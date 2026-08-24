@@ -111,7 +111,7 @@ flowchart LR
         Grammar["grammar (+command facade)\nexplicit tokens only — no NL inference (§17)"]
         Turn["turn.Executor\nexplicit skill → direct dispatch\nelse model tool loop, else streaming chat"]
         Cog["cognitive.Agent\nunbounded tool loop — brakes are\napproval gate + ctx cancel"]
-        Skills["skill.Registry — 30 built-ins (27 model-facing)\n+ 6 workbench tools (SourceWorkbench)\n+ 3 sub-agent tools (task/task_result/task_answer)\n+ MCP tools via mcp.Manager"]
+        Skills["skill.Registry — 35 model-facing tools on a fresh install\n+ workbench tools (SourceWorkbench)\n+ packed task (start · collect · answer · plan)\n+ MCP tools via mcp.Manager"]
         Safety["safety — ask / unsafe-only / full-access\nper-command risk rules"]
         Prompt["prompt — system prompt layers\n(identity · environment · user · project)"]
         RTK["rtk (optional)\nsqueezes tool receipts"]

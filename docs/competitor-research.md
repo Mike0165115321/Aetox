@@ -19,7 +19,7 @@
 | Capability | OpenCode | Claude Code | Codex CLI | Cursor | Aider | Aetox |
 |-----------|----------|-------------|-----------|--------|-------|-------|
 | Multi-provider | ✅ 40+ | ❌ Anthropic | ❌ OpenAI | ✅ หลายตัว | ✅ หลายตัว | ✅ 14 |
-| Sub-agents | ✅ primary/sub | ✅ custom | ✅ verifier | ✅ | ❌ | ✅ `task`/`task_result`, profiles explore/general/plan (depth 1) |
+| Sub-agents | ✅ primary/sub | ✅ custom | ✅ verifier | ✅ | ❌ | ✅ `task` *(start · collect · answer · plan)*, profiles explore/general/plan (depth 1) |
 | MCP | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ stdio + remote, tools + resources |
 | Plugins | ✅ JS/TS | ✅ | ❌ | ✅ | ❌ | ⚠️ skill auto-discovery ✅ / `plugin_install` ยังไม่ครบ / hooks ไม่ทำ |
 | Desktop UI | ✅ TUI+Web | ✅ CLI+Desktop+Web | ✅ TUI+Desktop | ✅ IDE | ❌ CLI | ✅ CLI + Desktop (Wails, browser + terminal pane) |

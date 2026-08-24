@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/Mike0165115321/Aetox/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/Mike0165115321/Aetox?color=2f81f7"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-proprietary%20%C2%B7%20source%20available-blue"></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-1%2C797%20Go%20%2B%20755%20UI-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-2%2C295%20Go%20%2B%20953%20UI-brightgreen">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%2B-lightgrey">
 </p>
 
@@ -36,7 +36,7 @@ Aetox is a desktop application for Windows that runs an AI agent against your ow
 You describe what needs doing; it reads and writes real files, runs real commands in a real
 shell, and drives a real browser you can watch.
 
-It is one self-contained 47.5 MB executable. There is no runtime to install alongside it, no
+It is one self-contained 48.5 MB executable. There is no runtime to install alongside it, no
 `node_modules`, no bundled copy of Chromium. It talks to whichever model you point it at —
 a hosted API, a subscription you already pay for, or a 9B/35B running in LM Studio or Ollama on
 your own GPU (your data never leaves your machine or country — hook it up to Ollama and not a single byte goes anywhere) — and the capability comes from the app rather than from the model's parameters.
@@ -88,7 +88,7 @@ ships five test models that exercise the real machinery (real tool calls, a real
 sub-agent, a long reasoning stream), so you can see what the app does before signing up for
 anything.
 
-**Installer** — [aetox-amd64-installer.exe](https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe) (20.9 MB)
+**Installer** — [aetox-amd64-installer.exe](https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe) (21.3 MB)
 
 It also fetches and SHA256-verifies the outside programs Aetox uses: WebView2, Tesseract (with
 Thai), poppler, ffmpeg, and a starter whisper model for offline speech. Any one of them failing
@@ -192,7 +192,7 @@ own prompt, its own memory, optionally its own model, and its own private skills
 **Give it a job, not a step.** Work that takes twenty moves is planned before it is worked, and
 `todo_write` puts that plan on screen while it runs, so what you watch is the order it chose
 rather than a spinner. Up to four specialists run at once: `task` hands work out and returns
-immediately, `task_result` collects it, so three jobs cost the time of the slowest rather than
+immediately, `task collect` picks it up, so three jobs cost the time of the slowest rather than
 the sum. One that reaches a decision it should not make alone comes back as a *question* instead
 of a guess. One still working when your answer arrives keeps working — you collect it by the same
 id in a later turn, so the end of a turn is not a deadline. And before any of it runs there is a
@@ -341,20 +341,19 @@ provider sees what its API normally sees, and nothing is routed through us.
 
 A tool count is not a reason to use anything, which is why this is down here.
 
-**40 tools reach the model on a fresh install**; a default assistant session carries fewer,
-because a desk narrows the set. They cost about 9,844 tokens on every request before you have
-typed anything, against a ceiling of 10,100 that a test enforces — eight slots of headroom, argued
-for rather than spent.
+**35 tools reach the model on a fresh install**; a default assistant session carries fewer,
+because a desk narrows the set. They cost about 7,727 tokens on every request before you have
+typed anything, against a ceiling of 10,400 tokens and 48 tools that a test enforces.
 
 | Group | Tools |
 |:---|:---|
-| **Files** | `read` `write` `edit` `apply_patch` `delete` `list` `glob` `grep` |
-| **Running commands** | `shell` *(run · output · kill · list)* `git` `desk_terminal` |
+| **Files** | `apply_patch` `delete` `edit` `glob` `grep` `list` `read` `write` |
+| **Running commands** | `desk_terminal` `git` `shell` *(run · output · kill · list)* |
 | **Handing back files** | `doc_write` `sheet_write` |
-| **Reading media** | `image_ocr` `video_ocr` `pdf_read` `audio_transcribe` |
-| **Web and automation** | `browser` *(open · read · click · type · wait · back · capture · tabs · dialog)* `web_fetch` `web_search` |
-| **Code work** | `diagnostics` `symbol` `github` *(repo_summary · search · read_file · list_files)* |
-| **How the assistant works** | `task` `task_result` `task_answer` `ask_user` `todo_write` `suggest_task` `memory` `session_search` `calc` `time` `desk` *(open · list · close)* `skills_list` `skill_view` `plugin_install` |
+| **Reading media** | `audio_transcribe` `image_ocr` `pdf_read` `video_ocr` |
+| **Web and automation** | `browser` *(open · read · click · type · wait · back · scroll · capture · tabs · dialog · console · network)* `web_fetch` `web_search` |
+| **Code work** | `diagnostics` `github` *(search · repo_summary · list_files · read_file)* `symbol` |
+| **How the assistant works** | `ask_user` `calc` `desk` *(open · list · close)* `memory` `plugin_install` `session_search` `skill_view` `skills_list` `suggest_task` `task` *(start · collect · answer · plan)* `time` `todo_write` |
 
 That table is generated from the registry the model is actually handed
 (`go test ./desktop -run TestPrintReadmeToolTable -v`), because a hand-kept list of what a program
@@ -406,16 +405,16 @@ has not passed them may not appear here or on the website.
 > The dangerous number is the flattering one, because nobody audits a figure that makes them look
 > good.
 
-**Aetox.** The two size rows and the two test counts were re-measured 2026-08-18 on v1.2.4;
+**Aetox.** The two size rows and the two test counts were re-measured 2026-08-25 on v1.5.7;
 assembling a turn is from 2026-08-13, and the ⁽ᵈ⁾ rows from 2026-07-27 on v0.9.2.
 
 | | |
 |:---|---:|
-| What you download | 20.9 MB installer |
-| What ends up on disk | **47.5 MB**, one file |
+| What you download | 21.3 MB installer |
+| What ends up on disk | **48.5 MB**, one file |
 | Assembling a turn | 0.32 ms · 174.9 KB allocated |
-| Go tests | 1,797 across 38 packages, 0 failures |
-| Frontend tests | 755 across 69 files, 0 failures |
+| Go tests | 2,295 across 42 packages, 0 failures |
+| Frontend tests | 953 across 91 files, 0 failures |
 | First launch (cold) | 1.77 s ⁽ᵈ⁾ |
 | Every launch after | 0.53 s ⁽ᵈ⁾ |
 | RAM committed | 252 MB ⁽ᵈ⁾ |
@@ -441,7 +440,7 @@ page and still to be fixed; what changed is that they no longer hide the platfor
 | First launch (cold) | 1.77 s | 2.12 s |
 | Every launch after | 0.53 s | 0.53 s |
 | RAM committed | 252 MB | 471 MB |
-| Disk | **47.5 MB** | 419 MB |
+| Disk | **48.5 MB** | 419 MB |
 
 Both columns except Aetox's disk figure were measured 2026-07-27 on the same machine under the same
 rules, and neither has been re-measured — Zed is no longer installed here. A tie on warm launch with
@@ -456,8 +455,8 @@ handed a second browser to store.
 <summary>How these were measured, and what does not qualify</summary>
 
 **Disk** — download [the portable zip](https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-windows-amd64-portable.zip),
-unpack it, and read the size of the one `aetox.exe` inside: 49,768,960 bytes. Anyone can reproduce
-it in a minute. It replaces the 41.5 MB figure measured on 2026-08-13, which was correct then and
+unpack it, and read the size of the one `aetox.exe` inside: 50,818,560 bytes. Anyone can reproduce
+it in a minute. It replaces the 47.5 MB figure measured on 2026-08-18, which was correct then and
 is not now. Competitor sizes are measured after install from the install folder, never
 taken from a download page, and never from a folder holding user profiles or caches.
 

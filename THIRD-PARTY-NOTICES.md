@@ -12,8 +12,8 @@ code in Aetox.
 
 The list is what is actually linked into the shipped binary and bundled into
 the shipped frontend — not everything `go.mod` or `package.json` mentions.
-Regenerate it after a dependency change; the versions below are those of
-v1.3.0.
+The Go table is `go list -deps -f '{{if .Module}}{{.Module.Path}} {{.Module.Version}}{{end}}' ./desktop`;
+it was checked against that command on 2026-08-25 (v1.5.7) and every row matched.
 
 ---
 
@@ -150,3 +150,26 @@ Calling a separate program is not linking it, so their terms — including the
 copyleft ones — do not reach Aetox's own code. The Windows installer offers
 to fetch some of them from their official sources; each arrives under its own
 licence, and nothing is downloaded without asking.
+
+---
+
+## Design owed, code not
+
+No code from this section is in the binary, and none of it is a licence
+obligation.
+
+Aetox's agent loop and tool surface follow conventions that open-source coding
+agents converged on; the one read closest while building them was
+[OpenCode](https://github.com/sst/opencode) (Apache-2.0). No OpenCode source was
+copied, translated, or vendored — the implementations below are original Go.
+
+| What follows their shape | Where it lives |
+|:---|:---|
+| Tool names and parameter conventions — `read` `write` `edit` `grep` `glob` | [internal/skill/](internal/skill/) |
+| A tool loop that runs until the model stops calling tools, rather than to a fixed cap | [internal/cognitive/agent.go](internal/cognitive/agent.go) |
+| The doom-loop guard: warn at three identical calls, stop after more | same file |
+| One global output-token ceiling per turn (`OUTPUT_TOKEN_MAX`) | same file |
+| Per-tool permission rules, glob-matched, last match wins | [internal/safety/safety.go](internal/safety/safety.go) |
+| Scanning `~/.agents/skills/` then `~/.claude/skills/` for skills somebody else wrote | [internal/skill/discovery.go](internal/skill/discovery.go) |
+
+`agent.go` names the upstream constant or issue in a comment beside each one.
