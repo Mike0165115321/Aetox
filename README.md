@@ -56,29 +56,19 @@ both; the language switch is in Settings and in the first-run wizard. This READM
 
 ## Highlights
 
-- **A workbench of four rooms, and the agent works in the one you are looking at** — slides,
-  browser, files and terminal sit in the same window as the conversation. This is not a chat that
-  hands you a file at the end; it is a place of work you watch it happen in, and can reach into at
-  any point. The Code door adds a fifth: **Git**, which lays out the uncommitted working tree with
-  a per-file diff.
-- **It builds slide decks** — one self-contained `.html` file: yours, editable by hand, and
-  openable on any machine with a browser. It opens in the slides room the moment it is written,
-  where you page through it, present it full screen, and export it as `.pdf`, `.png` or `.jpg`.
-  Converting the file is the app's job, not the model's. Slides sit on a 1280x720 box, exactly
-  PowerPoint's widescreen page.
-- **The browser control layer is ours** — the window is WebView2, composited into the app with an
-  address bar, back/forward, DevTools, and eight device presets that resize the native window so
-  CSS media queries genuinely fire. What we wrote is the layer above it: one read numbers every
-  interactive element on the page, and click and type aim at that number — so a model that cannot
-  see images hits the right control, with no vision model and no guessing at coordinates
-  ([see it](#what-you-can-do-with-it)).
-- **It builds websites and systems, not just code in a chat box** — point it at a folder and you
-  get a file tree, a Monaco editor, unlimited real PTY terminal tabs, `git`, `grep` and `glob` over
-  the whole tree, plus `diagnostics` and `symbol` backed by language servers the app installs on
-  first use. It writes, then opens the result in the browser room next door, in one pass.
+- **Four rooms in the same window as the conversation** — slides, browser, files and terminal. The
+  agent works in the room you are looking at, and you can reach in at any point. The Code door adds
+  a fifth: Git.
+- **It builds slide decks** — one self-contained `.html` file that is yours, editable by hand, and
+  openable on any machine with a browser. Exports as `.pdf`, `.png` or `.jpg`.
+- **The browser control layer is ours** — the window is WebView2; the layer that drives it we wrote.
+  A model that cannot see images clicks the right control, with no guessing at coordinates.
+- **It builds websites and systems, not just code in a chat box** — a file tree, a Monaco editor,
+  unlimited real PTY terminal tabs, `git`, `grep` and `glob` over the whole tree, and language
+  servers the app installs itself.
 - **Capability comes from the app, not from model parameters** — Thai/English OCR and offline
-  speech-to-text are tools the app drives, so a 9B/35B model running on your own GPU does these
-  jobs as well as a frontier one. The app does the work; the model does not have to.
+  speech-to-text are tools the app drives, so a 9B/35B model on your own GPU does these jobs as
+  well as a frontier one.
 - **22 model providers** — cloud (OpenAI, Anthropic, Gemini, DeepSeek, Groq, and more) and local
   (LM Studio, Ollama), switchable mid-conversation with context intact. Full list under
   [Everything it can do](#everything-it-can-do).
@@ -158,9 +148,7 @@ you a file at the end: it opens a room, works in that room, and you can reach in
 something yourself without waiting for the turn to finish.
 
 **It builds slide decks.** Give it the subject and what you want out of it, and the deck comes back
-as one self-contained `.html` file. HTML is the source on purpose: it is one file you own and can
-edit by hand, and it opens on any machine with a browser. Converting the file is the app's work
-rather than the model's.
+as one self-contained `.html` file. Converting it is the app's work rather than the model's.
 
 The deck is delivered when it opens in the slides room, not when it is exported — you page through
 it and present it full screen from there, and the export bar is on that same screen. It exports as
@@ -172,8 +160,11 @@ page.
 
 **Watch it work in a real browser.** Not a headless scrape: a WebView2 window composited into
 the app, with an address bar, back/forward, DevTools, and eight device presets that resize the
-native window and zoom the page so CSS media queries genuinely fire. The agent opens, reads,
-clicks by reference and types into it while you watch the same tab.
+native window and zoom the page so CSS media queries genuinely fire.
+
+The layer that drives it is ours. One read stamps a number on every interactive element on the
+page; click and type aim at that number. The agent hits the right control without a vision model
+and without guessing at coordinates, in the same tab you are watching.
 
 <img src="docs/assets/cap-browser.png" alt="The agent driving a page in the workbench browser" width="100%">
 
