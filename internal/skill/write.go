@@ -15,6 +15,9 @@ import (
 type writeSkill struct {
 	root         string
 	outputSubdir func() string
+	// files is the shared record a write checks and every toucher updates.
+	// Nil is supported and means no guard (filestate.go).
+	files *FileState
 }
 
 // placed decides where a new file actually lands. Without a project focused,
@@ -179,6 +182,15 @@ func (s *writeSkill) Execute(_ context.Context, input Input) (Output, error) {
 		return newToolOutput("write", "write "+requestPath, "", start, false, err), err
 	}
 
+	// Before the read below and long before the write: a whole-file write of a
+	// file that has moved since this app last looked at it is the one act in
+	// the program that destroys somebody else's work with no way back
+	// (filestate.go). Nothing known about the file means nobody here has looked
+	// at it, and the write is the create/replace it was asked to be.
+	if err := s.files.guardStale(targetPath, requestPath); err != nil {
+		return newToolOutput("write", "write "+requestPath, "", start, false, err), err
+	}
+
 	// Read the outgoing version before clobbering it, so the timeline can say
 	// whether this was a new file or a rewrite of N lines. A failed read means
 	// "no file there" — a brand new file, nothing removed.
@@ -202,6 +214,7 @@ func (s *writeSkill) Execute(_ context.Context, input Input) (Output, error) {
 	if err := os.WriteFile(targetPath, []byte(content), 0o644); err != nil {
 		return newToolOutput("write", "write "+requestPath, "", start, false, err), err
 	}
+	s.files.Note(targetPath)
 
 	// Echo the path the caller asked for, like edit does — the resolved
 	// absolute path is noise in context and nudges the model into repeating

@@ -1134,25 +1134,46 @@ func (a *App) browserEval(id, js string) {
 	a.onTab(id, func(v tabView, _ *browserTab) { v.eval(js) })
 }
 
-// CloseAllBrowserTabs destroys every native browser view this process still
-// holds. Called once by the frontend right after it (re)loads (App.svelte
-// onMount) — a freshly loaded frontend owns zero workbench tabs by
-// definition, so anything still open here is orphaned from a previous
-// frontend lifetime: the Go backend is a long-lived process, but a `wails
-// dev` Vite HMR full-reload (or any webview reload) wipes the JS-side
-// `workbench` store without running BrowserPane's onDestroy, leaving the
-// native view behind with nothing left to reposition or close it — it just
-// floats, stuck at its last bounds. On a genuine fresh app start `a.browsers`
-// is nil and this is a no-op.
+// CloseAllBrowserTabs destroys the native browser views this process is still
+// holding, except the ones a turn that is still running is working in.
+//
+// Called by the frontend right after it (re)loads (App.svelte onMount). The Go
+// backend outlives a webview reload — a `wails dev` Vite HMR full-reload, or a
+// plain Ctrl+R — which wipes the JS-side `workbench` store without running
+// BrowserPane's onDestroy, leaving the native view behind with nothing left to
+// reposition or close it. It just floats, stuck at its last bounds. Sweeping
+// those is what this is for, and on a genuine fresh start `a.browsers` is nil
+// and it is a no-op.
+//
+// **The exception is new, and the reasoning it replaces was wrong.** This used
+// to close everything, on the grounds that *"a freshly loaded frontend owns
+// zero workbench tabs by definition"*. True of the frontend, false of the app:
+// the engine keeps working across a reload, so a turn in flight can be holding
+// half a dozen tabs of its own — and reloading the window killed them all
+// mid-task, after which the agent walked its own list and was told, correctly
+// and uselessly, that every one of them had been closed (owner, 24 ส.ค.).
+//
+// Only while a turn is running. With nothing working, an agent tab is as
+// orphaned as any other and the sweep should take it — otherwise the leftovers
+// of a turn that died would sit there for the rest of the app's life with
+// nothing left to close them.
 func (a *App) CloseAllBrowserTabs() {
 	if a.browsers == nil {
 		return
+	}
+	keep := map[string]bool{}
+	if a.anyTurnRunning() {
+		for _, id := range a.agentTabs() {
+			keep[id] = true
+		}
 	}
 	h := a.browsers
 	h.mu.Lock()
 	ids := make([]string, 0, len(h.tabs))
 	for id := range h.tabs {
-		ids = append(ids, id)
+		if !keep[id] {
+			ids = append(ids, id)
+		}
 	}
 	h.mu.Unlock()
 	for _, id := range ids {
@@ -1176,25 +1197,55 @@ func (a *App) BrowserClose(id string) {
 }
 
 // closeTab is the close itself, with nothing said about who asked for it.
+//
+// Two things are true at once and they are why this is not four lines: the
+// registry entry has to go NOW, so the agent stops being told about a tab it
+// can no longer use, and the native window cannot go now, because destroying it
+// only happens on the browser thread (backend.do posts a message). Deleting
+// both together — which is what this did — meant a window whose destroy had not
+// run yet was already unreachable: no id in `views`, so nothing could hide it,
+// move it or try again. It just sat there, black, over the pane.
+//
+// So `tabs` and `agentOrder` are dropped immediately (live() reads `tabs`, so
+// the tab is closed the instant this returns) and `views` is dropped by the
+// queued func, after the window is actually gone.
 func (a *App) closeTab(id string) {
-	if host, err := a.browserHostLazy(); err == nil {
-		host.mu.Lock()
-		v := host.views[id]
-		delete(host.tabs, id)
+	host, err := a.browserHostLazy()
+	if err != nil {
+		return
+	}
+	host.mu.Lock()
+	v := host.views[id]
+	_, wasOpen := host.tabs[id]
+	delete(host.tabs, id)
+	// The current tab falls back to whatever is left rather than to nothing,
+	// so closing one of several does not strand the agent mid-task.
+	host.agentOrder = slices.DeleteFunc(host.agentOrder, func(open string) bool { return open == id })
+	if host.agentID == id {
+		host.agentID = ""
+		if len(host.agentOrder) > 0 {
+			host.agentID = host.agentOrder[len(host.agentOrder)-1]
+		}
+	}
+	if v == nil {
 		delete(host.views, id)
-		// The current tab falls back to whatever is left rather than to nothing,
-		// so closing one of several does not strand the agent mid-task.
-		host.agentOrder = slices.DeleteFunc(host.agentOrder, func(open string) bool { return open == id })
-		if host.agentID == id {
-			host.agentID = ""
-			if len(host.agentOrder) > 0 {
-				host.agentID = host.agentOrder[len(host.agentOrder)-1]
-			}
-		}
-		host.mu.Unlock()
-		if v != nil {
-			host.backend.do(func() { v.destroy() })
-		}
+	}
+	host.mu.Unlock()
+	if v != nil {
+		host.backend.do(func() {
+			v.destroy()
+			host.mu.Lock()
+			delete(host.views, id)
+			host.mu.Unlock()
+		})
+	}
+	// The window is told, which it never was. `workbench:open-browser` had no
+	// partner, so a tab closed from this side stayed on the strip forever —
+	// pointing at a native view that no longer existed, and with the pane
+	// latched open (BrowserPane's `opened`) so nothing would ever re-open it.
+	// The file side has said both halves all along (workbench:close-file).
+	if wasOpen || v != nil {
+		a.emitEvent("workbench:close-browser", map[string]string{"id": id})
 	}
 }
 

@@ -14,6 +14,9 @@ import (
 type deleteSkill struct {
 	root         string
 	outputSubdir func() string
+	// files is the shared record a write checks and every toucher updates.
+	// Nil is supported and means no guard (filestate.go).
+	files *FileState
 }
 
 func (*deleteSkill) Name() string { return "delete" }
@@ -95,12 +98,16 @@ func (s *deleteSkill) Execute(_ context.Context, input Input) (Output, error) {
 		if err := os.RemoveAll(targetPath); err != nil {
 			return newToolOutput("delete", "delete "+requestPath, "", start, false, err), err
 		}
+		s.files.Forget(targetPath)
 		output := "delete done: " + requestPath + "/ (folder and contents)"
 		return newToolOutput("delete", "delete "+requestPath, output, start, false, nil), nil
 	}
 	if err := os.Remove(targetPath); err != nil {
 		return newToolOutput("delete", "delete "+requestPath, "", start, false, err), err
 	}
+	// Forgotten, not noted: writing this name again is a creation, and holding
+	// the dead file's stamp would refuse it (filestate.go).
+	s.files.Forget(targetPath)
 
 	// Relative, matching edit and write — see write.go for why.
 	output := "delete done: " + requestPath

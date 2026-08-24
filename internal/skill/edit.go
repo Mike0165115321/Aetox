@@ -20,6 +20,9 @@ const editMaxFileBytes = 16 << 20 // 16 MiB
 type editSkill struct {
 	root         string
 	outputSubdir func() string
+	// files is the shared record a write checks and every toucher updates.
+	// Nil is supported and means no guard (filestate.go).
+	files *FileState
 }
 
 func (*editSkill) Name() string { return "edit" }
@@ -188,6 +191,10 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 		if err := os.WriteFile(targetPath, []byte(updated), 0o644); err != nil {
 			return newToolOutput("edit", command, "", start, false, err), err
 		}
+		// This app has now seen the file, so a later whole-file write can be
+		// held to it (filestate.go). edit needs no guard of its own: an
+		// old_string aimed at text somebody has changed simply will not match.
+		s.files.Note(targetPath)
 		out := newToolOutput("edit", command, "edit done: appended to "+requestPath, start, false, nil)
 		out.LinesAdded, _ = LineDelta("", addition)
 		out.Diff = UnifiedDiff(content, updated)
@@ -220,6 +227,7 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 	if err := os.WriteFile(targetPath, []byte(updated), 0o644); err != nil {
 		return newToolOutput("edit", command, "", start, false, err), err
 	}
+	s.files.Note(targetPath)
 
 	result := "edit done: " + requestPath
 	if replacements > 1 {

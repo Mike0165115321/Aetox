@@ -35,287 +35,29 @@ Unicode true
 !include "wails_tools.nsh"
 
 ####
-## Tesseract OCR is a runtime prerequisite for the image_ocr skill (agent
-## reads text out of attached images). Installed the same way Wails installs
-## the WebView2 runtime above: download the official installer at install
-## time (kept out of git — it's a ~48MB binary) and run it silently, rather
-## than vendoring the binary in this repo. Pinned to one version + a SHA256
-## check against tampering/corruption, since this fetches and executes a
-## third-party installer during our own install.
+## Nothing third-party is fetched here any more.
+##
+## This file used to curl Tesseract, poppler, ffmpeg and a starter speech model
+## during our own install, hash each one in PowerShell, and ExecWait the one
+## that is an .exe. Defender's cloud model classified the result as
+## Program:Win32/Wacapew.C!ml on 2026-08-20 and browsers deleted the download
+## before anyone saw the app. Read from the model's side it is fair: an
+## unsigned installer with no reputation that downloads four payloads and runs
+## one of them is the shape of a trojan-downloader, whatever the pins and
+## checksums around it say. Code signing answers the SmartScreen dialog. It
+## does not remove this shape, so the shape goes.
+##
+## internal/capability does the fetching now, from inside a running Aetox, when
+## someone ticks the capability they want, into config.DataRoot() -- which is
+## writable without elevation, so not one UAC prompt. Same pinned URL + SHA256
+## discipline, inherited verbatim, same four components, plus the whisper
+## engine this installer never shipped at all.
+## docs/architecture/capability-install-2026-08-21.md has the measurements.
+##
+## The installer's job is back to what NSIS is good at: putting our own files
+## on disk. wails.webview2runtime below stays -- the app cannot draw a window
+## without it, and it is Microsoft's own bootstrapper from a microsoft.com URL.
 ####
-!define TESSERACT_URL      "https://github.com/UB-Mannheim/tesseract/releases/download/v5.4.0.20240606/tesseract-ocr-w64-setup-5.4.0.20240606.exe"
-!define TESSERACT_SHA256   "C885FFF6998E0608BA4BB8AB51436E1C6775C2BAFC2559A19B423E18678B60C9"
-!define TESSDATA_THA_URL     "https://raw.githubusercontent.com/tesseract-ocr/tessdata/main/tha.traineddata"
-!define TESSDATA_THA_SHA256  "88032A9F21ACCFF825EFAED29604EB8A534E265CF8058A95EA5417A6DF91C005"
-
-!macro wails.tesseractocr
-    IfFileExists "$PROGRAMFILES64\Tesseract-OCR\tesseract.exe" 0 tesseract_install
-    SetDetailsPrint both
-    DetailPrint "Skipping: Tesseract OCR is already installed"
-    Goto tesseract_langdata
-
-    tesseract_install:
-    SetDetailsPrint both
-    DetailPrint "Installing: Tesseract OCR (used by the agent to read text in attached images)"
-    SetDetailsPrint listonly
-
-    InitPluginsDir
-    ; curl.exe ships in Windows System32 since 10 (1803) / all of 11 — no extra
-    ; NSIS plugin needed, unlike most HTTPS-download recipes for NSIS.
-    nsExec::ExecToLog 'curl.exe -L --max-time 180 -o "$PLUGINSDIR\tesseract-setup.exe" "${TESSERACT_URL}"'
-    Pop $0
-    ${If} $0 != 0
-        DetailPrint "Tesseract download failed (curl exit $0) — skipping. image_ocr will report how to install it manually if used."
-        Goto tesseract_done
-    ${EndIf}
-
-    ; [Console]::Write (not Write-Output) so the captured string has no
-    ; trailing newline for the exact-string ${If} comparison below to match.
-    nsExec::ExecToStack 'powershell -NoProfile -Command "[Console]::Write((Get-FileHash -Algorithm SHA256 $\'$PLUGINSDIR\tesseract-setup.exe$\').Hash)"'
-    Pop $0
-    Pop $1
-    ${If} $1 != "${TESSERACT_SHA256}"
-        DetailPrint "Tesseract installer checksum did not match the pinned release — skipping for safety."
-        Goto tesseract_done
-    ${EndIf}
-
-    ExecWait '"$PLUGINSDIR\tesseract-setup.exe" /S'
-
-    ; Thai isn't bundled by default (only English) — the installer's own docs
-    ; point at dropping a .traineddata straight into tessdata\ as the silent-
-    ; install-friendly way to add a language, so do that instead of trying to
-    ; script its GUI component picker.
-    ;
-    ; Checked on its own file, not folded into the skip above: a machine that
-    ; already has Tesseract (from any other app) has the English-only default,
-    ; and jumping straight past this left image_ocr silently unable to read Thai.
-    tesseract_langdata:
-    IfFileExists "$PROGRAMFILES64\Tesseract-OCR\tessdata\tha.traineddata" tesseract_done 0
-
-    SetDetailsPrint both
-    DetailPrint "Installing: Thai language data for Tesseract OCR"
-    SetDetailsPrint listonly
-
-    InitPluginsDir
-    nsExec::ExecToLog 'curl.exe -L --max-time 60 -o "$PLUGINSDIR\tha.traineddata" "${TESSDATA_THA_URL}"'
-    Pop $0
-    ${If} $0 == 0
-        nsExec::ExecToStack 'powershell -NoProfile -Command "[Console]::Write((Get-FileHash -Algorithm SHA256 $\'$PLUGINSDIR\tha.traineddata$\').Hash)"'
-        Pop $0
-        Pop $1
-        ${If} $1 == "${TESSDATA_THA_SHA256}"
-            CopyFiles "$PLUGINSDIR\tha.traineddata" "$PROGRAMFILES64\Tesseract-OCR\tessdata\tha.traineddata"
-        ${EndIf}
-    ${EndIf}
-
-    SetDetailsPrint both
-    tesseract_done:
-!macroend
-
-####
-## poppler's pdftotext backs the pdf_read skill (the agent reading an attached
-## PDF — `read` refuses one, a PDF is a binary container). Same pin + SHA256
-## rule as Tesseract above, but the delivery differs in two ways that matter:
-##
-##  - It ships as a plain zip with no installer, so nothing registers it on
-##    PATH. It is unpacked INTO the install directory and
-##    internal/skill/pdf_read.go looks for it next to Aetox's own exe. Editing
-##    the machine's PATH is the other option and a much worse one to get wrong.
-##  - There is no system-wide install to detect, so what is checked instead is
-##    a marker file named after the pinned version inside our own tree:
-##    reinstalling the same version downloads nothing, while bumping the version
-##    changes the marker's name and so still forces a full replace. pdftotext.exe
-##    is checked alongside it, so a half-deleted tree reinstalls rather than
-##    trusting a marker that outlived what it vouched for.
-##
-## POPPLER_INNER is the archive's own top folder and carries the version, so
-## all three defines are bumped together.
-####
-!define POPPLER_URL     "https://github.com/oschwartz10612/poppler-windows/releases/download/v26.02.0-0/Release-26.02.0-0.zip"
-!define POPPLER_SHA256  "993E4A94376ED712FAFC7058D724EA0B943D118BBD2305CD9ED55174EB85CDA5"
-!define POPPLER_INNER   "poppler-26.02.0"
-
-!macro wails.poppler
-    SetDetailsPrint both
-    IfFileExists "$INSTDIR\poppler\bin\pdftotext.exe" 0 poppler_install
-    IfFileExists "$INSTDIR\poppler\${POPPLER_INNER}.ok" 0 poppler_install
-    DetailPrint "Skipping: poppler ${POPPLER_INNER} is already installed"
-    Goto poppler_done
-
-    poppler_install:
-    DetailPrint "Installing: poppler (used by the agent to read attached PDFs)"
-    SetDetailsPrint listonly
-
-    InitPluginsDir
-    nsExec::ExecToLog 'curl.exe -L --max-time 300 -o "$PLUGINSDIR\poppler.zip" "${POPPLER_URL}"'
-    Pop $0
-    ${If} $0 != 0
-        DetailPrint "poppler download failed (curl exit $0) — skipping. pdf_read will report how to install it manually if used."
-        Goto poppler_done
-    ${EndIf}
-
-    nsExec::ExecToStack 'powershell -NoProfile -Command "[Console]::Write((Get-FileHash -Algorithm SHA256 $\'$PLUGINSDIR\poppler.zip$\').Hash)"'
-    Pop $0
-    Pop $1
-    ${If} $1 != "${POPPLER_SHA256}"
-        DetailPrint "poppler archive checksum did not match the pinned release — skipping for safety."
-        Goto poppler_done
-    ${EndIf}
-
-    ; tar.exe ships in System32 since Windows 10 (1803) and on all of 11 — the
-    ; same assumption curl.exe above already makes, so no NSIS unzip plugin is
-    ; needed. --strip-components drops the archive's poppler-<version>/Library/
-    ; prefix, so what lands is exactly $INSTDIR\poppler\bin\pdftotext.exe: one
-    ; fixed layout for the runtime lookup, with no version in the path.
-    RMDir /r "$INSTDIR\poppler"
-    CreateDirectory "$INSTDIR\poppler"
-    nsExec::ExecToLog 'tar.exe -xf "$PLUGINSDIR\poppler.zip" -C "$INSTDIR\poppler" --strip-components=2 "${POPPLER_INNER}/Library"'
-    Pop $0
-
-    IfFileExists "$INSTDIR\poppler\bin\pdftotext.exe" 0 poppler_failed
-    FileOpen $2 "$INSTDIR\poppler\${POPPLER_INNER}.ok" w
-    FileClose $2
-    Goto poppler_done
-
-    poppler_failed:
-    DetailPrint "poppler did not unpack as expected (tar exit $0) — pdf_read will fall back to any pdftotext already on PATH."
-
-    poppler_done:
-    SetDetailsPrint both
-!macroend
-
-####
-## ffmpeg backs video_ocr (frame sampling) and audio_transcribe (any input →
-## the 16kHz mono WAV every speech engine wants). Without it BOTH tools are
-## dead on a fresh install, while README advertises them — the gap this closes.
-##
-## Same delivery as poppler, and for the same reason: a plain zip with no
-## installer, nothing on PATH, so it is unpacked into the install directory and
-## internal/skill/bundled.go looks for it next to Aetox's own exe.
-##
-## Pinned to a dated BtbN autobuild rather than their "latest" tag: the assets
-## under `latest` are rebuilt in place, so its name is stable while its bytes
-## are not — a pinned SHA256 against it would start failing on their next
-## build, not on ours. The dated tag is immutable.
-##
-## LGPL, not GPL: the LGPL build is the safer one to put on someone else's
-## machine, and nothing here needs the GPL-only encoders. Shared, not static:
-## 59.5MB to download instead of 133MB for the same ffmpeg.
-####
-!define FFMPEG_URL     "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-27-14-00/ffmpeg-n7.1.5-10-g2aefd64d48-win64-lgpl-shared-7.1.zip"
-!define FFMPEG_SHA256  "D2A6DF844A674C04780478F33224134A29D1B54152F8D8314B82E02ECCB02EDD"
-!define FFMPEG_INNER   "ffmpeg-n7.1.5-10-g2aefd64d48-win64-lgpl-shared-7.1"
-
-!macro wails.ffmpeg
-    SetDetailsPrint both
-    IfFileExists "$INSTDIR\ffmpeg\bin\ffmpeg.exe" 0 ffmpeg_install
-    IfFileExists "$INSTDIR\ffmpeg\${FFMPEG_INNER}.ok" 0 ffmpeg_install
-    DetailPrint "Skipping: ffmpeg is already installed at the pinned build"
-    Goto ffmpeg_done
-
-    ffmpeg_install:
-    DetailPrint "Installing: ffmpeg (used by the agent to read video and audio)"
-    SetDetailsPrint listonly
-
-    InitPluginsDir
-    nsExec::ExecToLog 'curl.exe -L --max-time 600 -o "$PLUGINSDIR\ffmpeg.zip" "${FFMPEG_URL}"'
-    Pop $0
-    ${If} $0 != 0
-        DetailPrint "ffmpeg download failed (curl exit $0) — skipping. video_ocr and audio_transcribe will report how to install it manually if used."
-        Goto ffmpeg_done
-    ${EndIf}
-
-    nsExec::ExecToStack 'powershell -NoProfile -Command "[Console]::Write((Get-FileHash -Algorithm SHA256 $\'$PLUGINSDIR\ffmpeg.zip$\').Hash)"'
-    Pop $0
-    Pop $1
-    ${If} $1 != "${FFMPEG_SHA256}"
-        DetailPrint "ffmpeg archive checksum did not match the pinned release — skipping for safety."
-        Goto ffmpeg_done
-    ${EndIf}
-
-    ; Only bin\ is taken — ffmpeg.exe plus the DLLs it loads. The rest of the
-    ; archive is headers and import libraries for building against ffmpeg,
-    ; which nothing here does. --strip-components=1 (not 2, as for poppler)
-    ; because the wanted directory sits one level deeper in that archive.
-    RMDir /r "$INSTDIR\ffmpeg"
-    CreateDirectory "$INSTDIR\ffmpeg"
-    nsExec::ExecToLog 'tar.exe -xf "$PLUGINSDIR\ffmpeg.zip" -C "$INSTDIR\ffmpeg" --strip-components=1 "${FFMPEG_INNER}/bin"'
-    Pop $0
-
-    IfFileExists "$INSTDIR\ffmpeg\bin\ffmpeg.exe" 0 ffmpeg_failed
-    FileOpen $2 "$INSTDIR\ffmpeg\${FFMPEG_INNER}.ok" w
-    FileClose $2
-    Goto ffmpeg_done
-
-    ffmpeg_failed:
-    DetailPrint "ffmpeg did not unpack as expected (tar exit $0) — the tools will fall back to any ffmpeg already on PATH."
-
-    ffmpeg_done:
-    SetDetailsPrint both
-!macroend
-
-####
-## A starter speech model, so audio_transcribe works the moment Aetox is
-## installed instead of failing until the user goes and finds a 141MB file.
-##
-## tiny, not base: 31MB against 141MB, and it is the difference between a
-## default that costs almost nothing and one that doubles the install. It is
-## also the least accurate model whisper ships, so internal/skill/
-## audio_transcribe.go appends a line to every transcript produced from it
-## saying exactly that and where to pick a bigger one. A quiet wrong transcript
-## would be the worse trade.
-##
-## It lands in $INSTDIR\models, NOT %APPDATA%\aetox\models: with a per-machine
-## install $APPDATA resolves to the ALL USERS profile, which is not where any
-## user's DataRoot points. internal/stt/stores.go scans the install directory
-## for exactly this reason.
-##
-## Pinned to a commit, not to "main": HuggingFace's resolve/main is a moving
-## pointer, so a hash against it would start failing on the repo's next push
-## rather than on any change of ours.
-####
-!define WHISPER_MODEL_URL     "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-tiny-q5_1.bin"
-!define WHISPER_MODEL_SHA256  "818710568DA3CA15689E31A743197B520007872FF9576237BDA97BD1B469C3D7"
-!define WHISPER_MODEL_NAME    "ggml-tiny-q5_1.bin"
-
-!macro wails.whispermodel
-    SetDetailsPrint both
-    ; The file name carries the model, so its presence is the whole check — no
-    ; version marker as for poppler/ffmpeg. Changing the pinned commit does not
-    ; change these weights; picking a different model would change the name.
-    IfFileExists "$INSTDIR\models\${WHISPER_MODEL_NAME}" 0 whispermodel_install
-    DetailPrint "Skipping: the starter speech model is already installed"
-    Goto whispermodel_done
-
-    whispermodel_install:
-    DetailPrint "Installing: starter speech model (used by the agent to transcribe audio)"
-    SetDetailsPrint listonly
-
-    InitPluginsDir
-    nsExec::ExecToLog 'curl.exe -L --max-time 300 -o "$PLUGINSDIR\${WHISPER_MODEL_NAME}" "${WHISPER_MODEL_URL}"'
-    Pop $0
-    ${If} $0 != 0
-        DetailPrint "Speech model download failed (curl exit $0) — skipping. audio_transcribe will say how to get one if it is used."
-        Goto whispermodel_done
-    ${EndIf}
-
-    nsExec::ExecToStack 'powershell -NoProfile -Command "[Console]::Write((Get-FileHash -Algorithm SHA256 $\'$PLUGINSDIR\${WHISPER_MODEL_NAME}$\').Hash)"'
-    Pop $0
-    Pop $1
-    ${If} $1 != "${WHISPER_MODEL_SHA256}"
-        DetailPrint "Speech model checksum did not match the pinned release — skipping for safety."
-        Goto whispermodel_done
-    ${EndIf}
-
-    CreateDirectory "$INSTDIR\models"
-    CopyFiles /SILENT "$PLUGINSDIR\${WHISPER_MODEL_NAME}" "$INSTDIR\models\${WHISPER_MODEL_NAME}"
-
-    IfFileExists "$INSTDIR\models\${WHISPER_MODEL_NAME}" whispermodel_done 0
-    DetailPrint "Speech model could not be copied into the install folder — audio_transcribe will fall back to any model already on this machine."
-
-    whispermodel_done:
-    SetDetailsPrint both
-!macroend
 
 # The version information for this two must consist of 4 parts
 VIProductVersion "${INFO_PRODUCTVERSION}.0"
@@ -389,7 +131,6 @@ Section
     !insertmacro wails.setShellContext
 
     !insertmacro wails.webview2runtime
-    !insertmacro wails.tesseractocr
 
     ; A running instance locks its own exe, so a reinstall/update over top of
     ; it fails with "Can't write: ...\aetox-desktop.exe" and the installer
@@ -404,12 +145,6 @@ Section
     SetOutPath $INSTDIR
 
     !insertmacro wails.files
-
-    ; After wails.files, not alongside the Tesseract macro above: this one
-    ; unpacks into $INSTDIR, which only exists once the app's own files land.
-    !insertmacro wails.poppler
-    !insertmacro wails.ffmpeg
-    !insertmacro wails.whispermodel
 
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"

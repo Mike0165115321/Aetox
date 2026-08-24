@@ -214,3 +214,72 @@ func TestSessionSourcesStayInTheirOwnRoom(t *testing.T) {
 		t.Fatalf("an empty session id is not a wildcard, got %+v", got)
 	}
 }
+
+// The bug this list shipped with, and the reason it went unnoticed: every test
+// above hands `read` an ABSOLUTE path, and absolute paths were the only ones
+// that survived.
+//
+// The model types relative paths. `os.Stat` on one resolves against this
+// process's working directory — wherever the app happened to be launched from —
+// so a file the room really did read was dropped as missing, and แหล่งที่มา
+// came back holding nothing but web pages for a session full of reading.
+func TestSessionSourcesResolvesARelativePathAgainstTheRoot(t *testing.T) {
+	a := bootDeskApp(t, "coding")
+	root := a.cur().cfg.SandboxRoot
+	touch(t, filepath.Join(root, "internal"), "app.go")
+
+	recordRun(t, a, "read", `{"path":"internal/app.go"}`)
+
+	got := a.SessionSources(a.cur().id)
+	if len(got) != 1 {
+		t.Fatalf("a file the room read must not vanish because the path was relative: %+v", got)
+	}
+	if got[0].Path != "internal/app.go" || got[0].Label != "app.go" {
+		t.Errorf("row wrong: %+v", got[0])
+	}
+	// The count is built the same way, or it would promise rows the list cannot
+	// show — and the two would disagree about which files are still there.
+	if n := a.SessionSourceCount(a.cur().id); n != 1 {
+		t.Errorf("count = %d, want 1", n)
+	}
+}
+
+// The second half of the same rule. A relative `write` in an unfocused chat
+// lands in output/<session>, so the name in the record is not the name on disk —
+// and the model reads that file back by the name it first typed.
+func TestSessionSourcesFollowsAReadIntoTheOutputFolder(t *testing.T) {
+	a := bootDeskApp(t, "coding")
+	id := a.cur().id
+	touch(t, filepath.Join(a.cur().cfg.SandboxRoot, "output", id), "post.md")
+
+	recordRun(t, a, "read", `{"path":"post.md"}`)
+
+	got := a.SessionSources(id)
+	if len(got) != 1 {
+		t.Fatalf("want the placed file, got %+v", got)
+	}
+	if want := "output/" + id + "/post.md"; got[0].Path != want {
+		t.Errorf("path = %q, want %q — the row has to open what was actually read", got[0].Path, want)
+	}
+}
+
+// The other direction, and the check that the resolution above did not quietly
+// narrow the list: a file outside the project root keeps its row.
+//
+// It is reachable — the sandbox reopened the machine on purpose (§19.1 reversed
+// 2026-08-04), and ReadFile resolves through the very same gate — so the row
+// opens what it names. A path that gate really does refuse (a credential store)
+// is dropped by the same call, and refused in skill's own tests rather than
+// re-asserted here.
+func TestSessionSourcesKeepsAFileOutsideTheProjectRoot(t *testing.T) {
+	a := bootDeskApp(t, "coding")
+	a.projectFocused = true
+	outside := touch(t, t.TempDir(), "elsewhere.md")
+
+	recordRun(t, a, "read", fmt.Sprintf(`{"path":%q}`, outside))
+
+	got := a.SessionSources(a.cur().id)
+	if len(got) != 1 || got[0].Path != outside {
+		t.Fatalf("a file this session can open must keep its row, got %+v", got)
+	}
+}

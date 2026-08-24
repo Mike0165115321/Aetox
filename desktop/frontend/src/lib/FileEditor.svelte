@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte'
+  import { onMount, onDestroy, untrack } from 'svelte'
   import type * as Monaco from 'monaco-editor'
   import { WriteFile } from '../../wailsjs/go/main/App'
   import { t } from './i18n.svelte'
@@ -24,8 +24,80 @@
   let base = $state(content) // last saved text
   let saving = $state(false)
   let errorMsg = $state('')
+  // Bytes that arrived from outside while there was an unsaved draft in here.
+  // Null the rest of the time, which with autosave on is nearly always.
+  let incoming = $state<string | null>(null)
 
   const dirty = $derived(draft !== base)
+
+  // How long after the last keystroke the file is written.
+  //
+  // Owner, 24 ส.ค.: *"เวลาเอเจนเปิดไฟล์หรือแก้ไขไฟล์ผมอยากให้มัน ออโต้เซฟ"*.
+  // Short enough that the agent reading the file a moment later reads what is
+  // on screen — which is the whole point when a turn is running beside you —
+  // and long enough that a sentence being typed is one write, not thirty.
+  const AUTOSAVE_MS = 700
+  let saveTimer: ReturnType<typeof setTimeout> | undefined
+  // True only while an outside change is being written into the model. The
+  // change handler fires during that, and without this the file would schedule
+  // a save of bytes it had just been handed — writing the agent's own work back
+  // at it as if the user had typed it.
+  let applyingExternal = false
+
+  function scheduleSave() {
+    clearTimeout(saveTimer)
+    // A conflict is the one state autosave must not resolve on its own: the
+    // draft here and the file on disk have both moved, and quietly writing this
+    // one over that one is a decision with no way back. The bar asks instead.
+    if (incoming !== null) return
+    saveTimer = setTimeout(() => { void save() }, AUTOSAVE_MS)
+  }
+
+  /** Put bytes from outside into the editor without moving the user.
+   *
+   * pushEditOperations rather than setValue: it keeps the undo stack, so an
+   * edit the agent made while the user was reading is still Ctrl+Z-able, and
+   * the caret and scroll are put back where they were. A pane that jumps to
+   * line 1 every time a turn saves is one nobody can work beside. */
+  function applyExternal(next: string) {
+    applyingExternal = true
+    try {
+      if (editor && model) {
+        const pos = editor.getPosition()
+        const top = editor.getScrollTop()
+        model.pushEditOperations([], [{ range: model.getFullModelRange(), text: next }], () => null)
+        if (pos) editor.setPosition(pos)
+        editor.setScrollTop(top)
+      }
+      draft = next
+      base = next
+      incoming = null
+    } finally {
+      applyingExternal = false
+    }
+  }
+
+  // The file changed on disk — the agent wrote it, and the store re-read it
+  // (workbench.svelte.ts filesChangedOnDisk). `content` is a prop, so this is
+  // the whole subscription.
+  //
+  // untrack around the rest: `base` and `draft` are read to decide what to do
+  // and must not themselves re-trigger the decision, or applying a change would
+  // immediately ask to apply it again.
+  $effect(() => {
+    const next = content
+    untrack(() => {
+      if (next === undefined || next === base) return
+      if (draft !== base) {
+        // Someone is typing in here. Hold the new bytes and stop the clock:
+        // whichever side wins, it is the user who says so.
+        clearTimeout(saveTimer)
+        incoming = next
+        return
+      }
+      applyExternal(next)
+    })
+  })
 
   // Markdown files open in a rendered view (same renderer as chat); one click
   // flips to the editor. The Monaco mount stays alive underneath (CSS-hidden)
@@ -49,12 +121,16 @@
   let model: Monaco.editor.ITextModel | undefined
 
   async function save() {
+    clearTimeout(saveTimer)
     if (!dirty || saving) return
     saving = true
     errorMsg = ''
     try {
       await WriteFile(path, draft)
       base = draft
+      // Saving IS the answer to a conflict: the user chose this text over the
+      // one on disk, and the file now says so.
+      incoming = null
     } catch (err) {
       errorMsg = String(err)
     } finally {
@@ -82,6 +158,7 @@
       })
       editor.onDidChangeModelContent(() => {
         draft = model!.getValue()
+        if (!applyingExternal) scheduleSave()
       })
       // eslint-disable-next-line no-bitwise
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, save)
@@ -91,6 +168,13 @@
   })
 
   onDestroy(() => {
+    // The last write, and the one autosave exists for: a tab closed (or a
+    // session switched) inside the debounce window would otherwise drop
+    // whatever was typed in the final second. Not awaited — nothing may block a
+    // teardown — and skipped on a conflict, where the file on disk is not this
+    // pane's to overwrite unasked.
+    clearTimeout(saveTimer)
+    if (draft !== base && incoming === null) void WriteFile(path, draft)
     editor?.dispose()
     model?.dispose()
   })
@@ -119,6 +203,17 @@
       {saving ? t('fileEditor.saving') : dirty ? t('fileEditor.save') : t('fileEditor.saved')}
     </button>
   </div>
+  {#if incoming !== null}
+    <!-- Both sides moved at once, which autosave makes rare and cannot make
+         impossible. Neither is thrown away without being asked: the file on
+         disk still holds the agent's version, this pane still holds what was
+         typed, and the two buttons are the only way out. -->
+    <div class="fe-conflict" role="status">
+      <span class="fe-conflict-text">{t('fileEditor.changedOutside')}</span>
+      <button class="ctrl" onclick={() => applyExternal(incoming ?? draft)}>{t('fileEditor.takeDisk')}</button>
+      <button class="ctrl" onclick={save}>{t('fileEditor.keepMine')}</button>
+    </div>
+  {/if}
   <div class="editor-mount" class:fe-hidden={isMarkdown && preview} bind:this={container}></div>
   {#if isMarkdown && preview}
     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->

@@ -18,7 +18,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/url"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -50,9 +49,10 @@ const maxSources = 50
 // readingTools are the tools whose arguments name something the room *read*.
 //
 // Writers are deliberately absent. A file this conversation produced is not a
-// source for it, and the ผลงาน page already owns that question — listing them
-// here would be the second place answering it, which is the thing this file was
-// written to avoid.
+// source for it — it is the other half of the question, and ไฟล์ที่สร้างหรือแก้
+// (session_edits.go) is where that half is answered, off this same table.
+// Mixing the two would leave one list that cannot say whether a row is
+// something the room trusted or something it changed.
 //
 // glob and grep are absent too, and that is a judgement rather than an
 // oversight: their argument is a pattern, not a file. "**/*.ts" in a list of
@@ -113,9 +113,16 @@ func (a *App) SessionSources(sessionID string) []Source {
 	for i := len(order) - 1; i >= 0; i-- {
 		src := seen[order[i]]
 		if src.Kind == "file" {
-			if _, err := os.Stat(src.Path); err != nil {
+			// Resolved the way the agent's own tools resolve it, not stat'ed as
+			// typed: the model reads relative paths, and this process's working
+			// directory is wherever the app was launched from. Every local file
+			// this room read used to vanish from the list on that alone — a
+			// panel of nothing but web pages, for a session full of reading.
+			path, exists := a.onDisk(sessionID, src.Path)
+			if !exists {
 				continue
 			}
+			src.Path = path
 		}
 		out = append(out, src)
 		if len(out) == maxSources {
@@ -156,7 +163,10 @@ func (a *App) allSources(sessionID string) []Source {
 				return nil
 			}
 			if src.Kind == "file" {
-				if _, statErr := os.Stat(src.Path); statErr != nil {
+				// Same resolution as the list above, or the count would promise
+				// rows the list cannot show — and disagree with it about which
+				// files are still there.
+				if _, exists := a.onDisk(sessionID, src.Path); !exists {
 					return nil
 				}
 			}
@@ -228,30 +238,40 @@ func urlLabel(raw string) string {
 }
 
 // markCollisions fills Dir on every row whose Label another row also carries.
+func markCollisions(list []Source) {
+	for _, i := range collidingRows(len(list), func(i int) string { return list[i].Label }) {
+		if list[i].Kind == "file" {
+			list[i].Dir = filepath.Dir(list[i].Path)
+		}
+	}
+}
+
+// collidingRows reports the index of every row sharing its label with another.
 //
-// The whole group is marked, not the later members: telling two rows apart
+// The whole group is reported, not the later members: telling two rows apart
 // needs both of them to say where they are, and a `code.html` sitting next to
 // `src/code.html` still leaves the reader working out which one the bare name
 // belongs to.
-func markCollisions(list []Source) {
+//
+// Shared with ไฟล์ที่สร้างหรือแก้ (session_edits.go) rather than restated there. Both
+// lists are file rows in the same panel, and two answers to "is this bare name
+// enough" would eventually differ — which is the one thing a panel of shortened
+// names cannot afford.
+func collidingRows(n int, label func(int) string) []int {
 	byLabel := map[string][]int{}
-	for i, s := range list {
-		byLabel[s.Label] = append(byLabel[s.Label], i)
+	for i := 0; i < n; i++ {
+		byLabel[label(i)] = append(byLabel[label(i)], i)
 	}
 	labels := make([]string, 0, len(byLabel))
-	for label := range byLabel {
-		labels = append(labels, label)
+	for l := range byLabel {
+		labels = append(labels, l)
 	}
 	sort.Strings(labels) // deterministic, so a test can rely on it
-	for _, label := range labels {
-		idx := byLabel[label]
-		if len(idx) < 2 {
-			continue
-		}
-		for _, i := range idx {
-			if list[i].Kind == "file" {
-				list[i].Dir = filepath.Dir(list[i].Path)
-			}
+	out := []int{}
+	for _, l := range labels {
+		if idx := byLabel[l]; len(idx) > 1 {
+			out = append(out, idx...)
 		}
 	}
+	return out
 }

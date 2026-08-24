@@ -138,6 +138,10 @@ export function BrowserTypeRef(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['BrowserTypeRef'](arg1, arg2, arg3, arg4);
 }
 
+export function BusySignal() {
+  return window['go']['main']['App']['BusySignal']();
+}
+
 export function CancelAccountSignIn() {
   return window['go']['main']['App']['CancelAccountSignIn']();
 }
@@ -830,6 +834,10 @@ export function SessionAgent(arg1) {
   return window['go']['main']['App']['SessionAgent'](arg1);
 }
 
+export function SessionEdits(arg1) {
+  return window['go']['main']['App']['SessionEdits'](arg1);
+}
+
 export function SessionMode(arg1) {
   return window['go']['main']['App']['SessionMode'](arg1);
 }
@@ -856,6 +864,10 @@ export function SetAPIKey(arg1, arg2) {
 
 export function SetAgentOff(arg1, arg2) {
   return window['go']['main']['App']['SetAgentOff'](arg1, arg2);
+}
+
+export function SetBusyLayer(arg1, arg2) {
+  return window['go']['main']['App']['SetBusyLayer'](arg1, arg2);
 }
 
 export function SetConnectionStartCommand(arg1, arg2) {

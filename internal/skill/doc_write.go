@@ -24,6 +24,9 @@ import (
 type docWriteSkill struct {
 	root         string
 	outputSubdir func() string
+	// files is the shared record a write checks and every toucher updates.
+	// Nil is supported and means no guard (filestate.go).
+	files *FileState
 }
 
 func (*docWriteSkill) Name() string { return "doc_write" }
@@ -224,9 +227,16 @@ func (s *docWriteSkill) run(start time.Time, requestPath string, rawBlocks any) 
 	if err != nil {
 		return newToolOutput("doc_write", "doc_write "+requestPath, "", start, false, err), err
 	}
+	// A whole-document write is the same act `write` performs on text, and the
+	// same refusal applies (filestate.go).
+	if err := s.files.guardStale(targetPath, requestPath); err != nil {
+		return newToolOutput("doc_write", "doc_write "+requestPath, "", start, false, err), err
+	}
+
 	if err := ooxml.WriteFile(targetPath, parts); err != nil {
 		return newToolOutput("doc_write", "doc_write "+requestPath, "", start, false, err), err
 	}
+	s.files.Note(targetPath)
 
 	output := fmt.Sprintf("doc_write done: %s (%d block(s))", requestPath, len(blocks))
 	if requestPath != original {

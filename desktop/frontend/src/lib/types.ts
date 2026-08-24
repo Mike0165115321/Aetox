@@ -354,6 +354,16 @@ export interface ToolEvent {
    * only key that joins a live row to its task in the engine's register. */
   task?: string
   subject?: string
+  /** The action inside a packed tool: `browser`'s open/read/click, `task`'s
+   * start/collect. Packing put a dozen capabilities behind one name, so `name`
+   * says "browser" for every one of them and this is the only field that says
+   * which. Absent for a tool that is not packed. */
+  act?: string
+  /** Which browser tab this call is working. Stamped by the host on the way
+   * past, not by the engine, which has never heard of a browser. It is what
+   * lets ไฟบอกสถานะ point at one tab instead of lighting the whole panel
+   * (busySignal.svelte.ts). Absent for every tool that is not the browser. */
+  tab?: string
   ok?: boolean
   error?: string
   added?: number

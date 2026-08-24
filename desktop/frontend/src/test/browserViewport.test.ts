@@ -10,6 +10,16 @@ import { workbench, openBrowserTab } from '../lib/stores/workbench.svelte'
 import { BrowserSetBounds, BrowserSetZoom, BrowserSetVisible } from './mocks/wailsApp'
 
 const PANE = { x: 100, y: 50, width: 400, height: 900 }
+// Pane pixels the native window never gets, on every side. ไฟบอกสถานะ's
+// border light is drawn by the app, and the app draws behind this window — so
+// the strip it runs in has to be kept back from the page (BrowserPane
+// PANE_FRAME, §174). Every expectation below measures from the framed box, not
+// from the pane.
+const FRAME = 3
+const BOX = {
+  x: PANE.x + FRAME, y: PANE.y + FRAME,
+  width: PANE.width - FRAME * 2, height: PANE.height - FRAME * 2,
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -34,22 +44,22 @@ const lastBounds = () => BrowserSetBounds.mock.lastCall as unknown as [string, n
 const lastZoom = () => (BrowserSetZoom.mock.lastCall as unknown as [string, number])[1]
 
 describe('browser device presets', () => {
-  it('fills the pane at zoom 1 when no preset is chosen', async () => {
+  it('fills the pane inside its frame at zoom 1 when no preset is chosen', async () => {
     await mount()
     expect(lastZoom()).toBe(1)
-    expect(lastBounds()).toEqual(['web-1', 100, 50, 400, 900])
+    expect(lastBounds()).toEqual(['web-1', BOX.x, BOX.y, BOX.width, BOX.height])
   })
 
   it('centers a device that already fits, without upscaling it', async () => {
     await mount({ name: 'iPhone 12 Pro', w: 390, h: 844 })
     expect(lastZoom()).toBe(1)
-    expect(lastBounds()).toEqual(['web-1', 105, 78, 390, 844]) // centered in the 400x900 pane
+    expect(lastBounds()).toEqual(['web-1', 105, 78, 390, 844]) // centered in the 394x894 framed box
   })
 
   it('shrinks a device larger than the pane and zooms to match', async () => {
     await mount({ name: 'iPad Mini', w: 768, h: 1024 })
     const [, , , w, h] = lastBounds()
-    expect(lastZoom()).toBeCloseTo(400 / 768)
+    expect(lastZoom()).toBeCloseTo(BOX.width / 768)
     // The invariant: window size ÷ zoom is the device's real CSS viewport.
     expect(w / lastZoom()).toBeCloseTo(768)
     expect(Math.abs(h / lastZoom() - 1024)).toBeLessThan(1) // bounds round to whole device pixels
@@ -68,7 +78,7 @@ describe('browser device presets', () => {
 
     tab.viewport = { name: 'iPhone 14 Pro Max', w: 430, h: 932 }
     await vi.waitFor(() => expect(BrowserSetBounds).toHaveBeenCalled())
-    expect(lastZoom()).toBeCloseTo(400 / 430)
+    expect(lastZoom()).toBeCloseTo(BOX.width / 430)
     expect(lastBounds()[3] / lastZoom()).toBeCloseTo(430)
   })
 

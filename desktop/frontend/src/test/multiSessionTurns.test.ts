@@ -176,4 +176,37 @@ describe('two chats with turns in flight', () => {
     await vi.waitFor(() => expect(vi.mocked(SendMessage)).toHaveBeenLastCalledWith('ตามด้วยอันนี้'))
     expect(queuedMessages).toEqual([])
   })
+
+  // "ย้อนกลับ (1)" over a chat that had never run a turn (owner, 24 ส.ค.).
+  //
+  // The engine was right the whole way: the snapshot an undo goes back to has
+  // been per conversation since two chats could work at once
+  // (desktop/conversation.go lastSnapshot). The window simply never asked again
+  // on the way across, so the chip stayed on screen offering to put back a file
+  // another conversation wrote — the one control in the app whose stale copy
+  // touches the user's disk.
+  it('the undo chip belongs to its own chat and does not follow the user', async () => {
+    cockpit.openSession = A
+    cockpit.undoFiles = ['desktop/app.go']
+
+    vi.mocked(PendingUndo).mockResolvedValue([] as any)
+    await selectSession({ id: B } as Session)
+
+    expect(cockpit.undoFiles).toEqual([])
+    // Asked, not assumed: B's own answer is what the chip must show, and an
+    // arrival that never asks is how the stale one survived in the first place.
+    expect(PendingUndo).toHaveBeenCalled()
+  })
+
+  // The other direction, and the half a plain "clear it" would get wrong: a
+  // chat that DOES have something to put back gets its own chip on arrival.
+  it('picks up the arriving chat undo instead', async () => {
+    cockpit.openSession = A
+    cockpit.undoFiles = []
+
+    vi.mocked(PendingUndo).mockResolvedValue(['src/b.go'] as any)
+    await selectSession({ id: B } as Session)
+
+    expect(cockpit.undoFiles).toEqual(['src/b.go'])
+  })
 })

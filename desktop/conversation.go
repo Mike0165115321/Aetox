@@ -129,6 +129,31 @@ type conversation struct {
 	// back to. Guarded by App.snapshotMu with the store.
 	lastSnapshot string
 
+	// userSaves is every file the PERSON saved from the editor since
+	// lastSnapshot was taken. An undo of this chat leaves them alone.
+	//
+	// §157 settled which POINT an undo goes back to. It left open which FILES it
+	// drags along, and the answer was "all of them": Restore(id, nil) puts back
+	// every file that differs from the snapshot, and the snapshot store is the
+	// whole work tree that every chat in the project shares. So pressing undo to
+	// reject one answer also threw away whatever the user had typed while the
+	// turn ran, with nothing saying so.
+	//
+	// An exclusion rather than the obvious inclusion — "restore only what the
+	// agent's tools wrote" — because that list cannot be completed. Writing
+	// tools are enumerable (session_edits.go), but `shell` runs anything, and a
+	// tool that produces a file without being one of the writers (a rendered
+	// picture, a screenshot) would silently stop being undoable the day it is
+	// added. What CAN be enumerated exactly is what came through this app's own
+	// editor, because App.WriteFile is the only door it has. So undo keeps its
+	// reach and gives up only the files it can prove are the user's.
+	//
+	// Filled for every live conversation, not just the one on screen: a save is
+	// a fact about the tree, and the chat whose undo might eat it is often not
+	// the chat being looked at. Reset by captureSnapshot. Guarded by
+	// App.snapshotMu.
+	userSaves []string
+
 	// openTabs is what the window reports is open on THIS chat's workbench, so
 	// the agent can read its own desk (desk_list).
 	//
@@ -244,6 +269,28 @@ func (a *App) cur() *conversation {
 		}
 	})
 	return a.convs.current()
+}
+
+// all returns every live conversation, the one on screen included.
+//
+// A snapshot of the map rather than the map itself: the caller holds a
+// different lock (App.snapshotMu) while it walks the result, and handing out
+// the live map would put two locks in an order nobody has checked.
+func (c *conversations) all() []*conversation {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]*conversation, 0, len(c.byID)+1)
+	seen := map[*conversation]bool{}
+	if c.open != nil {
+		out = append(out, c.open)
+		seen[c.open] = true
+	}
+	for _, conv := range c.byID {
+		if !seen[conv] {
+			out = append(out, conv)
+		}
+	}
+	return out
 }
 
 // find returns the live conversation with this id, or nil. A conversation this

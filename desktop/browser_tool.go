@@ -91,7 +91,13 @@ func (s *browserSkill) Narrow(named []string) skill.Skill {
 	return &narrowed
 }
 
-func (*browserSkill) Name() string { return "browser" }
+// browserToolName is the one name this pack answers to, spelled once because
+// the busy signal matches tool events against it (desktop/app.go
+// recordToolAction) and a UI comparing against a literal is a UI that keeps
+// working after the tool is renamed, while showing nothing.
+const browserToolName = "browser"
+
+func (*browserSkill) Name() string { return browserToolName }
 
 func (*browserSkill) Description() string {
 	return "ใช้งานเบราว์เซอร์ของ workbench — เปิดหน้า อ่านหน้า คลิก และกรอกข้อความ (ผู้ใช้เห็นทุกอย่างที่ทำ)"
@@ -114,6 +120,7 @@ func (s *browserSkill) ToolDefinition() model.ToolDefinition {
 		"type":    "`type` (ref, text, enter?) — fill an input/textarea/select/contenteditable.",
 		"wait":    "`wait` (text, seconds?) — wait until that text appears.",
 		"back":    "`back` — return to the previous page in this tab.",
+		"scroll":  "`scroll` (to: down|up|top|bottom) — move the page; read again after.",
 		"capture": "`capture` (full?) — a picture of the page; full=true photographs the whole document instead of the visible part.",
 		"tabs":    "`tabs` (act: list|select|close, id) — your own tabs.",
 		"dialog":  "`dialog` (accept, text?) — answer this page's next alert/confirm/prompt.",
@@ -157,6 +164,7 @@ func (s *browserSkill) ToolDefinition() model.ToolDefinition {
 			"text":    map[string]any{"type": "string"},
 			"enter":   map[string]any{"type": "boolean"},
 			"newTab":  map[string]any{"type": "boolean"},
+			"to":      map[string]any{"type": "string"},
 			"act":     map[string]any{"type": "string", "enum": []string{"list", "select", "close"}},
 			"id":      map[string]any{"type": "string"},
 			"seconds": map[string]any{"type": "integer"},
@@ -204,6 +212,8 @@ func (s *browserSkill) run(ctx context.Context, args map[string]any) (skill.Outp
 		return (&browserWaitSkill{app: s.app}).wait(ctx, str(args["text"]), intArg(args["seconds"]))
 	case "back":
 		return (&browserBackSkill{app: s.app}).back(ctx)
+	case "scroll":
+		return (&browserScrollSkill{app: s.app}).scroll(str(args["to"]))
 	case "dialog":
 		return (&browserDialogSkill{app: s.app}).dialog(boolArg(args["accept"]), str(args["text"]))
 	case "console", "network":

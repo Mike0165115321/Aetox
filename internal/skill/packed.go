@@ -74,7 +74,7 @@ var packs = map[string]*pack{
 	// use, which is what retired its private profile-reading gate on 2026-08-10.
 	"browser": {
 		tool:    "browser",
-		actions: []string{"open", "read", "click", "type", "wait", "back", "capture", "tabs", "dialog", "console", "network"},
+		actions: []string{"open", "read", "click", "type", "wait", "back", "scroll", "capture", "tabs", "dialog", "console", "network"},
 		names: map[string]string{
 			"open":  "browser_open",
 			"read":  "browser_read",
@@ -113,6 +113,13 @@ var packs = map[string]*pack{
 			// granted the second.
 			"console": "browser_console",
 			"network": "browser_network",
+			// Added 2026-08-24, and it rides on browser_read's right rather than
+			// earning one of its own: scrolling reveals what a page was always
+			// going to show the reader, and a profile granted "may read this
+			// page" was never granted only its first screen. Nothing becomes
+			// reachable that reading could not already reach — the page just
+			// finishes arriving.
+			"scroll": "browser_read",
 		},
 	},
 	"shell": {

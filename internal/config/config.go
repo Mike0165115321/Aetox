@@ -76,6 +76,39 @@ type Config struct {
 	// with neither — which is what the two switches are weighing.
 	DelegateAgents     bool
 	DelegateHelpersOff bool
+	// The busy signal: four independent layers that say the agent is working
+	// the browser right now, each switchable on its own (owner, 24 ส.ค.:
+	// *"ไหนๆก็ทำแยกกันแล้วครับจะได้เพิ่มตัวเลือกให้ผุ้ใช้ด้วย"*).
+	//
+	// Spelled positive or negative to match how each one SHIPS, which is the
+	// discipline the two delegation fields above are written to: the default
+	// lives in the value, never in whichever code path happened to apply it.
+	//
+	//   EdgeGlow    the browser panel's border glows while a call is running
+	//   ActionBar   a strip that says, in words, what is being done and to what
+	//   TabDot      a dot marking WHICH tab the work is happening in
+	//   PageMarks   an arrow where it scrolls, a ring where it clicks, drawn
+	//               into the page itself
+	//
+	// Named for what somebody SEES, not for the part of the window it lives in.
+	// The first draft called one of these "ชิปแท็บ" and the owner's answer was
+	// *"ผมอ่านผมไม่รู้นะคืออะไร"* — which is the whole test a setting's name has
+	// to pass, and "chip" is a word from this repository rather than from the
+	// person reading it.
+	//
+	// Three ship on and are therefore negative; TabDot ships off and is
+	// positive, so a zero Config already means what a fresh install means.
+	// TabDot waits to be asked for, and not because it is intrusive: it answers
+	// "which tab", which is worth nothing at all until somebody is running
+	// several. Turning it on is how a person who does says so.
+	//
+	// prefers-reduced-motion outranks all four: a machine that has asked for no
+	// motion gets none, whatever these say. The switch chooses what Aetox would
+	// like to draw; the operating system decides whether it moves.
+	BusyEdgeGlowOff  bool
+	BusyActionBarOff bool
+	BusyTabDot       bool
+	BusyPageMarksOff bool
 	// WorkersOff names individual workers the ASSISTANT may not hand work to,
 	// either kind. Each one left out saves ~21 tokens per message.
 	//
@@ -186,6 +219,14 @@ type ModelPreference struct {
 	// They persist here rather than per project, because "may my assistant hand
 	// work to a specialist" is a fact about how somebody works and not about
 	// which folder is open — the same reason UILocale sits here.
+	// The busy signal's four layers. Same spelling rule as the Config fields
+	// they mirror: `omitempty` drops a field at its shipped default, so a file
+	// written by somebody who never touched these says nothing about them and
+	// keeps taking whatever ships.
+	BusyEdgeGlowOff    bool     `json:"busy_edge_glow_off,omitempty"`
+	BusyActionBarOff   bool     `json:"busy_action_bar_off,omitempty"`
+	BusyTabDot         bool     `json:"busy_tab_dot_on,omitempty"`
+	BusyPageMarksOff   bool     `json:"busy_page_marks_off,omitempty"`
 	DelegateAgents     bool     `json:"delegate_agents_on,omitempty"`
 	DelegateHelpersOff bool     `json:"delegate_helpers_off,omitempty"`
 	DelegateOn         bool     `json:"delegate_on,omitempty"` // read-only, pre-2026-08-20 files

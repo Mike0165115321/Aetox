@@ -57,6 +57,26 @@ func (s *browserTabsSkill) run(action, id string) (skill.Output, error) {
 		out.Content = fmt.Sprintf("ทำงานกับแท็บ %s แล้ว%s refs จากการ read ก่อนหน้าใช้ไม่ได้กับหน้านี้ อ่านใหม่ก่อนคลิก",
 			id, a.browserWhere(AgentTabID(id)))
 	case "close":
+		// No id means this one. The model has just been working a page and
+		// wants it shut; making it call `list` first to learn an id the tool
+		// already knows is friction that produces a refusal instead of a close
+		// — which is exactly what happened the first time the guidance told a
+		// model to tidy up after itself (owner's run, 24 ส.ค.).
+		//
+		// `select` keeps needing an id, and that is not an inconsistency: "go to
+		// the tab I am already on" is not a thing anybody asks for.
+		if strings.TrimSpace(id) == "" {
+			current, curErr := a.agentTab()
+			if curErr != nil {
+				err := fmt.Errorf("ไม่มีแท็บที่เปิดอยู่ให้ปิด")
+				out.Content, out.Stderr = err.Error(), err.Error()
+				return out, err
+			}
+			id = string(current)
+			// Named in the row too, or the timeline would show a close with no
+			// subject for the one case where the tool worked out the subject.
+			out.Command = "browser tabs close " + id
+		}
 		if err := a.closeAgentTab(id); err != nil {
 			out.Content, out.Stderr = err.Error(), err.Error()
 			return out, err

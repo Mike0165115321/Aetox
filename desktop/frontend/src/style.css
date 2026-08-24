@@ -693,6 +693,22 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .fe-error { color:var(--status-danger); font-family:var(--sans); font-size:var(--fs-md); }
 .fe-head .ctrl { appearance:none; background:var(--surface-sunken); border:1px solid var(--border-strong); border-radius:var(--r-sm); color:var(--text-secondary); font-family:var(--sans); font-size:var(--fs-md); padding:4px 10px; cursor:pointer; }
 .fe-head .ctrl:disabled { opacity:.5; cursor:default; }
+/* Both sides of a file moved at once. It sits above the editor rather than over
+   it: the text it is asking about has to stay readable while the question is
+   being answered. Warning colours, not danger — nothing is lost yet, and that
+   is the point of the bar. */
+.fe-conflict {
+  display:flex; align-items:center; gap:10px; padding:8px 12px;
+  border-bottom:1px solid var(--status-modified);
+  background:var(--surface-sunken); font-size:var(--fs-md);
+}
+.fe-conflict-text { flex:1; min-width:0; color:var(--status-modified); }
+.fe-conflict .ctrl {
+  appearance:none; background:var(--surface-panel); border:1px solid var(--border-strong);
+  border-radius:var(--r-sm); color:var(--text-secondary);
+  font-size:var(--fs-md); padding:4px 10px; cursor:pointer;
+}
+.fe-conflict .ctrl:hover { color:var(--text-primary); background:var(--surface-hover); }
 .fe-hidden { display:none !important; }
 /* Same split as .chat/.chat-inner below, and for the same reason: max-width on
    the scroll container itself left-aligned the whole preview and parked the
@@ -1216,6 +1232,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .sess-row.working,
 .proj-group-sess.working,
 .proj-chats li button.working,
+.wb.busy-glow,
 .markdown-body:has(.live) { animation:beam-phase 3s linear infinite; }
 
 .markdown-body .plan-card.live,
@@ -1225,6 +1242,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .sess-row.working::before,
 .proj-group-sess.working::before,
 .proj-chats li button.working::before,
+.wb.busy-glow::before,
 .markdown-body .plan-card.live::before,
 .markdown-body .codeblock.live::before,
 .markdown-body .drawing-box.live::before {
@@ -1278,11 +1296,13 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   .sess-row.working,
   .proj-group-sess.working,
   .proj-chats li button.working,
+  .wb.busy-glow,
   .markdown-body:has(.live) { animation:none; }
   .bgw-card.run::before,
   .sess-row.working::before,
   .proj-group-sess.working::before,
   .proj-chats li button.working::before,
+  .wb.busy-glow::before,
   .markdown-body .plan-card.live::before,
   .markdown-body .codeblock.live::before,
   .markdown-body .drawing-box.live::before {
@@ -2228,12 +2248,40 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    touching the control that opened it reads as part of the header rather than
    as a thing that opened. Anchored right — it is the last control on that edge,
    so a left-anchored panel would hang off the window. */
+/* No padding at the top any more: the header row below is the panel's top edge,
+   and 4px of panel showing above a sticky header is a sliver of nothing that
+   rows scroll through. */
 .summary-menu {
   position:absolute; top:calc(100% + 10px); right:0; z-index:60; width:320px;
-  padding:4px 0; border:1px solid var(--border-subtle); border-radius:var(--r-lg);
+  padding:0 0 4px; border:1px solid var(--border-subtle); border-radius:var(--r-lg);
   background:var(--surface-panel); box-shadow:var(--shadow-menu);
   max-height:70vh; overflow-y:auto;
 }
+/* The panel's own row: its name, and the one control that belongs to all of it
+   rather than to a section. Borrowed from .tl-head, which is the same shape
+   doing the same job one panel over.
+   Sticky, because four sections overflow 70vh on an ordinary window and a
+   refresh button you have to scroll back up to reach is one you stop using. */
+.summary-head {
+  position:sticky; top:0; z-index:1;
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:9px 14px 8px; border-bottom:1px solid var(--border-subtle);
+  background:var(--surface-panel);
+  font-size:var(--fs-xs); font-weight:600; color:var(--text-secondary);
+}
+/* --text-muted, not the --text-dim its neighbour × uses: that one is revealed
+   on hover and only has to be findable once you are looking for it. This one is
+   drawn all the time and is the only thing on the row you can press. */
+.summary-reload {
+  flex:none; display:grid; place-items:center; width:20px; height:20px;
+  border-radius:var(--r-sm); color:var(--text-muted); cursor:pointer;
+}
+.summary-reload:hover { color:var(--text-primary); background:var(--surface-hover); }
+/* Turning while the disk is being read, so the click is visibly heard on a
+   panel whose lists may come back looking identical. */
+.summary-reload.spinning { color:var(--text-muted); cursor:default; animation:summary-spin 1s linear infinite; }
+@keyframes summary-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .summary-reload.spinning { animation:none; } }
 .summary-sec { padding:10px 14px; display:flex; flex-direction:column; gap:4px; }
 .summary-sec + .summary-sec { border-top:1px solid var(--border-subtle); }
 .summary-sec h3 {
@@ -2269,18 +2317,25 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .summary-row .lbl, .summary-line .lbl {
   flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
-.summary-row .dir {
+.summary-row .dir, .summary-line .dir {
   flex:0 1 auto; min-width:0; max-width:45%; overflow:hidden; direction:rtl;
   text-overflow:ellipsis; white-space:nowrap;
   font-size:var(--fs-xs); color:var(--text-dim);
 }
-.summary-row .st {
+.summary-row .st, .summary-line .st {
   flex:none; width:14px; text-align:center; font-family:var(--mono);
   font-size:var(--fs-xs); color:var(--status-modified);
 }
 /* GitChangedFiles reports M or U (app.go) — the same two letters the file tree
-   badges with, so the colours have to be the same two as well. */
-.summary-row .st.U { color:var(--status-untracked); }
+   badges with, so the colours have to be the same two as well. SessionEdits
+   reports W, M and D (session_edits.go), and reuses the same two colours for
+   the same two meanings: something new, or something altered. */
+.summary-row .st.U, .summary-row .st.W, .summary-line .st.W { color:var(--status-untracked); }
+.summary-row .st.D, .summary-line .st.D { color:var(--status-danger); }
+/* Nothing is there any more. The strike-through is the whole message — a row
+   that only went grey would read as disabled, which is a statement about the
+   row rather than about the file. */
+.summary-line.gone .lbl { text-decoration:line-through; color:var(--text-dim); }
 /* Carries its own count, so the list never claims to be complete when it is
    not. Quiet: it is a way on, not the point of the section. */
 .summary-more {
@@ -2288,6 +2343,118 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   font-size:var(--fs-xs); color:var(--text-muted); cursor:pointer;
 }
 .summary-more:hover { color:var(--text-primary); background:var(--surface-hover); }
+
+/* ---------- ไฟบอกสถานะ: which "the agent is working" layers are on ----------
+   A checklist rather than a settings page, and it lives in the browser
+   toolbar rather than in Settings, because it is a decision about the panel
+   you are looking at while you are looking at it (owner, 24 ส.ค.). */
+.busy-wrap { position:relative; display:flex; }
+.busy-menu {
+  position:absolute; top:calc(100% + 8px); left:0; z-index:60; width:300px;
+  padding:4px; border:1px solid var(--border-subtle); border-radius:var(--r-lg);
+  background:var(--surface-panel); box-shadow:var(--shadow-menu);
+}
+.busy-head {
+  margin:0; padding:8px 10px 6px; font-size:var(--fs-xs); color:var(--text-muted);
+  border-bottom:1px solid var(--border-subtle);
+}
+.busy-item {
+  display:flex; gap:9px; width:100%; padding:9px 10px; border-radius:var(--r-sm);
+  text-align:left; cursor:pointer; color:var(--text-secondary);
+}
+.busy-item:hover { background:var(--surface-hover); }
+/* The tick box keeps its width whether or not it holds a tick, so the labels
+   stay on one left edge — a checklist whose rows shift as you toggle them is
+   one you have to re-find your place in after every click. */
+.busy-item .tick {
+  flex:none; width:16px; height:16px; margin-top:1px; display:grid; place-items:center;
+  border:1.5px solid var(--border-strong); border-radius:var(--r-sm); color:var(--text-on-interactive);
+}
+.busy-item.on .tick { background:var(--interactive); border-color:var(--interactive); }
+.busy-item .txt { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.busy-item .txt b { font-size:var(--fs-sm); font-weight:600; color:var(--text-secondary); }
+.busy-item.on .txt b { color:var(--text-primary); }
+.busy-item .txt span { font-size:var(--fs-xs); color:var(--text-dim); line-height:1.45; }
+
+/* ---------- ไฟบอกสถานะ: the layers themselves ----------
+   Three of the four are here. The fourth is drawn inside the page by an
+   injected script, because the page is a native window this stylesheet cannot
+   reach at all (desktop/browser_marks.go).
+
+   **ขอบแผงเรืองแสง** has no rules of its own — look for .wb.busy-glow in the
+   beam-phase block far above. It is the same comet the working chat row and
+   the running delegation card wear, on the same shared clock, and that is the
+   whole point: "this one is still going" is one fact, and a user who has
+   learned it once in the sidebar should not have to learn a second light down
+   here. Borrowed structure, not a borrowed ornament.
+
+   It has somewhere to run because BrowserPane keeps three pixels of the pane
+   back from the native window on every side (PANE_FRAME). Flush, three
+   quarters of the lap would be hidden behind the page. */
+
+/* The hairline under the tab strip, and the dot on the tab being worked.
+   Two marks for one sentence: the line says "up here", the dot says "this
+   one". The line alone cannot name a tab; the dot alone is 6 pixels in a strip
+   nobody was looking at. */
+.insp-tabs { position:relative; }
+.busy-strip-line {
+  position:absolute; left:0; right:0; bottom:-1px; height:1px; pointer-events:none;
+  background:linear-gradient(90deg,
+    transparent 0%, var(--interactive) 35%, var(--interactive-bright) 50%, var(--interactive) 65%, transparent 100%);
+  background-size:220% 100%;
+  animation:busy-sweep 2.4s linear infinite;
+}
+@keyframes busy-sweep { from { background-position:220% 0; } to { background-position:-20% 0; } }
+.busy-tab-dot {
+  flex:none; width:6px; height:6px; border-radius:50%;
+  background:var(--interactive); box-shadow:0 0 6px var(--interactive);
+  animation:busy-breathe 1.8s ease-in-out infinite;
+}
+@keyframes busy-breathe {
+  0%, 100% { opacity:.4; transform:scale(.75); }
+  50%      { opacity:1;  transform:scale(1); }
+}
+
+/* แถบบอกการกระทำ: the only layer made of words, and the only one that
+   can say WHAT. Sized like the address bar above it and bordered the same, so
+   it reads as one more row of the panel's own chrome rather than as something
+   that landed on top of the page.
+
+   Nothing in here moves. The dot is lit or it is out — the owner had the
+   animation taken out of this bar specifically (*"ฝากเอาอนิเมชั่นออกเลย
+   ไม่จำเป็น"*), and he is right: the border above is already saying
+   "still going", and a sentence is harder to read with something spinning
+   beside it. */
+.busy-bar {
+  display:flex; align-items:center; gap:8px; min-width:0;
+  padding:6px 14px; border-bottom:1px solid var(--border-default);
+  background:var(--surface-panel);
+}
+.busy-bar-dot {
+  flex:none; width:7px; height:7px; border-radius:50%;
+  background:var(--text-muted); transition:background 140ms ease, box-shadow 140ms ease;
+}
+.busy-bar.live .busy-bar-dot {
+  background:var(--interactive);
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--interactive) 20%, transparent);
+}
+/* One line, cut with an ellipsis rather than wrapped. A bar that grows to two
+   lines resizes the native page underneath it, which is the one thing this
+   row is built never to do (see busyWork.seen). */
+.busy-bar-txt {
+  min-width:0; font-size:var(--fs-xs); color:var(--text-dim);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.busy-bar.live .busy-bar-txt { color:var(--text-secondary); }
+
+/* Motion off, signal kept — the same trade the beam block makes. The global
+   rule at the end of this file already stops the animations; these two would
+   be left frozen mid-keyframe without it, which for the dot means "stuck at
+   40% opacity" and for the line means "lit on one side only". */
+@media (prefers-reduced-motion:reduce) {
+  .busy-strip-line { background:var(--interactive); background-size:auto; }
+  .busy-tab-dot { opacity:1; transform:none; }
+}
 
 /* ---------- inspector ---------- */
 .inspector { grid-area:inspector; background:var(--surface-panel); display:flex; flex-direction:column; overflow:hidden; }

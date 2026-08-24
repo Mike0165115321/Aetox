@@ -197,6 +197,8 @@ export const en: Record<keyof typeof th, string> = {
   'chat.editConfirm': 'Restore files and resend',
   'cockpit.regenerateError': 'Could not answer again: {err}',
   'cockpit.undoDone': 'Undid the last turn. {count} file(s) put back:',
+  // Said out loud: quietly sparing a file is as hard to trust as quietly eating one.
+  'cockpit.undoKept': 'Left alone: {count} file(s) you edited yourself during this turn:',
   'cockpit.undoNothing': 'There was nothing to undo.',
   'cockpit.undoFailed': 'Undo failed: {err}',
   'chat.removeAttachment': 'Remove attachment',
@@ -244,6 +246,12 @@ export const en: Record<keyof typeof th, string> = {
   // Always with the number: "View all" on its own says the list is incomplete
   // without saying how incomplete, which is a different decision.
   'summary.viewAll': 'View {count} more',
+  // "Created or edited", not "changed": git sits in the section below, and the
+  // two answer different questions — what this room did, against what state the
+  // working tree happens to be in.
+  'summary.edits': 'Created or edited',
+  'summary.editsEmpty': 'This room has not changed a file yet',
+  'summary.reload': 'Read again',
   'summary.repo': 'Repo',
   'summary.noBranch': 'Not a repository',
   'summary.noChanges': 'No files changed yet',
@@ -314,6 +322,37 @@ export const en: Record<keyof typeof th, string> = {
   'workbench.drawClear': 'Clear',
   'workbench.drawCancel': 'Cancel',
   'workbench.drawLabel': 'What the marks are on',
+  'workbench.busySignal': 'Working signal',
+  'workbench.busySignalHint': 'How the panel shows you the agent is working in here',
+  // What the action bar says. Two forms per action: while it is happening, and
+  // once it has. {subject} is the URL or the thing being worked, and vanishes
+  // with the space around it when the action names nothing.
+  'workbench.busyRun.open': 'Opening {subject}',
+  'workbench.busyEnd.open': 'Opened {subject}',
+  'workbench.busyRun.read': 'Reading the page {subject}',
+  'workbench.busyEnd.read': 'Read the page {subject}',
+  'workbench.busyRun.click': 'Clicking {subject}',
+  'workbench.busyEnd.click': 'Clicked {subject}',
+  'workbench.busyRun.type': 'Typing {subject}',
+  'workbench.busyEnd.type': 'Typed {subject}',
+  'workbench.busyRun.scroll': 'Scrolling the page {subject}',
+  'workbench.busyEnd.scroll': 'Scrolled the page {subject}',
+  'workbench.busyRun.capture': 'Taking a picture of the page {subject}',
+  'workbench.busyEnd.capture': 'Took a picture of the page {subject}',
+  'workbench.busyRun.tabs': 'Sorting out its tabs {subject}',
+  'workbench.busyEnd.tabs': 'Sorted out its tabs {subject}',
+  'workbench.busyRun.wait': 'Waiting for the page {subject}',
+  'workbench.busyEnd.wait': 'Waited for the page {subject}',
+  'workbench.busyRun.back': 'Going back {subject}',
+  'workbench.busyEnd.back': 'Went back {subject}',
+  'workbench.busyRun.dialog': "Answering the page's dialog {subject}",
+  'workbench.busyEnd.dialog': "Answered the page's dialog {subject}",
+  'workbench.busyRun.console': 'Reading the console {subject}',
+  'workbench.busyEnd.console': 'Read the console {subject}',
+  'workbench.busyRun.network': "Reading the page's network log {subject}",
+  'workbench.busyEnd.network': "Read the page's network log {subject}",
+  'workbench.busyRun.other': 'Working the browser {subject}',
+  'workbench.busyEnd.other': 'Worked the browser {subject}',
   'workbench.devtools': 'DevTools',
   'workbench.viewport': 'Screen size',
   'workbench.viewportFill': 'Fill panel',
@@ -394,6 +433,11 @@ export const en: Record<keyof typeof th, string> = {
   'fileEditor.saving': 'Saving…',
   'fileEditor.save': 'Save (Ctrl+S)',
   'fileEditor.saved': 'Saved',
+  // Only when both sides moved at once: a draft being typed here, and the agent
+  // writing the same file in the same moment. Neither is dropped unasked.
+  'fileEditor.changedOutside': 'This file changed on disk while you were typing',
+  'fileEditor.takeDisk': 'Take the file',
+  'fileEditor.keepMine': 'Keep mine',
   'fileEditor.preview': 'Preview',
   'fileEditor.source': 'Source',
 

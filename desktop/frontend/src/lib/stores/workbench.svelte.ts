@@ -111,6 +111,26 @@ export function removeTab(id: string): void {
   if (workbench.activeId === id) workbench.activeId = workbench.tabs.at(-1)?.id ?? ''
 }
 
+/** The engine closed a browser tab: take its chip off the strip.
+ *
+ * `workbench:open-browser` had no partner, so a tab closed from the Go side —
+ * the agent's own `browser tabs close`, or the orphan sweep after a reload —
+ * stayed on the strip forever, pointing at a native view that no longer existed.
+ * Worse than a dead chip: BrowserPane latches `opened` once it has called
+ * BrowserOpen, so the pane behind it would never try again either. A black
+ * rectangle with a URL in the address bar and nothing that could fix it (owner,
+ * 24 ส.ค.).
+ *
+ * Only browser tabs, and only by id: this is the mirror of one act on one tab,
+ * not a resync of the strip. `removeTab` rather than `closeTab` because the
+ * close already happened — calling back into Go would be this window asking the
+ * engine to do again what the engine just told it about. */
+export function browserTabClosedByEngine(id: string): void {
+  const tab = workbench.tabs.find((t) => t.id === id)
+  if (tab?.kind !== 'browser') return
+  removeTab(id)
+}
+
 /** Close a tab, stopping its backing terminal session if it has one. */
 export async function closeTab(tab: WorkbenchTab): Promise<void> {
   if (tab.kind === 'terminal') await TerminalClose(tab.id)
@@ -274,8 +294,9 @@ export function closeAgentFileTab(path: string): void {
  * Every field below is assigned every time, undefined included: a file that used
  * to fail and now reads must lose its `unreadable`, or the pane keeps showing
  * the old excuse. */
-async function loadFileTab(tab: WorkbenchTab, path: string): Promise<void> {
+async function loadFileTab(tab: WorkbenchTab, path: string, keepPane = false): Promise<void> {
   const next: Pick<WorkbenchTab, 'content' | 'view' | 'sheet' | 'unreadable'> = {}
+  const wasText = tab.content !== undefined
   const view = fileView(path)
   if (view) {
     // Nothing to load and nothing that can fail here: the pane addresses the
@@ -319,10 +340,56 @@ async function loadFileTab(tab: WorkbenchTab, path: string): Promise<void> {
   // edited back into a plain page must lose the slide pane, or the pane keeps
   // paging through sections that are no longer there.
   tab.deck = next.content !== undefined && isDeck(path, next.content)
-  // FileEditor snapshots `content` into local state once and the pane never
-  // unmounts, so fresh bytes alone would not reach the screen. Workbench.svelte
-  // keys the pane on this.
-  tab.rev = (tab.rev ?? 0) + 1
+  // Workbench.svelte keys the pane on this, so bumping it rebuilds the pane.
+  //
+  // Which is what an open wants and the opposite of what a re-read behind the
+  // user's back wants: a rebuilt editor loses the caret, the scroll position
+  // and the undo stack, and this path exists precisely for the case where they
+  // are still typing in it (`keepPane`). Text-to-text is therefore left to
+  // FileEditor, which patches the change into the model in place. Anything that
+  // changes WHICH pane draws the file — text that became unreadable, a workbook
+  // this is not any more — still has to rebuild, or the pane on screen is one
+  // for a file that no longer exists.
+  const sameKindOfFile = wasText && next.content !== undefined
+  if (!keepPane || !sameKindOfFile) tab.rev = (tab.rev ?? 0) + 1
+}
+
+/** The agent changed a file on disk. Put the new bytes in front of whoever is
+ * looking at it.
+ *
+ * Owner, 24 ส.ค.: *"ผมทำงานอยู่ มันปรับเนื้อหาในเอกสารแล้วผมยังเห็นอันเก่าอยู่"*.
+ * A file pane read the file once, when it was opened. `loadFileTab`'s own
+ * comment already said re-reading matters and every re-open did it — but a tab
+ * sitting open through a turn was never re-opened, so it kept the bytes it was
+ * born with while the agent edited the same path underneath it.
+ *
+ * Driven from Go (`workbench:files-changed`, off the same parse ไฟล์ที่สร้าง
+ * หรือแก้ reads) rather than from a timer or a watcher: the engine knows which
+ * call touched which path, and polling the disk for files nobody changed is
+ * work done on the chance it was wanted.
+ *
+ * Not scoped to the session that wrote it, deliberately. A pane shows a file on
+ * disk; the file on disk changed. Which conversation changed it is not a reason
+ * to keep showing the user something that is no longer true. */
+export async function filesChangedOnDisk(paths: string[]): Promise<void> {
+  const wanted = new Set((paths ?? []).map(samePathKey).filter(Boolean))
+  if (!wanted.size) return
+  for (const tab of workbench.tabs) {
+    if (tab.kind !== 'file' || !tab.path || !wanted.has(samePathKey(tab.path))) continue
+    await loadFileTab(tab, tab.path, true)
+  }
+}
+
+/** One spelling of a path, for asking "is this the same file".
+ *
+ * Windows is the reference platform: `Desktop\A.md` and `desktop/a.md` are one
+ * file there, and a comparison that says otherwise leaves the pane stale for
+ * the reason the user can least guess. Lowercasing is wrong on a case-sensitive
+ * filesystem in the one case where two files differ only by case — a trade
+ * taken on purpose, because the cost is one needless re-read and the cost the
+ * other way is the bug this function exists to fix. */
+function samePathKey(path: string): string {
+  return path.trim().replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase()
 }
 
 /** Absolute OS paths dropped onto the desk — from Explorer, the desktop, another

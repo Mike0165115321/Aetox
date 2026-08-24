@@ -1066,10 +1066,18 @@ export async function undoLastTurn(): Promise<void> {
   try {
     const result = await UndoLastTurn()
     const files = result?.files ?? []
-    const text = files.length > 0
-      ? [t('cockpit.undoDone', { count: String(files.length) }), ...files.map((f) => `- ${f}`)].join('\n')
-      : (result?.reason || t('cockpit.undoNothing'))
-    cockpit.chat.push({ role: 'agent', text, time: nowLabel() })
+    const lines = files.length > 0
+      ? [t('cockpit.undoDone', { count: String(files.length) }), ...files.map((f) => `- ${f}`)]
+      : [result?.reason || t('cockpit.undoNothing')]
+    // What it deliberately did NOT put back, because the user saved those files
+    // themselves while the turn ran. An undo that quietly spares some files is
+    // as hard to trust as the one that quietly ate them: the rule only helps if
+    // it can be seen being applied.
+    const kept = result?.kept ?? []
+    if (kept.length > 0) {
+      lines.push('', t('cockpit.undoKept', { count: String(kept.length) }), ...kept.map((f) => `- ${f}`))
+    }
+    cockpit.chat.push({ role: 'agent', text: lines.join('\n'), time: nowLabel() })
   } catch (err) {
     cockpit.chat.push({ role: 'agent', text: t('cockpit.undoFailed', { err: String(err) }), time: nowLabel() })
   }
@@ -2470,6 +2478,28 @@ export async function openFile(path: string): Promise<void> {
   cockpit.activeView = path
 }
 
+/** The other surface that draws a file, kept in step with the workbench one.
+ *
+ * `openFile` above reads the bytes once and nothing ever re-read them, which is
+ * the same staleness filesChangedOnDisk fixes one store over — and it is worse
+ * here, because these tabs fill the main area rather than a side panel.
+ *
+ * Only the content is replaced: FileEditor is keyed on the path alone here, so
+ * the pane is never rebuilt and the editor patches the change into its model
+ * with the caret where the user left it. A file that has become unreadable
+ * shows why, in the same slot the open path already uses for that. */
+export async function refreshOpenFiles(paths: string[]): Promise<void> {
+  const wanted = new Set((paths ?? []).map((p) => p.trim().replace(/\\/g, '/').toLowerCase()))
+  for (const f of cockpit.openFiles) {
+    if (!wanted.has(f.path.trim().replace(/\\/g, '/').toLowerCase())) continue
+    try {
+      f.content = await ReadFile(f.path)
+    } catch (err) {
+      f.content = t('workbench.openFileError', { err: String(err) })
+    }
+  }
+}
+
 /** Close a file tab; falls back to Chat (or another open file) if it was active. */
 export function closeFile(path: string): void {
   const idx = cockpit.openFiles.findIndex((f) => f.path === path)
@@ -2618,6 +2648,17 @@ function arriveAt(id: string): boolean {
   parkLive(cockpit.openSession)
   cockpit.openSession = id
   cockpit.sessionError = ''
+  // The undo chip belongs to the chat it was offered on, and it is not live
+  // turn state — so it is dropped here rather than parked, and re-read from the
+  // engine once the arrival is done (refreshUndo, at the tail of every door).
+  //
+  // Go always knew whose it was: the snapshot an undo goes back to is per
+  // conversation (desktop/conversation.go lastSnapshot). The window simply
+  // never asked again on the way across, so the chip rode along — "ย้อนกลับ (1)"
+  // over a chat that had never run a turn, offering to put back a file another
+  // conversation wrote. Clearing it before the arrival is what makes the gap
+  // read as "nothing offered" instead of as somebody else's work.
+  cockpit.undoFiles = []
   markOnScreen(id)
   // The tray belongs to the chat too (suggest_task chips are raised by a
   // conversation about its own work), so it is re-read for the one arriving
@@ -2645,6 +2686,10 @@ export async function selectSession(session: Session): Promise<void> {
   // nav has to follow it rather than keep pointing at where the user was.
   await refreshDesk()
   await switchWorkbenchSession(session.id)
+  // Whose undo is on offer changed with the chat — asked here for the same
+  // reason selectGlobalSession asks it, and missing here was the whole bug: the
+  // door most people actually use is this one.
+  await refreshUndo()
   await refreshSessions()
   await refreshGlobalHistory()
 }
@@ -2854,6 +2899,10 @@ async function afterNewSession(): Promise<void> {
   // Explicit switch (not adopt): a brand-new session starts with an empty
   // workbench; the old session's layout stays saved for when it's reopened.
   await switchWorkbenchSession(id)
+  // A chat that has run no turn has nothing to undo, and the engine says so —
+  // asked rather than assumed, so this stays right if a new session is ever
+  // born holding one.
+  await refreshUndo()
   await refreshSessions()
   await refreshGlobalHistory()
 }

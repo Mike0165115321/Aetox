@@ -21,12 +21,13 @@
     applyAgentChunk, applyReasoningChunk, attachImageFromPath,
     applyAskUser, applyAskDone, applyTodos, applyMissedInterjections, applyTaskChips, applyUsageRound,
     applyPendingLearned, refreshPendingLearned, refreshPendingIssues, applyAgentDone, isOverlayView, closeOverlay,
-    refreshProjectFolders,
+    refreshProjectFolders, refreshOpenFiles,
   } from './lib/stores/cockpit.svelte'
   import { shell, shellHasChats } from './lib/shell.svelte'
+  import { applyBusyEvent, clearBusyWork } from './lib/stores/busySignal.svelte'
   import { RelativizePath, CloseAllBrowserTabs } from '../wailsjs/go/main/App'
   import { OnFileDrop, OnFileDropOff, EventsOn } from '../wailsjs/runtime/runtime'
-  import { workbench, openPathsInWorkbench } from './lib/stores/workbench.svelte'
+  import { workbench, openPathsInWorkbench, filesChangedOnDisk } from './lib/stores/workbench.svelte'
   import { listenForUpdates } from './lib/selfUpdate.svelte'
   import { clampPanelWidth, fitPanelsToWindow } from './lib/panelSize'
   import { isShortcut } from './lib/shortcuts'
@@ -170,11 +171,22 @@
 
     const offAgentStatus = EventsOn('agent:status', applyAgentStatus)
     const offAgentTool = EventsOn('agent:tool', applyToolEvent)
+    // The same stream, read for a different question. applyToolEvent builds
+    // the chat's timeline; this asks only whether the browser is working and
+    // on which tab, which is what ไฟบอกสถานะ draws (§174). A second
+    // listener rather than a call inside the first, so a workbench concern
+    // stays out of the store that draws messages.
+    const offBusyTool = EventsOn('agent:tool', applyBusyEvent)
     const offAgentChunk = EventsOn('agent:chunk', applyAgentChunk)
     // The ending for a turn this window has no promise for — a webview reload
     // killed the SendMessage promise, the engine kept working, and this event
     // is how the finished answer still reaches the screen.
     const offAgentDone = EventsOn('agent:done', applyAgentDone)
+    // The far end of the busy signal. A browser call normally puts its own
+    // light out when its result arrives, but a turn that was stopped, or that
+    // died with the provider, owes nobody a result — and the panel would keep
+    // glowing for a page nothing is looking at.
+    const offBusyDone = EventsOn('agent:done', clearBusyWork)
     const offAgentReasoning = EventsOn('agent:reasoning', applyReasoningChunk)
     const offAskUser = EventsOn('ask:user', applyAskUser)
     const offAskDone = EventsOn('ask:done', applyAskDone)
@@ -192,6 +204,14 @@
     // panel is the one place that says what this session can reach, so it has
     // to learn about a folder that arrived without anybody opening it.
     const offWorkspace = EventsOn('workspace:changed', () => { void refreshProjectFolders() })
+    // The agent just wrote a file. Both surfaces that draw one re-read it, so
+    // somebody reading a document while a turn edits it sees the edit instead
+    // of the version it replaced (owner, 24 ส.ค.).
+    const offFiles = EventsOn('workbench:files-changed', (ev: { data?: string[] }) => {
+      const paths = ev?.data ?? []
+      void filesChangedOnDisk(paths)
+      void refreshOpenFiles(paths)
+    })
     const offCapabilities = listenCapabilities()
     // What the agent wants to remember and cannot until it is allowed to, and
     // what keeps failing and might be worth telling the developer about.
@@ -255,8 +275,10 @@
       OnFileDropOff()
       offAgentStatus()
       offAgentTool()
+      offBusyTool()
       offAgentChunk()
       offAgentDone()
+      offBusyDone()
       offAgentReasoning()
       offAskUser()
       offAskDone()
@@ -265,6 +287,7 @@
       offTaskChips()
       offUsage()
       offWorkspace()
+      offFiles()
       offCapabilities()
       offLearning()
       offUpdate()

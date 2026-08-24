@@ -6,15 +6,15 @@
 // words whatever is behind it, so the badge is the part that has to work — it
 // is the only thing telling anyone there is a plan running at all.
 //
-// The three sections are readings of things that already exist (todo_write,
-// tool_runs, git), so what is guarded here is not the data but the reading:
-// that an empty section says so instead of vanishing, that a truncated list
-// admits how truncated it is, and that no two rows can read the same.
+// The four sections are readings of things that already exist (todo_write,
+// tool_runs twice, git), so what is guarded here is not the data but the
+// reading: that an empty section says so instead of vanishing, that a truncated
+// list admits how truncated it is, and that no two rows can read the same.
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte'
 import SessionStrip from '../lib/SessionStrip.svelte'
 import { cockpit, applyTodos } from '../lib/stores/cockpit.svelte'
-import { SessionSources, SessionSourceCount, GitChangedFiles } from './mocks/wailsApp'
+import { SessionSources, SessionSourceCount, SessionEdits, GitChangedFiles } from './mocks/wailsApp'
 
 const plan = (...rows: [string, 'pending' | 'in_progress' | 'completed'][]) =>
   rows.map(([content, status]) => ({ content, status }))
@@ -22,6 +22,13 @@ const plan = (...rows: [string, 'pending' | 'in_progress' | 'completed'][]) =>
 const source = (over: Record<string, unknown> = {}) => ({
   kind: 'file', label: 'notes.md', path: 'D:/work/notes.md', time: '', ...over,
 })
+
+const edited = (over: Record<string, unknown> = {}) => ({
+  path: 'src/app.go', label: 'app.go', status: 'M', gone: false, time: '', ...over,
+})
+
+/** What SessionEdits hands back: the rows, and how many there are in total. */
+const editPage = (files: Record<string, unknown>[], total = files.length) => ({ files, total })
 
 const toggle = () => screen.getByRole('button', { name: /สรุปห้องนี้/ })
 
@@ -65,21 +72,23 @@ describe('the session summary button', () => {
 
     await openPanel()
     expect(SessionSources).toHaveBeenCalled()
+    expect(SessionEdits).toHaveBeenCalled()
     expect(GitChangedFiles).toHaveBeenCalled()
   })
 
   // Every section draws its heading whether or not it has anything, because in
   // a panel somebody opened on purpose "there is nothing" is the answer they
   // came for — and the heading teaches what will appear there later.
-  it('names all three sections and says which are empty', async () => {
+  it('names all four sections and says which are empty', async () => {
     render(SessionStrip)
 
     await openPanel()
-    for (const heading of ['แผน', 'แหล่งที่มา', 'ที่เก็บโค้ด']) {
+    for (const heading of ['แผน', 'แหล่งที่มา', 'ไฟล์ที่สร้างหรือแก้', 'ที่เก็บโค้ด']) {
       expect(screen.getByText(heading)).toBeTruthy()
     }
     expect(screen.getByText('ยังไม่มีแผนในห้องนี้')).toBeTruthy()
     expect(screen.getByText('ห้องนี้ยังไม่ได้เปิดไฟล์หรือเว็บอะไร')).toBeTruthy()
+    expect(screen.getByText('ห้องนี้ยังไม่ได้แก้ไฟล์ไหน')).toBeTruthy()
     expect(screen.getByText('ห้องนี้ไม่ได้โฟกัสโปรเจกต์')).toBeTruthy()
   })
 
@@ -140,6 +149,70 @@ describe('the session summary button', () => {
     const more = await screen.findByText(/ดูอีก 25 รายการ/)
     await fireEvent.click(more)
     expect(screen.getByText('f9.md')).toBeTruthy()
+  })
+
+  // The half nothing on screen used to answer. ที่เก็บโค้ด is `git status` —
+  // every file the user left dirty, agent's work and theirs in one undivided
+  // list — and ผลงาน only sweeps output/<session>, so a source file edited in
+  // place appeared in neither.
+  it('lists the files this room created or edited', async () => {
+    vi.mocked(SessionEdits).mockResolvedValue(editPage([
+      edited({ path: 'output/x/report.md', label: 'report.md', status: 'W' }),
+      edited(),
+    ]) as never)
+    const { container } = render(SessionStrip)
+
+    await openPanel()
+    await waitFor(() => expect(screen.getByText('report.md')).toBeTruthy())
+    expect(screen.getByText('app.go')).toBeTruthy()
+    expect([...container.querySelectorAll('.summary-sec .st')].map((e) => e.textContent))
+      .toEqual(['W', 'M'])
+  })
+
+  // A file that is gone is still what this room did — deleting one is the
+  // loudest thing it can do to a file — so the row stays. What it must not do
+  // is offer a door that opens nothing.
+  it('keeps a deleted file on the list without offering to open it', async () => {
+    vi.mocked(SessionEdits).mockResolvedValue(editPage([
+      edited({ path: 'src/old.go', label: 'old.go', status: 'D', gone: true }),
+    ]) as never)
+    const { container } = render(SessionStrip)
+
+    await openPanel()
+    await waitFor(() => expect(screen.getByText('old.go')).toBeTruthy())
+    expect(container.querySelector('.summary-line.gone')).toBeTruthy()
+    expect(screen.getByText('old.go').closest('button')).toBeNull()
+  })
+
+  // Same rule as แหล่งที่มา, and the count comes back with the list rather than
+  // from a second scan — one answer cannot disagree with itself about how much
+  // it is hiding.
+  it('says how many edited files it is not showing', async () => {
+    vi.mocked(SessionEdits).mockResolvedValue(editPage(
+      Array.from({ length: 10 }, (_, i) => edited({ path: `src/f${i}.go`, label: `f${i}.go` })),
+      18,
+    ) as never)
+    render(SessionStrip)
+
+    await openPanel()
+    const more = await screen.findByText(/ดูอีก 12 รายการ/)
+    await fireEvent.click(more)
+    expect(screen.getByText('f9.go')).toBeTruthy()
+  })
+
+  // Everything in the panel is read on open, so everything in it goes stale
+  // together while a turn keeps working — and the section saying which files
+  // the agent just touched is the last one anybody wants a stale copy of.
+  it('re-reads every section on demand', async () => {
+    render(SessionStrip)
+
+    await openPanel()
+    vi.mocked(SessionEdits).mockResolvedValue(editPage([edited({ label: 'new.go' })]) as never)
+
+    await fireEvent.click(screen.getByRole('button', { name: 'อ่านใหม่' }))
+    await waitFor(() => expect(screen.getByText('new.go')).toBeTruthy())
+    expect(SessionSources).toHaveBeenCalledTimes(2)
+    expect(GitChangedFiles).toHaveBeenCalledTimes(2)
   })
 
   it('shows the branch and the files that changed under it', async () => {

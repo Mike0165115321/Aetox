@@ -74,6 +74,16 @@ func (s *browserCaptureSkill) capture(ctx context.Context, full bool) (skill.Out
 	// It is the same event `open` uses, and the frontend's handler only makes an
 	// existing tab active, so nothing re-navigates and the URL is along for the
 	// ride the tab is already on.
+	// Nothing of Aetox's own in the photograph.
+	//
+	// The click ring sits directly over the control it points at, so a capture
+	// taken a moment after a click would hand the model a picture of the page
+	// with a bright circle drawn across the thing it was looking for — and the
+	// model has no way to know the circle is not part of the site. Queued
+	// before the raise below, so the removal has landed well before the shutter
+	// (browser_marks.go).
+	a.clearPageMarks(id)
+
 	var title, url string
 	if t := a.browsers.tab(string(id)); t != nil {
 		title, url = t.meta()

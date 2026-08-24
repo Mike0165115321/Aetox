@@ -275,25 +275,78 @@ func SubjectFromPartialArgs(args string) (string, bool) {
 		return "", false
 	}
 	firstByKey := map[string]string{}
+	// Every distinct path in the call, in the order they arrived. One is the
+	// ordinary case; several means a call that names several files, and
+	// apply_patch is the only tool that does. See subjectForPaths.
+	paths := []string{}
 	for _, m := range matches {
 		if _, seen := firstByKey[m[1]]; !seen {
 			firstByKey[m[1]] = m[2]
 		}
+		if m[1] == "path" {
+			if value := unescape(m[2]); value != "" && !hasPath(paths, value) {
+				paths = append(paths, value)
+			}
+		}
+	}
+	if len(paths) > 1 {
+		return subjectForPaths(paths), true
 	}
 	for _, key := range ArgSubjectKeys {
 		raw, ok := firstByKey[key]
 		if !ok {
 			continue
 		}
-		value := raw
-		if unquoted, err := strconv.Unquote(`"` + raw + `"`); err == nil {
-			value = unquoted
-		}
-		if value = strings.TrimSpace(value); value != "" {
+		if value := unescape(raw); value != "" {
 			return capSubject(value), true
 		}
 	}
 	return "", false
+}
+
+func unescape(raw string) string {
+	value := raw
+	if unquoted, err := strconv.Unquote(`"` + raw + `"`); err == nil {
+		value = unquoted
+	}
+	return strings.TrimSpace(value)
+}
+
+func hasPath(list []string, want string) bool {
+	for _, item := range list {
+		if item == want {
+			return true
+		}
+	}
+	return false
+}
+
+// subjectForPaths names a call that touched more than one file.
+//
+// `apply_patch` was reaching the timeline as the bare word "apply_patch": its
+// paths live inside `edits[]` and nothing looked in there, so the one writer
+// that can change several files at once was the one row that named none of
+// them. Owner, 24 ส.ค.: *"แต่ละ edit บางทีก็ไม่แสดงจำนวนไฟล์ที่มีการแก้ไขนะ"*.
+//
+// "บางที" is the tell, and it was two code paths disagreeing: the streaming
+// scan above finds `"path"` anywhere in the JSON and so DID name the first
+// file, while the completed parse looked only at the top level and named
+// nothing. A row is matched to its streamed guess by label when the engine
+// sends no call id, so the two spellings could also draw the same call twice.
+// Both now end here.
+//
+// The first file plus a count, rather than the whole list: the row is one line
+// at panel width, and the file that mattered is nearly always the first one the
+// model wrote. The count is what stops the row from claiming to be the whole
+// change.
+func subjectForPaths(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+	if len(paths) == 1 {
+		return capSubject(paths[0])
+	}
+	return capSubject(paths[0]) + fmt.Sprintf(" +%d", len(paths)-1)
 }
 
 // SubjectFromArgs is the same choice made over arguments that have finished
@@ -303,6 +356,12 @@ func SubjectFromPartialArgs(args string) (string, bool) {
 // a call by its label: if the streaming path and the completed path disagree
 // by so much as a truncation, one tool call draws two rows.
 func SubjectFromArgs(args map[string]any) string {
+	// A call whose files are nested one level down, which today is apply_patch
+	// and its `edits[]`. Read before the top-level keys, because such a call has
+	// no top-level path to find and used to fall through to nothing at all.
+	if paths := nestedPaths(args); len(paths) > 0 {
+		return subjectForPaths(paths)
+	}
 	for _, key := range ArgSubjectKeys {
 		if v, ok := args[key].(string); ok {
 			if v = strings.TrimSpace(v); v != "" {
@@ -311,6 +370,35 @@ func SubjectFromArgs(args map[string]any) string {
 		}
 	}
 	return ""
+}
+
+// nestedPaths collects the distinct `path` of every item in a list-valued
+// argument, in order.
+//
+// Written over any list rather than over the name `edits`, so a later tool that
+// takes a batch of files is named without anybody remembering to come back
+// here. A list of anything else contributes nothing and costs one type
+// assertion.
+func nestedPaths(args map[string]any) []string {
+	paths := []string{}
+	for _, key := range []string{"edits", "files", "items"} {
+		list, ok := args[key].([]any)
+		if !ok {
+			continue
+		}
+		for _, item := range list {
+			step, isMap := item.(map[string]any)
+			if !isMap {
+				continue
+			}
+			value, isText := step["path"].(string)
+			if value = strings.TrimSpace(value); !isText || value == "" || hasPath(paths, value) {
+				continue
+			}
+			paths = append(paths, value)
+		}
+	}
+	return paths
 }
 
 // subjectCap keeps a label to one readable line. Cut on a rune boundary, so a

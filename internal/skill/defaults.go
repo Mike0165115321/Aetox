@@ -40,6 +40,11 @@ type RegistryOptions struct {
 	// file-consuming skill as well, or that skill will fail to find whatever
 	// write just produced.
 	OutputSubdir func() string
+	// Files is the record of what this app last saw each file as, so a
+	// whole-file write can refuse to clobber a change it never saw
+	// (filestate.go). Nil is supported and means no guard — the CLI has one
+	// writer and nobody typing beside it.
+	Files *FileState
 	// Digest lets web_fetch answer a question about a page instead of
 	// returning the page. Nil is a supported configuration — the CLI has no
 	// provider handy at registry-build time — and simply means the tool keeps
@@ -121,7 +126,7 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&timeSkill{},
 		&calcSkill{},
 		&listSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
-		&readSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, vision: opts.Vision},
+		&readSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, vision: opts.Vision, files: opts.Files},
 		&gitSkill{root: opts.SandboxRoot},
 		&fsSkill{root: opts.SandboxRoot},
 		// One name, three actions: run, output, kill (packed.go). The other two
@@ -130,13 +135,13 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		// No backend here: which shell it runs in is read from the same record
 		// the file tools read, keyed by this root (setSandboxShell above).
 		&shellSkill{root: opts.SandboxRoot, shells: shells},
-		&writeSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
-		&sheetWriteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
-		&docWriteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
-		&editSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
+		&writeSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
+		&sheetWriteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
+		&docWriteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
+		&editSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
 		&grepSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&globSkill{root: opts.SandboxRoot},
-		&applyPatchSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
+		&applyPatchSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
 		// `notebook_edit` is deliberately absent (owner's call, 2026-08-19).
 		// It is 317 tokens in the block of every desk that carries the files
 		// group, paid on every request before the user types, and `tool_runs`
@@ -161,7 +166,7 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		// need nothing.
 		&diagnosticsSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&symbolSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
-		&deleteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
+		&deleteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
 		&pluginInstallSkill{},
 		// The automation engines the user connected. Registered unconditionally
 		// and gated later by connect.Allows, the same as the github tool: the

@@ -124,6 +124,10 @@ type Options struct {
 	// cfg.SandboxRoot. Read per tool call rather than baked in, so a host can
 	// move it while running. Nil writes to the sandbox root.
 	OutputSubdir func() string
+	// Files is the shared record a whole-file write checks before clobbering
+	// (skill.FileState). One per app, so the agent's tools and the window's own
+	// editor can see each other move. Nil disables the guard.
+	Files *skill.FileState
 
 	// OpenSandbox lifts the file-tool wall around cfg.SandboxRoot: any path on
 	// the machine works except the credential stores (skill/sandbox_open.go),
@@ -434,6 +438,7 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 	registry := skill.NewDefaultRegistry(skill.RegistryOptions{
 		SandboxRoot:  cfg.SandboxRoot,
 		OutputSubdir: opts.OutputSubdir,
+		Files:        opts.Files,
 		OpenSandbox:  scope.Open,
 		ExtraRoots:   scope.Extra,
 		AskWorkspace: opts.AskWorkspace,

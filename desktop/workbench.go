@@ -269,6 +269,32 @@ func (a *App) agentTab() (AgentTabID, error) {
 	return AgentTabID(id), nil
 }
 
+// agentTabPeek names the agent's tab without spending anything.
+//
+// agentTab above cannot be used for this and the difference is not cosmetic: it
+// TAKES agentTabClosed, so the flag that tells the model its page was closed
+// out from under it is consumed by whoever asks first. The busy signal asks on
+// every single tool call, browser or not, and it would have eaten that sentence
+// before the browser tool ever got to say it — a UI detail silently deleting a
+// message meant for the agent.
+//
+// So this is the read-only half: no error, no side effect, "" when there is no
+// live agent tab. A panel with nothing to point at lights itself instead of a
+// chip, which is the honest fallback (§174).
+func (a *App) agentTabPeek() string {
+	h := a.browsers
+	if h == nil {
+		return ""
+	}
+	h.mu.Lock()
+	id := h.agentID
+	h.mu.Unlock()
+	if id == "" || !h.live(id) {
+		return ""
+	}
+	return id
+}
+
 var errNoAgentTab = errors.New("the agent has no page open — use open first (tabs the user opened are theirs, not the agent's)")
 
 // errAgentTabClosed is the same "no page" state with the reason attached, and
@@ -745,11 +771,16 @@ func (s *browserClickSkill) click(ref int) (skill.Output, error) {
 	var res browserActResult
 	var answered bool
 	if err == nil {
+		// The ring goes down first, on the agent's path only. browserClickRef
+		// is shared with BrowserClickRef, which is the *user* clicking through
+		// their own panel — and a mark saying "the agent is working here" drawn
+		// over somebody's own click is the one thing this layer must never do.
+		s.app.markPageClick(id, ref)
 		res, answered, err = s.app.browserClickRef(string(id), ref)
 	}
 	out.DurationMs = time.Since(start).Milliseconds()
 	if err != nil {
-		out.Content, out.Stderr = "คลิกไม่สำเร็จ: " + err.Error(), err.Error()
+		out.Content, out.Stderr = "คลิกไม่สำเร็จ: "+err.Error(), err.Error()
 		return out, err
 	}
 	// The answer this tool did not have until 2026-08-22, and the one that
@@ -835,7 +866,7 @@ func (s *browserTypeSkill) typeText(ref int, text string, enter bool) (skill.Out
 	}
 	out.DurationMs = time.Since(start).Milliseconds()
 	if err != nil {
-		out.Content, out.Stderr = "พิมพ์ไม่สำเร็จ: " + err.Error(), err.Error()
+		out.Content, out.Stderr = "พิมพ์ไม่สำเร็จ: "+err.Error(), err.Error()
 		return out, err
 	}
 	// Same rule as click's, and it matters more here: text typed into nothing

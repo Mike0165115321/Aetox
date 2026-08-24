@@ -82,6 +82,8 @@ export function BrowserStopPick(arg1:string):Promise<void>;
 
 export function BrowserTypeRef(arg1:string,arg2:number,arg3:string,arg4:boolean):Promise<void>;
 
+export function BusySignal():Promise<Array<main.BusyLayer>>;
+
 export function CancelAccountSignIn():Promise<void>;
 
 export function CancelSignIn(arg1:string):Promise<void>;
@@ -215,6 +217,7 @@ export function ListDecidedChanges(arg1:number):Promise<Array<main.PendingChange
 export function ListDecidedIssues(arg1:number):Promise<Array<main.PendingChange>>;
 
 export function ListDecks():Promise<Array<main.Deck>>;
+
 export function ListDecksIn(arg1:string):Promise<main.DeckPage>;
 
 export function ListExternalSkills():Promise<Array<skill.DiscoveredSkill>>;
@@ -427,6 +430,8 @@ export function SendMessage(arg1:string):Promise<main.TurnReply>;
 
 export function SessionAgent(arg1:string):Promise<string>;
 
+export function SessionEdits(arg1:string):Promise<main.EditPage>;
+
 export function SessionMode(arg1:string):Promise<string>;
 
 export function SessionSourceCount(arg1:string):Promise<number>;
@@ -440,6 +445,8 @@ export function SessionsInSpace(arg1:string):Promise<Array<main.SessionMeta>>;
 export function SetAPIKey(arg1:string,arg2:string):Promise<main.ModelInfo>;
 
 export function SetAgentOff(arg1:string,arg2:boolean):Promise<main.DelegateSettings>;
+
+export function SetBusyLayer(arg1:string,arg2:boolean):Promise<Array<main.BusyLayer>>;
 
 export function SetConnectionStartCommand(arg1:string,arg2:string):Promise<void>;
 

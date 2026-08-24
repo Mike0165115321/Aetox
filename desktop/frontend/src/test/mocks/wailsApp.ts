@@ -60,6 +60,17 @@ export const AnswerUserQuestion = noop()
 export const AddWorkspaceFolder = arr()
 export const ClearProjectFocus = noop()
 export const CloseAllBrowserTabs = noop()
+// ไฟบอกสถานะ (desktop/busy_signal.go). Defaults to the shipped set — three on,
+// one off — so a test that renders the browser panel gets what a fresh install
+// gets without saying so.
+const busyLayers = () => [
+  { id: 'edgeGlow', label: 'ขอบแผงเรืองแสง', note: '', on: true },
+  { id: 'actionBar', label: 'แถบบอกการกระทำ', note: '', on: true },
+  { id: 'tabDot', label: 'จุดบนแท็บที่กำลังใช้', note: '', on: false },
+  { id: 'pageMarks', label: 'ลูกศรและวงแหวนบนหน้าเว็บ', note: '', on: true },
+]
+export const BusySignal = vi.fn(async (..._args: any[]) => busyLayers())
+export const SetBusyLayer = vi.fn(async (..._args: any[]) => busyLayers())
 export const CommandHistory = arr()
 export const AppVersion = vi.fn(async () => '0.8.4')
 // Defaults to "checked, nothing new": the About page has to render before any
@@ -218,6 +229,9 @@ export const SessionTranscript = arr()
 // the list is capped and the panel has to say how much it is not showing.
 export const SessionSources = arr()
 export const SessionSourceCount = vi.fn(async (..._args: any[]) => 0)
+// ไฟล์ที่สร้างหรือแก้ (desktop/session_edits.go). One call carries its own total, so the
+// panel can say how much it is not showing without a second scan of the table.
+export const SessionEdits = vi.fn(async (..._args: any[]) => ({ files: [] as any[], total: 0 }))
 // Idle by default: only a test about the mid-turn reload flips this on.
 export const TurnInFlight = vi.fn(async (..._args: any[]) => ({ running: false, sessionId: '', working: [] as string[] }))
 export const ListModes = arr()

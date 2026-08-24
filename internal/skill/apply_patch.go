@@ -24,6 +24,9 @@ import (
 type applyPatchSkill struct {
 	root         string
 	outputSubdir func() string
+	// files is the shared record a write checks and every toucher updates.
+	// Nil is supported and means no guard (filestate.go).
+	files *FileState
 }
 
 func (*applyPatchSkill) Name() string { return "apply_patch" }
@@ -55,9 +58,21 @@ func (*applyPatchSkill) ToolDefinition() model.ToolDefinition {
 							"description": "Replacement text",
 						},
 					},
-					"required":             []string{"path", "old_string", "new_string"},
+					// path is no longer required per edit: the call may name it
+					// once at the top level instead. A strict provider rejects
+					// what this list demands, so leaving it here would refuse
+					// the very shape the top-level default exists to accept.
+					"required":             []string{"old_string", "new_string"},
 					"additionalProperties": false,
 				},
+			},
+			// Named once for the whole call, for the commonest patch there is:
+			// several edits to one file. Without it in the schema a provider
+			// that enforces additionalProperties refuses the call outright, so
+			// the forgiving read in parsePatchEdits would never be reached.
+			"path": map[string]any{
+				"type":        "string",
+				"description": "Default file for edits that omit one",
 			},
 		},
 		"required":             []string{"edits"},
@@ -69,8 +84,7 @@ func (*applyPatchSkill) ToolDefinition() model.ToolDefinition {
 		Function: model.ToolFunction{
 			Name: "apply_patch",
 			Description: "Apply several edits across one or more files in a single atomic call — either all of them " +
-				"apply or none do. Prefer this over repeated edit calls when a change touches more than one place. " +
-				"read prefixes every line with its number and a tab — strip that prefix before matching, it is not in the file.",
+				"apply or none do. Prefer this over repeated edit calls when a change touches more than one place.",
 			Parameters: payload,
 		},
 	}
@@ -93,7 +107,13 @@ func (s *applyPatchSkill) ExecuteTool(_ context.Context, args map[string]any) (O
 		return newToolOutput("apply_patch", "apply_patch", "", start, false, err), err
 	}
 
-	edits, err := parsePatchEdits(args["edits"])
+	// The top-level path is a default, not a second way to say the same thing:
+	// several edits to ONE file is the commonest patch there is, and a model
+	// that has just named the file does not expect to name it again on every
+	// item. It sent `{"path": "...", "edits": [{old_string, new_string}, ...]}`
+	// and got "edit 1: path is required" — a refusal about shape, for a call
+	// whose meaning was never in doubt (owner's log, 24 ส.ค. 03:16).
+	edits, err := parsePatchEdits(args["edits"], stringArg(args["path"]))
 	if err != nil {
 		return newToolOutput("apply_patch", "apply_patch", "", start, false, err), err
 	}
@@ -162,6 +182,7 @@ func (s *applyPatchSkill) ExecuteTool(_ context.Context, args map[string]any) (O
 				len(written), len(staged), requested[targetPath], writeErr)
 			return newToolOutput("apply_patch", command, strings.Join(written, "\n"), start, false, err), err
 		}
+		s.files.Note(targetPath)
 		written = append(written, requested[targetPath])
 	}
 
@@ -183,7 +204,9 @@ func (s *applyPatchSkill) ExecuteTool(_ context.Context, args map[string]any) (O
 // parsePatchEdits accepts what a model actually sends: the tool layer hands
 // over []any of map[string]any, while a hand-written call may pass the typed
 // slice directly.
-func parsePatchEdits(raw any) ([]patchEdit, error) {
+// fallbackPath fills in for edits that name no file of their own. Empty when
+// the call named none either, which is still the error it always was.
+func parsePatchEdits(raw any, fallbackPath string) ([]patchEdit, error) {
 	switch v := raw.(type) {
 	case nil:
 		return nil, errors.New("edits is required")
@@ -204,13 +227,30 @@ func parsePatchEdits(raw any) ([]patchEdit, error) {
 	if len(edits) == 0 {
 		return nil, errors.New("edits is empty")
 	}
-	for i, e := range edits {
+	fallbackPath = strings.TrimSpace(fallbackPath)
+	for i := range edits {
+		if strings.TrimSpace(edits[i].Path) == "" {
+			edits[i].Path = fallbackPath
+		}
+		e := edits[i]
 		if strings.TrimSpace(e.Path) == "" {
-			return nil, fmt.Errorf("edit %d: path is required", i+1)
+			return nil, fmt.Errorf("edit %d: path is required — name the file on the edit, or once at the top level for all of them", i+1)
 		}
 		if e.OldString == "" {
 			return nil, fmt.Errorf("edit %d (%s): old_string is required — use write to create a file", i+1, e.Path)
 		}
 	}
 	return edits, nil
+}
+
+// Guidance is what apply_patch used to say in the tool block on every request.
+//
+// The line-number prefix belongs here rather than there by the standard in
+// guidance.go: it is a thing to watch out for, not part of what the tool is or
+// what to pass it. `edit` says the same thing in its own block entry, which is
+// where a model that only ever edits one file at a time meets it.
+func (*applyPatchSkill) Guidance(map[string]any) string {
+	return "read prefixes every line with its number and a tab — strip that prefix before matching, it is not in the file.\n" +
+		"Every edit must match exactly once, and if any one of them does not, NOTHING is written: the call is atomic on purpose, so a half-applied change cannot exist. When one fails, the report names which edit and why.\n" +
+		"Several edits to one file is the ordinary case: name the file once at the top level and leave `path` off the edits."
 }

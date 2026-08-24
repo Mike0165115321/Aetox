@@ -13,17 +13,24 @@
   // what buys some of that back — it appears only while a plan is unfinished,
   // so the corner is not silent about work that is running.
   //
-  // Three sections, and all three are readings of something that already
+  // Four sections, and all four are readings of something that already
   // exists. Nothing here is a second copy of a fact:
   //   แผน         — cockpit.todos, written by todo_write
   //   แหล่งที่มา   — SessionSources, read off tool_runs (desktop/sources.go)
+  //   ไฟล์ที่สร้างหรือแก้   — SessionEdits, read off the same table (session_edits.go)
   //   repo        — GitChangedFiles + the project's branch
   // A section with nothing in it still draws its heading and says so in words.
   // In a panel somebody opened on purpose, "there is no plan" is the answer
   // they came for, and the heading teaches what will appear there later.
+  //
+  // แหล่งที่มา and ไฟล์ที่สร้างหรือแก้ are the two halves of one question and sit next
+  // to each other on purpose: what this room read, then what it changed. The
+  // repo section below them answers something else — the state of the working
+  // tree, the user's own dirty files included — and is not a substitute for
+  // either, which is what it was quietly being used as.
   import { cockpit, clearPlan } from './stores/cockpit.svelte'
   import { t } from './i18n.svelte'
-  import { SessionSources, SessionSourceCount, GitChangedFiles, CurrentSessionID } from '../../wailsjs/go/main/App'
+  import { SessionSources, SessionSourceCount, SessionEdits, GitChangedFiles, CurrentSessionID } from '../../wailsjs/go/main/App'
   import { main } from '../../wailsjs/go/models'
   import { openFileTab, openUrlInWorkbench } from './stores/workbench.svelte'
   import Icon from './Icon.svelte'
@@ -32,8 +39,15 @@
   let open = $state(false)
   let sources = $state<main.Source[]>([])
   let sourceTotal = $state(0)
+  let edits = $state<main.EditedFile[]>([])
+  let editTotal = $state(0)
   let changed = $state<main.ChangedFile[]>([])
   let showAllSources = $state(false)
+  let showAllEdits = $state(false)
+  // Only while a re-read is in the air, so the button can say it heard the
+  // click. The panel keeps showing the last answer meanwhile: blanking three
+  // lists for the length of a disk read would make a refresh look like a wipe.
+  let reloading = $state(false)
 
   const todos = $derived(cockpit.todos)
   const planDone = $derived(todos.filter((td) => td.status === 'completed').length)
@@ -49,22 +63,43 @@
   // remaining. The full ratio is a click away, on rows you can actually read.
   const badge = $derived(hasPlan && planDone < todos.length ? String(todos.length - planDone) : '')
 
-  // Read on open, not on a timer. Both calls touch the disk — one reads the
-  // store, the other shells out to git — and a panel nobody has opened has no
-  // business doing either on every turn.
+  // Read on open, not on a timer. Every call here touches the disk — three read
+  // the store, one shells out to git — and a panel nobody has opened has no
+  // business doing any of it on every turn.
   async function load() {
     const id = await CurrentSessionID()
-    const [list, total, files] = await Promise.all([
-      SessionSources(id), SessionSourceCount(id), GitChangedFiles(),
+    const [list, total, wrote, files] = await Promise.all([
+      SessionSources(id), SessionSourceCount(id), SessionEdits(id), GitChangedFiles(),
     ])
     sources = list ?? []
     sourceTotal = total ?? 0
+    edits = wrote?.files ?? []
+    editTotal = wrote?.total ?? 0
     changed = files ?? []
+  }
+
+  // The way back to a fresh answer without closing the panel.
+  //
+  // Reading on open alone was right until the panel became something you leave
+  // open while a turn runs: the lists then describe the moment it was opened,
+  // and the section that says which files the agent just changed is exactly the
+  // one nobody wants a stale copy of. A button rather than a subscription —
+  // this is a panel you go and look at, and a list that reorders itself under
+  // the cursor is worse than one you asked to be brought up to date.
+  async function reload() {
+    if (reloading) return
+    reloading = true
+    try {
+      await load()
+    } finally {
+      reloading = false
+    }
   }
 
   function toggle() {
     open = !open
     showAllSources = false
+    showAllEdits = false
     if (open) void load()
   }
 
@@ -74,6 +109,8 @@
   const SHOWN = 6
   const visibleSources = $derived(showAllSources ? sources : sources.slice(0, SHOWN))
   const hiddenCount = $derived(sourceTotal - visibleSources.length)
+  const visibleEdits = $derived(showAllEdits ? edits : edits.slice(0, SHOWN))
+  const hiddenEdits = $derived(editTotal - visibleEdits.length)
 
   const todoIcon = (status: string): IconName =>
     status === 'completed' ? 'check' : status === 'in_progress' ? 'chevronRight' : 'circle'
@@ -87,6 +124,11 @@
   async function openChanged(f: main.ChangedFile) {
     open = false
     await openFileTab(f.path, f.path.split(/[\\/]/).pop() ?? f.path)
+  }
+
+  async function openEdited(f: main.EditedFile) {
+    open = false
+    await openFileTab(f.path, f.label)
   }
 
   function closeOnOutsideClick(e: MouseEvent) {
@@ -116,6 +158,23 @@
 
   {#if open}
     <div class="summary-menu" role="dialog" aria-label={t('summary.toggle')}>
+      <!-- The panel finally says its own name, and carries the one control that
+           belongs to all of it rather than to a section: everything below is
+           read on open, so everything below goes stale together, and one
+           button is the honest number of buttons for that. -->
+      <div class="summary-head">
+        <span>{t('summary.toggle')}</span>
+        <button
+          type="button"
+          class="summary-reload"
+          class:spinning={reloading}
+          aria-label={t('summary.reload')}
+          title={t('summary.reload')}
+          disabled={reloading}
+          onclick={reload}
+        ><Icon name="refreshCw" size={12} /></button>
+      </div>
+
       <section class="summary-sec">
         <h3>
           {t('strip.plan')}
@@ -162,6 +221,37 @@
           {/if}
         {:else}
           <p class="summary-none">{t('summary.sourcesEmpty')}</p>
+        {/if}
+      </section>
+
+      <section class="summary-sec">
+        <h3>{t('summary.edits')}</h3>
+        {#if visibleEdits.length}
+          {#each visibleEdits as f (f.path)}
+            <!-- A file that is no longer there is still what this room did, so
+                 the row stays — as a line rather than a button, because the one
+                 thing worse than no row is a row that opens nothing. -->
+            {#if f.gone}
+              <div class="summary-line gone" title={f.path}>
+                <span class="st {f.status}">{f.status}</span>
+                <span class="lbl">{f.label}</span>
+                {#if f.dir}<span class="dir">{f.dir}</span>{/if}
+              </div>
+            {:else}
+              <button type="button" class="summary-row" title={f.path} onclick={() => openEdited(f)}>
+                <span class="st {f.status}">{f.status}</span>
+                <span class="lbl">{f.label}</span>
+                {#if f.dir}<span class="dir">{f.dir}</span>{/if}
+              </button>
+            {/if}
+          {/each}
+          {#if hiddenEdits > 0}
+            <button type="button" class="summary-more" onclick={() => (showAllEdits = true)}>
+              {t('summary.viewAll', { count: String(hiddenEdits) })}
+            </button>
+          {/if}
+        {:else}
+          <p class="summary-none">{t('summary.editsEmpty')}</p>
         {/if}
       </section>
 

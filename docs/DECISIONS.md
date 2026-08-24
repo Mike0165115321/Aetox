@@ -5635,7 +5635,7 @@ The fold-out above answers *"what did that call change"*. The owner, the same ni
 **Decision: one panel in the workbench, `git` tab kind, โค้ด desk only, and it says so on its own face.**
 
 - **Only that desk, stated rather than implied.** The `+` menu draws the entry only when `cockpit.desk === 'coding'`, and the panel's second line reads *"แผงนี้แสดงเฉพาะหน้าโค้ดเท่านั้น"*. The owner asked for exactly this — *"อยากให้แสดงแค่หน้าโค้ด แล้วมีบอกว่า แสดงแค่หน้าโค้ดเท่านั้น"* — and it is the same rule §161.2 set for the fold-out, for the same reason: the storefront has no project to report on.
-- **Working tree, not this session's edits.** The owner offered both readings (*"เอาอิงตามตำแหน่งโปรเจค หรือไฟล์ที่แก้ไขดี"*). The session's own edits are already drawn, hunk by hunk, in the chat — a panel repeating them would be a second place answering a question that already has a home. The project's difference from HEAD is the fact nothing else holds.
+- **Working tree, not this session's edits.** The owner offered both readings (*"เอาอิงตามตำแหน่งโปรเจค หรือไฟล์ที่สร้างหรือแก้ไขดี"*). The session's own edits are already drawn, hunk by hunk, in the chat — a panel repeating them would be a second place answering a question that already has a home. The project's difference from HEAD is the fact nothing else holds.
 - **The hunks come from the same differ.** `GitFileDiff` reads HEAD's copy (`git show HEAD:<path>`) and the file on disk and hands both to `skill.FileDiff` — it does not parse `git diff` output. One extra process per expanded file buys the guarantee that a file's diff looks and truncates identically whether you meet it under a chat row or under a row here. Two renderers for one thing is how they drift.
 - **Counts come from git, content is fetched on expand.** `git diff --numstat HEAD` supplies `+N -M`, so the panel can never disagree with `git diff --stat` about the same file. Rows arrive collapsed and fetch nothing: a working tree of forty files is ordinary, and forty `git show` calls for a list nobody has opened is work done on the chance it is wanted.
 
@@ -5920,3 +5920,361 @@ Derived from what the desk holds rather than written out, for the reason the vis
 §166.4's `usage_limit_reached` gap is still open.
 
 The pane wording is English in an English system prompt, and the model renders it into Thai. That is a translation the prompt does not control, and matching the window's exact labels would mean copying `th.ts` into Go — a second copy of the frontend's locale, which is the trade this section just refused to make twice. Worth revisiting only if the model is observed drifting from the words on the buttons.
+
+## 168. Decision — The Room Said What It Read and Never What It Changed (2026-08-24)
+
+Owner, with a screenshot of สรุปห้อง open on a session that had been working for an hour: *"ควรจะมี ไฟล์ที่ Ai สร้างหรือแก้ ในเซสชั่นนั้นๆด้วย"* — and, in the same breath about the chip under the composer, *"อีกย้อนกลับไม่ควรแสดงข้ามเซสชั่น"*.
+
+Two things, and only one of them was a missing feature.
+
+### 168.1 ไฟล์ที่สร้างหรือแก้ — the other half of แหล่งที่มา
+
+The panel answered *"what did this room read"* and nothing on screen answered *"what did it change"*. Three surfaces looked like they did and none of them does:
+
+- **ที่เก็บโค้ด**, in the same panel, is `git status`. It is the working tree — the user's own dirty files and the agent's in one undivided list, with no way to tell them apart — and outside a repository it says nothing at all. On this owner's machine that list is never shorter than fifty rows.
+- **ผลงาน** sweeps `output/<session>`. It knows about a file the agent made *for* the user and nothing about the source file it edited in place.
+- **The chat timeline** has every call in it, which is the same reason แหล่งที่มา exists: by the time anybody wants the list it is thirty screens up.
+
+So [session_edits.go](../desktop/session_edits.go) is the sibling of `sources.go`, built the same way and for the same reason — a reading of `tool_runs`, not a second table. A table recording what the first one already knows goes stale the moment a file moves, and then it lies about the machine.
+
+Three decisions inside it are worth writing down:
+
+- **Only calls that succeeded.** `ok = 1` in the query. A refused write changed nothing, and reporting it as work that was done is the one mistake a list like this cannot make.
+- **The last thing done to a file is what the row says.** Rows key by path, so a file written eleven times is one row; written and then deleted reads as deleted, because that is the truth about it. `delete` is in the writers map on purpose — a file being gone is exactly the case somebody opens this panel to confirm.
+- **A file that is no longer there stays on the list, as a line rather than a button.** This section reports what the room *did*, and deleting a file is the loudest thing it can do to one. What it must not do is offer a door that opens nothing, which is `sources.go`'s rule kept rather than broken.
+
+`EditPage` carries its own total instead of a second `SessionEditCount` binding. แหล่งที่มา pays for its count with a second full scan of the same rows; one answer cannot disagree with itself about how much it is hiding.
+
+### 168.2 The bug found on the way in: every local file was falling out of แหล่งที่มา
+
+Building the existence check for the new list surfaced why the owner's screenshot showed six rows and every one of them a globe.
+
+`SessionSources` stat'ed the path **as the model typed it**. The model types relative paths, so `os.Stat("internal/app.go")` resolved against this process's working directory — wherever the app was launched from — and a file that did not happen to sit there was dropped as missing. Local files vanished from a panel whose whole job is naming them; only absolute paths and URLs survived.
+
+Both lists now go through `App.onDisk`, which resolves the way the agent's own tools resolve: `skill.PlacedPath` against the session's sandbox root. That second half matters as much as the first — a relative `write` in an unfocused chat lands in `output/<session>`, so the name in the record is not the name on disk, and `PlacedPath` is the single definition of that rule rather than a restatement of it.
+
+### 168.3 ย้อนกลับ crossing chats was never an engine bug
+
+The engine has been right since two chats could work at once: the snapshot an undo goes back to is per conversation ([conversation.go](../desktop/conversation.go), `lastSnapshot`), which is where §157 put it after §155 named the damage.
+
+The window simply never asked again on the way across. `clearLive` resets eleven fields and `undoFiles` was not one of them, and `selectSession` — the door most people actually use — never called `refreshUndo`. So the chip rode along: **"ย้อนกลับ (1)" over a chat that had never run a turn, offering to put back a file another conversation wrote.** Of everything that leaked across a session switch before this, it is the only one that touches the user's disk.
+
+It is dropped in `arriveAt` rather than parked, because it is not live turn state — it is a reading of the engine's, and the engine is what re-answers it. `refreshUndo` now runs at the tail of `selectSession` and `afterNewSession` as well as the two doors that already had it.
+
+### 168.4 One refresh, at the panel's level
+
+Owner, immediately after: *"เพิ่มปุ่มรีเฟรชด้วย"*.
+
+Everything in the panel is read on open, so everything in it goes stale together — and the section saying which files the agent just touched is the last one anybody wants a stale copy of. One button, in a header row that finally gives the panel its name on its own face, rather than one per section: they cannot go stale separately.
+
+A button and not a subscription. This is a panel you go and look at rather than one the room pushes at you, and a list that reorders itself under the cursor is worse than one you asked to bring up to date.
+
+### 168.5 Not done here
+
+**The repo section stays.** §161.4 flagged it as a smaller, older reading of `git status` and left the call to the owner; this section adds a neighbour to it and does not quietly resolve that. What it does change is the reason it was being read at all — "which files did the agent touch" now has its own answer one section up.
+
+**`write` still doubles a placed path.** The owner's screenshot carries a second bug in its title bar: `output/<id>/output/<id>/aetox-personal-post.md`. `placedWrite` prefixes the output folder unconditionally, so writing to the path a previous write reported back prefixes it again. `PlacedPath` — the read side — does not have this problem, because it checks whether the literal path resolves first. Reported, not fixed: it is a change to the write path and the owner's call.
+
+## 169. Decision — A Pane That Read the File Once (2026-08-24)
+
+Owner, with a document open beside a turn that was editing it: *"เวลาเอเจนเปิดไฟล์หรือแก้ไขไฟล์ผมอยากให้มัน ออโต้เซฟและเปลี่ยนอัตโนมัติ ตอนนี้ปัญหาคือ ผมทำงานอยู่ มันปรับเนื้อหาในเอกสารแล้วผมยังเห็นอันเก่าอยู่"*.
+
+Two asks, and the second one was a real hole rather than a preference.
+
+### 169.1 The staleness was structural, and the comment that missed it
+
+`loadFileTab` already carried a paragraph about exactly this danger — *"a cached tab meant clicking the file the agent had just rewritten showed the previous turn's bytes"* — and re-reads on **every open**, including a re-open of a tab that is already there.
+
+The case it does not cover is the one that matters most: a tab **left open** through a turn is never re-opened. So the pane read the file once, when it was created, and then sat there while the agent edited the same path underneath it. The panel whose whole job is showing what the agent produced was showing what it had produced before, with nothing on screen saying so.
+
+**Driven from the engine, not from a watcher.** `notifyFilesChanged` emits `workbench:files-changed` after any writing tool call that succeeded. It reads the call through `editsFromRun` — the same parse ไฟล์ที่สร้างหรือแก้ (§168.1) uses — so "which files did this call change" has one answer whether it is asked live or asked later. A filesystem watcher would answer the same question a second way, and polling would be work done on the chance it was wanted.
+
+The path announced is the **placed** path, not the string the model typed. A tab opened at `output/<session>/post.md` matches nothing when the event says `post.md`, and that is the majority case in an unfocused chat.
+
+**Not scoped to the session that wrote it.** A pane shows a file on disk; the file on disk changed. Which conversation changed it is not a reason to keep showing the user something that is no longer true.
+
+### 169.2 The re-read must not rebuild the pane
+
+`rev` is what rebuilds a pane, and `loadFileTab` bumps it on every read. That is right for an open and wrong here: a rebuilt editor loses the caret, the scroll position and the undo stack, and this path exists precisely for somebody who is still working in it.
+
+So the disk-change path passes `keepPane`, and the bump is skipped **only when the file was text and still is**. Anything that changes *which* pane draws the file — text that became unreadable, a workbook that is not one any more — still rebuilds, because otherwise the pane on screen belongs to a file that no longer exists.
+
+Text-to-text is then FileEditor's to apply, through `pushEditOperations` over the full model range rather than `setValue`: the undo stack survives, so an edit the agent made while the user was reading is still Ctrl+Z-able, and the caret and scroll go back where they were.
+
+Both surfaces that draw a file are refreshed — the workbench tab and `cockpit.openFiles`, which fills the main area and had the same one-read-forever bug.
+
+### 169.3 Autosave, and the one case it cannot decide
+
+700ms after the last keystroke, plus a flush on teardown so a tab closed inside the debounce window does not drop the last second of typing. Short enough that the agent reading the file a moment later reads what is on screen, which is the whole point when a turn is running beside you.
+
+That leaves a window of well under a second in which both sides can move at once. It is small and it is not empty, and **neither side may be thrown away without being asked**:
+
+- Clean pane → the change is applied silently. This is the owner's actual case and it is now invisible, which is correct.
+- Draft in flight → the pending save is **cancelled**, the incoming bytes are held, and a bar says so. Without the cancel, autosave would fire 400ms later and write the user's draft over the agent's file — a silent loss with no way back, arriving from a feature whose entire promise is not losing work.
+
+The two buttons are the only way out, and pressing Save is itself an answer: the user chose this text over the one on disk, and the file now says so.
+
+### 169.4 What this does not cover
+
+**Only the agent's own writes.** A file changed by `git checkout`, by another editor, or by anything outside a tool call still leaves the pane stale — there is no watcher, by the decision above. If that turns out to matter, the honest fix is a watcher on the open tabs' paths and not a poll.
+
+**The conflict bar has no automated test.** Monaco does not mount under jsdom, so a draft cannot be typed from a test — the clean path is pinned in `FileEditor.test.ts` and the store half in `fileChangedOnDisk.test.ts`, and the dirty half is left to the running app rather than to a mock that would only agree with itself.
+
+## 170. Decision — Three Repairs Around One File Nobody Owns (2026-08-24)
+
+Owner, after §169 put a live file pane on screen: *"แล้วถ้ามันแก้ไฟล์อยู่ ผมแก้ทับทันทีหรือแอบทำอะไรจะพังไหมแบบนี้"* — and, reading the answer, *"write ทับทั้งไฟล์ ไม่เช็คอะไรเลย อันตรายมาก"*.
+
+Reading the write path to answer him turned up three separate defects. They share a premise: **the work tree has no owner.** The agent's tools, another chat's tools, and the person typing in the editor all write to it, none of them locks, and `os.WriteFile` truncates.
+
+### 170.1 undo took the user's own work with it
+
+§157 settled which *point* an undo goes back to — `lastSnapshot` per conversation. It left open which *files* it drags along, and the answer was all of them: `Restore(id, nil)` puts back everything that differs from the snapshot, and the snapshot store is the whole work tree every chat in the project shares.
+
+So pressing undo to reject one answer also reverted whatever the user had typed while the turn ran, and another chat's work beside it, silently.
+
+**An exclusion, not the obvious inclusion.** The tempting fix is "restore only what the agent's tools wrote", and it is wrong: that list cannot be completed. Writing tools are enumerable (§168.1), but `shell` runs anything, and a tool that produces a file without being one of the writers — a rendered picture, a screenshot — would silently stop being undoable the day it is added. **Undo would get quietly weaker with every new tool, and nothing would say so.**
+
+What *can* be enumerated exactly is what came through this app's own editor, because `App.WriteFile` is the only door it has. So undo keeps its whole reach and gives up only the files it can prove are the user's. `UndoResult.Kept` names them, and the chat message says so: a rule that spares files quietly is as hard to trust as the one that ate them quietly.
+
+Recorded on **every live conversation**, not the one on screen — a save is a fact about the tree, and the chat whose undo might eat it is very often not the chat being looked at.
+
+The refusal text was wrong too, and had been since the store became a shadow repo of its own: *"undo needs the project to be a git repository"* named a cause that stopped existing when `snapshot.New` began `git init`-ing its own bare repo under the data root for any folder. The only thing that can be missing is git itself.
+
+### 170.2 `write` had no equivalent of `edit`'s safety
+
+`edit` and `apply_patch` were already safe **by construction**: they match `old_string` against the bytes on disk, so an edit aimed at text somebody has since changed fails cleanly and writes nothing. That is optimistic concurrency, arrived at for a different reason and working perfectly.
+
+The whole-file writers had nothing. [skill.FileState](../internal/skill/filestate.go) is the equivalent: what this app last saw each file as, updated by every read and every write — the editor's saves included — and checked by `write`, `doc_write` and `sheet_write` before they truncate.
+
+**Why a record rather than a read-before-write.** A whole-file `write` usually has not read the file; writing without reading is what the tool is *for*, and requiring a prior read would refuse the ordinary case. The question asked is narrower and answerable: *has this file changed since the last time anything in this app looked at it?* No record means nobody here has looked, and the write goes through.
+
+**What it is not: a lock.** Between the check and the write there is still a gap, and two writers with no lock cannot be made exclusive by looking harder. It turns "silently overwritten" into "almost always refused". That is the honest description and the whole of the improvement.
+
+**The price, stated because it is real:** the agent will sometimes be refused — a file edited in another editor, a user save landing mid-turn — and pay a round trip re-reading. The refusal names the act rather than the state (*"Read it again first"*) because the model is who has to resolve it, and a refusal it cannot act on becomes a retry loop.
+
+**Taught in the refusal, not in the tool block.** The block is at its ceiling and the ceiling is a debt marker (§99 and `desktop/tool_budget_test.go`). A permanent sentence in `write`'s description would cost tokens on every request for a case that arises rarely; the error text costs nothing until it fires. [SKILL.md](../internal/skill/skills/aetox/SKILL.md) carries the standing version, under "several chats at once", where the fact it depends on already lives.
+
+### 170.3 `apply_patch` named no file at all
+
+Owner: *"แต่ละ edit บางทีก็ไม่แสดงจำนวนไฟล์ที่มีการแก้ไขนะ"*.
+
+Its paths live inside `edits[]`, and `SubjectFromArgs` reads top-level keys only — so the one writer that can change several files at once was the one row in the timeline that named none of them.
+
+**"บางที" was the tell.** Two readers disagreed: the streaming scan finds `"path"` anywhere in the JSON and so *did* name the first file, while the completed parse named nothing. A row is matched to its streamed guess by label when the engine sends no call id, so the two spellings could also draw one call as two rows. Both now end at `subjectForPaths`, which reads the first file plus a count — the row is one line at panel width, and the count is what stops it claiming to be the whole change.
+
+Written over any list-valued argument rather than over the name `edits`, so a later batch tool is named without anybody remembering to come back.
+
+### 170.4 Not done here
+
+**"Restore to the start of the session" was asked for and is refused for now.** `write`'s own comment has said *"One turn deep, deliberately… an undo stack invites the far more dangerous 'undo the last six' long after the reasons are forgotten"* since undo shipped, and reaching back to the start of a session is the strongest case of exactly what that sentence fears. §170.1 makes it safer than it was; it does not make it a different decision.
+
+**"Look at the previous version", read-only, is worth building and is not built.** Nothing here risks data, but only *one* step back is addressable: `conv.lastSnapshot` is the only id anybody remembers, and real version history means storing a snapshot id per turn — a schema change, not a UI one. Two limits go with it: `Capture` honours `.gitignore`, so an ignored file has no history at all, and the shadow repo is never pruned, which nobody notices while there is no screen for it.
+
+## 171. Decision — A Tab Closed on One Side Only (2026-08-24)
+
+Owner, with five browser tabs on screen and the timeline repeating *"แท็บ web-agent-N ปิดไปแล้ว ใช้ list เพื่อดูว่าเหลืออะไร"* once a second: *"ทำไมมีเออเร่อ แล้วทำไม เบราว์เซอร์ที่ปิดไปแล้วถึงแสดงค้างแบบนี้ครับ"* — and then the half that named the second defect: *"บางทีโมเดลปิดหน้าต่างแต่เบราว์เซอร์จริงหรือแท็บไม่ได้ถูกลบจริง ทำให้มันดูมืดค้างแบบนั้น"*.
+
+The agent's error was correct. Everything around it was not.
+
+### 171.1 The event that had no partner
+
+The file side has said both halves since it shipped:
+
+```
+workbench:open-file    ↔  workbench:close-file
+workbench:open-browser ↔  (nothing)
+```
+
+`closeTab` destroyed the view, dropped it from the registry, and **told the window nothing**. So a tab closed from the Go side — the agent's own `browser tabs close`, or the orphan sweep below — kept its chip on the strip forever.
+
+Worse than a dead chip. `BrowserPane` latches `opened` the first time it calls `BrowserOpen`, and its effect returns early while `url === lastSent`: with the native view gone underneath, nothing would ever call `BrowserOpen` again. A black rectangle with a live URL in the address bar and no path back to a page.
+
+### 171.2 The registry forgot the window before the window was gone
+
+The owner's own observation, and the sharper of the two.
+
+Two things are true at once. The registry entry has to go **now**, so the agent stops being offered a tab it can no longer use. The native window cannot go now: destroying it only happens on the browser thread (`backend.do` posts a message). `closeTab` deleted both together, so between the delete and the destroy there was a live window with **no id in `views`** — nothing could hide it, move it, or try again. If the queued destroy was ever dropped or delayed, that was permanent.
+
+So `tabs` and `agentOrder` are dropped immediately (`live()` reads `tabs`, so the tab is shut the instant the call returns) and `views` is dropped by the queued func, after the window is actually destroyed.
+
+### 171.3 The sweep took the tabs of a turn that was still working
+
+`CloseAllBrowserTabs` runs on every frontend mount, and closed everything, reasoning: *"a freshly loaded frontend owns zero workbench tabs by definition"*.
+
+**True of the frontend, false of the app.** The engine outlives a webview reload — that is the whole design — so a turn in flight can be holding half a dozen tabs of its own. A plain Ctrl+R, or a `wails dev` HMR full reload, killed them all mid-task. The agent then walked its own list and was told, correctly and uselessly, that every one had been closed: five ids, five errors, one second apart. That is the screenshot.
+
+Agent tabs are now spared **while any turn is running**, and only then. With nothing working, an agent tab is as orphaned as any other, and the leftovers of a turn that died would otherwise sit there for the rest of the app's life with nothing left to close them.
+
+### 171.4 What this does not do
+
+**No resync of the strip.** The event is the mirror of one act on one tab, not a periodic reconciliation. A native view lost some other way — a webview crash — still leaves a chip the window believes in. The honest fix for that is the pane noticing its own view is gone, not a poll, and nothing has asked for it yet.
+
+## 172. Decision — A Video Link Is Words (2026-08-24)
+
+Owner, after a look at NotebookLM and then narrowing it himself: *"ทำให้ ตัวหลักอ่ะมันรับลิงค์จาก youtube แล้วเข้าใจเนื้อหาได้ก่อนดีกว่า"* — and, once the research came back, *"ผมว่าเอาแค่ถอดคำบรรยายก็น่าจะพอ เพราะหลายที่ก็ทำแบบนั้น"*.
+
+He was right, and the research says so plainly: **nobody transcribes a video that already has captions.** NotebookLM does not either — its own material says video analysis *"depends on transcript availability and quality"*, which is the polite way of saying it reads the caption track and does not watch anything. Human-written captions beat speech recognition, arrive instantly, and cost nothing.
+
+### 172.1 Inside `web_fetch`, not beside it
+
+A YouTube URL through `web_fetch` used to come back with the HTML shell — a page whose content arrives later by script, so the model got navigation chrome. **The question was right and the answer was garbage.**
+
+So this is not a new tool. It is the same question — "what is the content at this URL" — answered correctly for a kind of URL where the old answer was wrong. Three things follow from putting it there rather than in a `video_read` beside it:
+
+- **No tool-block cost**, and the block is at its ceiling (§99).
+- **Nothing to teach.** A model with a link already reaches for `web_fetch`.
+- **The cache and the digest apply for free.** It exits through `answer()` like every other fetch, so a 40-minute transcript can be digested against the caller's question exactly as a long page is.
+
+One clause was added where a model with a link is most likely to be looking — `browser open`'s guidance, beside the line that already sends source files to `read`. Same shape, same reason.
+
+### 172.2 One video, never a channel
+
+`isVideoPage` accepts `/watch?v=`, `youtu.be/…`, `/shorts/`, `/live/`, `/embed/` and nothing else. A channel, a playlist or a search page is refused, because yt-dlp would walk all of them: "read this link" turning into four hundred fetches is not a thing to do because it is possible.
+
+### 172.3 The rolling caption is the whole parser
+
+An automatic track scrolls — each cue repeats the tail of the one before it so the caption reads as a moving window. A naive read of a 40-minute talk therefore comes back three times too long and unreadable. `transcriptFromVTT` drops a line that repeats the one before it, strips the inline `<00:00:03.100><c>` timing spans, and keeps a digit line that is speech ("42 of them") while dropping one that is a cue number.
+
+VTT is taken as served rather than converted. `--convert-subs` runs through ffmpeg, and making a **caption read** depend on a 63MB capability that has nothing to do with reading text is a dependency for no reason.
+
+Where two tracks exist for one video, the shorter wins: an auto track repeats itself, so the shorter file for the same speech is the human one.
+
+### 172.4 A video with no captions says so
+
+Metadata is returned always — title, channel, length, publish date, description — because that is already more than the HTML shell ever gave, and it is enough to decide whether to look elsewhere.
+
+Where there is no caption track, the answer says that in words **and rules out the alternative**: *"Nothing was transcribed from the audio — say so rather than describing a video you have not heard."* A model handed an empty transcript with no explanation reads it as an empty video.
+
+### 172.5 Why this belongs on a desktop agent
+
+YouTube's bot challenge leans hardest on datacentre IP ranges; the standing advice is a residential connection, or cookies from a real browser. **Aetox is on the user's own machine, which is the situation that advice describes.** A hosted assistant fights this every day; this one mostly does not. The refusal text says so too — it points at signing in to YouTube in a browser on this machine, which is the fix that actually works.
+
+### 172.6 Not done, and one thing still needed
+
+**No audio fallback.** A video without captions is reported, not downloaded and transcribed. whisper and ffmpeg are both installable already, so the path exists — it stays shut because minutes of somebody's machine for a result nobody asked for is not a default.
+
+**No channel or playlist ingestion**, and no Facebook or TikTok: both want a login and neither hands back a caption track worth the dependency.
+
+**yt-dlp is not yet a capability.** `findVideoTool` looks on PATH and then in `<data>/tools/yt-dlp/`, so a machine that already has it works today. The sixth capability entry needs a mirrored release and its SHA256, which is the owner's to publish — and it carries a maintenance cost the other five do not: YouTube breaks yt-dlp every few weeks, and a pinned hash is exactly how ffmpeg went quietly missing for a fortnight (see the note in `capability.go`).
+
+## 173. Decision — Two Gaps the Video Link Made Visible (2026-08-24)
+
+Owner, after §172 landed: *"จากการขาด tool ตัวนี้ทำให้ผมฉุดคิดว่า เห้ยเราจะขาดอะไรอีกรึเปล่าว่ะในโลกของเบราว์เซอร์"* — and then, going through the audit: *"scroll โคตรสำคัญแต่ผมดันลืม"*.
+
+The instinct was right, and the audit turned up one thing that had been costing tokens every day and one that had been quietly shortening every long page.
+
+### 173.1 A file at a URL came back as its own bytes
+
+`web_fetch` checked one thing about a response — *does the content type say html* — and handed anything else over as-is. For JSON and plain text that is right and always was.
+
+For a PDF it meant **the raw bytes of the file went into the model's context**: forty thousand characters of binary, capped and paid for, carrying nothing. The same for a .docx, a .xlsx, a .png, a zip. And there was no other way in either: `pdf_read` takes a path on disk, and `browser open` renders a PDF in WebView2's own viewer, which has no DOM for `browser read` to extract. **A PDF behind a link was unreadable by every path the app had.**
+
+The readers were all there. What a downloaded body lacked was the one thing they want: a path. So it gets a temp file and goes to the reader that owns it — `runPdfToText` for a PDF, `readSkill.readOffice` for the three Office formats, both of which take a resolved path outright and never consult the sandbox root.
+
+**Content type first, extension second.** Servers lie about content type more often than URLs lie about their extension — `application/octet-stream` for a PDF is routine — so the extension gets a vote rather than being ignored.
+
+**And the rule for everything with no reader: name it, never dump it.** A body that is not text and has no reader comes back as its name, its type and its size. A model told "this is a 4MB zip" knows what to do next; a model handed four thousand characters of mojibake has been charged for the privilege of learning nothing.
+
+The same shape as §172, which is why one turned up the other: *the question was right and the answer was garbage.*
+
+### 173.2 `scroll`, and the family of pages that were unreadable without it
+
+`read` returns what is in the document. On a feed, a result list, a channel's videos — anything that loads as you go — the document is one screen deep until something scrolls. So the agent was not reading a short page; **it was reading the first screen of a long one, successfully, with nothing in the answer to suggest otherwise.** That is the same shape as the problem `wait` exists for: a success that is indistinguishable from a complete answer.
+
+**No report, on purpose.** The obvious version returns a scroll position and a document height so the model can decide whether to go again. That needs a round trip and a result type, and it duplicates something the model has a better instrument for. The loop that already exists — read, act, read again — answers "did more arrive" in the words of the page itself rather than in a number standing for them. So `scroll` acts, says so, and the next `read` is the measurement.
+
+**It scrolls the thing that actually scrolls.** A bare `window.scrollBy` does nothing on the many apps whose real scroller is a `div` with `overflow:auto` — and doing nothing looks exactly like a page with no more content, which is the failure this action exists to remove. The script finds the tallest scrollable element and falls back to the window, which is the same answer on an ordinary page and the only working one on an app.
+
+**Directions, not pixels.** A model asked for a number picks one, and a number picked without seeing the page is a guess. A screen at a time is what a person does; top and bottom are the two jumps that get asked for.
+
+**It rides on `browser_read`'s permission** rather than earning one of its own — the first action in the pack to share. Scrolling reveals what reading was always going to reach: a profile granted "may read this page" was never granted only its first screen, and nothing becomes reachable that reading could not already reach. The page just finishes arriving.
+
+### 173.3 Still missing, named so the next audit starts here
+
+- **No way to reuse the user's login.** The workbench browser keeps its own profile, separate from their Chrome. This is why Facebook and TikTok are out of reach, and why YouTube's bot check can bite (§172.5). It is the largest one left and it is a decision about the user's credentials, not a feature.
+- **No download**, so a link that hands back a file has nowhere to land — and **no upload**, so a file cannot be attached to a web form.
+- **No hover**, so a menu that opens on pointer-over is unreachable.
+- **No forward**, though `back` exists.
+
+Listed rather than built, because none of them was the one costing anything today. This is an audit of the tool surface and not a proof that it is complete.
+
+## 174. Decision — ไฟบอกสถานะ, Four Layers That Say the Browser Is Working (2026-08-24)
+
+The owner opened the workbench and found the browser panel dark with five tab chips in it, every one of them naming a native view that had already been destroyed, and asked how he was supposed to know whether Aetox was working at all.
+
+Three questions had no answer on screen. **Is it working. Which tab. Doing what.** And the panel is the one surface where they cannot be inferred, because a page that changes looks identical whether the agent did it or the user did.
+
+### 174.1 Four layers, because there are four answers
+
+They were built as four independent things before anybody thought of making them switchable, and that is the order it happened in: they answer different questions, so they are drawn by different means, and once that was true, letting a person keep the ones they want cost almost nothing. Owner: *"ไหนๆก็ทำแยกกันแล้วครับจะได้เพิ่มตัวเลือกให้ผุ้ใช้ด้วย"*.
+
+| id | name | what it draws | ships |
+|---|---|---|---|
+| `edgeGlow` | ขอบแผงเรืองแสง | a comet running the browser panel's border | on |
+| `actionBar` | แถบบอกการกระทำ | a strip under the toolbar saying in words what is being done, and to what | on |
+| `tabDot` | จุดบนแท็บที่กำลังใช้ | a breathing dot on the tab being worked, and a hairline under the strip | off |
+| `pageMarks` | ลูกศรและวงแหวนบนหน้าเว็บ | an arrow where it scrolls, a ring where it clicks, drawn into the page | on |
+
+**Every name is what somebody SEES, never where it lives in the window.** The first draft called `tabDot` "ชิปแท็บ" and the owner read it straight back: *"ผมอ่านผมไม่รู้นะคืออะไร"*. A setting whose name only makes sense to whoever wrote the code is a setting nobody can decide about.
+
+**Each field is spelled so its zero value is the shipped default** — `BusyEdgeGlowOff`, `BusyActionBarOff`, `BusyTabDot`, `BusyPageMarksOff` — the same discipline as `DelegateAgents`/`DelegateHelpersOff` beside them, with `omitempty` on all four. A preference file nobody has touched stays silent and keeps taking whatever ships.
+
+**No `applyConfig`.** `SetDelegateOff` next door rebuilds the agent, because what the model can DO changes with it and tools are built at bootstrap. Not one of these four reaches the engine, the prompt or the tool block, so this is a load-modify-save on the preference file, and a person flipping a switch does not pay for a rebuilt agent.
+
+### 174.2 The shape of the window is what decided the rest
+
+The workbench browser is a **native WebView2 child window glued over the pane** by `BrowserSetBounds`. It is not in the DOM, and it composites above the app's own webview, so anything the frontend draws over that rect lands behind the page. There are exactly two territories: **outside the native window's rect**, which the frontend owns, and **inside the page**, reachable only through `v.eval()`. Layers 1 to 3 live in the first. Layer 4 lives in the second, and could live nowhere else.
+
+### 174.3 The tab id had to exist before any of this could
+
+`turn.ToolEvent` carried `Name`, `Ref`, `Parent` and `Subject`, and for a browser call `Name` says `browser` for all twelve actions — packing (§99) put them behind one name. So the panel could learn that the browser was busy and not one thing more: no action to put into words, no tab to point at. `tabDot` was unbuildable and `edgeGlow` could only light the whole panel.
+
+Two fields, and they are filled in by different sides on purpose.
+
+- **`Act`** — the action inside a packed tool, read from the arguments by the executor. Written as the generic fact rather than a browser field, because every pack takes its sub-call under the same key and `task collect` benefits from it identically.
+- **`Tab`** — declared in `turn` and stamped by the host in `recordToolAction`. `turn` has never heard of a browser and should not start now; the host is the one side holding both the event and the tabs.
+
+**And the stamp peeks rather than asks.** `agentTab()` *takes* `agentTabClosed` — that sentence is said once, to the call that runs into it. The busy signal asks after the tab on every tool call, so asking the same way would have eaten the message telling the model the user closed its page, leaving it told instead that it had never opened one. `agentTabPeek()` is the read-only half, and the test for it is the only one in this section that guards something invisible.
+
+### 174.4 Events only, never a timer
+
+A layer starts on a browser tool `call` and stops on that call's `result`. Nothing counts down, nothing decays. **An animation that runs when nothing is happening is a lie, and this signal's entire job is to be believed.**
+
+The one thing that is not a result event is the turn ending, and it is not a fallback for a missing result: a stopped turn, a dropped provider, a tool killed mid-call — none of them owe anybody a result, and without `agent:done` the panel would still be glowing tomorrow morning. That is a later event, not a clock.
+
+**Calls in flight are counted, not flagged.** A round can carry two browser calls, and a single boolean is cleared by whichever finishes first while the other is still running.
+
+### 174.5 The comet was borrowed, not reinvented
+
+`edgeGlow` joins the `--beam-phase` block that the working chat row, the running delegation card and the live code block already share. Same clock, same conic gradient, same reduced-motion treatment. "This one is still going" is one fact, and a user who learned that light in the sidebar should not have to learn a second one down here. Borrowed structure, not a borrowed ornament.
+
+**It cost three pixels of the page.** The native window is now held back from the pane on every side (`PANE_FRAME` in `BrowserPane.svelte`), because flush to the pane the comet would run three quarters of its lap hidden behind the page. Held back **always**, not only while the agent works: insetting on demand would resize the native window twice per browser call, and every resize is a real reflow under an agent that is in the middle of reading that page.
+
+The same reasoning shapes the action bar, which is a row and therefore does change the pane's height. It mounts on the **first** browser call of a turn and stays until the turn ends, updating its words, rather than appearing and vanishing per call. One reflow instead of forty. Its dot is lit only while a call is actually in flight, so the bar between calls is a record of the last action and not a claim about the current one.
+
+**And the bar has no animation in it at all.** The first version had a small spinner turning beside the sentence and the owner had it taken straight out: *"ฝากเอาอนิเมชั่นออกเลย ไม่จำเป็น"*. He is right. The border above is already saying "still going" and saying it better, and a sentence is harder to read with something spinning next to it.
+
+### 174.6 Drawing on somebody else's page has three rules
+
+`pageMarks` is injected the same way `textScript` stamps `data-aetox-ref` on every read. Three things about it are not style choices.
+
+- **Cleared before `browser capture`.** `BrowserCapturePNG` photographs the real page, and the click ring sits directly over the control it points at. A model handed that picture has no way to know the circle is not part of the site.
+- **Mounted on `document.documentElement`, never inside the page's tree.** A `transform` or `filter` anywhere up the ancestor chain creates a new containing block and `position:fixed` inside one is no longer fixed to the viewport. The rule as written said `document.body`; the root is one step further up for the same reason, because putting `transform:translateZ(0)` on body to force a compositing layer is a routine thing for a site to do. It is also where `pickScript` mounts, so the two things Aetox ever draws on a stranger's page agree with each other.
+- **The previous mark removed before the next is drawn**, exactly as `textScript` clears stale refs first. Without it, rapid clicks and scrolls leave a page stacked with rings for actions that finished a second ago, which reads as the agent doing all of them at once.
+
+**The ring is drawn before the click, and centres the element itself.** `clickScript` scrolls the element into view before pressing, so a ring measured beforehand would be drawn where the button used to be. Doing the centring here means the rect measured is the rect the click hits, and `clickScript`'s own call then has nothing left to move. Drawing before also means a click that navigates takes its own ring down with the document, which is right: the page it pointed at is gone.
+
+**Styles through the CSSOM, motion through `element.animate()`.** A page's `style-src` governs the `style` attribute and `<style>` elements; it governs neither of these. A mark that vanished on exactly the strictest sites would be a mark nobody could rely on.
+
+### 174.7 The machine outranks all four switches
+
+`prefers-reduced-motion` is not a fifth switch. The switch says what Aetox would **like** to draw; the machine says whether it **moves**. The stylesheet's own global rule already stops every animation in the app, and the injected script asks the page itself, because the page is where the user's setting lives.
+
+Motion off, signal kept — the same trade the beam block has always made. The border becomes a steady lit outline, the dot stops breathing and stays lit, the hairline goes flat, and the marks appear and leave without travelling. **A signal that only exists while it moves is a signal that excludes the people most likely to need it.**
+
+### 174.8 Deliberately not done
+
+- **`type` gets no ring.** It aims at an element exactly as `click` does and would cost one line, but the layer is named for pressing and scrolling — *"ชี้จุดที่กำลังกด และทิศที่กำลังเลื่อน"* — and a setting that quietly does a third thing is a setting whose name has started to drift.
+- **`zh.ts` gets no new keys.** It is a `Partial` that falls through to English and it currently translates exactly one workbench string out of ninety. Adding two would be noise dressed as coverage.
+- **The layers are not in Settings.** They live in the browser toolbar behind a ✨, because it is a decision about the panel you are looking at while you are looking at it.
+- **Nothing was added to the tool block.** The model is told none of this, and should not be: it is what the user sees, not what the agent can do.

@@ -14,6 +14,9 @@
   let opened = $state(false)
   let lastSent = '' // last URL we told the native side to load — breaks the meta-event feedback loop
 
+  /** Pane pixels reserved around the native window, in CSS px. See layout(). */
+  const PANE_FRAME = 3
+
   // The native WebView2 window is a real OS window: it composites above the
   // app's own webview no matter what the DOM does, so anything the app draws
   // over this pane is invisible until the window hides. That is every
@@ -41,7 +44,22 @@
   // its media queries fire the way they would on the device. No preset = fill
   // the pane at zoom 1.
   function layout(el: HTMLElement): { rect: [number, number, number, number]; scale: number } {
-    const r = el.getBoundingClientRect()
+    const box = el.getBoundingClientRect()
+    // A few pixels of the pane kept back from the native window, all the way
+    // round. ไฟบอกสถานะ's border light is drawn by the app, and the app
+    // draws BEHIND this window: flush to the pane, the comet would run its lap
+    // hidden under the page on three sides out of four. This is the strip it
+    // runs in (§174).
+    //
+    // Held back always, not only while the agent works. Insetting on demand
+    // would resize the native window twice per browser call, and every resize
+    // is a real page reflow under an agent that is in the middle of reading it.
+    // A constant frame costs three pixels and moves nothing, ever.
+    const r = {
+      x: box.x + PANE_FRAME, y: box.y + PANE_FRAME,
+      width: Math.max(0, box.width - PANE_FRAME * 2),
+      height: Math.max(0, box.height - PANE_FRAME * 2),
+    }
     const s = window.devicePixelRatio
     const vp = tab.viewport
     const scale = vp ? Math.min(1, r.width / vp.w, r.height / vp.h) : 1

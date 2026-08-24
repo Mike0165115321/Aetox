@@ -16,15 +16,17 @@
   import { cockpit } from '../stores/cockpit.svelte'
   import {
     workbench, activateTab, closeTab, removeTab,
-    openFilesTab, openBrowserTab, openTerminalTab, openDecksTab, openGitTab, openFileTab, closeAgentFileTab, reportDeskTabs,
+    openFilesTab, openBrowserTab, openTerminalTab, openDecksTab, openGitTab, openFileTab, closeAgentFileTab,
+    browserTabClosedByEngine, reportDeskTabs,
     openUrlInWorkbench, saveWorkbenchSnapshot, resolveAddressBarInput, labelForUrl,
     setTabDragPayload, TAB_DRAG_MIME,
     type WorkbenchTab,
   } from '../stores/workbench.svelte'
+  import { busy, busyWork, layerOn, loadBusySignal, toggleBusyLayer } from '../stores/busySignal.svelte'
   import { TerminalShells, BrowserBack, BrowserForward, BrowserReload, BrowserOpenDevTools } from '../../../wailsjs/go/main/App'
   import { pagePick, startPagePick, stopPagePick, type PickMode } from './pagePick.svelte'
   import { EventsOn } from '../../../wailsjs/runtime/runtime'
-  import { t } from '../i18n.svelte'
+  import { t, type TKey } from '../i18n.svelte'
   import { isShortcut, shortcutLabel } from '../shortcuts'
   import Icon from '../Icon.svelte'
   import type { IconName } from '../icons'
@@ -46,10 +48,55 @@
 
   let shells = $state<{ name: string; path: string }[]>([])
   let menuOpen = $state(false)
+  // The busy-signal checklist, opened from the browser toolbar. Its own flag
+  // rather than sharing menuOpen: two menus that close each other by accident
+  // is the bug that costs a click every single time.
+  let busyOpen = $state(false)
   let urlDraft = $state('')
 
   const activeTab = $derived(workbench.tabs.find((t) => t.id === workbench.activeId))
   const hasActiveTask = $derived(cockpit.task.steps.some((s) => s.status === 'active'))
+
+  // ── ไฟบอกสถานะ (§174) ──────────────────────────────────────────────
+  //
+  // Three of the four layers are drawn here; the fourth is drawn inside the
+  // page itself, because it has to be (desktop/browser_marks.go).
+  //
+  // Each is a switch AND a fact, never one of them. The switch says what the
+  // panel may draw, the fact says whether there is anything to draw, and a
+  // layer that lit on the switch alone would be a light that means "you left
+  // this on" rather than "the agent is working".
+  //
+  // The three read different facts on purpose. The border and the tab mark
+  // follow `running`, which is one call in flight and nothing else. The action
+  // bar follows `seen` — the browser has been touched at some point this turn
+  // — because mounting it resizes the native page underneath, and doing that
+  // twice per call would reflow a page in the middle of being read (see
+  // busyWork.seen).
+  const busyGlow = $derived(layerOn('edgeGlow') && busyWork.running)
+  const busyBar = $derived(layerOn('actionBar') && busyWork.seen)
+  const busyDot = $derived(layerOn('tabDot') && busyWork.running)
+
+  // The browser actions the bar has words for. Anything else lands on `other`,
+  // which is a real sentence rather than a blank: an action added to the
+  // browser tool and not to the dictionary should read as work being done, not
+  // as the signal having broken.
+  const BUSY_ACTS = new Set(['open', 'read', 'click', 'type', 'scroll', 'capture', 'tabs', 'wait', 'back', 'dialog', 'console', 'network'])
+
+  /** What the bar says: the action in words, with the thing it is being done to.
+   *
+   *  Two forms per action rather than one phrase with the tense bolted on, so
+   *  each language writes its own sentence — Thai puts the tense at both ends
+   *  ("กำลังกด X" / "กด X แล้ว") and English changes the verb.
+   *
+   *  The collapse at the end is what lets one phrase serve an action that names
+   *  something and one that does not: `click` has no subject, so "{subject}"
+   *  resolves to nothing and the space it left goes with it. */
+  const busyText = $derived.by(() => {
+    const act = BUSY_ACTS.has(busyWork.act) ? busyWork.act : 'other'
+    const key = `workbench.busy${busyWork.running ? 'Run' : 'End'}.${act}` as TKey
+    return t(key, { subject: busyWork.subject }).replace(/\s+/g, ' ').trim()
+  })
 
   $effect(() => {
     urlDraft = activeTab?.url ?? ''
@@ -66,6 +113,12 @@
 
   onMount(() => {
     TerminalShells().then((s) => (shells = s))
+    // Read once, here rather than when the checklist opens. The panel draws
+    // from these on the first browser call of the session, which is long before
+    // anybody has a reason to open the menu — and layerOn's shipped-default
+    // fallback is meant to cover the milliseconds of a round trip, not a user
+    // who turned a layer off yesterday.
+    void loadBusySignal()
     // The ways the agent reaches this desk. Each mirrors a door the user
     // already has — a page, a file, a shell, and the × on a tab — so nothing
     // here can do something to the desk that a click could not have.
@@ -86,6 +139,13 @@
       // that again against the live array rather than trusting the mirror.
       EventsOn('workbench:close-file', ({ path }: { path: string }) => {
         closeAgentFileTab(path)
+      }),
+      // The browser's half of the same pair, which it never had. Any close on
+      // the Go side lands here — the agent closing its own tab, and the orphan
+      // sweep after a reload — because a chip whose native view is gone is a
+      // black rectangle nothing can repair.
+      EventsOn('workbench:close-browser', ({ id }: { id: string }) => {
+        browserTabClosedByEngine(id)
       }),
       // desk_terminal — the session already exists on the Go side (unlike the
       // browser, where the frontend creates the window), so this only mounts a
@@ -278,8 +338,14 @@
 <!-- Drop target for the whole panel; the tabs and panes inside stay the real
      interactive elements. Keyboard users reach every one of these by the +
      menu, Ctrl+T / Ctrl+P, and the chat's file cards. -->
-<div class="wb" ondragover={onDeskDragOver} ondragleave={onDeskDragLeave} ondrop={onDeskDrop}>
+<div class="wb" class:busy-glow={busyGlow} ondragover={onDeskDragOver} ondragleave={onDeskDragLeave} ondrop={onDeskDrop}>
   <div class="insp-tabs">
+    <!-- The hairline half of จุดบนแท็บที่กำลังใช้: a lit line along the
+         strip's own border, saying the row above it is where to look. Absolute
+         so it lies ON the border rather than pushing it down — a strip that
+         grew a pixel when the agent started working would move every tab, and
+         resize the native browser window underneath. -->
+    {#if busyDot}<span class="busy-strip-line" aria-hidden="true"></span>{/if}
     {#each workbench.tabs as tab (tab.id)}
       <button
         class="tab" class:active={workbench.activeId === tab.id} title={tab.name} onclick={() => activateTab(tab.id)}
@@ -288,6 +354,14 @@
       >
         <span class="ic"><Icon name={tabIcon[tab.kind] ?? 'fileText'} size={13} /></span>
         <span class="label">{tab.name}</span>
+        <!-- Breathing on the one tab the agent is working. tab.id is the id the
+             engine minted (web-agent-N) and busyWork.tab is that same id come
+             back on the tool event, so this is an identity check and not a
+             guess. Empty tab means the engine could not say which — no dot
+             anywhere, and the border light carries the message alone. -->
+        {#if busyDot && busyWork.tab && tab.id === busyWork.tab}
+          <span class="busy-tab-dot" aria-hidden="true"></span>
+        {/if}
         <span
           class="tab-close" role="button" tabindex="0" aria-label={t('workbench.close', { name: tab.name })}
           onclick={(e) => { e.stopPropagation(); closeTab(tab) }}
@@ -322,6 +396,34 @@
       onkeydown={(e) => e.key === 'Enter' && navigate()}
     />
     <button class="icobtn tiny" aria-label={t('workbench.go')} data-tip={t('workbench.go')} onclick={navigate}><Icon name="externalLink" size={14} /></button>
+    <span class="insp-sep" aria-hidden="true"></span>
+    <!-- What the panel SHOWS you about the agent working, as against the two
+         controls after it, which do something TO the page. It sits first
+         because it is the only one here that changes nothing except how the
+         panel reports itself. -->
+    <span class="busy-wrap">
+      <button
+        class="icobtn tiny" class:active={busyOpen}
+        aria-label={t('workbench.busySignal')} data-tip={t('workbench.busySignal')}
+        aria-expanded={busyOpen} aria-haspopup="true"
+        onclick={() => { busyOpen = !busyOpen; if (busyOpen) void loadBusySignal() }}
+      ><Icon name="sparkles" size={14} /></button>
+      {#if busyOpen}
+        <div class="busy-menu" role="dialog" aria-label={t('workbench.busySignal')}>
+          <p class="busy-head">{t('workbench.busySignalHint')}</p>
+          {#each busy.layers as layer (layer.id)}
+            <button
+              class="busy-item" class:on={layer.on}
+              role="menuitemcheckbox" aria-checked={layer.on}
+              onclick={() => void toggleBusyLayer(layer.id, !layer.on)}
+            >
+              <span class="tick">{#if layer.on}<Icon name="check" size={12} />{/if}</span>
+              <span class="txt"><b>{layer.label}</b><span>{layer.note}</span></span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </span>
     <!-- Pointing at the page is a way of talking to the agent, not a way of
          inspecting the page — the rule that separates it from the two controls
          after it, which are the user's own magnifying glass. -->
@@ -355,6 +457,19 @@
       </select>
     </span>
   </div>
+  <!-- แถบบอกการกระทำ: what is being done, and to what, in words.
+       Words only. The first draft had a small spinner turning inside it and the
+       owner took it straight back out — *"ฝากเอาอนิเมชั่นออกเลย ไม่จำเป็น"*.
+       The border light already says "still going" and says it better; a second
+       thing turning next to the sentence is decoration competing with the one
+       part of this panel that has to be read.
+       So the dot is a dot: lit while a call is in flight, out between them. -->
+  {#if busyBar}
+    <div class="busy-bar" class:live={busyWork.running} role="status" aria-live="polite">
+      <span class="busy-bar-dot" aria-hidden="true"></span>
+      <span class="busy-bar-txt">{busyText}</span>
+    </div>
+  {/if}
   {/if}
 
   <div class="insp-body">

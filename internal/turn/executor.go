@@ -368,8 +368,29 @@ type ToolEvent struct {
 	// Subject is the one argument worth reading in a list: the path a write
 	// touches, the URL a fetch opens. Empty when the tool takes nothing nameable.
 	Subject string `json:"subject,omitempty"`
-	OK      bool   `json:"ok"`              // result only
-	Error   string `json:"error,omitempty"` // result only, when !OK
+	// Act is the action *inside* a packed tool — `browser`'s open/read/click,
+	// `task`'s start/collect. Packing (§99) put a dozen capabilities behind one
+	// name, and Name has said "browser" for every one of them ever since: a UI
+	// holding a call could tell that the browser was busy and not one thing more.
+	//
+	// Written as the generic fact rather than as a browser field, because the
+	// question "which action of the packed tool is this" is asked by every pack
+	// and answered the same way in all of them. Empty for a tool that is not
+	// packed, and for arguments that will not parse.
+	Act string `json:"act,omitempty"`
+	// Tab is the browser tab this call is working, and it is the one field here
+	// the executor does not fill in: `turn` has never heard of a browser and
+	// should not start now. The host stamps it on the way past
+	// (desktop/app.go recordToolAction), because the host is the side that owns
+	// the tabs.
+	//
+	// It exists for ไฟบอกสถานะ (§174): "the agent is working" and "the agent is
+	// working *here*" are different sentences, and a panel that can only say the
+	// first has to light all five tab chips to say it. Empty for every tool that
+	// is not the browser, and for a browser call made before any tab exists.
+	Tab   string `json:"tab,omitempty"`
+	OK    bool   `json:"ok"`              // result only
+	Error string `json:"error,omitempty"` // result only, when !OK
 	// Added/Removed are the line counts of a write or edit, zero elsewhere.
 	Added   int `json:"added,omitempty"`
 	Removed int `json:"removed,omitempty"`
@@ -565,6 +586,7 @@ func (e *Executor) reportToolCall(ref, name, args string) {
 		agent, brief, isTask := delegationOf(name, args)
 		e.onToolAction(ToolEvent{
 			Action: "call", Ref: ref, Name: name, Subject: toolCallSubject(args),
+			Act:   packedActionOf(args),
 			Agent: agent, Brief: brief, AgentKind: e.kindOf(isTask, agent),
 			Delegation: &isTask,
 		})
@@ -627,6 +649,26 @@ func toolCallSubject(args string) string {
 	// One definition, shared with the streaming path — see model.SubjectFromArgs
 	// for why the two must not drift apart by even a truncation.
 	return model.SubjectFromArgs(parsed)
+}
+
+// packedActionOf reads the `action` a packed tool was called with.
+//
+// One key, spelled once. Every pack in the product takes its sub-call under
+// this name (internal/skill/packed.go builds the enum for all of them), so
+// this reads the packing convention rather than any particular tool — which is
+// why it lives here beside toolCallSubject and not next to the browser.
+//
+// Lower-cased, because the model sends what it likes and a UI comparing
+// against "click" should not be defeated by "Click". Empty when the arguments
+// will not parse or carry no action, which is the honest answer for an
+// unpacked tool and for a call whose JSON arrived broken.
+func packedActionOf(args string) string {
+	parsed, err := model.ParseToolArguments(args)
+	if err != nil {
+		return ""
+	}
+	action, _ := parsed["action"].(string)
+	return strings.ToLower(strings.TrimSpace(action))
 }
 
 func (e *Executor) reportToolResult(ev ToolEvent) {
@@ -994,9 +1036,15 @@ func (e *Executor) executeAgentToolLoop(
 		receipt, output, success, execErr := e.executeToolCallWithOutcome(ctx, call)
 		elapsed := time.Since(startedAt)
 		ev := ToolEvent{
-			Ref:        call.ID,
-			Name:       call.Function.Name,
-			Subject:    toolCallSubject(call.Function.Arguments),
+			Ref:     call.ID,
+			Name:    call.Function.Name,
+			Subject: toolCallSubject(call.Function.Arguments),
+			// Read from the arguments again rather than carried down from the
+			// call event, because the two are built in different functions and a
+			// result whose action disagreed with its call's would be worse than
+			// one that had none: the UI matches the pair up and would draw the
+			// close of an action it never saw open.
+			Act:        packedActionOf(call.Function.Arguments),
 			OK:         success,
 			Added:      output.LinesAdded,
 			Removed:    output.LinesRemoved,

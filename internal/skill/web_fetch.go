@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -169,6 +170,24 @@ func (s *webFetchSkill) fetch(ctx context.Context, rawURL, question string) (Out
 		return s.answer(ctx, command, "", body, start, false, question)
 	}
 
+	// A video link is the same question — "what is the content at this URL" —
+	// with an answer HTTP cannot give: the page arrives as a shell and fills
+	// itself in by script, so what came back was navigation chrome. It goes
+	// through the same exit as everything else (answer), so the cache and the
+	// digest apply to a transcript exactly as they do to a page. See
+	// video_page.go.
+	if isVideoPage(parsed) {
+		body, videoErr := fetchVideoPage(ctx, parsed.String())
+		if videoErr != nil {
+			return newToolOutput("web_fetch", command, "", start, false, videoErr), videoErr
+		}
+		truncated := false
+		if len(body) > webFetchMaxText {
+			body, truncated = body[:webFetchMaxText], true
+		}
+		return s.answer(ctx, command, cacheKey, body, start, truncated, question)
+	}
+
 	client := s.httpClient
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
@@ -201,13 +220,25 @@ func (s *webFetchSkill) fetch(ctx context.Context, rawURL, question string) (Out
 
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	if !strings.Contains(contentType, "html") {
-		// JSON/plain text and friends: hand it over as-is, capped.
-		content := string(body)
-		truncated := false
-		if len(content) > webFetchMaxText {
-			content = content[:webFetchMaxText] + "\n... (truncated)"
-			truncated = true
+		// A file with a reader of its own goes to that reader. They all take a
+		// path, which is the one thing a downloaded body lacked — see
+		// web_file.go. Without this a PDF's raw bytes went into the model's
+		// context: forty thousand characters of binary, paid for in tokens.
+		if kind := fetchedFileKind(finalURL, contentType); kind != "" {
+			shown := emptyFallback(filepath.Base(finalURL.Path), finalURL.Host)
+			text, fileErr := readFetchedFile(ctx, kind, body, shown)
+			if fileErr != nil {
+				return newToolOutput("web_fetch", command, "", start, false, fileErr), fileErr
+			}
+			clamped, truncated := clampText(text)
+			return s.answer(ctx, command, cacheKey, "URL: "+finalURL.String()+"\n\n"+clamped, start, truncated, question)
 		}
+		// Bytes that are not text and have no reader: named, never dumped.
+		if looksBinaryType(finalURL, contentType, string(body)) {
+			return s.answer(ctx, command, cacheKey, describeBinary(finalURL, contentType, len(body)), start, false, question)
+		}
+		// JSON/plain text and friends: hand it over as-is, capped.
+		content, truncated := clampText(string(body))
 		return s.answer(ctx, command, cacheKey, "URL: "+finalURL.String()+"\n\n"+strings.TrimSpace(content), start, truncated, question)
 	}
 
@@ -393,4 +424,13 @@ func collapseBlankLines(s string) string {
 		out = append(out, line)
 	}
 	return strings.TrimSpace(strings.Join(out, "\n"))
+}
+
+// clampText cuts a body to what may cross into a reply, and says when it did.
+// One definition, because the call sites above had each grown their own.
+func clampText(content string) (string, bool) {
+	if len(content) <= webFetchMaxText {
+		return content, false
+	}
+	return content[:webFetchMaxText] + "\n... (truncated)", true
 }

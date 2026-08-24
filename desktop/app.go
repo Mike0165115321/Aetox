@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -151,6 +152,14 @@ type App struct {
 	// while a turn goroutine writes it.
 	turns map[string]*liveTurn
 
+	// files is what this app last saw each file on disk as (skill.FileState),
+	// shared by every conversation's tools and by the editor's own save path.
+	// One per app on purpose: the whole job is catching two of them writing the
+	// same file, and two records could not see each other. Built once in NewApp
+	// and never replaced — a re-bootstrap changes the tools, not the disk.
+	files     *skill.FileState
+	filesOnce sync.Once
+
 	// snapshots is the undo net (internal/snapshot). Nil whenever it cannot
 	// work — no git, or a project that is not a repository — and every use of
 	// it is written to carry on without it rather than refuse to run.
@@ -243,6 +252,20 @@ const maxToolHistory = 50
 // of a detail line, so localizing that word (or appending anything to it) would
 // have silently marked every tool call as failed.
 func (a *App) recordToolAction(conv *conversation, ev turn.ToolEvent) {
+	// Which page this is happening on, filled in on the way past.
+	//
+	// The engine cannot answer it — `turn` has never heard of a browser — and
+	// the browser tool will not, because it would have to reach forward to an
+	// event it does not build. The host is the one place that holds both, so it
+	// is the one place that can say it, and it says it here rather than in the
+	// tool so that every browser action gets the stamp by existing rather than
+	// by somebody remembering to add it.
+	//
+	// Peeked, never taken: see agentTabPeek for the message this would otherwise
+	// have swallowed.
+	if ev.Name == browserToolName {
+		ev.Tab = a.agentTabPeek()
+	}
 	// Relay every call/result live to the chat's tool timeline, stamped with the
 	// conversation it happened in — the window draws two chats at once now, and
 	// an unstamped event is one it has to guess the home of.
@@ -768,7 +791,31 @@ func (a *App) WriteFile(relPath, content string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(full, []byte(content), 0o644)
+	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+		return err
+	}
+	// This is the one door the person's own typing comes through, and both
+	// safety nets hang off it: an undo leaves their work alone
+	// (conversation.userSaves), and the agent's next whole-file write of the
+	// same file is refused rather than silently winning (skill.FileState).
+	// Recorded after the write, so a refused save claims nothing.
+	a.noteUserSave(relPath)
+	a.fileState().Note(full)
+	return nil
+}
+
+// fileState is the shared disk record, built on first use.
+//
+// Lazily rather than in NewApp because most of this package's tests construct a
+// zero App, and a nil record there would quietly disable the guard in exactly
+// the tests written to check it.
+func (a *App) fileState() *skill.FileState {
+	a.filesOnce.Do(func() {
+		if a.files == nil {
+			a.files = skill.NewFileState()
+		}
+	})
+	return a.files
 }
 
 // IdentityFile is one markdown file in the user's cross-project "AI
@@ -1233,7 +1280,11 @@ func (a *App) documentAttachments(text string) (string, []model.Document) {
 // UndoResult is what the UI shows after an undo: which files went back, or why
 // nothing did.
 type UndoResult struct {
-	Files  []string `json:"files"`
+	Files []string `json:"files"`
+	// Kept is the files an undo deliberately did not touch, because the person
+	// saved them from the editor while the turn ran. Named rather than counted:
+	// "I left two of your files alone" is only useful if it says which two.
+	Kept   []string `json:"kept,omitempty"`
 	Reason string   `json:"reason,omitempty"`
 }
 
@@ -1244,6 +1295,10 @@ type UndoResult struct {
 func (a *App) captureSnapshot(conv *conversation) {
 	a.snapshotMu.Lock()
 	store := a.snapshots
+	// The window opens here: saves from now on are the ones an undo of the turn
+	// about to run must leave alone. Cleared even when there is no store to
+	// capture into, so a list cannot survive into a turn it does not describe.
+	conv.userSaves = nil
 	a.snapshotMu.Unlock()
 	if store == nil {
 		return
@@ -1256,6 +1311,70 @@ func (a *App) captureSnapshot(conv *conversation) {
 	a.snapshotMu.Lock()
 	conv.lastSnapshot = id
 	a.snapshotMu.Unlock()
+}
+
+// noteUserSave records that the person saved a file from the editor, so no
+// chat's undo puts it back.
+//
+// Recorded on every live conversation rather than on the one the window is
+// showing: a save is a fact about the tree, and the chat whose undo might eat it
+// is very often not the chat being looked at — that is the whole point of work
+// continuing in the background.
+func (a *App) noteUserSave(path string) {
+	path = filepath.ToSlash(strings.TrimSpace(path))
+	if path == "" {
+		return
+	}
+	a.snapshotMu.Lock()
+	defer a.snapshotMu.Unlock()
+	for _, conv := range a.convs.all() {
+		if !slices.Contains(conv.userSaves, path) {
+			conv.userSaves = append(conv.userSaves, path)
+		}
+	}
+}
+
+// undoPlan is what an undo of this chat's last turn would do: the files it
+// would put back, and the ones it is leaving alone because the user типed in
+// them.
+type undoPlan struct {
+	restore []string
+	kept    []string
+}
+
+// planUndo works out both lists from one reading of the tree.
+//
+// The changed set is every file that differs from the snapshot, exactly as
+// before — undo keeps its whole reach, because the list of things the agent can
+// change is not one this side can complete (see conversation.userSaves). What
+// comes out of it is only what the user is known to have saved.
+func (a *App) planUndo(conv *conversation, store *snapshot.Store, id string) (undoPlan, error) {
+	current, err := store.Capture(a.ctx)
+	if err != nil {
+		return undoPlan{}, err
+	}
+	changed, err := store.Changed(a.ctx, id, current)
+	if err != nil {
+		return undoPlan{}, err
+	}
+	a.snapshotMu.Lock()
+	mine := map[string]bool{}
+	for _, path := range conv.userSaves {
+		mine[path] = true
+	}
+	a.snapshotMu.Unlock()
+
+	plan := undoPlan{restore: []string{}, kept: []string{}}
+	for _, path := range changed {
+		// git reports forward slashes; a save comes in however the window spelled
+		// it, which on the reference platform is as often a backslash.
+		if mine[filepath.ToSlash(strings.TrimSpace(path))] {
+			plan.kept = append(plan.kept, path)
+			continue
+		}
+		plan.restore = append(plan.restore, path)
+	}
+	return plan, nil
 }
 
 // UndoLastTurn puts every file the last turn changed back the way it was.
@@ -1272,43 +1391,62 @@ func (a *App) UndoLastTurn() (UndoResult, error) {
 	a.snapshotMu.Unlock()
 
 	if store == nil {
-		return UndoResult{Reason: "undo needs the project to be a git repository"}, nil
+		// Not "this folder is not a repository", which is what it used to say
+		// and has not been true since the store became a shadow repo of its own
+		// (internal/snapshot.New git-inits one under the data root for any
+		// folder). The only thing that can be missing is git itself, and a
+		// message naming the wrong cause sends the user to fix the wrong thing.
+		return UndoResult{Reason: "undo needs git on this machine, and it was not found"}, nil
 	}
 	if id == "" {
 		return UndoResult{Reason: "nothing to undo yet"}, nil
 	}
-	files, err := store.Restore(a.ctx, id, nil)
+	plan, err := a.planUndo(conv, store, id)
+	if err != nil {
+		return UndoResult{}, err
+	}
+	if len(plan.restore) == 0 {
+		if len(plan.kept) > 0 {
+			// Everything that moved was the user's own typing. Saying "nothing
+			// changed" here would be false and, worse, would read as "your work
+			// is not there" to somebody who had just done it.
+			return UndoResult{Kept: plan.kept, Reason: "the only files that changed are ones you edited yourself, so nothing was put back"}, nil
+		}
+		return UndoResult{Reason: "the last turn changed no files"}, nil
+	}
+	files, err := store.Restore(a.ctx, id, plan.restore)
 	if err != nil {
 		return UndoResult{}, err
 	}
 	if len(files) == 0 {
-		return UndoResult{Reason: "the last turn changed no files"}, nil
+		return UndoResult{Kept: plan.kept, Reason: "the last turn changed no files"}, nil
 	}
 	// The restore IS the new state, so undoing twice must not undo further —
 	// re-capturing here is what makes the second press a no-op instead of a
 	// second, silent step backwards.
 	a.captureSnapshot(conv)
-	return UndoResult{Files: files}, nil
+	return UndoResult{Files: files, Kept: plan.kept}, nil
 }
 
 // PendingUndo reports what an undo would touch right now, so the UI can offer
 // it only when there is something to offer.
 func (a *App) PendingUndo() []string {
+	conv := a.cur()
 	a.snapshotMu.Lock()
-	store, id := a.snapshots, a.cur().lastSnapshot
+	store, id := a.snapshots, conv.lastSnapshot
 	a.snapshotMu.Unlock()
 	if store == nil || id == "" {
 		return []string{}
 	}
-	current, err := store.Capture(a.ctx)
+	// The same plan the button will carry out. Counting the raw changed set
+	// instead promised files undo now deliberately leaves alone — an offer of
+	// five where four would happen, on the one control in the app that writes to
+	// the user's disk.
+	plan, err := a.planUndo(conv, store, id)
 	if err != nil {
-		return []string{}
-	}
-	files, err := store.Changed(a.ctx, id, current)
-	if err != nil || files == nil {
 		return []string{} // never nil: §34, a nil slice crashes the frontend
 	}
-	return files
+	return plan.restore
 }
 
 // ProjectStatus is the real project/git state for the sandbox root the engine runs in.
@@ -1757,6 +1895,15 @@ func (a *App) turnBusy() bool {
 // Nothing guesses now. A turn is handed its conversation when it begins
 // (SendMessage, RegenerateReply) and every write it makes carries that; what is
 // left is this, which is a different question with a real answer.
+// anyTurnRunning reports whether this process is working on anything at all,
+// in any chat. The question a sweep asks before deciding a leftover is a
+// leftover rather than somebody's tools mid-task.
+func (a *App) anyTurnRunning() bool {
+	a.turnMu.Lock()
+	defer a.turnMu.Unlock()
+	return len(a.turns) > 0
+}
+
 func (a *App) turnRunningIn(id string) bool {
 	if id == "" {
 		return false
@@ -3390,6 +3537,7 @@ func (a *App) applyConfig(conv *conversation, cfg config.Config) {
 		Manager:      a.mcp,
 		ExtraSkills:  workbenchTools,
 		OutputSubdir: a.outputSubdir,
+		Files:        a.fileState(),
 		// The session's whole reach, in two fields and no third: unfocused mode
 		// roams the machine (minus credential stores), and a focused project
 		// sees itself plus the folders the user added to it. See unfocusedRoot
@@ -3408,9 +3556,14 @@ func (a *App) applyConfig(conv *conversation, cfg config.Config) {
 		// Which shell the agent's commands and the user's hooks run in. Read
 		// per call so the composer's picker takes effect on the next command
 		// rather than on the next restart.
-		Shell:            a.shellBackend,
-		OnToolAction:     func(ev turn.ToolEvent) { a.recordToolAction(conv, ev) },
-		OnToolRun:        func(run turn.ToolRun) { a.recordToolRun(conv, run) },
+		Shell:        a.shellBackend,
+		OnToolAction: func(ev turn.ToolEvent) { a.recordToolAction(conv, ev) },
+		// Two jobs, deliberately named apart: one writes the call down, the
+		// other tells the window a file it is showing has moved on.
+		OnToolRun: func(run turn.ToolRun) {
+			a.recordToolRun(conv, run)
+			a.notifyFilesChanged(conv, run)
+		},
 		Proposer:         appProposer{app: a},
 		OnStatus:         func(status string) { a.emitAgentStatus(conv, status) },
 		OnContentPreview: func(chunk string) { a.previewAnswer(conv, chunk) },
@@ -3530,6 +3683,14 @@ func resolveConfig(opts config.ConfigOptions) config.Config {
 		// that into both by the time it arrives here.
 		cfg.DelegateAgents = pref.DelegateAgents
 		cfg.DelegateHelpersOff = pref.DelegateHelpersOff
+		// The busy signal's four layers, read straight through for the same
+		// reason: each field is spelled so that its zero value IS the shipped
+		// default, so a preference file that has never heard of them lands on
+		// exactly what a fresh install shows.
+		cfg.BusyEdgeGlowOff = pref.BusyEdgeGlowOff
+		cfg.BusyActionBarOff = pref.BusyActionBarOff
+		cfg.BusyTabDot = pref.BusyTabDot
+		cfg.BusyPageMarksOff = pref.BusyPageMarksOff
 		cfg.WorkersOff = pref.WorkersOff
 		cfg.DelegateSet = pref.DelegateSet
 		if key := pref.APIKeyForProvider(cfg.ModelProvider); key != "" {
@@ -3621,6 +3782,14 @@ func persistModelPreference(cfg config.Config) {
 	// "go back to picking whatever is on disk" is expressed — so it is written
 	// through rather than treated as "nothing to say".
 	pref.SpeechModelPath = strings.TrimSpace(cfg.SpeechModelPath)
+	// Written through unconditionally, unlike the delegation block below: these
+	// four carry no "has anybody answered" flag and need none, because each
+	// one's zero value is its shipped default. Writing false for a switch
+	// nobody has touched writes the same thing omitempty would have left out.
+	pref.BusyEdgeGlowOff = cfg.BusyEdgeGlowOff
+	pref.BusyActionBarOff = cfg.BusyActionBarOff
+	pref.BusyTabDot = cfg.BusyTabDot
+	pref.BusyPageMarksOff = cfg.BusyPageMarksOff
 	// Same rule as SpeechModelPath one line up: an empty value is a real choice
 	// here — turning the last switch back on is expressed as "nobody is off" —
 	// so it is written through rather than treated as nothing to say.

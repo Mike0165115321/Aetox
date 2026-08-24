@@ -453,6 +453,24 @@ export namespace main {
 	        this.collected = source["collected"];
 	    }
 	}
+	export class BusyLayer {
+	    id: string;
+	    label: string;
+	    note: string;
+	    on: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new BusyLayer(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.label = source["label"];
+	        this.note = source["note"];
+	        this.on = source["on"];
+	    }
+	}
 	export class Chair {
 	    name: string;
 	    description: string;
@@ -592,6 +610,22 @@ export namespace main {
 	        this.modified = source["modified"];
 	    }
 	}
+	export class DeckFormat {
+	    id: string;
+	    ext: string;
+	    ready: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new DeckFormat(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.ext = source["ext"];
+	        this.ready = source["ready"];
+	    }
+	}
 	export class DeckPage {
 	    decks: Deck[];
 	    range: string;
@@ -625,22 +659,6 @@ export namespace main {
 		    }
 		    return a;
 		}
-	}
-	export class DeckFormat {
-	    id: string;
-	    ext: string;
-	    ready: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new DeckFormat(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.ext = source["ext"];
-	        this.ready = source["ready"];
-	    }
 	}
 	export class DelegateWorker {
 	    name: string;
@@ -763,6 +781,61 @@ export namespace main {
 	        this.mine = source["mine"];
 	    }
 	}
+	export class EditedFile {
+	    path: string;
+	    label: string;
+	    dir?: string;
+	    status: string;
+	    gone: boolean;
+	    time: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new EditedFile(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.label = source["label"];
+	        this.dir = source["dir"];
+	        this.status = source["status"];
+	        this.gone = source["gone"];
+	        this.time = source["time"];
+	    }
+	}
+	export class EditPage {
+	    files: EditedFile[];
+	    total: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new EditPage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.files = this.convertValues(source["files"], EditedFile);
+	        this.total = source["total"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class GitBranch {
 	    name: string;
 	    current: boolean;
@@ -1550,6 +1623,7 @@ export namespace main {
 	}
 	export class UndoResult {
 	    files: string[];
+	    kept?: string[];
 	    reason?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -1559,6 +1633,7 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.files = source["files"];
+	        this.kept = source["kept"];
 	        this.reason = source["reason"];
 	    }
 	}

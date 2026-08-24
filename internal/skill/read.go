@@ -34,6 +34,9 @@ type readSkill struct {
 	// vision turns read into the tool that opens an image, rather than the one
 	// that refuses to. False keeps the old refusal, which points at image_ocr.
 	vision bool
+	// files is the shared record (filestate.go). read fills it: a file the
+	// agent has looked at is one a later whole-file write can be held to.
+	files *FileState
 }
 
 // readMaxImageBytes bounds what read will hand a provider inline. Every one of
@@ -127,6 +130,11 @@ func (s *readSkill) Execute(_ context.Context, input Input) (Output, error) {
 		err = errors.New("read target is a directory")
 		return newToolOutput("read", command, "", start, false, err), err
 	}
+	// One place for every kind of read below — text, image, notebook, Office.
+	// Looking at a file is what gives a later whole-file write something to be
+	// stale against (filestate.go); a file this session has never opened is one
+	// `write` is free to replace, which is what that tool is for.
+	s.files.Note(targetPath)
 	if mediaType, isImage := imageMediaTypes[strings.ToLower(filepath.Ext(targetPath))]; isImage {
 		return s.readImage(targetPath, requestPath, command, mediaType, info.Size(), start)
 	}

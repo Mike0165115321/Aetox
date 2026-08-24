@@ -30,6 +30,9 @@ import (
 type sheetWriteSkill struct {
 	root         string
 	outputSubdir func() string
+	// files is the shared record a write checks and every toucher updates.
+	// Nil is supported and means no guard (filestate.go).
+	files *FileState
 }
 
 // Excel's own limits. Hitting either produces a file it refuses to open, so
@@ -187,9 +190,15 @@ func (s *sheetWriteSkill) run(start time.Time, requestPath string, rawSheets any
 	if err != nil {
 		return newToolOutput("sheet_write", "sheet_write "+requestPath, "", start, false, err), err
 	}
+	// Same act, same refusal as `write` and `doc_write` (filestate.go).
+	if err := s.files.guardStale(targetPath, requestPath); err != nil {
+		return newToolOutput("sheet_write", "sheet_write "+requestPath, "", start, false, err), err
+	}
+
 	if err := ooxml.WriteFile(targetPath, parts); err != nil {
 		return newToolOutput("sheet_write", "sheet_write "+requestPath, "", start, false, err), err
 	}
+	s.files.Note(targetPath)
 
 	output := "sheet_write done: " + requestPath + " (" + describeSheets(sheets) + ")"
 	if requestPath != original {

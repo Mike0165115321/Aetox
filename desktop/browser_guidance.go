@@ -35,8 +35,18 @@ var browserGuidance = map[string]string{
 	// The condition that generalizes is not "is this page important" — a model
 	// cannot answer that about a page it has not read. It is "is the page I am
 	// on still an input to my work", which is a question about its own task.
-	"open": "newTab=true keeps the page you are on and opens an extra one. Use it only when you will come back here — a list of results you are working through, a page you are comparing against. Otherwise let it replace the page, and use `back` if you were wrong: re-opening a URL is not the same as going back, because a form you filled and a scroll position do not survive it.\n" +
-		"A source file (.go, .ts, .py) is a download rather than a page; `read` it instead.",
+	//
+	// The closing paragraph is here for the reason `wait`'s trigger sits on
+	// `read`, and it is the same failure: a model that never opens a second tab
+	// never calls `tabs`, so the tabs guidance — which has said "close what you
+	// are done with" all along — arrives for nobody. In a real run the model
+	// gathered four sources by replacing the page four times and closed nothing,
+	// because reuse is the default (§130) and nothing on the path it took ever
+	// mentioned the alternative. The trigger has to ride on `open`, which every
+	// session that touches the browser calls.
+	"open": "newTab=true keeps the page you are on and opens an extra one. The question is whether you are still going to need this page: gathering several sources to write from, or holding two side by side to compare, means keep them — open each in its own tab. A page you have already taken what you need from is finished, so let the next open replace it, and use `back` if you were wrong: re-opening a URL is not the same as going back, because a form you filled and a scroll position do not survive it.\n" +
+		"Tabs you keep are windows on the user's screen. Close each one with `tabs` (act: close) as soon as the work that needed it is done — finishing a task with five of them still open leaves five for somebody else to close.\n" +
+		"A source file (.go, .ts, .py) is a download rather than a page; `read` it instead. A video link is words rather than a page: `web_fetch` reads its captions, which is what you want when the question is what was SAID in it — open it here only when the user should watch it.",
 
 	// Says WHEN, because the failure it prevents does not look like a failure.
 	"wait": "Most pages fetch their real content after the document loads. A `read` straight after `open` or `click` therefore SUCCEEDS and comes back empty, and there is nothing in that answer to suggest waiting — so the honest reading of it is \"there are no results\" when the truth is \"not yet\".\n" +
@@ -48,6 +58,12 @@ var browserGuidance = map[string]string{
 		"By default it sees what is on screen. `full=true` photographs the whole document instead, which is what you want for a long form or a report and is wasted on a page that already fits — it is the same answer in several times the bytes. If a page is too long even for that, the result says where it was cut; nothing else about the picture will tell you.\n" +
 		"The file is kept under output/<session> so the user can open it too.",
 
+	// Says WHEN, for the same reason `wait` does: the failure it prevents does
+	// not look like a failure. A feed read without scrolling comes back short
+	// and successful, and nothing in that answer suggests there was more.
+	"scroll": "A page that loads as you go — a feed, a result list, a channel — is one screen deep in the document until something scrolls it. So a short `read` on a page you expected to be long is usually not the whole page: scroll, read again, and repeat until the reading stops growing.\n" +
+		"`to` is down (a screen), up, top or bottom. Every scroll invalidates your refs, exactly like a navigation: read again before you click.",
+
 	"back": "Returns to the previous page in this tab with what you had typed and scrolled still there. Re-opening its URL is a different thing and loses all of it, and a page that came from a POST cannot be re-opened at all.\n" +
 		"A tab with nothing behind it does not fail — it says there is nowhere back to.",
 
@@ -58,7 +74,7 @@ var browserGuidance = map[string]string{
 
 	"tabs": "Every tab here is one you opened. The user has their own and you cannot reach them, which is why they are not listed — if they want you on a page they have open, they will hand it over.\n" +
 		"`select` changes which tab every other action works, and it invalidates your refs exactly like a navigation does: read again before you click.\n" +
-		"Close what you are done with. A tab you keep is a window on somebody's screen.",
+		"Close what you are done with. A tab you keep is a window on somebody's screen — `close` with no id shuts the one you are working, which is nearly always the one you mean.",
 
 	// The three below carry the ref rule, which used to sit in the block where
 	// every message paid for it. It lives with the actions that SPEND refs, so a
