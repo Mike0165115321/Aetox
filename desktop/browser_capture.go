@@ -186,13 +186,35 @@ func (s *browserCaptureSkill) capture(ctx context.Context, full bool) (skill.Out
 //
 // output/<session> is also the one path ListArtifacts is defined to sweep, so
 // anything put here shows up in the gallery under either mode.
+//
+// Which is right, and was the whole problem until 25 ส.ค.: they showed up
+// *level with the deliverable*. Counted on the owner's machine, 46 of 244 files
+// in the gallery were browser screenshots — one session had nine in a row, with
+// the document somebody actually asked for sitting as the tenth card, indistinct
+// from the pages it was written from ("อันไหนเป็นรูปภาพอ่ะครับ รวมมันเป็นการ์ด
+// อันเดียวกันได้มั้ยครับ").
+//
+// So the byproduct gets its own subfolder, and the gallery reads that folder as
+// the fact — Artifact.Folder, one card per folder. Nothing new records what a
+// file is: the place it was put says it, which is the only kind of record this
+// page trusts, because the folder is the half the user can move and rename.
+//
+// The subfolder is added here rather than at the call site so that the next tool
+// with a byproduct inherits it by using this function, which is the reason the
+// function has a name at all.
 func (a *App) workFileDir() string {
 	session := strings.TrimSpace(a.cur().id)
 	if session == "" {
 		session = "unsaved" // a chat that has not been saved can still take a picture
 	}
-	return path.Join("output", session)
+	return path.Join("output", session, workSubdir)
 }
+
+// workSubdir is the one folder name the app creates for its own working files.
+// English, like output/ above it: this is a real directory the user will meet in
+// Explorer and quote into a shell, and the gallery translates it for the card
+// rather than putting Thai in a path.
+const workSubdir = "work"
 
 // writeBrowserShot puts the picture in the work-file folder and answers with the
 // sandbox-relative path.

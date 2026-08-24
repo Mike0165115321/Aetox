@@ -442,6 +442,7 @@ function frameDrawing(svg: Element): void {
   box.className = 'drawing-box'
   svg.replaceWith(box)
   box.appendChild(svg)
+  capEnlargement(svg)
   const tools = document.createElement('div')
   tools.className = 'drawing-tools'
   for (const [cls, label] of [
@@ -455,6 +456,49 @@ function frameDrawing(svg: Element): void {
     tools.appendChild(button)
   }
   box.appendChild(tools)
+}
+
+// capEnlargement is the other half of the framed stage (.drawing-box in
+// style.css). The stage is one width for every drawing so that a transcript
+// stops looking like the app cannot draw the same picture twice, and the svg
+// fills it — but "fills it" on its own is the 2026-08-14 bug wearing a frame:
+// a drawing composed at 380 units stretched across a 644px stage is 1.7x, and
+// every label in it is 1.7x too.
+//
+// CSS cannot see a viewBox, so the ceiling is written here, where it can. The
+// drawing may grow by up to a sixth of what it was composed at and no further:
+// enough that a drawing laid out at anything near the stage width simply fills
+// it, and a small one is enlarged slightly rather than blown up. Under that it
+// stays its own size, centred on the stage.
+//
+// No viewBox and no width attribute means nothing to reason from — width:auto
+// in the stylesheet keeps that case at its intrinsic size, which is the
+// behaviour it already had.
+const maxDrawingGrowth = 1.16
+
+function capEnlargement(svg: Element): void {
+  const composed = composedWidth(svg)
+  if (composed === 0) return
+  const cap = `max-width:${Math.round(composed * maxDrawingGrowth)}px`
+  const own = svg.getAttribute('style') ?? ''
+  svg.setAttribute('style', own === '' ? cap : `${own};${cap}`)
+}
+
+// The width the model laid the drawing out at: the third number of the viewBox,
+// or a plain pixel width attribute when there is no viewBox. A percentage width
+// is what the prompt asks for and says nothing about size, so it is not one.
+function composedWidth(svg: Element): number {
+  const box = (svg.getAttribute('viewBox') ?? '').trim().split(/[\s,]+/)
+  if (box.length === 4) {
+    const width = Number(box[2])
+    if (Number.isFinite(width) && width > 0) return width
+  }
+  const attr = (svg.getAttribute('width') ?? '').trim()
+  if (attr !== '' && !attr.endsWith('%')) {
+    const width = Number.parseFloat(attr)
+    if (Number.isFinite(width) && width > 0) return width
+  }
+  return 0
 }
 
 function confineDrawing(svg: Element, nth: number): void {

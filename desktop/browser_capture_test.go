@@ -44,6 +44,40 @@ func TestBrowserShotStaysOutOfTheProjectRoot(t *testing.T) {
 	}
 }
 
+// A screenshot is not a deliverable, and the gallery has one way of knowing
+// that: the folder it is in. If this ever writes flat into output/<session>
+// again, the shots go back to sitting level with the document somebody asked
+// for — 46 of 244 cards on the owner's machine, the day this was written.
+func TestBrowserShotGoesInTheWorkFolderSoTheGalleryCanStackIt(t *testing.T) {
+	root := t.TempDir()
+	a := seed(&App{cfg: config.Config{SandboxRoot: root}, projectFocused: true}, &conversation{id: "s1"})
+
+	rel, err := a.writeBrowserShot([]byte("PNG fake"))
+	if err != nil {
+		t.Fatalf("writeBrowserShot() = %v", err)
+	}
+	if want := "output/s1/" + workSubdir + "/"; !strings.HasPrefix(rel, want) {
+		t.Errorf("writeBrowserShot() = %q, want it under %q", rel, want)
+	}
+
+	// And the gallery has to read that folder back as the deck key. Going
+	// through ListArtifacts rather than asserting on folderUnder directly is
+	// the point: the two halves are only useful if they agree.
+	found := false
+	for _, art := range sweepSession(filepath.Join(root, "output", "s1"), "s1", root) {
+		if filepath.Base(art.Path) != filepath.Base(rel) {
+			continue
+		}
+		found = true
+		if art.Folder != workSubdir {
+			t.Errorf("the shot reports Folder %q, want %q — the gallery groups on this", art.Folder, workSubdir)
+		}
+	}
+	if !found {
+		t.Error("the shot never came back from the sweep at all")
+	}
+}
+
 // Two shots in one turn are two files. They were one for as long as the name
 // was fixed, which reads as the second capture having failed silently.
 func TestTwoShotsAreTwoFiles(t *testing.T) {

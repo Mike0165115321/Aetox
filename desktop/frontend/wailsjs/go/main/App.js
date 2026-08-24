@@ -198,6 +198,10 @@ export function CompleteSignIn(arg1, arg2) {
   return window['go']['main']['App']['CompleteSignIn'](arg1, arg2);
 }
 
+export function CompressArtifacts(arg1) {
+  return window['go']['main']['App']['CompressArtifacts'](arg1);
+}
+
 export function ConnectAccount(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['ConnectAccount'](arg1, arg2, arg3, arg4);
 }

@@ -57,6 +57,21 @@ type Artifact struct {
 	// Root is the workspace it was found under, so a gallery spanning the
 	// machine can say where a file lives without printing the whole path.
 	Root string `json:"root"`
+	// Folder is the session-relative directory the file sits in, slash-separated,
+	// and empty for a file at the top of its session — which is where a
+	// deliverable lands.
+	//
+	// It exists so the gallery can group without an index and without reading
+	// filenames. A subfolder under a session is always the same fact: several
+	// files that belong to one thing — the pages of a site the agent exported,
+	// the frames of an animation, the screenshots it took while reading (those
+	// go to work/, see workFileDir). One card for the folder says that; forty
+	// cards say the gallery does not know what it is showing.
+	//
+	// Session-relative rather than absolute because it is a label as well as a
+	// key: the card can print it. Nested folders keep their whole path here, so
+	// two files in different branches never collapse into one deck.
+	Folder string `json:"folder,omitempty"`
 }
 
 // ListArtifacts returns every file under <root>/output/<session> for each root
@@ -250,11 +265,29 @@ func sweepSession(dir, sessionID, root string) []Artifact {
 			return nil //lint:ignore nilerr an unreadable entry is skipped, not fatal
 		}
 		if art, ok := describeArtifact(path, sessionID, root); ok {
+			art.Folder = folderUnder(dir, path)
 			out = append(out, art)
 		}
 		return nil
 	})
 	return out
+}
+
+// folderUnder is the directory of path relative to the session folder, in
+// slashes, and "" for a file sitting at the top of it.
+//
+// Slashes rather than the OS separator because this crosses to the frontend and
+// is compared and printed there; a key that is "work" on one machine and
+// "work\\shots" on another is a key that groups differently per platform. A
+// path that will not resolve against dir answers "", which reads as top level —
+// the honest answer for a walk that has lost track of where it is, and one that
+// costs a file its deck rather than putting it in the wrong one.
+func folderUnder(dir, path string) string {
+	rel, err := filepath.Rel(dir, filepath.Dir(path))
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return ""
+	}
+	return filepath.ToSlash(rel)
 }
 
 // insideOutput resolves path and reports whether it sits inside one of this

@@ -12,14 +12,25 @@ import type { TKey } from './i18n.svelte'
 
 const DAY_MS = 86_400_000
 
-export function dayBucket(iso: string | undefined): TKey {
+/** How many calendar days back this timestamp falls. Infinity when unreadable. */
+export function daysAgo(iso: string | undefined): number {
   const parsed = iso ? Date.parse(iso) : NaN
-  if (Number.isNaN(parsed)) return 'sidebar.older'
+  if (Number.isNaN(parsed)) return Infinity
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
   const thatDay = new Date(parsed)
   thatDay.setHours(0, 0, 0, 0)
-  const days = Math.round((todayStart.getTime() - thatDay.getTime()) / DAY_MS)
+  return Math.round((todayStart.getTime() - thatDay.getTime()) / DAY_MS)
+}
+
+// Split out of dayBucket rather than copied beside it, because the gallery now
+// asks the same question a second way: "select everything from yesterday" has to
+// mean the same yesterday the heading over those cards says. Two answers to
+// which day it is, in one view, is a selection that quietly misses a card the
+// user is looking straight at.
+export function dayBucket(iso: string | undefined): TKey {
+  const days = daysAgo(iso)
+  if (!Number.isFinite(days)) return 'sidebar.older'
   if (days <= 0) return 'sidebar.today'
   if (days === 1) return 'sidebar.yesterday'
   if (days <= 7) return 'sidebar.last7Days'

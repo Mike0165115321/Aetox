@@ -799,6 +799,15 @@ func computing() string {
 // a person scans down a column rather than reads. Merged, the layer would say
 // "make something visual", which is the instruction that produces decoration.
 //
+// Which left the boundary itself unowned, and 25 ส.ค. it cost a chart: a score
+// per row, every label in Thai, drawn in SVG where nothing measures text, so
+// the labels ran through the bars (drawing() carries the measurements). The
+// sentence about width added here is the panel's half of that seam. It is
+// written as the capability the panel has and the drawing does not — the
+// browser does the measuring — rather than as a rule about charts, because the
+// same fact decides every layout where text length is load-bearing, and a rule
+// about charts would only have moved the failure to the next shape.
+//
 // The hazards are the ones the sanitizer already enforces (no <style> element,
 // no script) plus the one it cannot: a fixed pixel width overflows a bubble
 // whose width the model never learns, exactly as an unsized <svg> did.
@@ -806,7 +815,11 @@ func panel() string {
 	return "A laid-out block — a row of cards, a small table of figures, a set of bars beside their " +
 		"labels — is worth reaching for when the answer is several things of the same kind, each " +
 		"carrying the same few facts: that is a shape a person scans, and prose makes them read it " +
-		"instead.\n" +
+		"instead. It is also the answer whenever the width of your own words decides whether the thing " +
+		"is readable — a name in one column and a bar or a figure in the next. Here the browser measures " +
+		"the text, so a label column written as minmax(0, max-content) is exactly as wide as the longest " +
+		"label actually is, in whatever language you wrote it, at whatever size the reader has chosen. " +
+		"That is a guarantee a drawing cannot give you.\n" +
 		"Colour it with the app's own variables — var(--surface-panel), var(--border-subtle), " +
 		"var(--text-primary), var(--text-dim), var(--interactive) — never a hex value. They resolve " +
 		"against whichever theme the user is running, so a panel written this way is the app's surface " +
@@ -815,7 +828,9 @@ func panel() string {
 		"Style only through style=\"…\" attributes: a <style> element and a <script> are both removed " +
 		"before the answer is shown, so anything that depended on them is silently gone. Size everything " +
 		"in percentages, fr units and minmax(0, 1fr) — you do not know how wide the panel is, and a fixed " +
-		"pixel width spills out of it. Keep it to what the answer needs; a panel is a way of saying " +
+		"pixel width spills out of it. Where one thing in a row stretches, say so about everything that " +
+		"does not: a figure sharing a row with a full-width bar, left to shrink, wraps itself one digit " +
+		"per line. Keep it to what the answer needs; a panel is a way of saying " +
 		"something, and one built around a single fact is decoration.\n"
 }
 
@@ -873,6 +888,29 @@ func planCard() string {
 // error, and the next drawing is built the same way. Stating what the renderer
 // is (a sanitizer, so anything that could execute is gone) rather than listing
 // forbidden tags is what makes that generalize past the three tags named.
+//
+// The paragraph about measuring text is the same kind of silent failure, found
+// 25 ส.ค. in two drawings from one answer. Both laid a score chart out as
+// labels at x="0" with the bars starting at a fixed x — a label column whose
+// width the model had guessed. Measured in the app's own font: the longest
+// label came to 119.4 units inside the 150 it was given, so that drawing
+// survived on 30 units of slack, and the next one, with longer labels, ran its
+// text through the bars. The same answer had a caption at x="338" in a
+// 600-unit viewBox, which simply ended off the edge.
+//
+// So it is not stated as "leave room for labels". A margin is a bet the model
+// re-takes on every drawing, in a language whose text it cannot measure, and it
+// will lose some of them. What is stated is the fact underneath — a <text> is a
+// point, not a column — and the two layouts where text length cannot cost
+// anything: a label on its own line above what it names, or, for rows of names
+// against values, not a drawing at all.
+//
+// That last clause is a seam between two layers, and both sides now name it.
+// panel() has always listed "a set of bars beside their labels" among the
+// things it is for; drawing() never handed the case over, so the two layers
+// overlapped in silence and the model picked by feel — which is how a chart
+// made entirely of Thai labels ended up in the one medium that cannot lay text
+// out.
 func drawing() string {
 	return "When what you are explaining is how several things relate — an order, a split, what feeds " +
 		"what, before against after — draw it instead of describing it. A reader gets a shape in one " +
@@ -893,11 +931,18 @@ func drawing() string {
 		"is saying — a thing still running, a flow going one way — never as decoration on a still picture. " +
 		"Write the whole drawing at the left margin with no blank line inside it and never inside a fenced " +
 		"block: a blank line hands the rest of it to the markdown parser, and a fence shows it as source " +
-		"instead of drawing it. A drawing is shown at the size of its own viewBox — 600 units wide draws " +
-		"600 pixels wide — shrinking to fit only when the window is narrower than that, so choose viewBox " +
-		"units as though they were pixels and pick font sizes that would read at that size. It is capped " +
-		"at 720px wide and 420px tall, so lay a drawing out across rather than down, and point at nothing " +
-		"on the network.\n" +
+		"instead of drawing it. A drawing is shown on a framed stage about 640px wide that every drawing " +
+		"in every answer gets, and it is scaled to fill that width — so lay it out at a viewBox around " +
+		"640 units wide and your units land as pixels and your font sizes read at the size you picked. " +
+		"Keep the height under about 390 units at that width, or the whole drawing is scaled down to fit " +
+		"it: lay a drawing out across rather than down, and point at nothing on the network.\n" +
+		"You cannot measure text, and SVG will not measure it for you: <text x=\"150\"> is a point, not a " +
+		"column, and a label that turns out wider than the room you left it runs straight through whatever " +
+		"you put beside it. So never place anything at a fixed x to the right of words you wrote — give a " +
+		"label its own line above the thing it names and start that thing at x=\"0\", where its length " +
+		"costs nothing. Rows of names against values — a score per row, a bar per row, a figure per row — " +
+		"are not a drawing at all: the browser measures text and you do not, so lay that out as a panel " +
+		"and let it.\n" +
 		"A drawing is not a decoration. Do not draw the shape of an answer that is one fact, one number, " +
 		"or one instruction — say it.\n"
 }

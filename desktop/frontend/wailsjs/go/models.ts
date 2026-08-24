@@ -274,6 +274,7 @@ export namespace main {
 	    size: number;
 	    modified: string;
 	    root: string;
+	    folder?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Artifact(source);
@@ -287,6 +288,7 @@ export namespace main {
 	        this.size = source["size"];
 	        this.modified = source["modified"];
 	        this.root = source["root"];
+	        this.folder = source["folder"];
 	    }
 	}
 	export class ArtifactPage {
@@ -513,6 +515,26 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.path = source["path"];
 	        this.status = source["status"];
+	    }
+	}
+	export class CompressReport {
+	    files: number;
+	    skipped: number;
+	    before: number;
+	    after: number;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CompressReport(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.files = source["files"];
+	        this.skipped = source["skipped"];
+	        this.before = source["before"];
+	        this.after = source["after"];
+	        this.error = source["error"];
 	    }
 	}
 	export class ContextSlice {

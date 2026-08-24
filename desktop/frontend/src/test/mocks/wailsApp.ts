@@ -280,6 +280,7 @@ export const DeleteArtifact = noop()
 // "Nothing worth drawing" is the right default: a card falls back to its icon,
 // so every gallery test renders without having to describe a file's insides.
 export const ArtifactPreview = vi.fn(async (..._args: any[]) => ({ kind: 'none' }) as any)
+export const CompressArtifacts = vi.fn(async (..._args: any[]) => ({ files: 0, skipped: 0, before: 0, after: 0 }) as any)
 export const OpenAgentsFolder = noop()
 export const SaveAgentProfile = noop()
 export const OpenSubagentsFolder = noop()

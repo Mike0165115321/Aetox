@@ -112,6 +112,8 @@ export function CompleteAccountSignIn():Promise<main.AccountState>;
 
 export function CompleteSignIn(arg1:string,arg2:string):Promise<main.ModelInfo>;
 
+export function CompressArtifacts(arg1:Array<string>):Promise<main.CompressReport>;
+
 export function ConnectAccount(arg1:string,arg2:string,arg3:string,arg4:Array<string>):Promise<connect.Account>;
 
 export function Connections():Promise<Array<connect.Status>>;

@@ -1819,7 +1819,13 @@
       <div class="tool-diff"><CodeDiff diff={s.diff ?? ''} /></div>
     {/if}
   {:else}
-    <div class="tool-step {s.state}">{@render stepFace(s, live)}</div>
+    <!-- The failure reason rides in the tooltip, not in the row. Printed
+         inline it was a full-width red sentence, and a tool that fails three
+         times running turned the transcript into three walls of red saying the
+         same thing. The glyph is what has to be honest here: an x row still
+         says it failed. The words stay one hover away, and the whole text is
+         in tool_runs.error either way. -->
+    <div class="tool-step {s.state}" title={s.error || undefined}>{@render stepFace(s, live)}</div>
   {/if}
   {/if}
 {/snippet}
@@ -1846,7 +1852,6 @@
       {#if s.state !== 'run'}<span class="del">-{s.removed ?? 0}</span>{/if}
     </span>
   {/if}
-  {#if s.error}<span class="tool-err">{s.error}</span>{/if}
 {/snippet}
 
 {#snippet toolTimeline(steps: ToolStep[], live: boolean)}

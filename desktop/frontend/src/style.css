@@ -720,7 +720,13 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    against the window edge. .chat-inner carries the centered reading column;
    splitting them keeps the scrollbar out of the middle of the screen. */
 .chat { flex:1; overflow-y:auto; overflow-x:hidden; }
-.chat-inner { max-width:1040px; margin:0 auto; width:100%; min-width:0; padding:22px 26px 8px; display:flex; flex-direction:column; gap:18px; font-size:var(--chat-font-size, 15.5px); }
+/* 30px, not 18px. An answer with headings and a drawing in it is a page, and at
+   18px the page ran straight into the next question with the same air a
+   paragraph gets inside it — nothing said where one turn ended (owner, 25 ส.ค.:
+   "อยากให้มีช่องว่างที่ชัดเจน ... เหมือนเว้นบรรทัดจริงๆ"). This is the outermost
+   of three gaps that all had to move together: turn, topic (the rule above a
+   heading), and figure (.drawing-box). */
+.chat-inner { max-width:1040px; margin:0 auto; width:100%; min-width:0; padding:22px 26px 8px; display:flex; flex-direction:column; gap:30px; font-size:var(--chat-font-size, 15.5px); }
 
 .empty-state { position:relative; overflow:hidden; flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; padding:32px; text-align:center; }
 .empty-state h2 { margin:0; font-size:var(--fs-3xl); font-weight:700; }
@@ -792,6 +798,15 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    user's own line stays capped, so it still reads as a right-hand bubble. */
 .msg { display:flex; max-width:100%; min-width:0; }
 .msg > .bubble { min-width:0; flex:1; }
+/* A rule between turns was built here and taken out again the same day (owner,
+   25 ส.ค., pointing at it: "ก่อนถึงแชทของผู้ใช้ไม่ต้องแสดง"). Worth a line
+   because the reasoning was sound and the answer was still no: a seam earns its
+   place where a reader loses the thread, and inside one long answer — where a
+   heading starts a new topic — they do. Between a question and its answer they
+   do not. The bubble is already a different shape on a different side; a line
+   there is the same fact said twice, and the 30px gap says the rest.
+   .msg.user keeps the cap on the row, which is what it always had — the row was
+   only ever widened so a full-width rule could reach the edge. */
 .msg.user { align-self:flex-end; max-width:min(80%, 620px); }
 .msg.user > .bubble { flex:0 1 auto; }
 .bubble { border-radius:var(--r-lg); padding:11px 14px; min-width:0; overflow-wrap:break-word; word-break:break-word; }
@@ -877,10 +892,6 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .tool-step .tool-stat { flex:0 0 auto; font-size:var(--fs-xs); font-variant-numeric:tabular-nums; }
 .tool-step .tool-stat .add { color:var(--status-success); }
 .tool-step .tool-stat .del { color:var(--status-danger); }
-.tool-step .tool-err {
-  min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-  font-size:var(--fs-xs); color:var(--status-danger);
-}
 /* A row with a diff behind it is a <button>, so it needs the button undone
    before it can look like the rows either side of it. width:100% and
    text-align:left are what keep it in the column the divs occupy. */
@@ -915,6 +926,36 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .markdown-body h4, .markdown-body h5, .markdown-body h6 {
   margin:1.5em 0 .5em; line-height:1.35; font-weight:700; color:var(--text-primary);
 }
+/* A new heading inside one answer is a new topic, and a topic change gets a
+   rule across the column — the same seam .said-block already uses for two
+   replies in one bubble, borrowed rather than invented (owner, 25 ส.ค.:
+   "อยากได้แบบเส้นแบ่ง เหมือน Qwen ตอนแยกหัวข้อตอบ").
+
+   Under .chat-inner, and that scope is load-bearing rather than tidiness. The
+   same renderer draws two other surfaces: the markdown preview beside the file
+   editor, and an artifact card's thumbnail. Unscoped, this rule outscores both
+   of their defences — .art-thumb-md's `border:0; padding:0` on headings is
+   (0,1,1) against this selector's (0,2,1) — and a 210px card would start
+   spending a fifth of its height on rules meant for a 1040px column. Reading a
+   chat is what asked for the seam; a .md file in the editor is what the user
+   wrote, and it is not this rule's business to add lines to it.
+
+   Direct children only: a heading nested in a list item or a blockquote is part
+   of that block, not a section of the answer. h4–h6 are left alone for the same
+   reason — a fourth-level heading is a label inside a section, and ruling every
+   one of them turns the seam back into a wall.
+
+   The model writes `---` before a heading often enough that the two must not
+   stack into a double line, so an <hr> immediately above one hands its job over
+   and the heading stays plain. */
+.chat-inner .markdown-body > :is(h1,h2,h3):not(:first-child) {
+  margin-top:1.9em; padding-top:1.05em; border-top:1px solid var(--border-subtle);
+}
+/* :not(:first-child) is carried over from the rule above rather than dropped as
+   redundant — a heading with an <hr> before it cannot be a first child, so it
+   buys nothing but the specificity to win. Without it this selector scores
+   under the one it is meant to override and the double line comes back. */
+.chat-inner .markdown-body > hr + :is(h1,h2,h3):not(:first-child) { margin-top:0; padding-top:0; border-top:none; }
 .markdown-body h1 { font-size:1.3em; }
 .markdown-body h2 { font-size:1.18em; }
 .markdown-body h3 { font-size:1.08em; }
@@ -963,12 +1004,69 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    resolves an attribute-less intrinsic width back to 100%, this catches it
    instead of returning silently to the bug. The height cap is the older one
    and unchanged — a model that writes viewBox="0 0 100 4000" must not push the
-   reply off the screen. */
+   reply off the screen.
+
+   That floor had already given way, and nothing said so. Measured on this file
+   at HEAD, 25 ส.ค.: a drawing written the way the prompt asks — viewBox plus
+   width="100%", no pixel width — renders at 988px in the chat column and 804px
+   beside the editor. Not 720. Two things had to both be true. `width:auto` on
+   an SVG that has a viewBox but no intrinsic width resolves to the container,
+   not to the viewBox, so the drawing was stretching in the first place; and the
+   cap that was supposed to catch that loses on specificity to
+   `.markdown-body > div > *` below (0,1,2 against 0,1,1) — a rule written to
+   fence in the `panel` layer, which matches every drawing too, because
+   frameDrawing wraps each one in a div. So a top-level drawing had no cap at
+   all, while one that markdown left inside a <p> kept the 720. Same picture,
+   two sizes, and the owner reading it as the app breaking: "บางทีมันพัง บางที
+   ขนาดไม่เท่ากัน".
+
+   Which is why the ceiling below is written as an inline style from markdown.ts
+   rather than as one more rule here. An inline style has no specificity fight
+   to lose.
+
+   25 ส.ค.: the size decision moved off this rule and onto the box around it,
+   and the paragraphs above are why it moved rather than being undone. Drawing
+   each one at its own intrinsic size is honest per drawing and incoherent down
+   a transcript: one chart lands 600 wide, the next 380, and a reader takes that
+   for the app failing to draw the same picture twice (owner: "เราไม่มีกรอบให้
+   กราฟชัดเจน บางทีมันเลยพัง บางทีขนาดไม่เท่ากัน"). So what is constant now is
+   the STAGE — .drawing-box is one width for every drawing in every answer — and
+   the drawing fills the stage it was given.
+
+   "Fills it" is the 2026-08-14 bug wearing a frame unless something stops it —
+   a drawing composed at 380 units across a 644px stage is 1.7x, measured, with
+   every label 1.7x with it. CSS cannot see a viewBox, so the ceiling is written
+   where it can be: markdown.ts (capEnlargement) puts a per-drawing max-width on
+   the svg at a sixth over what it was composed at. Anything laid out near the
+   stage width fills it; anything small is enlarged a little and centred, never
+   blown up. That inline max-width is the one that decides — nothing here
+   overrides it.
+
+   What is still sized here is what the box never wraps (markdown.ts skips both):
+   a plan card's own glyph, and KaTeX's pieces of a letter. */
 .markdown-body svg {
   display:block; width:auto; max-width:min(100%, 720px);
   height:auto; max-height:420px;
   margin:12px 0; color:var(--text-secondary);
 }
+/* The frame the drawing never had. Sunken surface, hairline, --r-md: the three
+   a fenced code block already wears, so a figure and a listing read as two of
+   the same kind of object instead of two inventions. The stage is what carries
+   the drawing's air now, so the svg inside gives up its own margin.
+   max-height stays inherited from the rule above — a drawing too tall for it
+   shrinks and margin-inline:auto keeps it centred on its stage rather than
+   stranded against the left edge.
+
+   Scoped to the chat for the reason the heading rule above is: a 680px stage
+   inside a 210px artifact thumbnail is not a stage, it is the card. Outside the
+   chat a drawing keeps exactly the size it has today — the inline cap
+   markdown.ts writes is a ceiling, and width:auto never reaches it. */
+.chat-inner .markdown-body .drawing-box {
+  margin:24px 0; padding:16px 18px; max-width:680px;
+  background:var(--surface-sunken);
+  border:1px solid var(--border-subtle); border-radius:var(--r-md);
+}
+.chat-inner .markdown-body .drawing-box > svg { width:100%; max-width:100%; height:auto; margin:0 auto; }
 /* A panel in an answer (internal/prompt's `panel` layer): laid out by the model
    with style attributes, painted with the app's own variables, and therefore
    already wearing the user's theme. Nothing here styles it — the two rules are
@@ -1322,8 +1420,13 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .proj-chats li button { position:relative; }
 .proj-group-sess::before,
 .proj-chats li button::before { inset:0; }
-/* A drawing box has no border of its own to inherit a radius from. */
-.markdown-body .drawing-box::before { border-radius:var(--r-md); }
+/* The drawing box carries --r-md of its own now (the frame added 25 ส.ค.), so
+   `border-radius:inherit` above already lands on the right corners — the same
+   way the code block beside it has always got them. Stated rather than deleted:
+   this line existed because the box had no border, and the next person to take
+   the frame off has to put it back. Outside the chat the frame is not applied
+   and the corners would resolve square, which costs nothing: the ring is lit
+   only by markLive, and only a streamed answer is ever live. */
 /* Motion off, signal kept: a steady lit outline still says which one is the
    one still working, which is the whole job. */
 @media (prefers-reduced-motion: reduce) {
@@ -3226,19 +3329,137 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 }
 .art-thumb-text { white-space:pre-wrap; word-break:break-word; font-family:var(--font-mono, ui-monospace, monospace); }
 /* The chat renderer's own spacing is built for a 700px column; at 9.5px in a
-   210px card its margins alone would fill the box. */
-.art-thumb-md :global(*) { margin:0 0 4px; font-size:inherit !important; line-height:1.45; }
-.art-thumb-md :global(h1), .art-thumb-md :global(h2), .art-thumb-md :global(h3) {
+   210px card its margins alone would fill the box.
+   These four rules said that and did nothing for it. They were written with
+   `:global(...)`, which is Svelte's syntax for reaching out of a scoped
+   component <style> — and this file is not one. It is a plain stylesheet, where
+   :global is not a selector, so the browser dropped all four at parse time.
+   Checked 25 ส.ค. through the CSSOM: of the rules naming .art-thumb-md, exactly
+   one survived (the padding above), and a <pre> in a thumbnail still computed
+   display:block after a rule two lines below said none.
+
+   Both classes are on the same element, so writing .art-thumb-md.markdown-body
+   is what makes them land: `.art-thumb-md *` on its own scores under
+   .markdown-body's own element rules and would have gone on doing nothing in a
+   quieter way. */
+.art-thumb-md.markdown-body * { margin:0 0 4px; font-size:inherit !important; line-height:1.45; }
+.art-thumb-md.markdown-body :is(h1,h2,h3) {
   font-weight:700; color:var(--text-primary); border:0; padding:0;
 }
-.art-thumb-md :global(pre), .art-thumb-md :global(img), .art-thumb-md :global(table) { display:none; }
-.art-thumb-md :global(ul), .art-thumb-md :global(ol) { padding-left:14px; }
+.art-thumb-md.markdown-body :is(pre,img,table) { display:none; }
+.art-thumb-md.markdown-body :is(ul,ol) { padding-left:14px; }
 .art-thumb-sheet { width:100%; border-collapse:collapse; font-size:9px; color:var(--text-secondary); }
 .art-thumb-sheet td {
   border:1px solid var(--border-subtle); padding:3px 5px; max-width:70px;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 .art-thumb-sheet td.head { font-weight:700; color:var(--text-primary); background:var(--surface-panel); }
+
+/* How many files are in the folder this card stands for, said on the picture.
+   The card itself is a card like any other — same size, same preview, same
+   caption. Four designs that made it look like a pile were tried and dropped
+   (paper edges, a fan, a seamless mosaic, a card spanning two columns): each
+   one made the folder legible by making it unlike the files around it, and a
+   gallery of equal tiles is the thing that was worth keeping. So the count is
+   the only mark, sitting where a photo app puts it. */
+/* ---- picking more than one ----
+   The controls sit at the right-hand end of the row the range picker is on,
+   because they act on exactly what that picker put on screen. margin-left:auto
+   is the whole placement: one rule, and the row keeps working when a range name
+   grows in another language. */
+.art-bulk { display:flex; align-items:center; gap:6px; margin-left:auto; }
+.art-picked { color:var(--text-secondary); font-size:var(--fs-sm); font-variant-numeric:tabular-nums; }
+.art-range.danger { color:var(--status-danger); }
+.art-range.danger.on { background:var(--status-danger); color:var(--text-on-interactive); border-color:var(--status-danger); }
+.art-range:disabled { opacity:.5; cursor:default; }
+
+/* Split control: the answer people mean most of the time on the left, the rest
+   behind the chevron. The menu hangs from the right edge because the whole
+   toolbar is pinned there and a left-anchored menu would run off the pane. */
+.art-span { position:relative; display:flex; }
+.art-span > .art-range:first-child { border-top-right-radius:0; border-bottom-right-radius:0; }
+.art-span-more { border-top-left-radius:0; border-bottom-left-radius:0; margin-left:-1px; padding-left:6px; padding-right:6px; }
+.art-span-menu {
+  position:absolute; top:calc(100% + 5px); right:0; z-index:20; min-width:172px;
+  display:flex; flex-direction:column; padding:5px;
+  background:var(--surface-panel); border:1px solid var(--border-strong);
+  border-radius:var(--r-md); box-shadow:0 12px 32px #0000006b;
+}
+.art-span-menu button {
+  text-align:left; padding:7px 10px; border-radius:var(--r-sm);
+  color:var(--text-secondary); font-size:var(--fs-sm);
+}
+.art-span-menu button:hover { background:var(--surface-row-hover); color:var(--text-primary); }
+
+/* The tick, floated over the card's own corner. Quiet until it is wanted:
+   forty checkboxes drawn on a grid of work is a filing cabinet, not a gallery.
+   z-index over the thumbnail, which is where it sits. */
+.art-card { position:relative; }
+.art-tick {
+  position:absolute; left:8px; top:8px; z-index:4;
+  width:19px; height:19px; display:grid; place-items:center;
+  border-radius:5px; border:1px solid var(--border-strong);
+  background:color-mix(in srgb, var(--surface-app) 80%, transparent);
+  color:var(--text-on-interactive); cursor:pointer;
+  opacity:0; transition:opacity .12s, background .12s, border-color .12s;
+}
+.art-card:hover .art-tick, .art-tick:focus-visible, .art-tick.on,
+.art-grid.picking .art-tick { opacity:1; }
+.art-tick.on { background:var(--interactive); border-color:var(--interactive); }
+.art-card.picked { border-color:var(--interactive); }
+
+/* The drag box. The grid is its frame of reference, so the grid is what has to
+   be positioned — without this the box would anchor to the page and slide away
+   from the cards as the gallery scrolls. */
+.art-grid { position:relative; }
+.art-band {
+  position:absolute; z-index:6; pointer-events:none;
+  border:1px solid var(--interactive);
+  background:color-mix(in srgb, var(--interactive) 16%, transparent);
+  border-radius:var(--r-xs);
+}
+/* Dragging over a grid of pictures otherwise selects them as page content, and
+   the browser paints a blue wash over half the gallery. */
+.art-grid.picking, .art-grid:active { user-select:none; }
+
+/* What the last compression gave back, kept on screen until dismissed. */
+.art-squeezed {
+  display:flex; align-items:center; gap:9px; margin:10px 0 2px; padding:8px 12px;
+  border:1px solid var(--border-subtle); border-radius:var(--r-md);
+  background:var(--surface-panel); color:var(--text-secondary); font-size:var(--fs-sm);
+}
+.art-squeezed > :first-child { color:var(--status-success); flex:none; }
+/* Turning while it works. The count beside it is the honest signal — this only
+   says the page is still alive between two of them.
+   tool-spin, not a fifth keyframe that says rotate(360deg): the tool timeline
+   and the background-work card already spin at that rate, and a spinner that
+   turns at a different speed from every other spinner in the app reads as a
+   different kind of waiting. */
+.art-squeeze-spin { display:flex; flex:none; color:var(--interactive); animation:tool-spin 1.2s linear infinite; }
+.art-squeeze-spin svg { display:block; }
+/* How far along, drawn on the strip's own bottom edge rather than as a bar of
+   its own: the strip is already the width of the thing being filled. */
+.art-squeeze-bar {
+  position:absolute; left:0; bottom:0; height:2px; width:var(--p, 0%);
+  background:var(--interactive); border-radius:0 2px 2px 0;
+  transition:width .18s ease-out;
+}
+.art-squeezed { position:relative; overflow:hidden; }
+.art-squeezed .art-del { margin-left:auto; }
+
+.art-deck-count {
+  position:absolute; right:7px; bottom:7px; z-index:2;
+  min-width:20px; padding:1px 7px; border-radius:999px;
+  background:color-mix(in srgb, var(--surface-app) 80%, transparent);
+  border:1px solid var(--border-default);
+  color:var(--text-secondary); font-size:var(--fs-xs); text-align:center;
+  font-variant-numeric:tabular-nums;
+}
+/* Above the fade .art-thumb draws over its own bottom edge, or the number sits
+   in the mist. */
+.art-thumb::after { z-index:1; }
+.art-chev { display:flex; flex:none; margin-left:auto; color:var(--text-dim); transition:transform .14s; }
+.art-chev.on { transform:rotate(180deg); }
 
 .art-name-row { display:flex; align-items:center; gap:6px; min-width:0; padding:0 14px; }
 .art-meta { padding:0 14px; }

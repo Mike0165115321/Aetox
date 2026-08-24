@@ -36,10 +36,10 @@ func bootGalleryApp(t *testing.T) *App {
 func writeArtifact(t *testing.T, a *App, session, name string, age time.Duration) string {
 	t.Helper()
 	dir := filepath.Join(a.cur().cfg.SandboxRoot, "output", session)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	path := filepath.Join(dir, filepath.FromSlash(name))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -221,5 +221,37 @@ func TestAnEnormousHTMLPageFallsBackToAnExcerpt(t *testing.T) {
 	}
 	if !strings.HasSuffix(got.Text, "…") {
 		t.Error("a clipped excerpt must show that it was clipped")
+	}
+}
+
+// The folder a file sits in is the whole grouping key, so it has to survive the
+// sweep exactly: empty at the top of a session, the folder name one level down,
+// and a nested path in slashes rather than in whatever the OS separates with.
+// A key that is "a/b" on one machine and "a\b" on another groups differently
+// per platform, which is the kind of bug nobody sees until a screenshot.
+func TestFolderIsWhatGroupsFilesIntoADeck(t *testing.T) {
+	a := bootGalleryApp(t)
+	writeArtifact(t, a, "s1", "report.md", time.Hour)
+	writeArtifact(t, a, "s1", "work/page-1.png", time.Hour)
+	writeArtifact(t, a, "s1", "work/shots/page-2.png", time.Hour)
+
+	want := map[string]string{
+		"report.md":  "",
+		"page-1.png": "work",
+		"page-2.png": "work/shots",
+	}
+	seen := map[string]string{}
+	for _, art := range a.ListArtifacts() {
+		seen[art.Name] = art.Folder
+	}
+	for name, folder := range want {
+		got, ok := seen[name]
+		if !ok {
+			t.Errorf("%s never came back from the sweep", name)
+			continue
+		}
+		if got != folder {
+			t.Errorf("%s reports Folder %q, want %q", name, got, folder)
+		}
 	}
 }
