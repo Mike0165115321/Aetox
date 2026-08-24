@@ -179,7 +179,7 @@ func TestClosingATabTellsTheWindow(t *testing.T) {
 	app := hostWithTabs(t, "web-agent-1", []string{"web-agent-1"}, "web-agent-1")
 	events := captureEvents(app)
 
-	app.closeTab("web-agent-1")
+	app.closeTab("web-agent-1", closedByApp)
 
 	closed := []string{}
 	for _, ev := range *events {
@@ -204,9 +204,9 @@ func TestClosingATabTwiceOnlyAnnouncesItOnce(t *testing.T) {
 	app := hostWithTabs(t, "web-agent-1", []string{"web-agent-1"}, "web-agent-1")
 	events := captureEvents(app)
 
-	app.closeTab("web-agent-1")
+	app.closeTab("web-agent-1", closedByApp)
 	app.browsers.backend.(*fakeBackend).drain()
-	app.closeTab("web-agent-1")
+	app.closeTab("web-agent-1", closedByApp)
 
 	n := 0
 	for _, ev := range *events {
@@ -230,7 +230,7 @@ func TestTheViewOutlivesTheTabUntilItIsActuallyDestroyed(t *testing.T) {
 	app := hostWithTabs(t, "web-agent-1", []string{"web-agent-1"}, "web-agent-1")
 	view := app.browsers.views["web-agent-1"].(*fakeView)
 
-	app.closeTab("web-agent-1")
+	app.closeTab("web-agent-1", closedByApp)
 
 	// Closed to everyone who asks — immediately.
 	if app.browsers.live("web-agent-1") {

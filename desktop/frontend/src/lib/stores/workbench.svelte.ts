@@ -4,7 +4,7 @@
 // under lib/workbench/ render from this; nothing else mutates it directly.
 
 import {
-  TerminalStart, TerminalClose, ReadFile, ReadWorkbook,
+  TerminalStart, TerminalClose, BrowserClose, ReadFile, ReadWorkbook,
   RelativizePath, SaveChatFile, WorkbenchTabsChanged, ResolveAddress,
 } from '../../../wailsjs/go/main/App'
 import type { main, ooxml } from '../../../wailsjs/go/models'
@@ -131,9 +131,16 @@ export function browserTabClosedByEngine(id: string): void {
   removeTab(id)
 }
 
-/** Close a tab, stopping its backing terminal session if it has one. */
+/** Close a tab, stopping whatever is running behind it.
+ *
+ * This is the × on the strip and the only thing in the window that means a
+ * PERSON closed a tab. It has to say so here, where the click is, rather than
+ * leaving it to the pane's teardown: an unmount happens for several reasons and
+ * only one of them is this one, so a close inferred from a lifecycle hook
+ * reports every reason as the user (browser-tab-lifetime-2026-08-25.md). */
 export async function closeTab(tab: WorkbenchTab): Promise<void> {
   if (tab.kind === 'terminal') await TerminalClose(tab.id)
+  if (tab.kind === 'browser') BrowserClose(tab.id)
   removeTab(tab.id)
 }
 

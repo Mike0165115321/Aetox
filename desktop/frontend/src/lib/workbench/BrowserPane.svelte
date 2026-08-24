@@ -3,7 +3,7 @@
   import { recordVisit, type WorkbenchTab } from '../stores/workbench.svelte'
   import { cockpit, isOverlayView } from '../stores/cockpit.svelte'
   import {
-    BrowserOpen, BrowserNavigate, BrowserSetBounds, BrowserSetVisible, BrowserClose, BrowserSetZoom,
+    BrowserOpen, BrowserNavigate, BrowserSetBounds, BrowserSetVisible, BrowserSetZoom,
   } from '../../../wailsjs/go/main/App'
   import { EventsOn } from '../../../wailsjs/runtime/runtime'
   import BrowserStart from './BrowserStart.svelte'
@@ -134,9 +134,23 @@
     if (visible) reflow()
   })
 
+  // Unmounting is not closing, and this used to treat it as if it were.
+  //
+  // A pane goes away for reasons that have nothing to do with anybody's
+  // intent — most often because the ENGINE closed the tab and told us, which
+  // takes the chip off the strip and takes this pane with it. Closing from
+  // here then asked Go to close what Go had just closed, and Go read that
+  // second call as the user pressing ×. The agent was told a person had shut
+  // its page, six seconds after it opened one, three times in forty seconds
+  // (docs/architecture/browser-tab-lifetime-2026-08-25.md).
+  //
+  // Every close now says who it is at the place it happens: the × goes through
+  // the store's closeTab, the agent's own close goes through its tool, and a
+  // window orphaned by a reload — the one case this hook was really covering,
+  // and the one case where it does not run at all — is swept by
+  // CloseAllBrowserTabs on the next mount.
   onDestroy(() => {
     off()
-    if (opened) BrowserClose(tab.id)
   })
 </script>
 

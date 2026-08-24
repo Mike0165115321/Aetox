@@ -6680,3 +6680,75 @@ The rule does not stop at parameters. **A tool name teaches the call shape befor
 
 `web_search` takes both `query` and `queries` and merges them into one list. One idea, two doors, and this rule does not reach it — both names are perfectly ordinary English. It is a duplicate rather than a naming mistake, and it is still to be decided.
 
+## 182. Decision — A Close That Does Not Say Who Should Not Compile (2026-08-25)
+
+Owner, handed the app's own problem report: *"อันนี้คือปัญหาอะไร เครื่องมือ browser ล้มซ้ำด้วยเหตุเดียวกัน"* — and then, on the first fix offered: *"แน่ใจหรอครับแนวทางนี้จะแก้ระยะยาวได้"*, and *"ไปคิดสถาปัตยกรรมที่ดีมาจริงๆ ก่อนหน้ามันเคยดีครับ"*.
+
+He was right twice. The first fix was a guard, and it missed a live second path before it was even written. And the subsystem really had been good: what went wrong was added to it, twice, by people with no reason to look.
+
+**Design:** [docs/architecture/browser-tab-lifetime-2026-08-25.md](architecture/browser-tab-lifetime-2026-08-25.md), which continues [browser-subsystem-2026-08-17.md](architecture/browser-subsystem-2026-08-17.md) and is a fifth instance of its thesis.
+
+### 182.1 What the app reported about itself
+
+Three `browser scroll` calls refused in forty seconds, each with *"the page you were working on was closed (the user closed the tab)"*, one of them **six seconds after a successful `open`**. Nobody had touched a tab.
+
+In 902 `browser` calls this message has fired three times in the life of the app, and all three are these. Its true-positive rate is zero — which is not the same as saying the case it describes is not real. It is rare, the app is three weeks old, and the message stays.
+
+### 182.2 The loop, and the two additions that made it
+
+```
+Go: closeTab(id)                     any reason at all
+  └─ emit workbench:close-browser    added §171, 24 Aug
+       └─ the window drops the chip
+            └─ the pane unmounts
+                 └─ onDestroy → BrowserClose(id)   written 21 Jul
+                      └─ "the user closed it"      added 22 Aug
+```
+
+Each step was correct when it was written. On **21 July** `BrowserClose` meant one thing — end this tab — and calling it from a component teardown was right. On **22 August** it gained a second meaning, *and the user did it*, and nobody re-read a caller from five weeks earlier. On **24 August** §171 gave the engine's close an event so a dead chip would stop haunting the strip, which completed a circle back into the door that now meant "a person did this".
+
+The store's own comment shows how close this came to being caught: `browserTabClosedByEngine` uses `removeTab` rather than `closeTab` explicitly because *"the close already happened — calling back into Go would be this window asking the engine to do again what the engine just told it about"*. Exactly right, and defeated one level down by a lifecycle hook nobody was thinking about.
+
+### 182.3 Why the first fix was rejected — including by me
+
+The first proposal was: do not stamp the flag if the tab is already gone. It catches the echo and **misses `CloseAllBrowserTabs`**, which collects ids while they are still in `tabs` and closes them one at a time. That path is a frontend reload, it is not the user, and it was open before the guard was proposed and would have stayed open after.
+
+A guard on the paths you happen to know about is not an architecture. The rule was still prose, and prose is what failed here twice already.
+
+### 182.4 The reason is an argument now
+
+```go
+type closeReason int
+
+const (
+	closedByUser  closeReason = iota + 1
+	closedByAgent
+	closedByApp
+)
+```
+
+**No zero value, deliberately.** `a.closeTab(id)` does not compile. A tab can stop existing for three reasons, the agent needs a different sentence for each, and a close that will not say which is not one this program knows how to report.
+
+`BrowserClose` is now the × on the strip and nothing else — a Wails binding whose only caller is the window. `closeAgentTab` passes `closedByAgent`, which it had been trying to say through a comment. The sweep passes `closedByApp`, and gets a third message that names no culprit: *"the page you were working on is no longer open — open it again and carry on from there."*
+
+### 182.5 The other half was in the window, and it was one line
+
+`onDestroy` closed the tab. An unmount is a **lifecycle** event and never an intent — the pane goes away when the engine closed the tab, when the strip changes, when anything above it re-renders. Intent now gets stated where it happens: the store's `closeTab` calls `BrowserClose` because that is the × being clicked, and the teardown calls nothing.
+
+It turns out the hook was covering a case the sweep already covers better. The one moment a native window is genuinely orphaned is a frontend reload — and a reload does not run `onDestroy` at all.
+
+### 182.6 The record grew an id
+
+`agentTabClosed bool` could only answer *"was something closed recently"*, while the question is *"what happened to the page I am holding"*. Those come apart the instant the agent opens a new page, which is why the message landed on a scroll six seconds after a successful open.
+
+It is `goneID`/`goneWhy` now, cleared in `open` the moment the agent has a page again, and written only by the call that actually removed a tab — so the echo is a no-op **by construction rather than by a guard**. "Said once" (22 Aug) is unchanged and so is `agentTabPeek`; merging those two is a different argument and was not made here.
+
+### 182.7 The instrument that agreed with me
+
+Every test was watched failing against the old code first. One of them was a lie on the first attempt: the pane test passed either way, because `openBrowserTab()` makes a tab with no URL, the pane never latches `opened`, and the old teardown would not have closed anything either. It only became a test once it opened a real page first.
+
+§180.5 was one day earlier and about the same thing. Twice in two days is not a coincidence; it is the cost of writing the test after the fix, when you already know what you want it to say.
+
+### 182.8 The rule this leaves behind
+
+**An event is not an intention.** A component unmounting, a list changing, a window reloading — these say that something happened, never that somebody meant it. The moment a piece of state means "somebody meant this", the only safe place to set it is where the meaning is, and the only safe way to carry it is as an argument the compiler will demand.

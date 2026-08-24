@@ -795,16 +795,23 @@ type browserHost struct {
 	lastID     string
 	agentID    string
 	agentOrder []string
-	// agentTabClosed remembers that a page the agent was working was closed
-	// out from under it, so the next thing the agent asks of the browser can
-	// say so instead of answering "you have no page open" as though the agent
-	// had forgotten to open one. Owner, 22 ส.ค.: a click in the browser is a
-	// user-side action, and the model is meant to hear about it and carry on.
+	// goneID and goneWhy remember that a page the agent was working stopped
+	// existing, and who ended it, so the next thing the agent asks of the
+	// browser can say so instead of answering "you have no page open" as though
+	// the agent had forgotten to open one. Owner, 22 ส.ค.: a click in the
+	// browser is a user-side action, and the model is meant to hear about it
+	// and carry on.
 	//
-	// One flag rather than a list of ids: what the model can act on is that the
-	// page is gone, and the only move from there is to open again. Which id it
-	// used to have is not something it can do anything with.
-	agentTabClosed bool
+	// The id is half the record and not decoration. Without it this was a bare
+	// bool that anything could raise, which could only answer "did something get
+	// closed recently" — while the question being asked is "what happened to the
+	// page I am holding". The two come apart the moment the agent opens a new
+	// page: a bool set before that survives the reopen and lands on the first
+	// action of a fresh, perfectly live tab. So the id is cleared the moment the
+	// agent has a page again (see open), and the reason is written only by the
+	// call that actually removed a tab (see closeTab).
+	goneID  string
+	goneWhy closeReason
 }
 
 func newBrowserHost(app *App) *browserHost {
@@ -851,6 +858,12 @@ func (h *browserHost) open(id, url string, x, y, w, hgt int) {
 			if !slices.Contains(h.agentOrder, id) {
 				h.agentOrder = append(h.agentOrder, id)
 			}
+			// The agent has a page again, so whatever happened to the last one
+			// has stopped being news. Cleared HERE rather than when the message
+			// is read, because a record that outlives the reopen is a sentence
+			// about a tab that no longer exists, delivered against one that
+			// does — which is the whole failure this pair replaced.
+			h.goneID, h.goneWhy = "", 0
 		}
 		h.mu.Unlock()
 	})
@@ -1177,23 +1190,38 @@ func (a *App) CloseAllBrowserTabs() {
 	}
 	h.mu.Unlock()
 	for _, id := range ids {
-		a.BrowserClose(id)
+		// The app tidying up after a reload, which is not the user and must not
+		// be reported as one: the agent is told its page is gone, not that
+		// somebody closed it.
+		a.closeTab(id, closedByApp)
 	}
 }
 
-// BrowserClose is the frontend's door onto closing a tab, so every call to it
-// is the user: the × on the tab strip, or the panel closing behind one. The
-// agent's own `browser tabs close` goes to closeTab instead, which is what
-// keeps the note this leaves behind honest.
+// closeReason says who ended a tab.
+//
+// It has no zero value on purpose. A tab can stop existing for three different
+// reasons and the agent needs to be told a different thing about each, so a
+// close that does not say which is not a close this program knows how to
+// report — and it should not compile.
+//
+// The rule this replaces was prose: "BrowserClose is the frontend's door, so
+// every call to it is the user." True when it was written and false five weeks
+// later, because a lifecycle hook in the window and a sweep in the engine both
+// reached it and neither is a user. See
+// docs/architecture/browser-tab-lifetime-2026-08-25.md.
+type closeReason int
+
+const (
+	closedByUser  closeReason = iota + 1 // the × on the tab strip
+	closedByAgent                        // the agent's own `browser tabs close`
+	closedByApp                          // a sweep, a teardown, a view that died
+)
+
+// BrowserClose is the × on the tab strip, and nothing else. It is a Wails
+// binding, so the window is its only caller; every close inside the engine
+// names its own reason through closeTab.
 func (a *App) BrowserClose(id string) {
-	if isAgentTabID(id) {
-		if host, err := a.browserHostLazy(); err == nil {
-			host.mu.Lock()
-			host.agentTabClosed = true
-			host.mu.Unlock()
-		}
-	}
-	a.closeTab(id)
+	a.closeTab(id, closedByUser)
 }
 
 // closeTab is the close itself, with nothing said about who asked for it.
@@ -1209,7 +1237,7 @@ func (a *App) BrowserClose(id string) {
 // So `tabs` and `agentOrder` are dropped immediately (live() reads `tabs`, so
 // the tab is closed the instant this returns) and `views` is dropped by the
 // queued func, after the window is actually gone.
-func (a *App) closeTab(id string) {
+func (a *App) closeTab(id string, why closeReason) {
 	host, err := a.browserHostLazy()
 	if err != nil {
 		return
@@ -1218,6 +1246,16 @@ func (a *App) closeTab(id string) {
 	v := host.views[id]
 	_, wasOpen := host.tabs[id]
 	delete(host.tabs, id)
+	// Written by the call that actually removed the tab, and only that one.
+	// A second pass over an id already gone writes nothing, so re-entering
+	// this function cannot overwrite the reason the first pass gave — which
+	// matters because closing a tab tells the window, the window drops the
+	// chip, and dropping the chip used to come straight back round here. That
+	// echo is a no-op now by construction rather than by a guard somebody has
+	// to remember to keep.
+	if wasOpen && isAgentTabID(id) {
+		host.goneID, host.goneWhy = id, why
+	}
 	// The current tab falls back to whatever is left rather than to nothing,
 	// so closing one of several does not strand the agent mid-task.
 	host.agentOrder = slices.DeleteFunc(host.agentOrder, func(open string) bool { return open == id })

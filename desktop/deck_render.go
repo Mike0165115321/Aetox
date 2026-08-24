@@ -66,7 +66,7 @@ func (a *App) withExportTab(ctx context.Context, fileURL string, work func(call 
 	// A previous export that died mid-flight would otherwise leave its tab
 	// behind, and open() returns early when the id is taken — so the next
 	// export would quietly work on the previous deck.
-	a.BrowserClose(exportTabID)
+	a.closeTab(exportTabID, closedByApp)
 
 	// The export webview gets a top-level window of its own, parked outside
 	// every monitor — browser_windows.go arranges that on this id, because the
@@ -76,7 +76,7 @@ func (a *App) withExportTab(ctx context.Context, fileURL string, work func(call 
 	// composited is not optional; a window that produces no frames photographs
 	// as a blank rectangle (browser_capture.go, WebView2Feedback #1077, #2983).
 	host.open(exportTabID, fileURL, 0, 0, deckSlideWidthPx, deckSlideHeightPx)
-	defer a.BrowserClose(exportTabID)
+	defer a.closeTab(exportTabID, closedByApp)
 
 	if err := a.waitForDeckLoad(ctx, host, exportTabID); err != nil {
 		return err

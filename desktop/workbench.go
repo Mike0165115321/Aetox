@@ -254,19 +254,31 @@ func (a *App) agentTab() (AgentTabID, error) {
 	}
 	h.mu.Lock()
 	id := h.agentID
-	// Taken, not read: this is said once, to the call that runs into it. The
-	// second call has nothing new to learn from it, and repeating it would have
-	// the model believing the page was closed again.
-	closed := h.agentTabClosed
-	h.agentTabClosed = false
+	goneID, goneWhy := h.goneID, h.goneWhy
 	h.mu.Unlock()
-	if id == "" || !h.live(id) {
-		if closed {
-			return "", errAgentTabClosed
-		}
+	if id != "" && h.live(id) {
+		return AgentTabID(id), nil
+	}
+	if goneID == "" {
 		return "", errNoAgentTab
 	}
-	return AgentTabID(id), nil
+	// Taken, not read, and only on the path that actually says it: this is told
+	// once, to the call that runs into it. The second call has nothing new to
+	// learn from it, and repeating it would have the model believing the page
+	// was closed again. Consuming it here rather than above also stops an
+	// unrelated successful call from eating a sentence meant for the one that
+	// has no page.
+	h.mu.Lock()
+	h.goneID, h.goneWhy = "", 0
+	h.mu.Unlock()
+	switch goneWhy {
+	case closedByUser:
+		return "", errAgentTabClosed
+	case closedByApp:
+		return "", errAgentTabGone
+	}
+	// closedByAgent: it closed the page itself and does not need telling.
+	return "", errNoAgentTab
 }
 
 // agentTabPeek names the agent's tab without spending anything.
@@ -302,6 +314,14 @@ var errNoAgentTab = errors.New("the agent has no page open — use open first (t
 // user closed it. Worded so the next move is obvious, because a user action is
 // something to work around rather than something to stop for.
 var errAgentTabClosed = errors.New("the page you were working on was closed while you worked (the user closed the tab) — open it again and carry on from there")
+
+// errAgentTabGone is the third answer, and it exists because the other two were
+// both wrong for it. The app itself ended the page — a sweep after the window
+// reloaded, a view that died — so "the user closed it" is an accusation of
+// somebody who did nothing, and "you have no page open" reads as the agent
+// having forgotten to open one. Same next move as errAgentTabClosed, no blame
+// attached to it.
+var errAgentTabGone = errors.New("the page you were working on is no longer open — open it again and carry on from there")
 
 // browserWhere names the page a tab is on, as a parenthetical to hang off the
 // end of an action's result, or "" when the tab cannot say.
