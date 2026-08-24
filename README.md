@@ -40,8 +40,9 @@ It is one self-contained 47.5 MB executable. There is no runtime to install alon
 `node_modules`, no bundled copy of Chromium. It talks to whichever model you point it at —
 a hosted API, a subscription you already pay for, or a 9B/35B running in LM Studio or Ollama on
 your own GPU (your data never leaves your machine or country — hook it up to Ollama and not a single byte goes anywhere) — and the capability comes from the app rather than from the model's parameters.
-That is why a small local model can still read a picture, transcribe a recording, and produce
-a spreadsheet: `image_ocr`, `audio_transcribe` and `sheet_write` are the app's, not the model's.
+That is why a small local model can still read a picture, transcribe a recording, and hand you a
+deck that opens in PowerPoint: `image_ocr`, `audio_transcribe` and the slide exporter are the
+app's, not the model's.
 
 Two concrete jobs, to make that less abstract. *"Go through this folder of receipts and give me
 one spreadsheet"* — it OCRs each image, works out the totals in a JavaScript interpreter
@@ -55,14 +56,27 @@ both; the language switch is in Settings and in the first-run wizard. This READM
 
 ## Highlights
 
+- **A workbench of four rooms, and the agent works in the one you are looking at** — slides,
+  browser, files and terminal sit in the same window as the conversation. This is not a chat that
+  hands you a file at the end; it is a place of work you watch it happen in, and can reach into at
+  any point. The Code door adds a fifth: **Git**, which lays out the uncommitted working tree with
+  a per-file diff.
+- **Slide decks are what it is best at** — ask for a deck and you get one self-contained `.html`
+  file that opens in the slides room, where you page through it, present it full screen, and export
+  it as `.pptx`, `.pdf` or images from that same room. Slides are laid out on a 1280x720 box, which
+  is exactly PowerPoint's widescreen page, so the deck opens there without shifting.
 - **A browser we built into the app ourselves** — not a headless scrape: a WebView2 window
   actually composited into the app, with an address bar, back/forward, DevTools, and eight device
   presets that resize the native window so CSS media queries genuinely fire. The agent opens,
   reads, clicks and types into the same tab you're watching ([see it](#what-you-can-do-with-it)).
-- **Capability is built into the app, not borrowed from model parameters** — Thai/English OCR,
-  offline speech-to-text, and real Office file writing are built in-house and shipped inside the
-  one binary, so a 9B/35B model running on your own GPU does these jobs as well as a frontier one.
-  The app does the work; the model does not have to.
+- **It builds websites and systems, not just code in a chat box** — point it at a folder and you
+  get a file tree, a Monaco editor, unlimited real PTY terminal tabs, `git`, `grep` and `glob` over
+  the whole tree, plus `diagnostics` and `symbol` backed by language servers the app installs on
+  first use. It writes, then opens the result in the browser room next door, in one pass.
+- **Capability is built into the app, not borrowed from model parameters** — Thai/English OCR and
+  offline speech-to-text are built in-house and shipped inside the one binary, so a 9B/35B model
+  running on your own GPU does these jobs as well as a frontier one. The app does the work; the
+  model does not have to.
 - **22 model providers** — cloud (OpenAI, Anthropic, Gemini, DeepSeek, Groq, and more) and local
   (LM Studio, Ollama), switchable mid-conversation with context intact. Full list under
   [Everything it can do](#everything-it-can-do).
@@ -135,12 +149,17 @@ wails build -nsis    # with the installer
 
 ## What you can do with it
 
-**Hand over a folder and get a file back.** Point it at a directory of images, PDFs or
-recordings and ask for the thing you actually want. OCR (Thai and English), PDF text with the
-layout intact, and offline speech-to-text all feed the same conversation; `sheet_write`,
-`doc_write` hand back a real Office file, built from Go's standard-library
-zip and XML with no third-party dependency — live formulas, dates that sort, Thai vowels in the
-right place.
+**All of it happens on the same workbench you are watching.** One window holds four rooms —
+slides, browser, files and terminal — and the Code door adds a fifth, Git, which lays out the
+uncommitted working tree with a per-file diff. The agent does not work behind a curtain and hand
+you a file at the end: it opens a room, works in that room, and you can reach in and change
+something yourself without waiting for the turn to finish.
+
+**Slide decks are what it is best at.** Give it the subject and what you want out of it, and the
+deck comes back as one self-contained `.html` file that opens in the slides room, where you page
+through it, present it full screen, and export it as `.pptx`, `.pdf` or images from that same
+room. A slide's box is 1280x720, which is 13.333 x 7.5in at 96dpi — exactly PowerPoint's
+widescreen page, so the deck opens there without shifting.
 
 **Watch it work in a real browser.** Not a headless scrape: a WebView2 window composited into
 the app, with an address bar, back/forward, DevTools, and eight device presets that resize the
@@ -149,15 +168,22 @@ clicks by reference and types into it while you watch the same tab.
 
 <img src="docs/assets/cap-browser.png" alt="The agent driving a page in the workbench browser" width="100%">
 
+**Build websites and systems.** Point it at a folder and the files room becomes a real place to
+work: file tree, Monaco editor, unlimited real PTY terminal tabs, `git`, `grep` and `glob` over
+the whole tree, plus `diagnostics` and `symbol` backed by language servers the app installs on
+first use (gopls, typescript-language-server, svelteserver). Write a page, then open it and look
+at the real thing in the browser room next door, without leaving the app to find somewhere to run
+it.
+
+**Hand over a folder and get a file back.** Point it at a directory of images, PDFs or
+recordings and ask for the thing you actually want. OCR (Thai and English), PDF text with the
+layout intact, and offline speech-to-text all feed the same conversation.
+
 **Read what the model cannot see.** `image_ocr` runs Tesseract with Thai and English, so a
 screenshot, a scan or a photographed form becomes text a 9B/35B model can reason about — no vision
 model required, and the model that *can* see gets the image itself instead.
 
 <img src="docs/assets/cap-image-ocr.png" alt="OCR pulling Thai text out of an image" width="100%">
-
-**Point it at a repository.** File tree, Monaco editor, unlimited real PTY terminal tabs, `git`,
-`grep` and `glob` over the whole tree, plus `diagnostics` and `symbol` backed by language servers
-the app installs on first use (gopls, typescript-language-server, svelteserver).
 
 **Delegate to a specialist.** Type `@doc`, `@sheet`, `@github`, `@automation` or
 `@research` and your sentence reaches that agent word for word — not a paraphrase. Each is a folder on disk with its
