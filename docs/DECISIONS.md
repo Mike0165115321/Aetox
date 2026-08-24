@@ -6586,3 +6586,57 @@ The `queries` array was paid for by deleting two sentences that should never hav
 - **A paid API.** Brave's free tier would roughly double the sources per query, and it costs a key. Aetox does not make people sign up for things.
 - **An index of our own.** A million pages is 10 to 15 GB of index on the user's disk, against a 47.5MB application, and stale within weeks of the last crawl. It is most of why Perplexity is good and none of it is a thing a desktop app builds.
 - **Image search.** There is none, and the question came up the same day. `image_ocr` reads text out of a picture, `web_fetch` collects image URLs off a page it was already reading; neither is a search. DuckDuckGo's image endpoint wants a `vqd` token lifted from the HTML page first, which is a more fragile scrape than the one already here. Its own decision, not a footnote to this one.
+
+## 180. Decision — Measure the Tool Before Changing It (2026-08-24)
+
+Two questions went unasked all day, and both had answers sitting in `tool_runs` the whole time. The owner asked the first one out loud after the work was already committed: *"ก่อนเราเพิ่มแบบนี้อะควรวัดก่อนไหมว่า 1 อันแบบเดิมอ่ะที่มีมันเพียงพอไหม"*.
+
+### 180.1 Was the old version failing?
+
+`web_search` fan-out (§179) was built on the measurement that fan-out *works* — a second wording finds four sources a first did not. Nobody measured whether one wording was *insufficient*, which is a different question and the one that justifies building anything.
+
+Asked afterwards, of 161 recorded `web_search` calls:
+
+- **0 failures.**
+- **118 pairs of repeat searches inside three minutes of each other, in one session.**
+
+And the repeats are not retries after a bad answer. They fire in the same second:
+
+```
+03:13:04  "how editors handle file changed on disk detection reload"
+03:13:04  "file locking mechanisms operating system shared exclusive"
+03:13:04  "how desktop applications handle open files being modified"
+```
+
+**The model had been fanning out for months**, by spending three tool calls where the tool offered one. Three result blocks at roughly 774 tokens each, with the overlap between them paid for twice. So §179 was right, and it was right by evidence that was already collected and never read.
+
+### 180.2 What depended on the output?
+
+The worse omission. `web_fetch` was rewritten three times in one day — window, `find`, extraction cap — and at no point did anyone ask what was already relying on the shape of its output.
+
+Something was. A page assembled by `web_fetch` opens with its title, its URL, up to twenty image URLs and its links, and only then its prose. **BM25 scores prose.** So a `find` about anything textual selected passages from the middle and dropped that opening entirely.
+
+The owner noticed the capability before the code did: *"ค้นภาพ ไม่มีเลย แต่ก่อนหน้านี้โมเดลมันเจ๋งนะ มันหาภาพมาได้ เพราะมันไปโหลดมา"*. There is no image search in Aetox and there never was; what there was is a page fetch that hands back the picture URLs it saw, and a tool description telling the model to show one with `![alt](url)`. A real habit, built on a real output, silently broken.
+
+Measured on a fixture: plain fetch returned six image URLs, the same fetch with `find` returned none.
+
+### 180.3 The fix is one passage
+
+When `find` is used, the first passage of the page comes back whether or not it scored.
+
+It is one line of code and it answers three things at once, because they all live in that first 900 characters: **which page this is** (title and URL), **the first of its images**, and **how many more there are** — the assembled header already reads `Images on the page — 20 of 31 listed`, a line that was counting past itself before any of this was written.
+
+**Paid for out of the window, not added to it.** Room is made by dropping the weakest hit. The budget is what the caller pays and it must not move because of how a page happened to be laid out.
+
+### 180.4 The rule this leaves behind
+
+Before changing a tool, read `tool_runs`. Two questions, both answerable from the data already on the machine:
+
+1. **Is the current version actually failing?** Count calls, failures, and repeats close together in one session. A retry with different arguments is the model saying the first answer was not enough.
+2. **What depends on the current output shape?** The capability that breaks is rarely the one being changed.
+
+It is the same instinct as *measure the running app* for UI bugs, pointed at the engine instead of the window. And a green build proves neither: every test passed on the day the pictures went missing.
+
+### 180.5 One more thing this cost
+
+A test written for §180 asserted a miss by searching for "entirely unrelated zzzqqq" — and the page said "unrelated matters" in its filler, so it was a hit dressed as a miss. Caught because it failed loudly, unlike the bug it was written for. The second measurement mistake of the day, after the probe in §178.6, and both of the same kind: **the instrument agreed with what was expected of it.**

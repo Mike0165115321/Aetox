@@ -219,7 +219,8 @@ func readFor(body, find string, from int) (shown, note string) {
 	if find == "" {
 		return windowOf(body, from)
 	}
-	hits := selectPassages(splitPassages(body), find, webFetchWindow)
+	ps := splitPassages(body)
+	hits := selectPassages(ps, find, webFetchWindow)
 	if len(hits) == 0 {
 		shown, note = windowOf(body, 0)
 		miss := fmt.Sprintf("[nothing on this page mentions %q — what follows is the top of the page, not a match]", find)
@@ -227,6 +228,35 @@ func readFor(body, find string, from int) (shown, note string) {
 			return shown, miss
 		}
 		return shown, miss + "\n" + note
+	}
+	// **The head of the page comes back whether it scored or not.**
+	//
+	// A page assembled by this file opens with its title, its URL, its image
+	// URLs and its links, and only then its prose. BM25 scores prose, so a
+	// `find` about anything textual selects passages from the middle and drops
+	// that opening entirely — silently. Measured 24 Aug: a fetch with `find`
+	// returned no image URLs at all, on a page whose plain fetch returned six.
+	// The owner had a working habit built on those URLs, and it stopped working
+	// the day this file was rewritten, with nothing anywhere to say so.
+	//
+	// One passage fixes it, because the first one carries the title, the URL,
+	// the start of the image list AND the line that counts the rest of it
+	// ("20 of 31 listed"). Orientation and the images, together, for about 900
+	// of the window's 8,000.
+	//
+	// Dropping the last hit to make room rather than growing the window: the
+	// budget is what the caller pays, and it must not move because of how a
+	// page happened to be laid out.
+	if len(ps) > 0 && hits[0].at != ps[0].at {
+		used := 0
+		for _, h := range hits {
+			used += len(h.text)
+		}
+		for len(hits) > 1 && used+len(ps[0].text) > webFetchWindow {
+			used -= len(hits[len(hits)-1].text)
+			hits = hits[:len(hits)-1]
+		}
+		hits = append([]passage{ps[0]}, hits...)
 	}
 	var b strings.Builder
 	for i, p := range hits {
