@@ -61,11 +61,11 @@ both; the language switch is in Settings and in the first-run wizard. This READM
   hands you a file at the end; it is a place of work you watch it happen in, and can reach into at
   any point. The Code door adds a fifth: **Git**, which lays out the uncommitted working tree with
   a per-file diff.
-- **It builds slide decks** — the deck is one self-contained `.html` file, which is
-  the format a model actually writes well; turning it into anything else is the app's job, not the
-  model's. It opens in the slides room the moment it is written, so export is a button on the screen
-  you are already looking at rather than a second step — `.pdf`, images, or `.pptx`. Slides sit on
-  a 1280x720 box, exactly PowerPoint's widescreen page.
+- **It builds slide decks** — one self-contained `.html` file: yours, editable by hand, and
+  openable on any machine with a browser. It opens in the slides room the moment it is written,
+  where you page through it, present it full screen, and export it as `.pdf`, `.png` or `.jpg`.
+  Converting the file is the app's job, not the model's. Slides sit on a 1280x720 box, exactly
+  PowerPoint's widescreen page.
 - **The browser control layer is ours** — the window is WebView2, composited into the app with an
   address bar, back/forward, DevTools, and eight device presets that resize the native window so
   CSS media queries genuinely fire. What we wrote is the layer above it: one read numbers every
@@ -157,18 +157,18 @@ uncommitted working tree with a per-file diff. The agent does not work behind a 
 you a file at the end: it opens a room, works in that room, and you can reach in and change
 something yourself without waiting for the turn to finish.
 
-**It builds slide decks.** Give it the subject and what you want out of it, and the
-deck comes back as one self-contained `.html` file. HTML is the source on purpose: it is the format
-a model writes well, it is one file you own and can edit by hand, and it opens on any machine with
-a browser. Converting it into a presentation format is the app's work rather than the model's.
+**It builds slide decks.** Give it the subject and what you want out of it, and the deck comes back
+as one self-contained `.html` file. HTML is the source on purpose: it is one file you own and can
+edit by hand, and it opens on any machine with a browser. Converting the file is the app's work
+rather than the model's.
 
 The deck is delivered when it opens in the slides room, not when it is exported — you page through
-it and present it full screen from there, and the export bar is on that same screen. `.pdf` is the
-deck file itself through the renderer that draws it on screen, so it looks exactly like what you
-were just looking at. Speaker notes survive every route out. Images export one file per slide into a
-folder of their own, named `01`, `02`, so a ten-slide deck sorts correctly everywhere. A slide's box
-is 1280x720, which is
-13.333 x 7.5in at 96dpi — exactly PowerPoint's widescreen page, so the deck opens there unshifted.
+it and present it full screen from there, and the export bar is on that same screen. It exports as
+`.pdf`, `.png` or `.jpg`: the PDF is the deck file itself through the renderer that draws it on
+screen, so it looks exactly like what you were just looking at, and images come out one file per
+slide into a folder of their own, named `01`, `02`, so a ten-slide deck sorts correctly everywhere.
+A slide's box is 1280x720, which is 13.333 x 7.5in at 96dpi — exactly PowerPoint's widescreen
+page.
 
 **Watch it work in a real browser.** Not a headless scrape: a WebView2 window composited into
 the app, with an address bar, back/forward, DevTools, and eight device presets that resize the
