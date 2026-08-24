@@ -6393,3 +6393,140 @@ That split is the answer to the objection the owner raised the moment he saw the
 - **Still no pixels**, and no `smooth` either. The owner's clarification ruled the second one out before it was built: the ask was distance. A smooth animation would also mean the tool returning while the page was still travelling, which is the one thing the settle exists to prevent.
 - **No report of where it ended up.** §173.2's reasoning is untouched: the loop that already exists — read, act, read again — answers "did more arrive" in the words of the page itself, rather than in a scroll position standing for them.
 - **No horizontal scroll.** Nothing has asked for one.
+
+## 177. Decision — The Summarizer Cost More Than the Page (2026-08-24)
+
+`web_fetch` took 57 seconds on a GitHub page while the same call took 401 milliseconds on a YouTube one. The owner saw it in the log: *"ใช่มันช้า เจาะดูเลย"*.
+
+The download was not slow. **`web_fetch` had a second model call inside it**, and nothing anywhere said so.
+
+### 177.1 What was actually happening
+
+Given a `prompt`, and a page over 8,000 characters, `web_fetch` sent the whole page to the provider in a separate non-streaming completion and returned the answer instead of the page (`internal/bootstrap/digest.go`). The idea is good and it is what Claude Code's WebFetch does — the cache TTL in this file was copied from theirs.
+
+**But Claude Code runs that pass on a small fast model, and this ran it on the model you are talking to.** `Digester(provider, cfg.ModelName)`. There is no cheap-model concept anywhere in this codebase to fall back to, so the half that makes the pattern work is the half we do not have. Owner: *"จะไม่ได้เป็นเงาใครละ"*.
+
+The log is unambiguous. One request, one response, no retries:
+
+```
+15:35:50.587  tool call: web_fetch({"prompt":"extract...","url":"github.com/..."})
+15:36:47.572  quota: opencode-go stated none
+15:36:48.436  tool result: duration_ms=57173
+```
+
+The whole turn was 124 seconds. This was 57 of them — 46%.
+
+### 177.2 Three things worse than the wait
+
+- **The tokens were invisible.** `Digester` called `provider.Complete` directly, below the turn executor that emits `usage:round`. Nothing was written to `token_usage` for it. The user paid for roughly ten thousand input tokens and up to twelve hundred output, and no meter anywhere showed it.
+- **Nothing said it was happening.** `web_fetch` is not wired to the status reporter, so the row spun for a minute with no explanation, which reads as a hang.
+- **It had no bound of its own.** The only ceiling was the model client's ResponseHeaderTimeout — five minutes for a remote provider.
+
+### 177.3 The threshold was measuring the wrong thing
+
+`digestMinChars = 8000` asked *is this page big enough to be worth condensing*. It never asked *is a round trip here cheap enough*. A page of 8,001 characters — about two thousand tokens — triggered a full completion to save two thousand tokens of context.
+
+That is the same shape as the bug §176 fixed: **a mechanism built to save something, with nothing measuring whether it does.**
+
+### 177.4 What replaced it
+
+The summarizer is gone, and 8,000 stays as the number with its meaning turned around: it used to be the line above which a page was worth an extra model call, and it is now the line above which the page simply stops. Same number, opposite response, and one of the two is free.
+
+**The cut counts past itself**, which is the rule `read`'s 150-element cap and `capture`'s renderer limit already follow. A cap that stops silently cannot be told apart from a page that ended, so the notice names both figures and the exact argument that fetches the next part:
+
+> showing 8000 of 25431 characters (0 to 8000). For the next part, fetch the same URL with from: 8000 — the page is held for 15m0s, so continuing costs no download
+
+**`from` works because the cache was already there.** It holds the whole extracted page (up to 40,000 characters) for fifteen minutes, and it was built for research walking back over the same few pages. A continuation is served from it: a tool round trip, no second download, no model call. That is what made a blunt cap affordable — without it, "go and get the rest" would have meant fetching the page again.
+
+It cuts on a space where there is one, because a window ending mid-word reads as corrupted text rather than as a page that continues. And running off the end is a report, not an error: a caller that added the window size one time too many is told it is done.
+
+### 177.5 It made the tool block smaller
+
+`prompt` is gone with the summarizer, and it was not a small parameter — its description ran to 72 tokens on **every request**, and what it promised was *"far cheaper than reading the whole thing"*, which had just been measured as false on this provider. `from` costs about 24 in its place.
+
+**Net −48 tokens per request, and one fewer promise the product cannot keep.** A change that removes a feature and gets cheaper and faster is worth saying out loud.
+
+### 177.6 Deliberately not done
+
+- **No timeout on a kept summarizer.** That was the alternative, and it fixes the symptom while leaving a mechanism whose value nothing measures. The owner chose the blunt version — *"ตั้งเพดานให้ดึงได้ไม่เกิน 8000 ดื้อๆแบบนั้นแหละ"* — and the blunt version is the one that also gets cheaper.
+- **`Digester` was deleted, not left dormant.** A mechanism kept "in case" is a second answer to a question the window now answers. Bringing summarizing back means first having a cheap model to run it on, which is a real piece of work and should be argued for on its own.
+- **`web_fetch` still reports no status.** The minute-long silence is gone with the cause, so the gap stopped mattering today. It is still a gap.
+
+## 178. Decision — The Reader Did Not Have to Be a Model (2026-08-24)
+
+§177 removed `web_fetch`'s summarizer and said why: the pattern needs a cheap fast reader to run the pass on, and Aetox has no such model. That was true. What it missed, and what the owner saw within the hour, is that **the reader does not have to be a model at all**: *"BM25 มันเบาเครื่องนะ"*.
+
+He is right, and the reframing that follows is the useful part. **BM25 does not need a web index, it needs a corpus.** Perplexity runs it over the web because the web is their corpus. The corpus here is the page already in hand, which is a corpus they cannot see.
+
+### 178.1 What `find` is
+
+`web_fetch` takes `find`, and the page comes back as the parts that mention it, in **page order**, each labelled with its offset so `from` can pull any of them in full.
+
+Page order, not score order, and that is the whole difference between a search result and an answer. Ranked output hands the model paragraph 40 before paragraph 3 and leaves it to reassemble the argument; document order gives it the page with the irrelevant parts removed, which is what it asked for.
+
+A `find` that matches nothing falls back to the top of the page **and says so**. Handing back the first window silently would be a page presented as a hit, and the caller would then report on a page that never mentioned what it asked about.
+
+Cost against the thing it replaces:
+
+| | summarizer (§177) | BM25 |
+|---|---|---|
+| time | 57,175 ms | under 1 ms |
+| model calls | 1, about 10,000 tokens | 0 |
+| block entry | 219 tokens | 215 |
+
+### 178.2 Thai, and where the tokens come from
+
+A whitespace tokenizer is correct for Latin and useless for Thai: a whole paragraph arrives as one token that matches nothing, and the failure is silent — the page comes back looking like it had no answer. So a token in a script without spaces is emitted as its character **trigrams**.
+
+That is not an invention. `desktop/db.go` declares its FTS tables `tokenize='trigram'` for the same reason, and doing something else here would mean Aetox ranked Thai two ways depending on which door you came in.
+
+**And the tokenizer was cutting Thai words in half.** Thai tone marks and most of its vowels are nonspacing marks, so a letters-and-digits split breaks ขนส่งทางราง into ขนส and งทางราง at the mai ek — and it does that to ส่ง, ที่, ไม่, น้ำ, most of the common words in the language. Found only by printing the query's terms while chasing something else. The trigrams of the fragments still matched enough to work, which is the kind of luck that hides a bug rather than the kind that excuses one.
+
+### 178.3 Coverage, weighted by IDF
+
+Plain BM25 sums per term, so a passage carrying one query term twenty times and none of the others can outscore one carrying most of them once. In English that is a passage that only says "the". In Thai it is worse, because a query is trigrams and trigrams collide across word boundaries.
+
+Measured on th.wikipedia's ประเทศไทย: a search for ขนส่งทางราง returned the country infobox first — area, population, GDP — because **ตารางกิโลเมตร contains ราง**, and the infobox is short and says it many times.
+
+Scaling by the count of distinct terms matched removed the infobox and promoted ทางทิศใต้ in its place: a passage that also matched exactly one trigram, just a different one. So the scale is not a count but a **weight**. Matching a term the whole page uses is not the same achievement as matching one only this passage has, and IDF is the number that already knows the difference. Coverage is the share of the query's *information* a passage accounts for.
+
+### 178.4 The cap that had changed jobs
+
+Chasing the ranking turned up something larger. `webFetchMaxText` was 40,000, and its comment read *"chars of extracted text handed to the model"* — true while the whole body went to the model, and false since §177 cut the window to 8,000. It had stopped bounding context and was bounding only memory, at a number set for the job it no longer did.
+
+Measured with our own extractor:
+
+| page | real text | kept at 40,000 | lost |
+|---|---|---|---|
+| sqlite.org/fts5.html | 153,864 | 40,000 | **74%** |
+| th.wikipedia ประเทศไทย | 403,331 | 40,000 | **90%** |
+
+"bm25" appears 28 times in the real FTS5 page, last at offset 77,004. Exactly one survived the cut — the line in the table of contents. The model was handed that, told the page was 43,580 characters long, and reasonably concluded the word was barely mentioned. It then spent twelve tool calls hunting for something that had already been thrown away.
+
+**Raised to 250,000, and it costs the model nothing.** The window decides what the conversation pays; this decides what Aetox keeps. 32 cached pages at this size is 8MB worst case against a browser tab's tens of megabytes, and entries expire in fifteen minutes.
+
+**Two cuts, and both now count past themselves.** The window says what this call returned out of what is held, and can be continued with `from`. The extraction says what is held out of what the page said, and **cannot** — what was dropped is gone, and only the browser can reach it. Different remedies, so two sentences.
+
+### 178.5 What it measured, end to end
+
+Same prompts, before and after, from `tool_runs`:
+
+| | before | after |
+|---|---|---|
+| sqlite.org page | 12+ calls, ended up in the browser | **2**, in parallel |
+| th.wikipedia page | 16 calls (6 fetch + 10 browser) | **2**, in parallel |
+| "bm25" mentions the model saw | 1 | **24** |
+
+### 178.6 What was tried and did not work, so nobody tries it twice
+
+- **Counting matched terms** rather than weighting them by IDF. Removed one false winner and promoted another that failed the same way.
+- **Down-weighting list-like passages** by line length, to demote tables of contents. Never built: raising the extraction cap made it unnecessary on its own — with 266,666 characters of real prose competing instead of 40,000, the navigation chrome stopped placing at all.
+
+And one mistake worth recording because it cost a full round of work: a probe printed `hits[0]` and called it the top result. `selectPassages` returns **page order**, by design, decided in this same file. Two fixes were attempted for a ranking failure that the measurement had invented. *A broken instrument is worse than no instrument, because it produces confidence.*
+
+### 178.7 Deliberately not done
+
+- **Thai word segmentation.** It is the only thing that removes the ตาราง/ราง collision at the root, and it needs a dictionary. The owner ruled that out outright: *"ผมไม่ฝังคำไทยหรือพจนานุกรมไปแน่นอนครับ"*. His earlier proposal — index the segmented and unsegmented forms together and let the two compete — is the right shape if that ever changes, because it makes a bad segmenter harmless rather than fatal.
+- **Embeddings.** The lexical ceiling is real and written at the head of `passage.go`: a page saying "disable automatic reattempts" will never match a search for "stop the retry loop". That gap is what embeddings buy and what they charge for, and `internal/capability` already knows how to download a model file if it is ever worth it. Ollama and LM Studio both expose embedding endpoints and Aetox already speaks to both, so the cheapest first version costs no download at all.
+- **A guidance line telling the model to retry with the page's own vocabulary.** It already does — the logs show ทางราง then รถไฟ then การขนส่ง, unprompted, at 1 to 7ms each off the cache. Teaching something a model already does is tokens spent on nothing.
+- **Perfect ranking.** The window returns nine passages and the model reads all of them; precision at rank one is not the metric. In both live runs the answer was correct.

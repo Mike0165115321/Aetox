@@ -156,11 +156,6 @@ type Options struct {
 	Space        string
 	SpaceContext SpaceContext
 
-	// Digest overrides the page summarizer web_fetch uses. Nil means
-	// Digester(provider, cfg.ModelName) — the normal case. Present so a test
-	// can pin it without standing up a provider.
-	Digest skill.Digester
-
 	// Shell is which shell runs the agent's commands and the user's hooks: the
 	// machine's own, or a WSL distro. Read per call rather than baked in, so
 	// the picker can move it while the app runs.
@@ -431,10 +426,6 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		MaxChars: maxChars,
 	})
 
-	digest := opts.Digest
-	if digest == nil {
-		digest = Digester(bootstrapResult.Provider, cfg.ModelName)
-	}
 	registry := skill.NewDefaultRegistry(skill.RegistryOptions{
 		SandboxRoot:  cfg.SandboxRoot,
 		OutputSubdir: opts.OutputSubdir,
@@ -445,7 +436,6 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		// Empty ModelPath keeps the original behaviour — auto-discover — so a
 		// user who never opens the picker sees no change.
 		Speech: stt.Options{ModelPath: cfg.SpeechModelPath},
-		Digest: digest,
 		// The same question visionAttachments asks of a user's attachment,
 		// asked once here for the files the model finds on its own. Re-asked on
 		// every re-bootstrap, which is what happens when the model changes.

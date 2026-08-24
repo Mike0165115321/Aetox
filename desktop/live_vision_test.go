@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/bootstrap"
 	"github.com/Mike0165115321/Aetox/internal/model"
 )
 
@@ -163,42 +162,6 @@ func TestLiveVisionOpenAICompatibleParts(t *testing.T) {
 		if !strings.Contains(answer, colour) {
 			t.Errorf("answer is missing %q — the image did not survive the parts conversion:\n%s", colour, resp.Text)
 		}
-	}
-}
-
-// TestLiveWebFetchDigestAnswersTheQuestion proves the digester returns an
-// answer rather than a summary of the page, against a real model.
-func TestLiveWebFetchDigestAnswersTheQuestion(t *testing.T) {
-	key := liveDeepSeekKey(t)
-	p, err := model.NewProvider(model.ProviderOptions{
-		Provider: "deepseek", Model: "deepseek-v4-flash", APIKey: key,
-	})
-	if err != nil {
-		t.Fatalf("provider: %v", err)
-	}
-
-	digest := bootstrap.Digester(p, "deepseek-v4-flash")
-	if digest == nil {
-		t.Fatal("bootstrap.Digester returned nil for a real provider")
-	}
-	page := strings.Repeat("Assorted filler about unrelated topics. ", 400) +
-		"\nThe maximum retry count is controlled by the MaxAttempts option, which defaults to 5.\n" +
-		strings.Repeat("More filler that answers nothing. ", 200)
-
-	answer, err := digest(context.Background(), "what option controls the retry count, and what is its default?", page)
-	if err != nil {
-		t.Fatalf("digest: %v", err)
-	}
-	t.Logf("digest said: %s", answer)
-	if !strings.Contains(answer, "MaxAttempts") {
-		t.Errorf("the answer does not name the option:\n%s", answer)
-	}
-	if !strings.Contains(answer, "5") {
-		t.Errorf("the answer does not give the default:\n%s", answer)
-	}
-	// The point of the feature: an answer, not the page back.
-	if len(answer) > len(page)/4 {
-		t.Errorf("the digest is %d chars against a %d char page — that is a summary, not an answer", len(answer), len(page))
 	}
 }
 

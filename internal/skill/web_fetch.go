@@ -24,9 +24,6 @@ import (
 // scripting; this is for research: read many pages quickly.
 type webFetchSkill struct {
 	httpClient *http.Client
-	// digest, when the host supplies one, answers a caller's question about a
-	// page instead of returning the whole page. See RegistryOptions.Digest.
-	digest Digester
 
 	mu    sync.Mutex
 	cache map[string]webFetchEntry
@@ -42,8 +39,41 @@ type webFetchEntry struct {
 }
 
 const (
-	webFetchMaxBody  = 2 << 20 // 2MB raw body cap
-	webFetchMaxText  = 40000   // chars of extracted text handed to the model
+	webFetchMaxBody = 2 << 20 // 2MB raw body cap
+	// webFetchWindow is how much of a page one call hands back.
+	//
+	// It replaced a summarizer, and the number is the summarizer's own
+	// threshold turned around (§177): 8,000 chars used to be the line above
+	// which a page was worth a whole extra model call to condense, and it is now
+	// the line above which the page simply stops. Same number, opposite
+	// response, and one of the two is free.
+	//
+	// Roughly two thousand tokens, which is a paragraph of orientation and then
+	// some. It is deliberately small: the caller that needs more says so, and
+	// pays for exactly the part it asked for.
+	webFetchWindow = 8000
+	// webFetchMaxText is how much of a page Aetox KEEPS. It is a memory bound
+	// and nothing else, and that is a change of job nobody noticed at the time.
+	//
+	// It used to read "chars of extracted text handed to the model", and while
+	// that was true the number was doing two jobs at once: bounding the cache
+	// and bounding the context. §177 split them — the model now gets
+	// webFetchWindow per call whatever this says — and left this one set for
+	// the job it had stopped doing.
+	//
+	// Measured 24 Aug on the two pages a real test reached for: sqlite.org's
+	// FTS5 page extracts to 153,864 characters and th.wikipedia's
+	// ประเทศไทย to 403,331. At 40,000 the first lost 74% of itself and the
+	// second 90%, and the word the caller was hunting for — "bm25", 28 times in
+	// the real page, last at offset 77,004 — survived exactly once, in the table
+	// of contents. The model then spent twelve tool calls looking for something
+	// that had already been thrown away.
+	//
+	// **Raising it costs the model nothing.** 32 cached pages at this size is
+	// 8MB in the worst case and far less in practice, against a browser tab that
+	// costs tens of megabytes. What it buys is that `find` has the whole page to
+	// search, which is the only reason keeping this much is worth anything.
+	webFetchMaxText  = 250000
 	webFetchMaxImgs  = 20
 	webFetchMaxLinks = 40
 	// webFetchCacheTTL matches what Claude Code's WebFetch keeps. Long enough
@@ -92,9 +122,13 @@ func (*webFetchSkill) ToolDefinition() model.ToolDefinition {
 				"type":        "string",
 				"description": "The http(s) URL to fetch",
 			},
-			"prompt": map[string]any{
+			"find": map[string]any{
 				"type":        "string",
-				"description": "What you want from the page, e.g. \"the exact signature of the retry option\". Given this, the page is read for you and only the answer comes back — far cheaper than reading the whole thing. Leave it out when you genuinely need the full text.",
+				"description": "What you are looking for on the page. Returns the parts that mention it, in page order, instead of the top of the page",
+			},
+			"from": map[string]any{
+				"type":        "integer",
+				"description": "Character offset to continue from, when a previous fetch said it was cut",
 			},
 		},
 		"required":             []string{"url"},
@@ -119,35 +153,136 @@ func (s *webFetchSkill) Execute(ctx context.Context, input Input) (Output, error
 		err := errors.New("usage: web_fetch <url>")
 		return newToolOutput("web_fetch", "web_fetch", "", time.Now(), false, err), err
 	}
-	return s.fetch(ctx, strings.TrimSpace(strings.Join(args, " ")), "")
+	return s.fetch(ctx, strings.TrimSpace(strings.Join(args, " ")), "", 0)
 }
 
 func (s *webFetchSkill) ExecuteTool(ctx context.Context, args map[string]any) (Output, error) {
 	rawURL, _ := args["url"].(string)
-	question, _ := args["prompt"].(string)
-	return s.fetch(ctx, strings.TrimSpace(rawURL), strings.TrimSpace(question))
+	find, _ := args["find"].(string)
+	return s.fetch(ctx, strings.TrimSpace(rawURL), strings.TrimSpace(find), IntArg(args["from"]))
 }
 
 // answer is the single exit every successful fetch takes, so the cache and the
-// digest both apply no matter which content type came back.
-func (s *webFetchSkill) answer(ctx context.Context, command, key, body string, start time.Time, truncated bool, question string) (Output, error) {
+// window both apply no matter which content type came back.
+//
+// **The whole page is remembered and only a window of it is returned.** Those
+// are two different sizes on purpose: the cache holds what was extracted so a
+// caller asking to continue is served without a second download, and the window
+// is what this call costs the conversation.
+func (s *webFetchSkill) answer(command, key, body string, start time.Time, dropped int, find string, from int) (Output, error) {
 	if key != "" {
 		s.remember(key, body)
 	}
-	if question == "" || s.digest == nil {
-		return newToolOutput("web_fetch", command, body, start, truncated, nil), nil
+	shown, note := readFor(body, find, from)
+	if note != "" {
+		shown += "\n\n" + note
 	}
-	digested, err := s.digest(ctx, question, body)
-	if err != nil || strings.TrimSpace(digested) == "" {
-		// The page is in hand either way. Returning it whole costs tokens;
-		// returning an error for a question that was only ever an optimization
-		// would cost the model the page.
-		return newToolOutput("web_fetch", command, body, start, truncated, nil), nil
+	// **Two cuts, and both have to count past themselves.**
+	//
+	// The window is the one readFor reports: what this call handed back out of
+	// what Aetox holds. This is the other one, made earlier and higher up —
+	// what Aetox holds out of what the page actually said — and it was silent
+	// until 24 Aug. That silence is what turned a 153,864-character page into a
+	// "43,580-character page" in the note, and a caller told that reasonably
+	// concluded the word it wanted appeared once.
+	//
+	// It also has a different remedy, which is why it is a different sentence:
+	// the window can be continued with `from`, and this cannot. What was
+	// dropped is gone from here and only the browser can reach it.
+	if dropped > 0 {
+		shown += fmt.Sprintf(
+			"\n\n[this page is %d characters long and only the first %d were kept, so nothing past that is reachable here — open it with the browser to read the rest]",
+			dropped, webFetchMaxText)
 	}
-	return newToolOutput("web_fetch", command, strings.TrimSpace(digested), start, false, nil), nil
+	return newToolOutput("web_fetch", command, shown, start, dropped > 0, nil), nil
 }
 
-func (s *webFetchSkill) fetch(ctx context.Context, rawURL, question string) (Output, error) {
+// readFor decides which of the two readers this call gets.
+//
+// **Position or relevance, and the caller says which.** Without `find` the page
+// is read from the top, which is right when you are reading a page rather than
+// searching it, and is supported by the finding that most pages answer their
+// own headline in the first hundred words. With `find` the page is scored and
+// only the parts that mention it come back.
+//
+// This is what §177 removed and §178 put back at a thousandth of the price. The
+// summarizer that used to serve `prompt` sent the whole page to a model and
+// waited; this counts words (passage.go) and answers in under a millisecond.
+// Same capability, and the argument §177 made against it — that the pattern
+// needs a cheap fast reader Aetox does not have — stopped applying the moment
+// the reader stopped having to be a model.
+//
+// A `find` that matches nothing falls back to the top of the page and SAYS so.
+// Handing back the first window silently would be a page presented as a hit,
+// and the caller would report on a page that never mentioned what it asked for.
+func readFor(body, find string, from int) (shown, note string) {
+	if find == "" {
+		return windowOf(body, from)
+	}
+	hits := selectPassages(splitPassages(body), find, webFetchWindow)
+	if len(hits) == 0 {
+		shown, note = windowOf(body, 0)
+		miss := fmt.Sprintf("[nothing on this page mentions %q — what follows is the top of the page, not a match]", find)
+		if note == "" {
+			return shown, miss
+		}
+		return shown, miss + "\n" + note
+	}
+	var b strings.Builder
+	for i, p := range hits {
+		if i > 0 {
+			b.WriteString("\n\n")
+		}
+		// The offset travels with each part, so a caller that wants the
+		// paragraphs around a hit can ask for them with `from` rather than
+		// re-fetching the page and hunting.
+		fmt.Fprintf(&b, "[at %d]\n%s", p.at, strings.TrimSpace(p.text))
+	}
+	return b.String(), fmt.Sprintf(
+		"[%d matching parts of a %d-character page, in page order. The rest is not shown. For any part in full, fetch the same URL with from: <the number above it>]",
+		len(hits), len(body))
+}
+
+// windowOf takes the slice of the page this call hands back, and the sentence
+// that says what was left out.
+//
+// **It counts past itself**, which is the rule `read` and `capture` already
+// follow: a cap that stops silently is indistinguishable from a page that
+// simply ended, and a caller cannot tell "that is all there is" from "that is
+// all you were given". So the note names both numbers and the exact argument
+// that fetches the next part.
+//
+// Cut on a space when there is one nearby, because a window that ends mid-word
+// reads as corrupted text rather than as a page that continues.
+func windowOf(body string, from int) (shown, note string) {
+	total := len(body)
+	if from < 0 {
+		from = 0
+	}
+	if from >= total {
+		// Past the end is not an error: a caller that added the window size to
+		// an offset one time too many should be told it is done, not refused.
+		if total == 0 {
+			return "", ""
+		}
+		return "", fmt.Sprintf("[nothing at offset %d — this page is %d characters and you have reached the end]", from, total)
+	}
+	end := from + webFetchWindow
+	if end >= total {
+		if from == 0 {
+			return body, ""
+		}
+		return body[from:], fmt.Sprintf("[characters %d to %d of %d — this is the end of the page]", from, total, total)
+	}
+	if cut := strings.LastIndexAny(body[from:end], " \n\t"); cut > webFetchWindow/2 {
+		end = from + cut
+	}
+	return body[from:end], fmt.Sprintf(
+		"[showing %d of %d characters (%d to %d). For the next part, fetch the same URL with from: %d — the page is held for %s, so continuing costs no download]",
+		end-from, total, from, end, end, webFetchCacheTTL)
+}
+
+func (s *webFetchSkill) fetch(ctx context.Context, rawURL, find string, from int) (Output, error) {
 	start := time.Now()
 	command := "web_fetch " + rawURL
 	if rawURL == "" {
@@ -167,7 +302,7 @@ func (s *webFetchSkill) fetch(ctx context.Context, rawURL, question string) (Out
 	// the same few pages, and the second walk should cost nothing.
 	cacheKey := parsed.String()
 	if body, ok := s.cached(cacheKey); ok {
-		return s.answer(ctx, command, "", body, start, false, question)
+		return s.answer(command, "", body, start, 0, find, from)
 	}
 
 	// A video link is the same question — "what is the content at this URL" —
@@ -181,11 +316,11 @@ func (s *webFetchSkill) fetch(ctx context.Context, rawURL, question string) (Out
 		if videoErr != nil {
 			return newToolOutput("web_fetch", command, "", start, false, videoErr), videoErr
 		}
-		truncated := false
+		dropped := 0
 		if len(body) > webFetchMaxText {
-			body, truncated = body[:webFetchMaxText], true
+			dropped, body = len(body), body[:webFetchMaxText]
 		}
-		return s.answer(ctx, command, cacheKey, body, start, truncated, question)
+		return s.answer(command, cacheKey, body, start, dropped, find, from)
 	}
 
 	client := s.httpClient
@@ -230,16 +365,16 @@ func (s *webFetchSkill) fetch(ctx context.Context, rawURL, question string) (Out
 			if fileErr != nil {
 				return newToolOutput("web_fetch", command, "", start, false, fileErr), fileErr
 			}
-			clamped, truncated := clampText(text)
-			return s.answer(ctx, command, cacheKey, "URL: "+finalURL.String()+"\n\n"+clamped, start, truncated, question)
+			clamped, dropped := clampText(text)
+			return s.answer(command, cacheKey, "URL: "+finalURL.String()+"\n\n"+clamped, start, dropped, find, from)
 		}
 		// Bytes that are not text and have no reader: named, never dumped.
 		if looksBinaryType(finalURL, contentType, string(body)) {
-			return s.answer(ctx, command, cacheKey, describeBinary(finalURL, contentType, len(body)), start, false, question)
+			return s.answer(command, cacheKey, describeBinary(finalURL, contentType, len(body)), start, 0, find, from)
 		}
 		// JSON/plain text and friends: hand it over as-is, capped.
-		content, truncated := clampText(string(body))
-		return s.answer(ctx, command, cacheKey, "URL: "+finalURL.String()+"\n\n"+strings.TrimSpace(content), start, truncated, question)
+		content, dropped := clampText(string(body))
+		return s.answer(command, cacheKey, "URL: "+finalURL.String()+"\n\n"+strings.TrimSpace(content), start, dropped, find, from)
 	}
 
 	page := extractReadablePage(body, finalURL)
@@ -258,13 +393,13 @@ func (s *webFetchSkill) fetch(ctx context.Context, rawURL, question string) (Out
 		}
 	}
 	text := page.Text
-	truncated := false
+	dropped := 0
 	if len(text) > webFetchMaxText {
-		text = text[:webFetchMaxText] + "\n... (truncated)"
-		truncated = true
+		dropped = len(text)
+		text = text[:webFetchMaxText]
 	}
 	fmt.Fprintf(&b, "\n%s", text)
-	return s.answer(ctx, command, cacheKey, b.String(), start, truncated, question)
+	return s.answer(command, cacheKey, b.String(), start, dropped, find, from)
 }
 
 type pageImage struct {
@@ -428,9 +563,13 @@ func collapseBlankLines(s string) string {
 
 // clampText cuts a body to what may cross into a reply, and says when it did.
 // One definition, because the call sites above had each grown their own.
-func clampText(content string) (string, bool) {
+// clampText cuts a body to what Aetox keeps and reports how long it really
+// was, so the caller can say so. Returns 0 when nothing was dropped — the "no
+// cut" answer is the absence of a number rather than a separate flag, because a
+// flag is what let this cut go unmentioned for as long as it did.
+func clampText(content string) (string, int) {
 	if len(content) <= webFetchMaxText {
-		return content, false
+		return content, 0
 	}
-	return content[:webFetchMaxText] + "\n... (truncated)", true
+	return content[:webFetchMaxText], len(content)
 }

@@ -1,22 +1,9 @@
 package skill
 
 import (
-	"context"
-
 	"github.com/Mike0165115321/Aetox/internal/proc"
 	"github.com/Mike0165115321/Aetox/internal/stt"
 )
-
-// Digester answers a question about a block of text. web_fetch uses it to hand
-// back an answer instead of a whole web page: a documentation page is tens of
-// thousands of characters and the model usually wants one paragraph of it, so
-// without this the tool's own output is the expensive part of the call.
-//
-// A function, not a model.Provider: internal/skill has no business knowing how
-// a completion is made, and a func is what a test can supply in one line. The
-// host wires it in RegistryOptions; when it is nil, web_fetch returns the full
-// page exactly as it always has.
-type Digester func(ctx context.Context, question, text string) (string, error)
 
 // RegistryOptions carries what built-in skills need from the host. Most skills
 // only want the sandbox root; a skill that the *user* configures (rather than
@@ -45,11 +32,6 @@ type RegistryOptions struct {
 	// (filestate.go). Nil is supported and means no guard — the CLI has one
 	// writer and nobody typing beside it.
 	Files *FileState
-	// Digest lets web_fetch answer a question about a page instead of
-	// returning the page. Nil is a supported configuration — the CLI has no
-	// provider handy at registry-build time — and simply means the tool keeps
-	// its old behaviour.
-	Digest Digester
 	// Vision reports whether the model behind this registry can look at an
 	// image. It decides one thing: whether `read` hands back a .png or tells
 	// the caller to run image_ocr on it. False is the safe value and the one
@@ -180,7 +162,7 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&videoOCRSkill{root: opts.SandboxRoot},
 		&pdfReadSkill{root: opts.SandboxRoot},
 		&audioTranscribeSkill{root: opts.SandboxRoot, speech: opts.Speech},
-		&webFetchSkill{digest: opts.Digest},
+		&webFetchSkill{},
 		&webSearchSkill{},
 		// One name, four actions: search, repo_summary, list_files, read_file
 		// (github_pack.go). `plugin_install` above is not one of them — it
