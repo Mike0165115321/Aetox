@@ -429,6 +429,7 @@ export const zh: Partial<Record<keyof typeof th, string>> = {
   'settings.aboutChannelScoop': '通过 Scoop 安装',
   'settings.aboutChannelInstaller': '通过安装程序安装',
   'settings.aboutChannelPortable': '便携版，从 zip 解压',
+  'settings.aboutChannelStore': '从 Microsoft Store 安装',
   'settings.aboutChannelUnknown': '安装方式未知',
   'settings.aboutCheck': '检查更新',
   'settings.aboutChecking': '检查中…',

@@ -70,6 +70,11 @@ func TestClassifyWindows(t *testing.T) {
 		// Windows paths are case-insensitive; the user's PATH entry may not match.
 		{`c:\program files\aetox\aetox\AETOX.EXE`, ChannelInstaller, "different case, same place"},
 		{`C:\Users\Mike\SCOOP\Apps\Aetox\current\aetox.exe`, ChannelScoop, "scoop, shouting"},
+		// The MSIX package. It is under Program Files, so the row below it is
+		// the one this would have matched if WindowsApps were checked second —
+		// which is the whole reason the check is ordered the way it is.
+		{`C:\Program Files\WindowsApps\AetoxAI.Aetox_1.5.6.0_x64__qh6w3m69v8a0y\aetox.exe`, ChannelStore, "installed from the Microsoft Store"},
+		{`c:\program files\windowsapps\AetoxAI.Aetox_1.5.6.0_x64__qh6w3m69v8a0y\AETOX.EXE`, ChannelStore, "same place, different case"},
 	} {
 		if got := classifyWindows(c.exe, env); got != c.want {
 			t.Errorf("classifyWindows(%q) = %q, want %q — %s", c.exe, got, c.want, c.why)
@@ -118,7 +123,7 @@ func TestDetectFrom(t *testing.T) {
 // knows how to render — never a panic and never an empty string.
 func TestDetectAlwaysAnswersWithAKnownChannel(t *testing.T) {
 	switch got := Detect(); got {
-	case ChannelScoop, ChannelInstaller, ChannelPortable, ChannelUnknown:
+	case ChannelScoop, ChannelInstaller, ChannelPortable, ChannelStore, ChannelUnknown:
 	default:
 		t.Fatalf("Detect() = %q, which no Settings → About branch handles", got)
 	}
@@ -130,10 +135,38 @@ func TestUpgradeHintOnlyWhereWeCanGiveOne(t *testing.T) {
 	}
 	// Every other channel must stay silent rather than invent a command: the
 	// UI falls back to the releases page, which is always right.
-	for _, c := range []Channel{ChannelInstaller, ChannelPortable, ChannelUnknown} {
+	for _, c := range []Channel{ChannelInstaller, ChannelPortable, ChannelStore, ChannelUnknown} {
 		if got := UpgradeHint(c); got != "" {
 			t.Errorf("UpgradeHint(%q) = %q, want no command", c, got)
 		}
+	}
+}
+
+// A Store install must never be offered a download. The package is Windows'
+// to replace, and a GitHub artifact installed over the top would leave two
+// Aetoxes on the machine disagreeing about which one is current.
+func TestStoreChannelNeverChecksGitHub(t *testing.T) {
+	reached := false
+	serve(t, func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		_, _ = w.Write([]byte(`[{"tag_name":"v9.9.9","html_url":"https://example.invalid/r/v9.9.9"}]`))
+	})
+
+	st, assets, err := checkOn(context.Background(), "1.5.6", ChannelStore)
+	if err != ErrDisabled {
+		t.Fatalf("err = %v, want ErrDisabled", err)
+	}
+	if reached {
+		t.Error("the Store channel called the release API — it must not")
+	}
+	if !st.Disabled {
+		t.Error("Status.Disabled = false, so the UI would offer a check that cannot happen")
+	}
+	if st.Available || st.CanAuto || len(assets) > 0 {
+		t.Errorf("Store status offers an update: %+v, assets=%d", st, len(assets))
+	}
+	if st.URL != StorePage {
+		t.Errorf("URL = %q, want the Store listing %q — the releases page installs a second copy", st.URL, StorePage)
 	}
 }
 

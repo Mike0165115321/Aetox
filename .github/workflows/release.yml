@@ -115,6 +115,59 @@ jobs:
           go vet ./...
           go test ./...
 
+      # The Microsoft Store build. Deliberately NOT attached to the GitHub
+      # Release below: an unsigned .msix cannot be installed by anyone, because
+      # the Store signs it with Microsoft's own certificate at ingestion. That
+      # is also the entire reason it is worth building — a Store install is the
+      # only channel that never shows a SmartScreen warning, signed or not.
+      # It goes out as a workflow artifact, to be uploaded to Partner Center.
+      - name: Build the Microsoft Store package
+        run: |
+          # Newest SDK that actually carries the tool, rather than a version
+          # number pinned here that a runner image bump would silently break.
+          $makeappx = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Directory -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending |
+            ForEach-Object { Join-Path $_.FullName "x64\makeappx.exe" } |
+            Where-Object { Test-Path $_ } |
+            Select-Object -First 1
+          if (-not $makeappx) { throw "makeappx.exe is not on this runner — the Windows SDK is missing" }
+          Write-Host "using $makeappx"
+
+          # AppxManifest.xml ships with Version="0.0.0.0" so that it is not a
+          # seventh file to bump by hand. The Store wants four parts with the
+          # last one zero, so the tag's three become MAJOR.MINOR.PATCH.0.
+          $version = "$env:GITHUB_REF_NAME".TrimStart("v")
+          $manifest = "desktop/build/windows/msix/AppxManifest.xml"
+          $xml = (Get-Content $manifest -Raw) -replace 'Version="0\.0\.0\.0"', "Version=`"$version.0`""
+          if ($xml -notmatch [regex]::Escape("Version=`"$version.0`"")) {
+            throw "the version stamp did not take — $manifest would have shipped as 0.0.0.0"
+          }
+
+          $stage = "msix-stage"
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          New-Item -ItemType Directory -Force "$stage\Assets" | Out-Null
+          Copy-Item desktop/build/bin/aetox.exe $stage
+          Copy-Item desktop/build/windows/msix/Assets/*.png "$stage\Assets"
+          Set-Content "$stage\AppxManifest.xml" $xml -Encoding utf8
+
+          & $makeappx pack /d $stage /p aetox-windows-amd64.msix /o
+          if ($LASTEXITCODE -ne 0) { throw "makeappx failed with exit $LASTEXITCODE" }
+
+          # makeappx has been known to report success over a package missing
+          # what it was asked to carry, and the next thing to notice would be
+          # Partner Center days later. Ask here instead.
+          if (-not (Test-Path aetox-windows-amd64.msix)) { throw "no .msix was produced" }
+          $mb = (Get-Item aetox-windows-amd64.msix).Length / 1MB
+          if ($mb -lt 5) { throw "aetox-windows-amd64.msix is only $([math]::Round($mb,1)) MB — the app binary did not make it in" }
+          "aetox-windows-amd64.msix  {0:N1} MB  (v$version.0)" -f $mb
+
+      - name: Keep the Store package for Partner Center
+        uses: actions/upload-artifact@v4
+        with:
+          name: msix-store-package
+          path: aetox-windows-amd64.msix
+          if-no-files-found: error
+
       - name: Package portable zip + checksums
         run: |
           Compress-Archive -Path desktop/build/bin/aetox.exe -DestinationPath aetox-windows-amd64-portable.zip

@@ -678,6 +678,7 @@
     scoop: 'settings.aboutChannelScoop',
     installer: 'settings.aboutChannelInstaller',
     portable: 'settings.aboutChannelPortable',
+    store: 'settings.aboutChannelStore',
     unknown: 'settings.aboutChannelUnknown',
   }
 
@@ -5066,6 +5067,13 @@
     {:else if active === 'issues'}
       <h2>{t('settings.issues')}</h2>
       <p class="muted set-sub">{t('settings.issuesDesc')}</p>
+      <!-- Said here rather than only in the privacy policy, because this is the
+           page where the button is. The pre-filled body carries the tool's own
+           arguments, and those are the user's file paths -- a report is one
+           click from publishing "output/20260823/xiaomi-17t-pro/index.html" to
+           a public tracker. Nothing is sent until they submit on GitHub, so the
+           fix is telling them what they are about to look at, not hiding it. -->
+      <p class="muted set-sub">{t('settings.issuesReportNote')}</p>
 
       {#if issuesError}<div class="mset-error">{issuesError}</div>{/if}
 

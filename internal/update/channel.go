@@ -41,6 +41,15 @@ const (
 	// but it is their folder and their layout; we point at the new zip.
 	ChannelPortable Channel = "portable"
 
+	// ChannelStore — the MSIX package from the Microsoft Store, which lives in
+	// Program Files\WindowsApps. Windows owns updates here and the package's
+	// own files are not ours to replace, so this channel's whole job is to make
+	// Check stop: no GitHub call, no download offer, no command to run. It has
+	// to exist as its own case rather than fall into ChannelInstaller, which is
+	// where the path alone would put it — that would have told a Store user to
+	// go and re-run an NSIS installer that would then install a second copy.
+	ChannelStore Channel = "store"
+
 	// ChannelUnknown — everything else, including every non-Windows install
 	// until those platforms actually ship. Resolves to "open the releases
 	// page", which is the honest answer when we cannot do better.
@@ -98,6 +107,17 @@ func classifyWindows(exe string, env func(string) string) Channel {
 	p := norm(exe)
 	if strings.Contains(p, "/scoop/apps/") {
 		return ChannelScoop
+	}
+	// Before the Program Files check below, not after: an MSIX package installs
+	// to Program Files\WindowsApps, so it satisfies that check too and would be
+	// classified as the NSIS installer by whichever test ran first. The more
+	// specific place has to win.
+	//
+	// Matched on the path segment rather than an env var because Windows
+	// publishes no variable for it — and the folder is ACL'd so tightly that
+	// even reading its name from anywhere else is a privilege question.
+	if strings.Contains(p, "/windowsapps/") {
+		return ChannelStore
 	}
 	// Both installer scopes: the release build is machine-wide (Program Files),
 	// but project.nsi also supports WAILS_INSTALL_SCOPE=user, which lands in

@@ -36,6 +36,17 @@ const (
 	// sent to, and the "what changed" link on all of them.
 	ReleasesPage = "https://github.com/" + repoOwner + "/" + repoName + "/releases"
 
+	// StorePage is where a ChannelStore install is sent instead. 9N4KKBRRSCZZ
+	// is the Store ID Partner Center assigned to AetoxAI.Aetox; it is the same
+	// identity desktop/build/windows/msix/AppxManifest.xml declares, and the
+	// two must be bumped together if the listing is ever recreated.
+	//
+	// Sending a Store user to the GitHub releases page would be worse than
+	// saying nothing: the files there install a SECOND copy beside the one they
+	// already have, from a channel that then fights the Store over which is
+	// current.
+	StorePage = "https://apps.microsoft.com/detail/9N4KKBRRSCZZ"
+
 	// DisableEnv turns the check off entirely, for people who do not want the
 	// app talking to github.com at all and for anything running in CI. Named
 	// after opencode's OPENCODE_DISABLE_AUTOUPDATE, which exists for the same
@@ -132,12 +143,30 @@ func Check(ctx context.Context, current string) (Status, error) {
 // internal because only Apply consumes them; the Settings page has no use for
 // a URL list it must not build its own download logic on.
 func checkWithAssets(ctx context.Context, current string) (Status, []Asset, error) {
+	return checkOn(ctx, current, Detect())
+}
+
+// checkOn is checkWithAssets with the channel handed in rather than detected.
+// Same reason detectFrom takes its OS as a parameter: the rule worth testing
+// here is "a Store install never reaches github.com", and no test can make the
+// machine it runs on into a Store install.
+func checkOn(ctx context.Context, current string, ch Channel) (Status, []Asset, error) {
 	st := Status{
 		Current: current,
-		Channel: string(Detect()),
+		Channel: string(ch),
 		URL:     ReleasesPage,
 	}
 	st.Hint = UpgradeHint(Channel(st.Channel))
+
+	// Before Disabled(), because this one is not a preference anyone set and
+	// cannot be switched back on: a packaged app does not update itself, and
+	// Microsoft Store certification asks for exactly this. Windows has already
+	// installed the newer package by the time we would have noticed it exists.
+	if Channel(st.Channel) == ChannelStore {
+		st.Disabled = true
+		st.URL = StorePage
+		return st, nil, ErrDisabled
+	}
 
 	if Disabled() {
 		st.Disabled = true

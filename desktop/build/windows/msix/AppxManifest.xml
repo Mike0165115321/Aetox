@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  The Microsoft Store package for Aetox.
+
+  Identity is not ours to choose. Name, Publisher and PublisherDisplayName are
+  assigned by Partner Center (Product management > Product identity) for the
+  reserved listing AetoxAI.Aetox, Store ID 9N4KKBRRSCZZ. A package whose
+  identity differs from the listing's by one character is rejected at upload,
+  before any certification runs. internal/update.StorePage carries the same
+  Store ID, and the two move together or not at all.
+
+  Version is left at 0.0.0.0 on purpose. .github/workflows/release.yml stamps
+  the tag into it the same way it already stamps wails.json, so this is not a
+  seventh file anyone has to remember to bump, and a package that somehow
+  reaches the Store unstamped is rejected for the version rather than shipped
+  under a wrong one. The Store also requires the fourth part to be 0; the
+  stamp writes MAJOR.MINOR.PATCH.0.
+
+  EntryPoint="Windows.FullTrustApplication" with rescap:runFullTrust is what
+  makes this a packaged Win32 app rather than a sandboxed UWP one: the same
+  aetox.exe the installer and the zip carry, with the same access to the
+  machine. runFullTrust is a restricted capability, which sounds like a hurdle
+  and is not: it is the ordinary declaration for every desktop app in the
+  Store, and it is granted as a matter of course.
+-->
+
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <Identity
+    Name="AetoxAI.Aetox"
+    Publisher="CN=01DE8417-AE5C-43D5-9857-F50888113821"
+    Version="0.0.0.0"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Aetox</DisplayName>
+    <PublisherDisplayName>Aetox AI</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <!--
+      19041 is Windows 10 2004, the floor WebView2 and packaged full-trust
+      apps are both comfortably above. README says "Windows 10 or newer, x64"
+      and this is the version of that sentence Windows itself enforces.
+    -->
+    <TargetDeviceFamily
+      Name="Windows.Desktop"
+      MinVersion="10.0.19041.0"
+      MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <!--
+    The three languages the app actually ships strings for
+    (desktop/frontend/src/lib/locales). Declaring one it cannot speak would put
+    Aetox in front of people in a language it does not have.
+  -->
+  <Resources>
+    <Resource Language="en-us" />
+    <Resource Language="th-th" />
+    <Resource Language="zh-hans" />
+  </Resources>
+
+  <Applications>
+    <Application Id="Aetox" Executable="aetox.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Aetox"
+        Description="An AI agent that does the work on your machine: reads your files, drives a real browser, and writes real documents back."
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile
+          Wide310x150Logo="Assets\Wide310x150Logo.png"
+          Square71x71Logo="Assets\Square71x71Logo.png"
+          Square310x310Logo="Assets\Square310x310Logo.png" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+
+</Package>

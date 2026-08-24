@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>นโยบายความเป็นส่วนตัว · Aetox</title>
+<meta name="description" content="Aetox ทำงานบนเครื่องคุณ ผู้พัฒนาไม่มีเซิร์ฟเวอร์ที่รับบทสนทนา ไฟล์ หรือคีย์ของคุณ และไม่มีการเก็บสถิติการใช้งานใด ๆ">
+<link rel="canonical" href="https://mike0165115321.github.io/Aetox/privacy.html">
+<meta name="theme-color" content="#060607">
+<meta name="robots" content="index, follow">
+<script>
+// Same pre-paint theme decision as the landing page, for the same reason:
+// choosing after the stylesheet has painted is what causes the load flash.
+(function(){
+  try{
+    var saved = localStorage.getItem("aetox-theme");
+    var t = saved || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+    document.documentElement.dataset.theme = t;
+  }catch(e){ document.documentElement.dataset.theme = "dark"; }
+})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Tokens borrowed from index.html so this reads as the same site. The layout
+   is not borrowed: this is a document, not a landing page, so it gets one
+   column and nothing that moves. */
+:root{
+  color-scheme:dark;
+  --bg:#060607; --bg-elev:#0c0e12;
+  --line:rgba(255,255,255,.10); --line-strong:rgba(255,255,255,.22);
+  --text:#f3f4f6; --muted:#9aa1ab; --dim:#767d88;
+  --sheen:rgba(255,255,255,.05);
+  --mono:"Cascadia Code",Consolas,"Courier New",monospace;
+  --sans:"IBM Plex Sans Thai","Leelawadee UI","Segoe UI",Tahoma,sans-serif;
+  --r-sm:8px; --r-md:14px;
+}
+:root[data-theme="light"]{
+  color-scheme:light;
+  --bg:#ffffff; --bg-elev:#f6f8fa;
+  --line:rgba(14,17,22,.12); --line-strong:rgba(14,17,22,.26);
+  --text:#0e1116; --muted:#4d5561; --dim:#6b7280;
+  --sheen:rgba(14,17,22,.03);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:var(--sans); font-size:16px; line-height:1.75;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:44rem; margin:0 auto; padding:2.5rem 1.5rem 6rem}
+header{border-bottom:1px solid var(--line); padding-bottom:1.5rem; margin-bottom:2.5rem}
+header a{color:var(--muted); text-decoration:none; font-size:.9rem}
+header a:hover{color:var(--text)}
+h1{font-size:1.9rem; line-height:1.3; font-weight:700; margin:.75rem 0 .5rem}
+h2{font-size:1.15rem; font-weight:600; margin:2.5rem 0 .75rem; padding-top:1.5rem; border-top:1px solid var(--line)}
+h2:first-of-type{border-top:0; padding-top:0}
+h3{font-size:1rem; font-weight:600; margin:1.5rem 0 .35rem}
+p{margin:0 0 1rem; color:var(--text)}
+.lede{color:var(--muted)}
+.date{color:var(--dim); font-size:.9rem}
+ul{margin:0 0 1rem 1.25rem}
+li{margin:0 0 .5rem}
+code{font-family:var(--mono); font-size:.9em; background:var(--sheen); border:1px solid var(--line); border-radius:var(--r-sm); padding:.1em .4em}
+a{color:var(--text)}
+.card{background:var(--bg-elev); border:1px solid var(--line); border-radius:var(--r-md); padding:1.25rem 1.5rem; margin:0 0 1.5rem}
+.card p:last-child{margin-bottom:0}
+.sep{margin:4rem 0 0; border:0; border-top:1px solid var(--line-strong)}
+.en{margin-top:3rem}
+.en h1{font-size:1.5rem}
+footer{margin-top:4rem; padding-top:1.5rem; border-top:1px solid var(--line); color:var(--dim); font-size:.9rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <a href="./">← Aetox</a>
+  <h1>นโยบายความเป็นส่วนตัว</h1>
+  <p class="date">ปรับปรุงล่าสุด 24 สิงหาคม 2026</p>
+</header>
+
+<div class="card">
+  <p><strong>สรุปหนึ่งบรรทัด:</strong> Aetox ทำงานบนเครื่องของคุณ ผู้พัฒนาไม่มีเซิร์ฟเวอร์ที่รับบทสนทนา
+  ไฟล์ หรือคีย์ของคุณ และไม่มีการเก็บสถิติการใช้งานใด ๆ ทั้งสิ้น</p>
+</div>
+
+<h2>สิ่งที่ Aetox ไม่ทำ</h2>
+<ul>
+  <li>ไม่ส่งสถิติการใช้งานของคุณออกจากเครื่อง สถิติมีอยู่ แต่อยู่กับคุณ ดูหัวข้อถัดไป</li>
+  <li>ไม่มี analytics ของบุคคลที่สาม และไม่มีการส่งรายงานข้อผิดพลาดโดยอัตโนมัติ
+      การแจ้งปัญหาเกิดขึ้นต่อเมื่อคุณกดปุ่มแจ้งด้วยตัวเองเท่านั้น ดูข้อ 6</li>
+  <li>ผู้พัฒนาไม่ได้ดำเนินการเซิร์ฟเวอร์ใดที่รับข้อความ ไฟล์ หรือคีย์ของคุณ</li>
+  <li>ไม่มีการขายหรือแบ่งปันข้อมูลของคุณให้ใคร เพราะไม่มีข้อมูลของคุณอยู่ที่เรา</li>
+</ul>
+
+<h2>สิ่งที่เก็บไว้บนเครื่องของคุณ</h2>
+<p>ทั้งหมดอยู่ในโฟลเดอร์ <code>%AppData%\aetox</code> บนเครื่องของคุณเอง ไม่มีการซิงก์ไปที่ไหน</p>
+<ul>
+  <li>บทสนทนาและประวัติการทำงาน</li>
+  <li>ความจำต่อโปรเจกต์ที่คุณให้เอเจนจำ</li>
+  <li>การตั้งค่า สิทธิ์ที่คุณอนุมัติ และฮุก</li>
+  <li>API key และโทเคนของผู้ให้บริการ <strong>ถูกเข้ารหัสด้วย Windows DPAPI</strong>
+      ซึ่งผูกกับบัญชีผู้ใช้ Windows ของคุณ ผู้ใช้อื่นบนเครื่องเดียวกันถอดรหัสไม่ได้</li>
+  <li>โปรแกรมเสริมที่คุณเลือกติดตั้ง เช่น Tesseract, poppler, ffmpeg และโมเดลถอดเสียง</li>
+  <li><strong>สถิติการใช้งานของคุณเอง</strong> เช่น จำนวนโทเคนที่ใช้ไปและการเรียกใช้เครื่องมือ
+      บันทึกไว้เพื่อให้คุณเปิดดูย้อนหลังได้ในแอป เก็บอยู่ในเครื่องคุณเท่านั้น
+      ไม่ถูกส่งมาให้ผู้พัฒนาและไม่ถูกส่งไปที่ใด</li>
+</ul>
+<p>ลบทั้งหมดได้ด้วยการลบโฟลเดอร์นั้นทิ้ง หรือถอนการติดตั้งแอป</p>
+
+<h2>สิ่งที่ออกจากเครื่อง และไปหาใคร</h2>
+<p>Aetox ต่อออกไปข้างนอกในหกกรณีนี้เท่านั้น และทุกกรณีเป็นผลจากสิ่งที่คุณสั่งหรือตั้งค่าไว้</p>
+
+<h3>1. ผู้ให้บริการโมเดลที่คุณตั้งค่าเอง</h3>
+<p>เมื่อคุณใส่ API key ของผู้ให้บริการรายใด พร้อมต์ ไฟล์ที่คุณแนบ และเนื้อหาบทสนทนา
+จะถูกส่งไปหา<strong>ผู้ให้บริการรายนั้นโดยตรง</strong> ภายใต้นโยบายความเป็นส่วนตัวและเงื่อนไขของเขา
+Aetox ไม่ได้อยู่ตรงกลาง และผู้พัฒนาไม่เห็นข้อมูลนั้น</p>
+<p>ถ้าคุณยังไม่ได้ตั้งค่าผู้ให้บริการใดเลย Aetox จะใช้ผู้ให้บริการในตัวชื่อ <code>aetox</code>
+ซึ่ง<strong>ทำงานอยู่ในโปรแกรมบนเครื่องคุณล้วน ๆ ไม่ส่งอะไรออกไปเลย</strong></p>
+
+<h3>2. การตรวจหารุ่นใหม่</h3>
+<p>Aetox ถาม <code>api.github.com</code> ว่ามีรุ่นใหม่กว่าที่คุณใช้อยู่หรือไม่
+คำขอนั้นมีเพียงหมายเลขรุ่นปัจจุบัน ไม่มีเนื้อหาใด ๆ ของคุณ
+เช่นเดียวกับการเปิดเว็บทั่วไป GitHub จะเห็นหมายเลขไอพีของคุณจากคำขอนั้น</p>
+<p>ปิดได้ด้วยการตั้งตัวแปรสภาพแวดล้อม <code>AETOX_DISABLE_UPDATE_CHECK=1</code>
+และรุ่นที่ติดตั้งจาก Microsoft Store จะไม่ตรวจเลย เพราะ Windows เป็นผู้อัปเดตให้</p>
+
+<h3>3. การดาวน์โหลดความสามารถเสริม</h3>
+<p>เมื่อคุณติ๊กเลือกความสามารถอย่างการอ่านข้อความจากรูปหรือการถอดเสียง
+Aetox จะดาวน์โหลดโปรแกรมที่จำเป็นจากที่อยู่ที่ปักหมุดไว้ล่วงหน้าบน GitHub และ Hugging Face
+พร้อมตรวจค่าแฮช SHA256 ก่อนใช้งาน ไม่มีการส่งข้อมูลของคุณไปกับคำขอเหล่านี้
+และจะไม่เกิดขึ้นเลยถ้าคุณไม่ได้ติ๊ก</p>
+
+<h3>4. เว็บที่คุณสั่งให้เอเจนเปิด</h3>
+<p>เมื่อคุณสั่งให้เอเจนเปิดหน้าเว็บหรือดึงข้อมูลจากเว็บ คำขอจะไปหาเว็บนั้นโดยตรงจากเครื่องคุณ
+เว็บปลายทางจะเห็นคำขอนั้นเหมือนที่เบราว์เซอร์ทั่วไปเปิดเข้าไป</p>
+
+<h3>5. บริการที่คุณเชื่อมต่อเอง</h3>
+<p>ถ้าคุณเชื่อมบัญชี GitHub หรือตั้งค่าเซิร์ฟเวอร์ MCP เพิ่มเติม Aetox จะติดต่อบริการเหล่านั้น
+ตามที่คุณตั้งไว้ ภายใต้เงื่อนไขของบริการนั้น ๆ</p>
+
+<h3>6. การแจ้งปัญหาที่คุณกดเอง</h3>
+<p>ในหน้า "ปัญหาของระบบ" มีปุ่ม <strong>แจ้งปัญหานี้</strong> อยู่ข้างแต่ละรายการ
+เมื่อคุณกด Aetox จะเปิดเบราว์เซอร์ไปที่หน้าเปิดประเด็นใหม่บน GitHub โดยกรอกรายละเอียดของปัญหานั้น
+พร้อมบันทึกการทำงานส่วนที่เกี่ยวข้องไว้ให้ล่วงหน้า</p>
+<p>สองข้อที่ควรรู้ก่อนกดส่ง</p>
+<ul>
+  <li>ไม่มีอะไรถูกส่งจนกว่าคุณจะกดปุ่มส่งบนหน้า GitHub ด้วยตัวเอง Aetox แค่เปิดหน้าที่กรอกไว้ให้
+      คุณจึงเห็นข้อความทั้งหมดก่อนเสมอ และแก้หรือปิดทิ้งได้</li>
+  <li><strong>ประเด็นบน GitHub เป็นสาธารณะ</strong> และรายละเอียดที่กรอกมาให้อาจมีชื่อไฟล์
+      เส้นทางโฟลเดอร์ หรือค่าที่ส่งให้เครื่องมือของคุณติดมาด้วย ควรอ่านแล้วลบส่วนที่ไม่อยากเปิดเผยออกก่อนส่ง</li>
+</ul>
+
+<h2>ทุกเพศทุกวัย</h2>
+<p>Aetox เป็นผู้ช่วยบนคอมพิวเตอร์สำหรับทุกคน ใครใช้คอมพิวเตอร์เป็นก็ใช้ได้ ไม่มีการจำกัดอายุ
+และไม่มีการเก็บข้อมูลส่วนตัวจากผู้ใช้คนไหนทั้งสิ้น ไม่ว่าอายุเท่าไร</p>
+<p>ข้อเดียวที่ผู้ปกครองควรรู้: เอเจนเปิดหน้าเว็บได้ตามที่ผู้ใช้สั่ง ซึ่งหมายถึงเว็บอะไรก็ได้บนอินเทอร์เน็ต
+เด็กเล็กจึงควรมีผู้ใหญ่อยู่ด้วย เหมือนกับตอนใช้เบราว์เซอร์ทั่วไป</p>
+
+<h2>การเปลี่ยนแปลงนโยบายนี้</h2>
+<p>หากมีการเปลี่ยนแปลง จะประกาศบนหน้านี้พร้อมวันที่ปรับปรุงด้านบน</p>
+
+<h2>ติดต่อ</h2>
+<p>คำถามเรื่องความเป็นส่วนตัว เปิดประเด็นได้ที่
+<a href="https://github.com/Mike0165115321/Aetox/issues">github.com/Mike0165115321/Aetox/issues</a></p>
+
+<hr class="sep">
+
+<section class="en" lang="en">
+  <h1>Privacy Policy</h1>
+  <p class="date">Last updated 24 August 2026</p>
+
+  <div class="card">
+    <p><strong>In one line:</strong> Aetox runs on your machine. The developer operates no server
+    that receives your conversations, your files, or your keys, and the app collects no usage
+    data of any kind.</p>
+  </div>
+
+  <h2>What Aetox does not do</h2>
+  <ul>
+    <li>No usage statistics leave your machine. Statistics exist, but they stay with you: see the
+        next section</li>
+    <li>No third-party analytics, and no automatic error reporting. A problem is only reported
+        when you press the button to report it yourself: see case 6</li>
+    <li>The developer runs no server that receives your messages, files, or keys</li>
+    <li>Nothing is sold or shared with anyone, because none of your data is held by us</li>
+  </ul>
+
+  <h2>What is stored on your machine</h2>
+  <p>All of it lives in <code>%AppData%\aetox</code> on your own computer. Nothing is synced anywhere.</p>
+  <ul>
+    <li>Conversations and history</li>
+    <li>Per-project memory you asked the agent to keep</li>
+    <li>Settings, the permissions you granted, and hooks</li>
+    <li>Provider API keys and tokens, <strong>encrypted with Windows DPAPI</strong> and tied to your
+        Windows user account, so another user on the same machine cannot decrypt them</li>
+    <li>Optional components you chose to install, such as Tesseract, poppler, ffmpeg and the
+        speech model</li>
+    <li><strong>Your own usage statistics</strong>, such as tokens spent and tool calls made, kept
+        so that you can look back at them inside the app. They stay on your machine. They are not
+        sent to the developer and are not sent anywhere else</li>
+  </ul>
+  <p>Deleting that folder, or uninstalling the app, removes all of it.</p>
+
+  <h2>What leaves your machine, and to whom</h2>
+  <p>Aetox reaches the network in exactly these six cases, and every one of them follows from
+  something you configured or asked for.</p>
+
+  <h3>1. The model provider you configured</h3>
+  <p>When you enter a provider's API key, your prompts, the files you attach and the conversation
+  content are sent <strong>directly to that provider</strong>, under that provider's own privacy
+  policy and terms. Aetox is not in the middle, and the developer does not see any of it.</p>
+  <p>If you have configured no provider, Aetox uses its built-in <code>aetox</code> provider, which
+  <strong>runs entirely inside the app on your machine and sends nothing anywhere</strong>.</p>
+
+  <h3>2. The update check</h3>
+  <p>Aetox asks <code>api.github.com</code> whether a newer release exists. The request carries only
+  the version you are running and none of your content. As with any web request, GitHub sees the
+  IP address it came from.</p>
+  <p>It can be switched off with the environment variable <code>AETOX_DISABLE_UPDATE_CHECK=1</code>,
+  and builds installed from the Microsoft Store never check at all, because Windows handles
+  updates for them.</p>
+
+  <h3>3. Optional component downloads</h3>
+  <p>When you tick a capability such as reading text from images or transcribing speech, Aetox
+  downloads the program it needs from URLs pinned in advance on GitHub and Hugging Face, and
+  verifies a SHA256 checksum before using it. None of your data is sent with these requests, and
+  none of them happen unless you ticked the box.</p>
+
+  <h3>4. Sites you ask the agent to visit</h3>
+  <p>When you ask the agent to open a page or fetch from the web, the request goes from your
+  machine to that site directly, exactly as an ordinary browser visit would.</p>
+
+  <h3>5. Services you connect yourself</h3>
+  <p>If you connect a GitHub account or configure additional MCP servers, Aetox contacts those
+  services as you configured, under their own terms.</p>
+
+  <h3>6. Problem reports you send yourself</h3>
+  <p>The "System problems" page has a <strong>Report this problem</strong> button beside each
+  entry. Pressing it opens your browser at GitHub's new-issue form, pre-filled with a description
+  of that problem and the relevant part of the log.</p>
+  <p>Two things to know before you send one:</p>
+  <ul>
+    <li>Nothing is sent until you press submit on GitHub yourself. Aetox only opens the pre-filled
+        form, so you always see the whole text first, and you can edit it or close it.</li>
+    <li><strong>GitHub issues are public</strong>, and the pre-filled detail can include your file
+        names, folder paths, or the arguments passed to a tool. Read it and remove anything you
+        would rather not publish before you send it.</li>
+  </ul>
+
+  <h2>For everyone</h2>
+  <p>Aetox is a computer assistant for anyone who can use a computer. There is no age limit, and
+  no personal data is collected from any user, whatever their age.</p>
+  <p>One thing a parent should know: the agent opens web pages when asked, which means any page on
+  the internet. A young child should have an adult nearby, the same as with any browser.</p>
+
+  <h2>Changes to this policy</h2>
+  <p>Any change will be published on this page, with the updated date shown above.</p>
+
+  <h2>Contact</h2>
+  <p>For privacy questions, open an issue at
+  <a href="https://github.com/Mike0165115321/Aetox/issues">github.com/Mike0165115321/Aetox/issues</a></p>
+</section>
+
+<footer>
+  Aetox · <a href="./">mike0165115321.github.io/Aetox</a>
+</footer>
+
+</div>
+</body>
+</html>
