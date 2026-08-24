@@ -96,8 +96,10 @@ var storeMu sync.Mutex
 // plan's terms may not permit. The last two had stopped working on top of it.
 // Credentials left in the store by an older version are dropped on load so a
 // stale token is never sent anywhere, and the next save purges them from disk.
-// Removing a *sign-in* is not always removing the provider: qwen still runs on
-// an API key, which never lived in this file.
+// Removing a *sign-in* is not always removing the provider: that row still runs
+// on an API key, which never lived in this file. The key below stays "qwen"
+// because it is a literal string in oauth.json files written before the
+// 2026-08-24 rename, not a provider name to be kept current.
 //
 // ChatGPT came back in §69 — see codex.go and ARCHITECTURE.md — so it is
 // deliberately absent below. An oauth.json that survived §64 without being

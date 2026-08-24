@@ -1491,7 +1491,7 @@ var desktopProviders = []string{
 	// Signed into, not keyed in (internal/oauth).
 	"codex", "openrouter",
 	// API key or a local server.
-	"anthropic", "ollama", "lmstudio", "deepseek", "gemini", "openai", "qwen", "zai",
+	"anthropic", "ollama", "lmstudio", "deepseek", "gemini", "openai", "alibaba", "zai",
 	// Same runtime as the row above (OpenAI-compatible, base URL, key), kept off
 	// only because nobody had typed them here. Each endpoint verified up to the
 	// auth wall against the live API (2026-08-14): base URL, path and body shape

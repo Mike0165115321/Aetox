@@ -130,7 +130,7 @@ flowchart LR
     CLI --> Engine
     Bindings --> Engine
 
-    Providers[["19 Provider APIs (verified in code)\nOpenRouter, OpenAI, Codex, Anthropic, DeepSeek,\nZ.AI, Gemini, Qwen, Groq, Mistral, Kimi, MiniMax,\nxAI, ThaiLLM, ModelScope, NVIDIA,\nOllama Cloud, LM Studio, Ollama (local)"]]
+    Providers[["19 Provider APIs (verified in code)\nOpenRouter, OpenAI, Codex, Anthropic, DeepSeek,\nZ.AI, Gemini, Alibaba, Groq, Mistral, Kimi, MiniMax,\nxAI, ThaiLLM, ModelScope, NVIDIA,\nOllama Cloud, LM Studio, Ollama (local)"]]
     GH[["GitHub API\ngithub (4 actions) · plugin_install · rtk self-install"]]
     MCPExt[["Configured MCP servers"]]
     Web[["Live web pages\n(inside native browser tabs)"]]

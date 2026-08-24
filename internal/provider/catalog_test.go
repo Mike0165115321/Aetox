@@ -38,6 +38,16 @@ func TestNormalize_KnownAlias(t *testing.T) {
 		{"noop", "aetox"},
 		{"none", "aetox"},
 		{"stub", "aetox"},
+		{"alibaba", "alibaba"},
+		{"alibaba-cloud", "alibaba"},
+		{"aliyun", "alibaba"},
+		{"bailian", "alibaba"},
+		// The pre-2026-08-24 spellings. Every one of these can be sitting in a
+		// preference file, an enabled list, or a credentials.json key.
+		{"qwen", "alibaba"},
+		{"dashscope", "alibaba"},
+		{"tongyi", "alibaba"},
+		{"qwen-code", "alibaba"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
@@ -290,7 +300,7 @@ func TestDefaultBaseURL(t *testing.T) {
 
 func TestRequiresAPIKey(t *testing.T) {
 	needsKey := []string{"openrouter", "openai", "deepseek", "gemini", "groq",
-		"mistral", "kimi", "minimax", "qwen", "zai", "xai", "thaillm", "anthropic"}
+		"mistral", "kimi", "minimax", "alibaba", "zai", "xai", "thaillm", "anthropic"}
 	for _, p := range needsKey {
 		if !RequiresAPIKey(p) {
 			t.Fatalf("expected %q to require API key", p)
@@ -393,4 +403,47 @@ func boolStr(b bool) string {
 		return "true"
 	}
 	return "false"
+}
+
+// A provider that gets renamed keeps every name it has ever been saved under,
+// because the only thing standing between an old preference file and a
+// provider the user can no longer reach is this list. The rename mechanism is
+// Normalize and nothing else — there is no migration step to forget to run,
+// and no file rewritten on upgrade — so a dropped alias is silent: the app
+// starts, the picker looks right, and one person's key is simply gone.
+//
+// Names go in here when a row is renamed. They never come out.
+func TestRenamedProvidersKeepTheirOldNames(t *testing.T) {
+	renamed := map[string]string{
+		"noop":      "aetox",   // the built-in engine, renamed before v0.8
+		"qwen":      "alibaba", // 2026-08-24
+		"dashscope": "alibaba", // 2026-08-24
+		"tongyi":    "alibaba", // 2026-08-24
+		"qwen-code": "alibaba", // 2026-08-24, the dead sign-in's spelling
+	}
+	for old, want := range renamed {
+		if got := Normalize(old); got != want {
+			t.Errorf("Normalize(%q): want %q got %q — a saved key under the old name is now unreachable", old, want, got)
+		}
+	}
+}
+
+// Alibaba Cloud Model Studio is two account worlds behind one wire format and
+// the row has to pick one. It picks the international endpoint, because that
+// is the console apiKeyURL sends people to: a row that hands out a Singapore
+// key and then talks to the Beijing host answers "Incorrect API key provided"
+// to a key that is perfectly good, which is the bug this row shipped with for
+// a year. If the default ever moves back to dashscope.aliyuncs.com, the key
+// page has to move with it.
+func TestAlibabaTalksToTheConsoleItSendsPeopleTo(t *testing.T) {
+	spec, ok := Lookup("alibaba")
+	if !ok {
+		t.Fatal("alibaba is not in the catalog")
+	}
+	if !strings.Contains(spec.BaseURL, "dashscope-intl.aliyuncs.com") {
+		t.Errorf("base URL %q is not the international host", spec.BaseURL)
+	}
+	if !strings.Contains(spec.APIKeyURL, "alibabacloud.com") {
+		t.Errorf("key page %q is not the international console, but the base URL is", spec.APIKeyURL)
+	}
 }

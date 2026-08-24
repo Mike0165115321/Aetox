@@ -320,22 +320,107 @@ var catalog = map[string]*entry{
 		modelDefaults: ModelDefaults{FallbackModel: "gpt-5.5"},
 		capabilities:  Capabilities{ToolCalling: true, Reasoning: true},
 	},
+	// Alibaba Cloud Model Studio (DashScope), named for the company rather than
+	// the model family since 2026-08-24. It was `qwen` for a year, and the row
+	// was reported missing twice by people who had gone looking for "Alibaba
+	// Cloud" in the picker and found a list that never says those words — the
+	// picker prints the canonical id and nothing else, so the id *is* the name.
+	// models_dev.go used to carry a translation line for this exact gap
+	// ("Aetox names the product a user picks"); the product a user picks here
+	// is Alibaba Cloud, so the line is gone and the two catalogs now agree.
+	//
+	// Every old spelling stays an alias, which is the whole migration — the
+	// same mechanism the noop→aetox rename used. A preference file, an enabled
+	// list or a saved key written as "qwen" normalizes to "alibaba" on read
+	// (config.APIKeyForProvider normalizes both sides for that reason).
+	//
 	// API key only since v0.8.1 (§65): the qwen-code device flow that used to
-	// stand behind this entry never completed a sign-in and is gone. DashScope's
-	// OpenAI-compatible endpoint is the only path left, so it is a fixed base
-	// URL again rather than one the login hands back.
-	"qwen": {
-		canonical:      "qwen",
-		balanceKind:    BalanceWebOnly,
-		quotaSource:    QuotaOpenAIStd,
-		aliases:        []string{"qwen", "qwen-code", "dashscope", "tongyi"},
+	// stand behind this row never completed a sign-in and is gone.
+	//
+	// The base URL is the INTERNATIONAL host, changed 2026-08-24 and the other
+	// half of "I set it up and it still would not work". apiKeyURL sends people
+	// to bailian.console.alibabacloud.com, whose own <title> is "Alibaba Cloud
+	// Model Studio Console", while this row talked to dashscope.aliyuncs.com,
+	// the China host — so the row's own documented path produced a key that
+	// could only ever answer "Incorrect API key provided".
+	//
+	// Model Studio is SIX regions, not two worlds, and their docs say the rest
+	// plainly: "Singapore, US (Virginia), and China (Beijing) API keys are not
+	// interchangeable." The region is a dropdown in the console's top-right
+	// corner, which is nowhere a user looks while copying a key. Worse for a
+	// catalog, five of the six put the user's own workspace id in the HOST:
+	//
+	//   US (Virginia)  https://dashscope-us.aliyuncs.com/compatible-mode/v1
+	//   the other five https://{WorkspaceId}.{ap-southeast-1|cn-beijing|
+	//                  cn-hongkong|ap-northeast-1|eu-central-1}.maas.aliyuncs.com/compatible-mode/v1
+	//
+	// A fixed string cannot hold a per-user subdomain, so the default is the
+	// workspace-free international host that has served this endpoint for
+	// years. Whether it is still the right one for a key minted today is the
+	// open question on this row: it answers, but only a real key can say
+	// whether it answers 200.
+	//
+	// Probed from here 2026-08-24, junk key, five hosts: dashscope-intl,
+	// dashscope, dashscope-us and a made-up workspace on both ap-southeast-1
+	// and cn-beijing all answered the same 401 body, differing only in the help
+	// link (www.alibabacloud.com/help/en on four, help.aliyun.com/zh on the two
+	// China ones). The maas hosts are wildcard-routed — an invented workspace
+	// id reaches auth — so nothing before a valid key distinguishes them, and
+	// the picker cannot warn in advance. What can, and now does, is the 401:
+	// credentialHint in [account_access.go] appends the region list to Model
+	// Studio's rejection, matched on the error-code doc link it puts in every
+	// regional response.
+	//
+	// No region dial. Anyone outside the default pastes their own URL into the
+	// base URL field already on this card, and a second one-provider control is
+	// worse than a field that exists. AltBaseURL is deliberately NOT it either:
+	// that slot means "this API speaks a second wire format", a fact about the
+	// protocol, and using it for geography would make the Settings control
+	// labelled "wire format" answer a question about which country signed you
+	// up.
+	//
+	// One more wall, and it is not ours: the console refuses to create a key at
+	// all until the account's details are complete ("โปรดกรอกข้อมูลบัญชีให้ครบถ้วน
+	// ...ก่อนสร้างคีย์ API", owner's own console 2026-08-24, request id
+	// 01A032AB-8C87-5664-AAD7-346599C3793F). Same state the nvidia row is in —
+	// shipped, reachable, unproven, waiting on an owner-only account step.
+	"alibaba": {
+		canonical:   "alibaba",
+		balanceKind: BalanceWebOnly,
+		quotaSource: QuotaOpenAIStd,
+		aliases: []string{
+			"alibaba", "alibaba-cloud", "alibabacloud", "aliyun",
+			"model-studio", "modelstudio", "bailian",
+			// The pre-rename spellings. Removing any of these silently
+			// orphans a saved key.
+			"qwen", "qwen-code", "dashscope", "tongyi",
+		},
 		requiresAPIKey: true,
 		runtime:        RuntimeOpenAICompatible,
-		baseURL:        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+		baseURL:        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
 		envKeys:        []string{"DASHSCOPE_API_KEY", "QWEN_API_KEY"},
 		apiKeyURL:      "https://bailian.console.alibabacloud.com/?tab=model#/api-key",
-		modelDefaults:  ModelDefaults{FallbackModel: "qwen3-coder-plus"},
-		capabilities:   Capabilities{ToolCalling: true},
+		// Was qwen3-coder-plus, released 2025-07-23 and thirteen months stale
+		// by the time anyone noticed — the picker is filled by
+		// DiscoverOpenAICompatibleModels, so this name is only ever reached
+		// when the endpoint cannot be asked, which is exactly the moment a
+		// dead id is unrecoverable.
+		//
+		// qwen3.7-plus from models.dev, fetched 2026-08-24: tool calls, a
+		// million tokens of context, text/image/video in, at a sixth of
+		// qwen3.8-max's input price. Newest is not the job of a fallback;
+		// working is. Not measured against the live endpoint — that needs a
+		// key, and nobody here has one.
+		modelDefaults: ModelDefaults{FallbackModel: "qwen3.7-plus"},
+		// Reasoning stays false on a row where models.dev marks
+		// reasoningToggle true for every current model (qwen3.5 through
+		// qwen3.8). It is deliberate, not an oversight: this runtime would
+		// send OpenAI's reasoning_effort, and DashScope's documented dial is
+		// enable_thinking/thinking_budget. Which one the endpoint honours
+		// cannot be probed through a 401. Turning this on before that is
+		// answered would draw a four-level picker that may send nothing —
+		// the thinking_capabilities.go warning about controls that lie.
+		capabilities: Capabilities{ToolCalling: true},
 	},
 	"deepseek": {
 		canonical:      "deepseek",

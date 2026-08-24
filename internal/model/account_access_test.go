@@ -44,3 +44,53 @@ func TestAnOrdinaryNotFoundIsLeftAlone(t *testing.T) {
 		t.Fatalf("a missing model was rewritten as an account problem: %v", err)
 	}
 }
+
+// Verbatim from dashscope-intl.aliyuncs.com on 2026-08-24, junk key. The same
+// body came back from dashscope, dashscope-us, and a made-up workspace id on
+// ap-southeast-1 — five hosts, one sentence, and nothing in it about regions.
+const modelStudioBadKey401 = `{"error":{"message":"Incorrect API key provided. For details, see: https://www.alibabacloud.com/help/en/model-studio/error-code#apikey-error","type":"invalid_request_error","param":null,"code":"invalid_api_key"},"request_id":"6ce1ad79-c7e2-9afb-acf8-e68191913351"}`
+
+// And from cn-beijing the same day: identical except the help link, which is
+// the Chinese doc site. The marker has to survive that difference or the hint
+// appears for half the regions it is about.
+const modelStudioBadKey401CN = `{"error":{"message":"Incorrect API key provided. For details, see: https://help.aliyun.com/zh/model-studio/error-code#apikey-error","type":"invalid_request_error","param":null,"code":"invalid_api_key"},"request_id":"a38e3d77-cff0-9152-bfe0-52c7e5d6fd4e"}`
+
+// And from a workspace host on ap-southeast-1, same day: a THIRD wording for
+// the same rejection — "Invalid API-key provided", with the request id under
+// "id" instead of "request_id". Three spellings across five hosts is the whole
+// argument for matching the doc link rather than the sentence: a marker written
+// against the prose would have gone quiet on the maas hosts, which are the five
+// regions out of six.
+const modelStudioBadKey401MAAS = `{"error":{"message":"Invalid API-key provided. For details, see: https://www.alibabacloud.com/help/en/model-studio/error-code#apikey-error","id":"12105deb-efba-9660-a304-2edaa46de207","type":"invalid_request_error","code":"invalid_api_key"}}`
+
+func TestModelStudio401SaysTheRegionCouldBeTheCause(t *testing.T) {
+	for name, body := range map[string]string{
+		"international":  modelStudioBadKey401,
+		"china":          modelStudioBadKey401CN,
+		"maas workspace": modelStudioBadKey401MAAS,
+	} {
+		hint := credentialHint([]byte(body))
+		if hint == "" {
+			t.Fatalf("%s: a Model Studio 401 got no hint — the user is told the key is wrong and nothing about the six endpoints it could belong to", name)
+		}
+		for _, want := range []string{"region", "base URL", "maas.aliyuncs.com"} {
+			if !strings.Contains(hint, want) {
+				t.Errorf("%s: hint does not mention %q: %s", name, want, hint)
+			}
+		}
+	}
+}
+
+// Every other provider's 401 stays exactly as it was. A key really can just be
+// wrong, and appending a lecture about Alibaba regions to OpenAI's rejection
+// would be noise on the far more common case.
+func TestAnOrdinaryBadKeyGetsNoHint(t *testing.T) {
+	for _, body := range []string{
+		`{"error":{"message":"Incorrect API key provided: sk-abc***","type":"invalid_request_error","code":"invalid_api_key"}}`,
+		`{"error":{"message":"No credentials presented"}}`,
+	} {
+		if hint := credentialHint([]byte(body)); hint != "" {
+			t.Errorf("an ordinary 401 was given the Model Studio hint: %s", hint)
+		}
+	}
+}

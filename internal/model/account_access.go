@@ -72,3 +72,63 @@ func accountAccessError(providerName string, status int, body []byte, detail str
 	}
 	return nil
 }
+
+// credentialHints are the providers whose 401 is ambiguous in a way the user
+// cannot see, and where the extra sentence is a fact about the API rather than
+// a guess about the key.
+//
+// "Incorrect API key provided" is the whole message on a provider that serves
+// the same wire format from six hosts and issues a key that only works on one
+// of them. The key can be freshly created, copied correctly, and still get
+// exactly that sentence — so the honest reading of the raw 401 is not the only
+// reading, and a user with no way to know that goes and makes another key.
+//
+// Matched on the vendor's own prose, like accountAccessMarkers, and for a
+// stronger reason here: this marker is the error-code doc link Model Studio
+// puts in every regional response, so it identifies the SERVICE and not the
+// host. A marker written as a hostname would have to list all six.
+var credentialHints = []struct {
+	marker []byte
+	hint   string
+}{
+	{
+		// Alibaba Cloud Model Studio. Their own docs say it plainly —
+		// "Singapore, US (Virginia), and China (Beijing) API keys are not
+		// interchangeable" — and the region is chosen in a dropdown in the
+		// console's top-right corner, which is not somewhere a user looks
+		// while copying a key.
+		//
+		// Probed 2026-08-24 with a junk key: dashscope-intl, dashscope,
+		// dashscope-us and a made-up workspace on both ap-southeast-1 and
+		// cn-beijing all answer this same 401. The two China hosts link
+		// help.aliyun.com/zh and the rest link www.alibabacloud.com/help/en,
+		// so the marker below deliberately starts after that difference.
+		marker: []byte("model-studio/error-code#apikey-error"),
+		hint: "Model Studio issues a separate key per region and each region has its own endpoint — " +
+			"a Singapore key answers exactly this on the Beijing host, and the other way round. " +
+			"Check the region dropdown in the top-right of the console against this provider's base URL. " +
+			"Their current docs give US (Virginia) as https://dashscope-us.aliyuncs.com/compatible-mode/v1, " +
+			"and Singapore, Beijing, Hong Kong, Tokyo and Frankfurt as " +
+			"https://{WorkspaceId}.{ap-southeast-1|cn-beijing|cn-hongkong|ap-northeast-1|eu-central-1}.maas.aliyuncs.com/compatible-mode/v1, " +
+			"where {WorkspaceId} comes from the console's Workspace Management page. " +
+			"Aetox defaults to the workspace-free international host; paste yours into the base URL field on this provider's card if that is not your region.",
+	},
+}
+
+// credentialHint returns a sentence to add to a 401, or "" when there is
+// nothing honest to add.
+//
+// Separate from accountAccessError because the two answer different questions.
+// That one says "the key is fine and the account is not allowed", and replaces
+// the provider's message. This one does not dispute the 401 at all — the key
+// really was rejected — it says what else could have caused it, and is
+// appended so the provider still gets the last word.
+func credentialHint(body []byte) string {
+	lower := bytes.ToLower(body)
+	for _, entry := range credentialHints {
+		if bytes.Contains(lower, entry.marker) {
+			return entry.hint
+		}
+	}
+	return ""
+}

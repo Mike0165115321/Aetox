@@ -178,10 +178,16 @@ const modelCatalogFile = "model-catalog.json"
 // modelsDevProvider maps an Aetox canonical provider onto the name models.dev
 // files it under.
 //
-// Four of them disagree, and the disagreements are not typos to be normalized
+// Three of them disagree, and the disagreements are not typos to be normalized
 // away — they are two projects naming the same company differently. Aetox names
 // the product a user picks ("gemini", "kimi"); models.dev names the vendor
 // ("google", "moonshotai"). Anything not listed is already identical.
+//
+// There were four until 2026-08-24, when "qwen" → "alibaba" came off: the row
+// is now named for the company on both sides, which is what a user looking for
+// Alibaba Cloud in the picker was searching for. A translation line that exists
+// because one catalog is named after a model family and the other after the
+// vendor is a smell — the row was misnamed, not the table.
 func modelsDevProvider(canonical string) string {
 	switch canonical {
 	case "gemini":
@@ -190,9 +196,6 @@ func modelsDevProvider(canonical string) string {
 		return "moonshotai"
 	case "together":
 		return "togetherai"
-	case "qwen":
-		// DashScope serves Alibaba's own models under Alibaba's catalog entry.
-		return "alibaba"
 	default:
 		return canonical
 	}

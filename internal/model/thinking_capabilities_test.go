@@ -212,7 +212,7 @@ func TestUnknownModelOfAReasoningProviderGetsNoDial(t *testing.T) {
 // And the providers whose API carries no thinking setting at all offer nothing,
 // however many levels the table might have been able to name.
 func TestProvidersWithoutAReasoningKnobOfferNothing(t *testing.T) {
-	for _, p := range []string{"aetox", "mistral", "qwen", "zai", "ollama", "lmstudio"} {
+	for _, p := range []string{"aetox", "mistral", "alibaba", "zai", "ollama", "lmstudio"} {
 		if levels := SupportedThinkingLevels(p, ""); len(levels) != 0 {
 			t.Errorf("%s offers %#v but its runtime sends no thinking field at all", p, levels)
 		}

@@ -10,9 +10,11 @@ package model
 // a broken resolver rather than as a thin fixture.
 //
 // Keyed the way distill() keys them, by the MODELS.DEV provider name: Aetox
-// says gemini, kimi and qwen where that table says google, moonshotai and
-// alibaba. The first draft keyed by the Aetox name and every gemini and qwen
-// row silently missed; the matrix caught it on the first run.
+// says gemini and kimi where that table says google and moonshotai. The first
+// draft keyed by the Aetox name and every gemini and qwen row silently missed;
+// the matrix caught it on the first run. The qwen half of that lesson stopped
+// applying on 2026-08-24, when the row was renamed to `alibaba` and the two
+// catalogs started agreeing on it — see DECISIONS §175.
 var capabilityMatrixRows = map[string]ModelFacts{
 	// anthropic (anthropic): rich
 	"anthropic/claude-opus-5": {Context: 1000000, ToolCall: true, Reasoning: true, ReasoningToggle: false, NoTemperature: true, ReasoningLevels: []string{"low", "medium", "high", "xhigh", "max"}, Input: []string{"text", "image", "pdf"}, Output: []string{"text"}},
@@ -86,13 +88,13 @@ var capabilityMatrixRows = map[string]ModelFacts{
 	"openrouter/z-ai/glm-4.5v": {Context: 65536, ToolCall: true, Reasoning: true, ReasoningToggle: true, NoTemperature: false, ReasoningLevels: nil, Input: []string{"text", "image"}, Output: []string{"text"}},
 	// openrouter (openrouter): plain
 	"openrouter/z-ai/glm-5": {Context: 204800, ToolCall: true, Reasoning: true, ReasoningToggle: false, NoTemperature: false, ReasoningLevels: nil, Input: []string{"text"}, Output: []string{"text"}},
-	// qwen (alibaba): plain
+	// alibaba (alibaba): plain
 	"alibaba/glm-5.2": {Context: 1000000, ToolCall: true, Reasoning: true, ReasoningToggle: false, NoTemperature: false, ReasoningLevels: []string{"none", "minimal", "low", "medium", "high", "xhigh", "max"}, Input: []string{"text"}, Output: []string{"text"}},
-	// qwen (alibaba): seeing
+	// alibaba (alibaba): seeing
 	"alibaba/qvq-max": {Context: 131072, ToolCall: true, Reasoning: true, ReasoningToggle: false, NoTemperature: false, ReasoningLevels: nil, Input: []string{"text", "image"}, Output: []string{"text"}},
-	// qwen (alibaba): notool
+	// alibaba (alibaba): notool
 	"alibaba/qwen-vl-ocr": {Context: 34096, ToolCall: false, Reasoning: false, ReasoningToggle: false, NoTemperature: false, ReasoningLevels: nil, Input: []string{"text", "image"}, Output: []string{"text"}},
-	// qwen (alibaba): rich
+	// alibaba (alibaba): rich
 	"alibaba/qwen3.8-max": {Context: 1000000, ToolCall: true, Reasoning: true, ReasoningToggle: true, NoTemperature: false, ReasoningLevels: []string{"low", "medium", "xhigh"}, Input: []string{"text", "image", "video", "pdf"}, Output: []string{"text"}},
 	// xai (xai): rich
 	"xai/grok-4.6": {Context: 500000, ToolCall: true, Reasoning: true, ReasoningToggle: false, NoTemperature: false, ReasoningLevels: []string{"low", "medium", "high", "xhigh"}, Input: []string{"text", "image", "pdf"}, Output: []string{"text"}},
@@ -324,7 +326,7 @@ var capabilityMatrixRows = map[string]ModelFacts{
 	"openrouter/qwen/qwen3.6-27b": {Context: 262144, ToolCall: true, Reasoning: true, ReasoningToggle: true, NoTemperature: false, ReasoningLevels: nil, Input: []string{"text", "image", "video"}, Output: []string{"text"}},
 	// openrouter (openrouter): named-by-tests
 	"openrouter/z-ai/glm-5.2": {Context: 1048576, ToolCall: true, Reasoning: true, ReasoningToggle: true, NoTemperature: false, ReasoningLevels: []string{"high", "xhigh"}, Input: []string{"text"}, Output: []string{"text"}},
-	// qwen (alibaba): named-by-tests
+	// alibaba (alibaba): named-by-tests
 	"alibaba/qwen3.7-plus": {Context: 1000000, ToolCall: true, Reasoning: true, ReasoningToggle: true, NoTemperature: false, ReasoningLevels: nil, Input: []string{"text", "image", "video"}, Output: []string{"text"}},
 	// xai (xai): named-by-tests
 	"xai/grok-4.5": {Context: 500000, ToolCall: true, Reasoning: true, ReasoningToggle: false, NoTemperature: false, ReasoningLevels: []string{"low", "medium", "high"}, Input: []string{"text", "image", "pdf"}, Output: []string{"text"}},
@@ -381,10 +383,10 @@ var capabilityMatrixPairs = []struct{ Provider, Model string }{
 	{"openrouter", "openai/o1-pro"},
 	{"openrouter", "z-ai/glm-4.5v"},
 	{"openrouter", "z-ai/glm-5"},
-	{"qwen", "glm-5.2"},
-	{"qwen", "qvq-max"},
-	{"qwen", "qwen-vl-ocr"},
-	{"qwen", "qwen3.8-max"},
+	{"alibaba", "glm-5.2"},
+	{"alibaba", "qvq-max"},
+	{"alibaba", "qwen-vl-ocr"},
+	{"alibaba", "qwen3.8-max"},
 	{"xai", "grok-4.6"},
 	{"xai", "grok-imagine-video"},
 	{"zai", "glm-4.5v"},
@@ -500,7 +502,7 @@ var capabilityMatrixPairs = []struct{ Provider, Model string }{
 	{"openrouter", "qwen/qwen3-8b"},
 	{"openrouter", "qwen/qwen3.6-27b"},
 	{"openrouter", "z-ai/glm-5.2"},
-	{"qwen", "qwen3.7-plus"},
+	{"alibaba", "qwen3.7-plus"},
 	{"xai", "grok-4.5"},
 	{"zai", "glm-4.5"},
 	{"zai", "glm-4.6"},

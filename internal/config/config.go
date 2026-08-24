@@ -350,13 +350,19 @@ func (p *ModelPreference) EnsureProviderMap() map[string]string {
 	return p.ModelAPIKeys
 }
 
+// APIKeyForProvider normalizes BOTH sides of the comparison, and that is the
+// whole migration path for a provider rename. The stored map is keyed by
+// whatever the app was calling the provider on the day the key was saved
+// ("qwen" before 2026-08-24, "alibaba" after); normalizing only the lookup
+// name would turn every one of those files into a key the owner can see in
+// credentials.json and the app swears is not there.
 func (p ModelPreference) APIKeyForProvider(provider string) string {
 	key := p.normalizeProviderKey(provider)
 	if key == "" {
 		return ""
 	}
 	for providerKey, value := range p.ModelAPIKeys {
-		if strings.EqualFold(strings.TrimSpace(providerKey), key) {
+		if p.normalizeProviderKey(providerKey) == key {
 			return strings.TrimSpace(value)
 		}
 	}
@@ -373,7 +379,23 @@ func (p *ModelPreference) SetAPIKeyForProvider(provider, apiKey string) {
 		return
 	}
 	p.EnsureProviderMap()
+	// One provider, one row. Writing under the canonical name while an entry
+	// saved under an older one survives would leave two rows both answering to
+	// this provider, and the reader above walks a map — it would return
+	// whichever Go handed it first, so the key that actually gets sent could
+	// change between two runs of the same build.
+	p.dropAliasEntries(p.ModelAPIKeys, key)
 	p.ModelAPIKeys[key] = trimmed
+}
+
+// dropAliasEntries removes every entry that means the same provider as key but
+// is spelled differently, leaving key itself alone.
+func (p *ModelPreference) dropAliasEntries(m map[string]string, key string) {
+	for stored := range m {
+		if stored != key && p.normalizeProviderKey(stored) == key {
+			delete(m, stored)
+		}
+	}
 }
 
 func (p ModelPreference) BaseURLForProvider(provider string) string {
@@ -381,8 +403,11 @@ func (p ModelPreference) BaseURLForProvider(provider string) string {
 	if key == "" {
 		return ""
 	}
+	// Both sides normalized, for the reason APIKeyForProvider spells out: an
+	// endpoint override saved under an older name still belongs to this
+	// provider.
 	for providerKey, value := range p.ModelBaseURLs {
-		if strings.EqualFold(strings.TrimSpace(providerKey), key) {
+		if p.normalizeProviderKey(providerKey) == key {
 			return strings.TrimSpace(value)
 		}
 	}
@@ -399,12 +424,16 @@ func (p *ModelPreference) SetBaseURLForProvider(provider, baseURL string) {
 	}
 	trimmed := strings.TrimSpace(baseURL)
 	if trimmed == "" {
+		// Reset has to clear the older spellings too, or "back to the catalog
+		// default" would silently leave the override in place.
+		p.dropAliasEntries(p.ModelBaseURLs, key)
 		delete(p.ModelBaseURLs, key)
 		return
 	}
 	if p.ModelBaseURLs == nil {
 		p.ModelBaseURLs = make(map[string]string)
 	}
+	p.dropAliasEntries(p.ModelBaseURLs, key)
 	p.ModelBaseURLs[key] = trimmed
 }
 

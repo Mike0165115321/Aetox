@@ -263,6 +263,12 @@ func (p *OpenAICompatibleProvider) statusError(resp *http.Response, body []byte)
 		}
 		return fmt.Errorf("%s is rate limiting this key. Try again shortly. (429)", p.provider)
 	case http.StatusUnauthorized:
+		// The provider's sentence first, then whatever it left out. A 401 that
+		// says only "Incorrect API key provided" is complete on a provider with
+		// one endpoint and misleading on one with six — see credentialHint.
+		if hint := credentialHint(body); hint != "" {
+			return fmt.Errorf("%s rejected the credentials (401: %s). %s", p.provider, detail, hint)
+		}
 		return fmt.Errorf("%s rejected the credentials (401: %s)", p.provider, detail)
 	default:
 		// A 404 is usually a model id nobody serves, and that message is

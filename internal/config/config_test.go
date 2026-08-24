@@ -488,3 +488,46 @@ func TestCredentialsRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// The upgrade that renames a provider is the one that can lose a key, and it
+// loses it silently: the file still has it, the card still draws, and the app
+// says there is no key. Every credentials.json written before 2026-08-24 keyed
+// Alibaba Cloud as "qwen".
+func TestKeySavedUnderAnOlderProviderNameStillResolves(t *testing.T) {
+	pref := ModelPreference{ModelAPIKeys: map[string]string{"qwen": "sk-from-an-older-build"}}
+	if got := pref.APIKeyForProvider("alibaba"); got != "sk-from-an-older-build" {
+		t.Errorf("APIKeyForProvider(alibaba) = %q — the key saved as \"qwen\" is unreachable", got)
+	}
+	if got := pref.APIKeyForProvider("qwen"); got != "sk-from-an-older-build" {
+		t.Errorf("APIKeyForProvider(qwen) = %q — the old name has to keep working too", got)
+	}
+}
+
+// And the write side, which is the half that turns one stale row into two live
+// ones. APIKeyForProvider walks a map: with both "qwen" and "alibaba" present
+// it returns whichever Go hands it first, so the key actually sent could
+// change between two runs of the same binary.
+func TestSavingAKeyClearsTheOlderSpelling(t *testing.T) {
+	pref := ModelPreference{ModelAPIKeys: map[string]string{"qwen": "sk-old"}}
+	pref.SetAPIKeyForProvider("alibaba", "sk-new")
+	if _, stale := pref.ModelAPIKeys["qwen"]; stale {
+		t.Error("the entry keyed \"qwen\" survived the write — two rows now answer for one provider")
+	}
+	if got := pref.APIKeyForProvider("alibaba"); got != "sk-new" {
+		t.Errorf("APIKeyForProvider(alibaba) = %q, want the key just saved", got)
+	}
+}
+
+// Same rule for the endpoint override, including the reset: "back to the
+// catalog default" has to clear a value saved under the older name, or the
+// button does nothing on exactly the machines this rename touched.
+func TestBaseURLOverrideFollowsTheRename(t *testing.T) {
+	pref := ModelPreference{ModelBaseURLs: map[string]string{"qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1"}}
+	if got := pref.BaseURLForProvider("alibaba"); got == "" {
+		t.Error("a China-region endpoint saved as \"qwen\" is no longer read")
+	}
+	pref.SetBaseURLForProvider("alibaba", "")
+	if len(pref.ModelBaseURLs) != 0 {
+		t.Errorf("reset left %v behind", pref.ModelBaseURLs)
+	}
+}
