@@ -65,18 +65,17 @@ both; the language switch is in Settings and in the first-run wizard. This READM
   file that opens in the slides room, where you page through it, present it full screen, and export
   it as `.pptx`, `.pdf` or images from that same room. Slides are laid out on a 1280x720 box, which
   is exactly PowerPoint's widescreen page, so the deck opens there without shifting.
-- **A browser we built into the app ourselves** — not a headless scrape: a WebView2 window
-  actually composited into the app, with an address bar, back/forward, DevTools, and eight device
+- **A real browser inside the app** — not a headless scrape: a WebView2 window actually
+  composited into it, with an address bar, back/forward, DevTools, and eight device
   presets that resize the native window so CSS media queries genuinely fire. The agent opens,
   reads, clicks and types into the same tab you're watching ([see it](#what-you-can-do-with-it)).
 - **It builds websites and systems, not just code in a chat box** — point it at a folder and you
   get a file tree, a Monaco editor, unlimited real PTY terminal tabs, `git`, `grep` and `glob` over
   the whole tree, plus `diagnostics` and `symbol` backed by language servers the app installs on
   first use. It writes, then opens the result in the browser room next door, in one pass.
-- **Capability is built into the app, not borrowed from model parameters** — Thai/English OCR and
-  offline speech-to-text are built in-house and shipped inside the one binary, so a 9B/35B model
-  running on your own GPU does these jobs as well as a frontier one. The app does the work; the
-  model does not have to.
+- **Capability comes from the app, not from model parameters** — Thai/English OCR and offline
+  speech-to-text are tools the app drives, so a 9B/35B model running on your own GPU does these
+  jobs as well as a frontier one. The app does the work; the model does not have to.
 - **22 model providers** — cloud (OpenAI, Anthropic, Gemini, DeepSeek, Groq, and more) and local
   (LM Studio, Ollama), switchable mid-conversation with context intact. Full list under
   [Everything it can do](#everything-it-can-do).

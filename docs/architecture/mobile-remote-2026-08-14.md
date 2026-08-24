@@ -33,9 +33,8 @@ shape of this decision reaches backwards into work already on the map, and
 learning it late means rework. Everything below is the design as it stood when
 it was parked.
 
-Prior note this finally picks up:
-[competitor-research.md:85](../competitor-research.md) — *"Mobile monitor —
-Mike บอกจำไว้ ควรทำ (Codex Remote เป็นแรงบันดาลใจ)"*.
+Prior note this finally picks up: the owner's own — *"Mobile monitor, จำไว้ ควรทำ"*,
+with Codex Remote as the thing that prompted it.
 
 Live code this touches:
 [`bootstrap.go`](../../internal/bootstrap/bootstrap.go) ·
