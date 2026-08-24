@@ -400,8 +400,6 @@ silently depend on your laptop never closing. n8n and Windmill are the clock; Ae
 
 ## When a turn goes wrong
 
-The engine's job is to finish the turn. These four are failures it absorbs instead of handing you.
-
 **An answer cut off by the output-token limit is continued.** A reply that hits the ceiling used to
 reach you stopped mid-word, with nothing anywhere asking for the rest. The turn now carries on up to
 three times and appends to what is already on screen, so one answer is watched being written rather
