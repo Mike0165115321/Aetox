@@ -9,8 +9,8 @@ package skill
 // the agent's tools and the person typing in the editor beside them — and until
 // now neither could see the other move.
 //
-// `edit` and `apply_patch` were already safe by construction: they match
-// `old_string` against the bytes on disk, so an edit aimed at text somebody has
+// `edit` and `edits` were already safe by construction: they match
+// the `find` text against the bytes on disk, so an edit aimed at text somebody has
 // since changed fails cleanly and writes nothing. The whole-file writers had no
 // equivalent, and that is what this is.
 //

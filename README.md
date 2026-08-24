@@ -347,7 +347,7 @@ typed anything, against a ceiling of 10,400 tokens and 48 tools that a test enfo
 
 | Group | Tools |
 |:---|:---|
-| **Files** | `apply_patch` `delete` `edit` `glob` `grep` `list` `read` `write` |
+| **Files** | `delete` `edit` `edits` `glob` `grep` `list` `read` `write` |
 | **Running commands** | `desk_terminal` `git` `shell` *(run · output · kill · list)* |
 | **Handing back files** | `doc_write` `sheet_write` |
 | **Reading media** | `audio_transcribe` `image_ocr` `pdf_read` `video_ocr` |

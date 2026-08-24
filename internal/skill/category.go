@@ -49,7 +49,7 @@ var toolCategories = map[string]string{
 	"read":          CategoryFiles,
 	"write":         CategoryFiles,
 	"edit":          CategoryFiles,
-	"apply_patch":   CategoryFiles,
+	"edits":   CategoryFiles,
 	"delete":        CategoryFiles,
 	"list":          CategoryFiles,
 	"glob":          CategoryFiles,

@@ -23,9 +23,9 @@ func TestEditSkillReplacesUniqueMatch(t *testing.T) {
 	s := &editSkill{root: root}
 
 	out, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":       "a.txt",
-		"old_string": "old",
-		"new_string": "new",
+		"path":    "a.txt",
+		"find":    "old",
+		"replace": "new",
 	})
 	if err != nil {
 		t.Fatalf("ExecuteTool: unexpected error: %v", err)
@@ -45,9 +45,9 @@ func TestEditSkillEmptyNewStringDeletes(t *testing.T) {
 	s := &editSkill{root: root}
 
 	if _, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":       "a.txt",
-		"old_string": " remove",
-		"new_string": "",
+		"path":    "a.txt",
+		"find":    " remove",
+		"replace": "",
 	}); err != nil {
 		t.Fatalf("ExecuteTool: unexpected error: %v", err)
 	}
@@ -63,9 +63,9 @@ func TestEditSkillRejectsMissingMatch(t *testing.T) {
 	s := &editSkill{root: root}
 
 	_, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":       "a.txt",
-		"old_string": "absent",
-		"new_string": "x",
+		"path":    "a.txt",
+		"find":    "absent",
+		"replace": "x",
 	})
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("expected not-found error, got %v", err)
@@ -78,9 +78,9 @@ func TestEditSkillRejectsAmbiguousMatch(t *testing.T) {
 	s := &editSkill{root: root}
 
 	_, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":       "a.txt",
-		"old_string": "dup",
-		"new_string": "x",
+		"path":    "a.txt",
+		"find":    "dup",
+		"replace": "x",
 	})
 	if err == nil || !strings.Contains(err.Error(), "2 times") {
 		t.Fatalf("expected ambiguity error, got %v", err)
@@ -91,7 +91,7 @@ func TestEditSkillRejectsAmbiguousMatch(t *testing.T) {
 	}
 }
 
-// replace_all is the answer to the error the test above asserts: the ambiguity
+// all is the answer to the error the test above asserts: the ambiguity
 // guard stays the default, and this is how the model says it meant all of them.
 func TestEditSkillReplaceAll(t *testing.T) {
 	root := t.TempDir()
@@ -99,10 +99,10 @@ func TestEditSkillReplaceAll(t *testing.T) {
 	s := &editSkill{root: root}
 
 	out, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":        "a.txt",
-		"old_string":  "old",
-		"new_string":  "new",
-		"replace_all": true,
+		"path":    "a.txt",
+		"find":    "old",
+		"replace": "new",
+		"all":     true,
 	})
 	if err != nil {
 		t.Fatalf("ExecuteTool: %v", err)
@@ -120,7 +120,7 @@ func TestEditSkillReplaceAll(t *testing.T) {
 	}
 }
 
-// replace_all off (or absent) must still refuse an ambiguous match — the guard
+// all off (or absent) must still refuse an ambiguous match — the guard
 // is the default, not a mode the caller opts into.
 func TestEditSkillReplaceAllFalseStillRejectsAmbiguity(t *testing.T) {
 	root := t.TempDir()
@@ -128,13 +128,13 @@ func TestEditSkillReplaceAllFalseStillRejectsAmbiguity(t *testing.T) {
 	s := &editSkill{root: root}
 
 	_, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":        "a.txt",
-		"old_string":  "dup",
-		"new_string":  "x",
-		"replace_all": false,
+		"path":    "a.txt",
+		"find":    "dup",
+		"replace": "x",
+		"all":     false,
 	})
-	if err == nil || !strings.Contains(err.Error(), "replace_all") {
-		t.Fatalf("expected the ambiguity error to name replace_all as the way out, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "all") {
+		t.Fatalf("expected the ambiguity error to name all as the way out, got %v", err)
 	}
 }
 
@@ -154,7 +154,7 @@ func TestEditSkillRefusesWhenTheFileMovedUnderIt(t *testing.T) {
 	}
 
 	_, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path": "a.go", "old_string": "\treturn 1\n", "new_string": "\treturn 3\n",
+		"path": "a.go", "find": "\treturn 1\n", "replace": "\treturn 3\n",
 	})
 	if err == nil {
 		t.Fatal("an edit against text that is no longer in the file must fail")
@@ -162,7 +162,7 @@ func TestEditSkillRefusesWhenTheFileMovedUnderIt(t *testing.T) {
 	// It used to say "re-read the file and match the text exactly", which is
 	// the most expensive recovery available and, for the failure that actually
 	// arrives, the least likely to work — see lineendings.go. The contract now
-	// is that the error says what is wrong with this old_string.
+	// is that the error says what is wrong with this find.
 	if !strings.Contains(err.Error(), "already been changed") {
 		t.Errorf("err = %v, want it to name why nothing matched", err)
 	}
@@ -183,9 +183,9 @@ func TestEditSkillRejectsBinaryFile(t *testing.T) {
 	s := &editSkill{root: root}
 
 	if _, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":       "bin.dat",
-		"old_string": "a",
-		"new_string": "x",
+		"path":    "bin.dat",
+		"find":    "a",
+		"replace": "x",
 	}); err == nil {
 		t.Fatal("expected binary-file error, got nil")
 	}
@@ -194,9 +194,9 @@ func TestEditSkillRejectsBinaryFile(t *testing.T) {
 func TestEditSkillRejectsMissingFile(t *testing.T) {
 	s := &editSkill{root: t.TempDir()}
 	if _, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":       "nope.txt",
-		"old_string": "a",
-		"new_string": "b",
+		"path":    "nope.txt",
+		"find":    "a",
+		"replace": "b",
 	}); err == nil {
 		t.Fatal("expected error for missing file, got nil")
 	}
@@ -205,9 +205,9 @@ func TestEditSkillRejectsMissingFile(t *testing.T) {
 func TestEditSkillRejectsEscape(t *testing.T) {
 	s := &editSkill{root: t.TempDir()}
 	if _, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":       "../escape.txt",
-		"old_string": "a",
-		"new_string": "b",
+		"path":    "../escape.txt",
+		"find":    "a",
+		"replace": "b",
 	}); err == nil {
 		t.Fatal("expected error escaping sandbox, got nil")
 	}
@@ -218,9 +218,9 @@ func TestEditSkillRejectsIdenticalStrings(t *testing.T) {
 	writeEditFixture(t, root, "a.txt", "same")
 	s := &editSkill{root: root}
 	if _, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":       "a.txt",
-		"old_string": "same",
-		"new_string": "same",
+		"path":    "a.txt",
+		"find":    "same",
+		"replace": "same",
 	}); err == nil {
 		t.Fatal("expected error for identical strings, got nil")
 	}
@@ -258,12 +258,12 @@ func TestEditSkillPreservesWhitespaceSignificantStrings(t *testing.T) {
 	path := writeEditFixture(t, root, "a.go", "func a() {\n\treturn 1\n}\n")
 	s := &editSkill{root: root}
 
-	// old_string with leading tab and trailing newline must match byte-exact,
+	// find with leading tab and trailing newline must match byte-exact,
 	// proving ExecuteTool doesn't trim (the stringSlice hazard).
 	if _, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":       "a.go",
-		"old_string": "\treturn 1\n",
-		"new_string": "\treturn 2\n",
+		"path":    "a.go",
+		"find":    "\treturn 1\n",
+		"replace": "\treturn 2\n",
 	}); err != nil {
 		t.Fatalf("ExecuteTool: unexpected error: %v", err)
 	}
@@ -280,9 +280,9 @@ func TestEditSkillRejectsDirectoryTarget(t *testing.T) {
 	}
 	s := &editSkill{root: root}
 	if _, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":       "somedir",
-		"old_string": "a",
-		"new_string": "b",
+		"path":    "somedir",
+		"find":    "a",
+		"replace": "b",
 	}); err == nil {
 		t.Fatal("expected error for directory target, got nil")
 	}
@@ -290,11 +290,11 @@ func TestEditSkillRejectsDirectoryTarget(t *testing.T) {
 
 func TestEditSkillExecuteToolMissingArgs(t *testing.T) {
 	s := &editSkill{root: t.TempDir()}
-	if _, err := s.ExecuteTool(context.Background(), map[string]any{"old_string": "a", "new_string": "b"}); err == nil {
+	if _, err := s.ExecuteTool(context.Background(), map[string]any{"find": "a", "replace": "b"}); err == nil {
 		t.Fatal("expected error for missing path, got nil")
 	}
-	if _, err := s.ExecuteTool(context.Background(), map[string]any{"path": "a.txt", "new_string": "b"}); err == nil {
-		t.Fatal("expected error for missing old_string, got nil")
+	if _, err := s.ExecuteTool(context.Background(), map[string]any{"path": "a.txt", "replace": "b"}); err == nil {
+		t.Fatal("expected error for missing find, got nil")
 	}
 }
 
@@ -306,9 +306,9 @@ func TestEditSkillAppendContinuesAFile(t *testing.T) {
 	s := &editSkill{root: root}
 
 	out, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":       "report.html",
-		"new_string": "<h1>สรุป</h1>\n</body>\n</html>\n",
-		"mode":       "append",
+		"path":    "report.html",
+		"replace": "<h1>สรุป</h1>\n</body>\n</html>\n",
+		"mode":    "append",
 	})
 	if err != nil {
 		t.Fatalf("ExecuteTool: unexpected error: %v", err)
@@ -332,9 +332,9 @@ func TestEditSkillAppendJoinsWithoutInventingASeparator(t *testing.T) {
 	s := &editSkill{root: root}
 
 	if _, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":       "cut.txt",
-		"new_string": "lf",
-		"mode":       "append",
+		"path":    "cut.txt",
+		"replace": "lf",
+		"mode":    "append",
 	}); err != nil {
 		t.Fatalf("ExecuteTool: unexpected error: %v", err)
 	}
@@ -352,9 +352,9 @@ func TestEditSkillAppendKeepsTheFilesLineEndings(t *testing.T) {
 	s := &editSkill{root: root}
 
 	if _, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":       "crlf.txt",
-		"new_string": "third\nfourth\n",
-		"mode":       "append",
+		"path":    "crlf.txt",
+		"replace": "third\nfourth\n",
+		"mode":    "append",
 	}); err != nil {
 		t.Fatalf("ExecuteTool: unexpected error: %v", err)
 	}
@@ -372,15 +372,15 @@ func TestEditSkillAppendRefusesAnOldString(t *testing.T) {
 	s := &editSkill{root: root}
 
 	_, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":       "a.txt",
-		"old_string": "old",
-		"new_string": "new",
-		"mode":       "append",
+		"path":    "a.txt",
+		"find":    "old",
+		"replace": "new",
+		"mode":    "append",
 	})
 	if err == nil {
-		t.Fatal("expected a refusal when append is given an old_string")
+		t.Fatal("expected a refusal when append is given a find text")
 	}
-	if !strings.Contains(err.Error(), "no old_string") {
+	if !strings.Contains(err.Error(), "no find") {
 		t.Errorf("the refusal must say which argument to drop, got %q", err.Error())
 	}
 }
@@ -393,11 +393,11 @@ func TestEditSkillMissingOldStringPointsAtAppend(t *testing.T) {
 	s := &editSkill{root: root}
 
 	_, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":       "a.txt",
-		"new_string": "more",
+		"path":    "a.txt",
+		"replace": "more",
 	})
 	if err == nil {
-		t.Fatal("expected a refusal for replace without old_string")
+		t.Fatal("expected a refusal for replace without find")
 	}
 	if !strings.Contains(err.Error(), "append") {
 		t.Errorf("refusal must offer append, got %q", err.Error())

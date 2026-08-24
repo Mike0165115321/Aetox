@@ -84,9 +84,9 @@ func TestEditAppendOverCapChangesNothing(t *testing.T) {
 	s := &editSkill{root: root}
 
 	_, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":       "cont.txt",
-		"new_string": linesOf(contentLineCap + 1),
-		"mode":       "append",
+		"path":    "cont.txt",
+		"replace": linesOf(contentLineCap + 1),
+		"mode":    "append",
 	})
 	if err == nil {
 		t.Fatal("append must obey the same cap as write")
@@ -105,9 +105,9 @@ func TestEditReplaceIsNotCapped(t *testing.T) {
 	s := &editSkill{root: root}
 
 	if _, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":       "big.go",
-		"old_string": "OLD_BLOCK",
-		"new_string": linesOf(contentLineCap + 100),
+		"path":    "big.go",
+		"find":    "OLD_BLOCK",
+		"replace": linesOf(contentLineCap + 100),
 	}); err != nil {
 		t.Fatalf("a large replace must still be allowed: %v", err)
 	}

@@ -277,7 +277,7 @@ func SubjectFromPartialArgs(args string) (string, bool) {
 	firstByKey := map[string]string{}
 	// Every distinct path in the call, in the order they arrived. One is the
 	// ordinary case; several means a call that names several files, and
-	// apply_patch is the only tool that does. See subjectForPaths.
+	// edits is the only tool that does. See subjectForPaths.
 	paths := []string{}
 	for _, m := range matches {
 		if _, seen := firstByKey[m[1]]; !seen {
@@ -323,7 +323,7 @@ func hasPath(list []string, want string) bool {
 
 // subjectForPaths names a call that touched more than one file.
 //
-// `apply_patch` was reaching the timeline as the bare word "apply_patch": its
+// `edits` was reaching the timeline as the bare word "edits": its
 // paths live inside `edits[]` and nothing looked in there, so the one writer
 // that can change several files at once was the one row that named none of
 // them. Owner, 24 ส.ค.: *"แต่ละ edit บางทีก็ไม่แสดงจำนวนไฟล์ที่มีการแก้ไขนะ"*.
@@ -356,7 +356,7 @@ func subjectForPaths(paths []string) string {
 // a call by its label: if the streaming path and the completed path disagree
 // by so much as a truncation, one tool call draws two rows.
 func SubjectFromArgs(args map[string]any) string {
-	// A call whose files are nested one level down, which today is apply_patch
+	// A call whose files are nested one level down, which today is edits
 	// and its `edits[]`. Read before the top-level keys, because such a call has
 	// no top-level path to find and used to fall through to nothing at all.
 	if paths := nestedPaths(args); len(paths) > 0 {

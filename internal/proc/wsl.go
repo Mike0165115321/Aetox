@@ -24,7 +24,7 @@ import (
 // because that is where the project's toolchain is. So only that crosses.
 //
 // What does not cross is worth stating, because it is the part that makes this
-// cheap: read, write, grep, glob, edit and apply_patch are Go reading files,
+// cheap: read, write, grep, glob, edit and edits are Go reading files,
 // and \\wsl.localhost has let Windows read a distro's filesystem since 21H2.
 // They go on being Windows code whichever backend is selected.
 //

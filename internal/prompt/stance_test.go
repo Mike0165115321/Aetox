@@ -58,7 +58,7 @@ func TestASessionWithNoToolsIsNotTaughtHowToUseThem(t *testing.T) {
 	// Phrases from the layers that are only ever instructions for using tools.
 	for _, phrase := range []string{
 		"skills_list",            // capability
-		"apply_patch",            // fileEditing
+		"edits",            // fileEditing
 		"one shell script",       // batchWork
 		"Reach for calc",         // computing
 		"write it to a .md file", // longform

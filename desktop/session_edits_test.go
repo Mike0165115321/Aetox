@@ -30,7 +30,7 @@ func TestSessionEditsListsWhatTheRoomWrote(t *testing.T) {
 	touch(t, filepath.Join(root, "internal"), "app.go")
 	touch(t, root, "README.md")
 
-	recordRun(t, a, "edit", `{"path":"internal/app.go","old_string":"a","new_string":"b"}`)
+	recordRun(t, a, "edit", `{"path":"internal/app.go","find":"a","replace":"b"}`)
 	recordRun(t, a, "write", `{"path":"README.md","content":"x"}`)
 
 	page := a.SessionEdits(a.cur().id)
@@ -89,13 +89,13 @@ func TestSessionEditsCountsEveryPathInOnePatch(t *testing.T) {
 	touch(t, root, "one.go")
 	touch(t, root, "two.go")
 
-	recordRun(t, a, "apply_patch", `{"edits":[
-		{"path":"one.go","old_string":"a","new_string":"b"},
-		{"path":"two.go","old_string":"c","new_string":"d"}]}`)
+	recordRun(t, a, "edits", `{"edits":[
+		{"path":"one.go","find":"a","replace":"b"},
+		{"path":"two.go","find":"c","replace":"d"}]}`)
 
 	page := a.SessionEdits(a.cur().id)
 	if len(page.Files) != 2 {
-		t.Fatalf("want a row per file in the patch, got %+v", page.Files)
+		t.Fatalf("want a row per file in the call, got %+v", page.Files)
 	}
 }
 
@@ -105,7 +105,7 @@ func TestSessionEditsKeepsOnlyTheLastThingDoneToAFile(t *testing.T) {
 	a := bootDeskApp(t, "coding")
 
 	recordRun(t, a, "write", `{"path":"draft.md","content":"x"}`)
-	recordRun(t, a, "edit", `{"path":"draft.md","old_string":"x","new_string":"y"}`)
+	recordRun(t, a, "edit", `{"path":"draft.md","find":"x","replace":"y"}`)
 	recordRun(t, a, "delete", `{"path":"draft.md"}`)
 
 	page := a.SessionEdits(a.cur().id)
@@ -245,7 +245,7 @@ func TestNotifyFilesChangedNamesWhatAWriteTouched(t *testing.T) {
 }
 
 // The same parse the panel uses, so the two cannot disagree about what a call
-// changed — several files in one atomic patch included.
+// changed — several files in one atomic call included.
 func TestNotifyFilesChangedCoversEveryPathInAPatch(t *testing.T) {
 	a := bootDeskApp(t, "coding")
 	events := captureEvents(a)
@@ -253,9 +253,9 @@ func TestNotifyFilesChangedCoversEveryPathInAPatch(t *testing.T) {
 	touch(t, root, "one.go")
 	touch(t, root, "two.go")
 
-	a.notifyFilesChanged(a.cur(), turn.ToolRun{Name: "apply_patch", OK: true, Args: `{"edits":[
-		{"path":"one.go","old_string":"a","new_string":"b"},
-		{"path":"two.go","old_string":"c","new_string":"d"}]}`})
+	a.notifyFilesChanged(a.cur(), turn.ToolRun{Name: "edits", OK: true, Args: `{"edits":[
+		{"path":"one.go","find":"a","replace":"b"},
+		{"path":"two.go","find":"c","replace":"d"}]}`})
 
 	if got := changedPaths(t, *events); len(got) != 2 {
 		t.Fatalf("want both files announced, got %+v", got)

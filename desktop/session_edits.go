@@ -69,7 +69,7 @@ var writingTools = map[string]string{
 	"sheet_write":   "W",
 	"notebook_edit": "W",
 	"edit":          "M",
-	"apply_patch":   "M", // several paths in one call; see editsFromRun
+	"edits":   "M", // several paths in one call; see editsFromRun
 	"delete":        "D",
 }
 
@@ -178,7 +178,7 @@ func (a *App) editsFromRun(sessionID, tool, args, at string) []EditedFile {
 	if json.Unmarshal([]byte(args), &parsed) != nil {
 		return nil
 	}
-	// apply_patch is the one writer that names several files in one call, and
+	// edits is the one writer that names several files in one call, and
 	// every one of them was changed by it. Reading only a top-level "path"
 	// would drop the lot.
 	raws := []string{}

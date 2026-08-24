@@ -79,18 +79,18 @@ func (*grepSkill) ToolDefinition() model.ToolDefinition {
 				"type":        "integer",
 				"description": "Lines of surrounding context to show around each match (default 0, max 20). Use it to see enough of the code to build an exact edit without a second read call.",
 			},
-			"output_mode": map[string]any{
+			"show": map[string]any{
 				"type":        "string",
 				"enum":        []string{"content", "files_with_matches", "count"},
 				"description": "content (default) returns the matching lines; files_with_matches returns only the file paths; count returns a per-file tally. Use one of the latter two when you are mapping where something lives — they cost a fraction of the tokens.",
 			},
-			"head_limit": map[string]any{
+			"limit": map[string]any{
 				"type":        "integer",
 				"description": "Return at most this many entries — matches in content mode, files otherwise.",
 			},
 			"offset": map[string]any{
 				"type":        "integer",
-				"description": "Skip this many entries first. Together with head_limit this pages through a search that hit the result cap, instead of having to invent a narrower pattern.",
+				"description": "Skip this many entries first. Together with limit this pages through a search that hit the result cap, instead of having to invent a narrower pattern.",
 			},
 		},
 		"required":             []string{"pattern"},
@@ -135,12 +135,12 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 	if ctxLines > maxGrepContext {
 		ctxLines = maxGrepContext
 	}
-	mode := strings.ToLower(strings.TrimSpace(stringArg(input["output_mode"])))
+	mode := strings.ToLower(strings.TrimSpace(stringArg(input["show"])))
 	if mode == "" {
 		mode = grepModeContent
 	}
 	if mode != grepModeContent && mode != grepModeFiles && mode != grepModeCount {
-		err := errors.New("output_mode must be content, files_with_matches or count")
+		err := errors.New("show must be content, files_with_matches or count")
 		return newToolOutput("grep", "grep "+pattern, "", start, false, err), err
 	}
 	skip := intArg(input["offset"])
@@ -186,10 +186,10 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 		maxFileBytes = 1 << 20
 		maxLineLen   = 200
 	)
-	// head_limit only ever tightens the cap. A model asking for 10,000 matches
+	// limit only ever tightens the cap. A model asking for 10,000 matches
 	// is not a reason to send it 10,000 matches.
 	limit := maxResults
-	if want := intArg(input["head_limit"]); want > 0 && want < limit {
+	if want := intArg(input["limit"]); want > 0 && want < limit {
 		limit = want
 	}
 	results := make([]string, 0)
@@ -403,11 +403,11 @@ func (s *grepSkill) ExecuteTool(ctx context.Context, args map[string]any) (Outpu
 		callArgs = append(callArgs, strings.TrimSpace(path))
 	}
 	return s.Execute(ctx, Input{
-		"args":        callArgs,
-		"glob":        args["glob"],
-		"context":     args["context"],
-		"output_mode": args["output_mode"],
-		"head_limit":  args["head_limit"],
-		"offset":      args["offset"],
+		"args":    callArgs,
+		"glob":    args["glob"],
+		"context": args["context"],
+		"show":    args["show"],
+		"limit":   args["limit"],
+		"offset":  args["offset"],
 	})
 }

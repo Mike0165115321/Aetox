@@ -154,7 +154,7 @@ func TestGrepSkillOutputModes(t *testing.T) {
 		return out.Content
 	}
 
-	files := run(t, map[string]any{"output_mode": "files_with_matches"})
+	files := run(t, map[string]any{"show": "files_with_matches"})
 	if !strings.Contains(files, "a.txt") || !strings.Contains(files, "b.txt") {
 		t.Errorf("files_with_matches = %q, want both matching files", files)
 	}
@@ -162,27 +162,27 @@ func TestGrepSkillOutputModes(t *testing.T) {
 		t.Errorf("files_with_matches = %q, want paths only and no non-matching file", files)
 	}
 
-	counts := run(t, map[string]any{"output_mode": "count"})
+	counts := run(t, map[string]any{"show": "count"})
 	if !strings.Contains(counts, "a.txt:2") || !strings.Contains(counts, "b.txt:1") {
 		t.Errorf("count = %q, want a.txt:2 and b.txt:1", counts)
 	}
 
-	// head_limit and offset are one mechanism seen from both ends: page one and
+	// limit and offset are one mechanism seen from both ends: page one and
 	// page two must not overlap, and together must cover everything.
-	first := run(t, map[string]any{"head_limit": 2})
-	second := run(t, map[string]any{"head_limit": 2, "offset": 2})
+	first := run(t, map[string]any{"limit": 2})
+	second := run(t, map[string]any{"limit": 2, "offset": 2})
 	if strings.Count(first, "needle") != 2 {
-		t.Errorf("head_limit=2 returned %q, want two matches", first)
+		t.Errorf("limit=2 returned %q, want two matches", first)
 	}
 	if strings.Contains(second, "a.txt:1:") {
 		t.Errorf("offset=2 returned %q, want the first page skipped", second)
 	}
 	if !strings.Contains(first, "offset=2") {
-		t.Errorf("head_limit=2 returned %q, want a resume hint", first)
+		t.Errorf("limit=2 returned %q, want a resume hint", first)
 	}
 
-	if _, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "needle", "output_mode": "nonsense"}); err == nil {
-		t.Error("output_mode=nonsense was accepted; an unknown mode must fail rather than silently return content")
+	if _, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "needle", "show": "nonsense"}); err == nil {
+		t.Error("show=nonsense was accepted; an unknown mode must fail rather than silently return content")
 	}
 }
 

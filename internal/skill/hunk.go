@@ -93,7 +93,7 @@ func UnifiedDiff(before, after string) string {
 }
 
 // FileDiff is UnifiedDiff with the file it belongs to named above it, for the
-// one tool that changes several files in a single call (apply_patch). Every
+// one tool that changes several files in a single call (edits). Every
 // other writer touches one file and the row's own label already names it.
 func FileDiff(path, before, after string) string {
 	body := UnifiedDiff(before, after)

@@ -28,7 +28,7 @@ Sort the sentence you are about to add into one of two buckets, out loud, in the
 | Bucket | What it looks like | Where it goes |
 |---|---|---|
 | **The model already does this** | General competence: an edit is cheaper than a rewrite · a tool call costs a round · mental arithmetic on small numbers is fine · long answers should be organised · be concise | **Not in the prompt.** Delete it. If it feels necessary, what you actually noticed was a *failure*, and the failure has a specific cause — name that instead. |
-| **Only Aetox knows this** | What a tool of ours does that its name does not say (`apply_patch` is atomic) · what a tool cannot reach (`calc` has no filesystem) · what this surface silently strips (`<foreignObject>`) · where a threshold sits for us · what is on this desk | **In the prompt**, as the shortest sentence that carries it. |
+| **Only Aetox knows this** | What a tool of ours does that its name does not say (`edits` is atomic) · what a tool cannot reach (`calc` has no filesystem) · what this surface silently strips (`<foreignObject>`) · where a threshold sits for us · what is on this desk | **In the prompt**, as the shortest sentence that carries it. |
 
 Three tests the sentence has to pass before it is written:
 

@@ -87,7 +87,7 @@ assistant    categories: agent, web, media, files, shell      ← ไม่ม�
 specialized  categories: media, web, agent
              tools:  read, write, list, glob
              chairs: doc_write, sheet_write,                 ← อยู่ตรงนี้
-                     edit, grep, apply_patch, delete,
+                     edit, grep, edits, delete,
                      shell, git, desk_terminal
 ```
 

@@ -846,7 +846,7 @@ func TestToolCallToArgs(t *testing.T) {
 		{"write path+content", "write", map[string]any{"path": "a.txt", "content": "x"}, []string{"a.txt", "x"}},
 		{"read path", "read", map[string]any{"path": "a.txt"}, []string{"a.txt"}},
 		{"delete path", "delete", map[string]any{"path": "a.txt"}, []string{"a.txt"}},
-		{"edit path only, match strings excluded", "edit", map[string]any{"path": "a.txt", "old_string": "old", "new_string": "new"}, []string{"a.txt"}},
+		{"edit path only, match strings excluded", "edit", map[string]any{"path": "a.txt", "find": "old", "replace": "new"}, []string{"a.txt"}},
 		{"grep pattern+path", "grep", map[string]any{"pattern": "needle", "path": "sub"}, []string{"needle", "sub"}},
 		{"grep pattern only", "grep", map[string]any{"pattern": "needle"}, []string{"needle"}},
 		{"grep empty args", "grep", map[string]any{}, []string{}},
@@ -875,11 +875,11 @@ func TestPermissionRulesMatchEditAndGrepArgs(t *testing.T) {
 		{Tool: "grep", Pattern: "*", Action: safety.PermissionAllow},
 	}}
 
-	editArgs := toolCallToArgs("edit", map[string]any{"path": "docs/x.md", "old_string": "a", "new_string": "b"})
+	editArgs := toolCallToArgs("edit", map[string]any{"path": "docs/x.md", "find": "a", "replace": "b"})
 	if action, matched := cfg.Resolve("edit", editArgs); !matched || action != safety.PermissionAllow {
 		t.Errorf("edit docs/x.md: Resolve = (%q, %v), want (allow, true)", action, matched)
 	}
-	editArgs = toolCallToArgs("edit", map[string]any{"path": "src/x.go", "old_string": "a", "new_string": "b"})
+	editArgs = toolCallToArgs("edit", map[string]any{"path": "src/x.go", "find": "a", "replace": "b"})
 	if _, matched := cfg.Resolve("edit", editArgs); matched {
 		t.Error("edit src/x.go should not match docs/* rule")
 	}

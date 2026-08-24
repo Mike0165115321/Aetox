@@ -338,7 +338,7 @@ Aetox จำข้ามเซสชันได้ และ**ไม่มี�
 
 | กลุ่ม | เครื่องมือ |
 |:---|:---|
-| **ไฟล์** | `apply_patch` `delete` `edit` `glob` `grep` `list` `read` `write` |
+| **ไฟล์** | `delete` `edit` `edits` `glob` `grep` `list` `read` `write` |
 | **รันคำสั่ง** | `desk_terminal` `git` `shell` *(run · output · kill · list)* |
 | **ส่งไฟล์กลับ** | `doc_write` `sheet_write` |
 | **อ่านสื่อ** | `audio_transcribe` `image_ocr` `pdf_read` `video_ocr` |

@@ -226,7 +226,7 @@ func TestPlanIsNotTaughtToUseTheToolsItWithheld(t *testing.T) {
 		t.Fatal("the rebuilt agent has no context at all")
 	}
 	p := msgs[0].Content
-	for _, phrase := range []string{"apply_patch", "write it to a .md file", "one shell script"} {
+	for _, phrase := range []string{"edits", "write it to a .md file", "one shell script"} {
 		if strings.Contains(p, phrase) {
 			t.Errorf("วางแผน was told %q, and it has no such tool", phrase)
 		}

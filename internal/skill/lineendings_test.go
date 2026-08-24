@@ -22,7 +22,7 @@ func TestEditMatchesTextTheModelCannotSeeTheLineEndingsOf(t *testing.T) {
 	s := &editSkill{root: root}
 
 	if _, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path": "note.md", "old_string": "alpha\nbeta", "new_string": "alpha\nBETA",
+		"path": "note.md", "find": "alpha\nbeta", "replace": "alpha\nBETA",
 	}); err != nil {
 		t.Fatalf("a multi-line edit joined with \\n against a CRLF file must apply: %v", err)
 	}
@@ -50,9 +50,9 @@ func TestEditKeepsAnLFFileOnLF(t *testing.T) {
 	s := &editSkill{root: root}
 
 	if _, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path": "note.md", "old_string": "alpha\r\nbeta", "new_string": "alpha\r\nBETA",
+		"path": "note.md", "find": "alpha\r\nbeta", "replace": "alpha\r\nBETA",
 	}); err != nil {
-		t.Fatalf("a CRLF-joined old_string against an LF file must apply: %v", err)
+		t.Fatalf("a CRLF-joined find against an LF file must apply: %v", err)
 	}
 	data, _ := os.ReadFile(path)
 	if strings.Contains(string(data), "\r") {
@@ -68,10 +68,10 @@ func TestLineEndingToleranceDoesNotWeakenTheUniquenessRule(t *testing.T) {
 	s := &editSkill{root: root}
 
 	_, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path": "note.md", "old_string": "x\ny", "new_string": "x\nz",
+		"path": "note.md", "find": "x\ny", "replace": "x\nz",
 	})
 	if err == nil {
-		t.Fatal("an old_string matching twice must still be refused")
+		t.Fatal("a find text matching twice must still be refused")
 	}
 	if !strings.Contains(err.Error(), "matches 2 times") {
 		t.Errorf("err = %v, want the ordinary ambiguity refusal", err)
@@ -93,7 +93,7 @@ func TestNoMatchIsDiagnosedRatherThanHandedBack(t *testing.T) {
 		want string
 	}{
 		{
-			// read prefixes every line with `%6d\t`; an old_string that carries
+			// read prefixes every line with `%6d\t`; a find text that carries
 			// one silently never matches, and the tool can see that it does.
 			name: "read's line-number prefix carried over",
 			old:  "     2\t\treturn 1",
@@ -113,12 +113,12 @@ func TestNoMatchIsDiagnosedRatherThanHandedBack(t *testing.T) {
 		{
 			name: "not in this file at all",
 			old:  "func absent() {",
-			want: "no line of old_string appears in this file",
+			want: "no line of the find text appears in this file",
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			_, err := s.ExecuteTool(context.Background(), map[string]any{
-				"path": "a.go", "old_string": c.old, "new_string": "x",
+				"path": "a.go", "find": c.old, "replace": "x",
 			})
 			if err == nil {
 				t.Fatal("expected the edit to be refused")
@@ -133,22 +133,22 @@ func TestNoMatchIsDiagnosedRatherThanHandedBack(t *testing.T) {
 	}
 }
 
-// apply_patch carried the identical bug and a heavier cost: a patch that cannot
+// edits carried the identical bug and a heavier cost: a call that cannot
 // apply in full writes nothing, so one invisible `\r` threw away every edit in
 // the batch.
-func TestApplyPatchMatchesAcrossLineEndings(t *testing.T) {
+func TestEditsMatchesAcrossLineEndings(t *testing.T) {
 	root := t.TempDir()
 	path := writeEditFixture(t, root, "note.md", "alpha\r\nbeta\r\ngamma\r\ndelta\r\n")
-	s := &applyPatchSkill{root: root}
+	s := &editsSkill{root: root}
 
 	_, err := s.ExecuteTool(context.Background(), map[string]any{
 		"edits": []any{
-			map[string]any{"path": "note.md", "old_string": "alpha\nbeta", "new_string": "alpha\nBETA"},
-			map[string]any{"path": "note.md", "old_string": "gamma\ndelta", "new_string": "gamma\nDELTA"},
+			map[string]any{"path": "note.md", "find": "alpha\nbeta", "replace": "alpha\nBETA"},
+			map[string]any{"path": "note.md", "find": "gamma\ndelta", "replace": "gamma\nDELTA"},
 		},
 	})
 	if err != nil {
-		t.Fatalf("a two-edit patch joined with \\n against a CRLF file must apply: %v", err)
+		t.Fatalf("a two-edit call joined with \\n against a CRLF file must apply: %v", err)
 	}
 	data, _ := os.ReadFile(path)
 	got := string(data)
@@ -156,7 +156,7 @@ func TestApplyPatchMatchesAcrossLineEndings(t *testing.T) {
 		t.Fatalf("both edits should have landed: %q", got)
 	}
 	if strings.Count(got, "\n") != strings.Count(got, "\r\n") {
-		t.Errorf("the patch left mixed line endings behind: %q", got)
+		t.Errorf("the call left mixed line endings behind: %q", got)
 	}
 }
 

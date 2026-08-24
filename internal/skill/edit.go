@@ -39,25 +39,25 @@ func (*editSkill) ToolDefinition() model.ToolDefinition {
 				"type":        "string",
 				"description": "Relative file path to edit",
 			},
-			"old_string": map[string]any{
+			"find": map[string]any{
 				"type":        "string",
-				"description": "Exact text to replace, unique in the file. Unused by mode=append.",
+				"description": "Exact text to find, unique in the file. Unused by mode=append.",
 			},
-			"new_string": map[string]any{
+			"replace": map[string]any{
 				"type":        "string",
-				"description": "Replacement text, or the text to add in mode=append. Empty deletes old_string.",
+				"description": "Text to put in its place, or the text to add in mode=append. Empty deletes what find matched.",
 			},
-			"replace_all": map[string]any{
+			"all": map[string]any{
 				"type":        "boolean",
 				"description": "Replace every occurrence instead of requiring exactly one.",
 			},
 			"mode": map[string]any{
 				"type":        "string",
 				"enum":        []string{"replace", "append"},
-				"description": "replace (default), or append to add new_string at the end of the file.",
+				"description": "replace (default), or append to add the replace text at the end of the file.",
 			},
 		},
-		"required":             []string{"path", "new_string"},
+		"required":             []string{"path", "replace"},
 		"additionalProperties": false,
 	}
 	payload, _ := json.Marshal(schema)
@@ -95,20 +95,20 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 	}
 
 	// raw []string on purpose: stringSlice trims and drops empty items, which
-	// would corrupt whitespace-significant old_string/new_string.
+	// would corrupt whitespace-significant find/replace.
 	args, _ := input["args"].([]string)
 	if len(args) != 3 {
-		err := errors.New("usage: edit <path> <old_string> <new_string>")
+		err := errors.New("usage: edit <path> <find> <replace>")
 		return newToolOutput("edit", "edit", "", start, false, err), err
 	}
 
 	requestPath := PlacedPath(s.root, s.outputSubdir, strings.TrimSpace(args[0]))
-	oldString := args[1]
-	newString := args[2]
+	findText := args[1]
+	replaceText := args[2]
 	command := "edit " + requestPath
 
 	if requestPath == "" {
-		err := errors.New("usage: edit <path> <old_string> <new_string>")
+		err := errors.New("usage: edit <path> <find> <replace>")
 		return newToolOutput("edit", command, "", start, false, err), err
 	}
 
@@ -116,21 +116,21 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 	// a file without re-sending the rest. It earns its place on the truncation
 	// path — a write cut off at the output ceiling leaves a file that needs
 	// carrying on, and the alternative was making the model quote the tail
-	// back as old_string, which is the very content the limit already proved
+	// back as find text, which is the very content the limit already proved
 	// it cannot afford to repeat.
 	appendMode := strings.EqualFold(strings.TrimSpace(stringArg(input["mode"])), "append")
 	switch {
-	case appendMode && oldString != "":
-		err := errors.New("mode=append adds to the end of the file, so it takes no old_string; drop it, or use the default replace mode")
+	case appendMode && findText != "":
+		err := errors.New("mode=append adds to the end of the file, so it takes no find text; drop it, or use the default replace mode")
 		return newToolOutput("edit", command, "", start, false, err), err
-	case appendMode && newString == "":
-		err := errors.New("new_string is empty; mode=append needs the text to add")
+	case appendMode && replaceText == "":
+		err := errors.New("replace text is empty; mode=append needs the text to add")
 		return newToolOutput("edit", command, "", start, false, err), err
-	case !appendMode && oldString == "":
-		err := errors.New("old_string is empty; use mode=append to add to the end of the file, or write to create one")
+	case !appendMode && findText == "":
+		err := errors.New("find text is empty; use mode=append to add to the end of the file, or write to create one")
 		return newToolOutput("edit", command, "", start, false, err), err
-	case !appendMode && oldString == newString:
-		err := errors.New("old_string and new_string are identical")
+	case !appendMode && findText == replaceText:
+		err := errors.New("find and replace hold the same text")
 		return newToolOutput("edit", command, "", start, false, err), err
 	}
 
@@ -148,7 +148,7 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 	// and append is the door that would otherwise take the traffic write no
 	// longer accepts.
 	if appendMode {
-		if err := checkContentLineCap("new_string", newString); err != nil {
+		if err := checkContentLineCap("replace text", replaceText); err != nil {
 			return newToolOutput("edit", command, "", start, false, err), err
 		}
 	}
@@ -177,7 +177,7 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 		return newToolOutput("edit", command, "", start, false, err), err
 	}
 
-	replaceAll, _ := input["replace_all"].(bool)
+	replaceAll, _ := input["all"].(bool)
 
 	content := string(data)
 
@@ -186,14 +186,14 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 	// byte it stopped at, and a newline we add on its behalf lands inside the
 	// content rather than between two of its parts.
 	if appendMode {
-		addition := newlinesLike(content, newString)
+		addition := newlinesLike(content, replaceText)
 		updated := content + addition
 		if err := os.WriteFile(targetPath, []byte(updated), 0o644); err != nil {
 			return newToolOutput("edit", command, "", start, false, err), err
 		}
 		// This app has now seen the file, so a later whole-file write can be
 		// held to it (filestate.go). edit needs no guard of its own: an
-		// old_string aimed at text somebody has changed simply will not match.
+		// find text aimed at text somebody has changed simply will not match.
 		s.files.Note(targetPath)
 		out := newToolOutput("edit", command, "edit done: appended to "+requestPath, start, false, nil)
 		out.LinesAdded, _ = LineDelta("", addition)
@@ -205,17 +205,17 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 	// reference platform every checked-out file is CRLF and a model cannot see
 	// a `\r`, so an exact-only match failed every multi-line edit and told the
 	// model to re-read, which showed it the same invisible character again.
-	matchString, count := resolveOldString(content, oldString)
-	newString = newlinesLike(content, newString)
+	matchString, count := resolveFindText(content, findText)
+	replaceText = newlinesLike(content, replaceText)
 	switch {
 	case count == 0:
-		err = fmt.Errorf("old_string not found in file — %s", whyNoMatch(content, oldString))
+		err = fmt.Errorf("find text not found in file — %s", whyNoMatch(content, findText))
 		return newToolOutput("edit", command, "", start, false, err), err
 	case count > 1 && !replaceAll:
 		// Still the default, and still the safer one: a model that meant to
 		// change one call site and matched eight has made a mistake worth
-		// stopping, and replace_all is how it says it meant all eight.
-		err = fmt.Errorf("old_string matches %d times; add surrounding lines to make it unique, or set replace_all to change all %d", count, count)
+		// stopping, and all=true is how it says it meant all eight.
+		err = fmt.Errorf("find text matches %d times; add surrounding lines to make it unique, or pass all=true to change all %d", count, count)
 		return newToolOutput("edit", command, "", start, false, err), err
 	}
 
@@ -223,7 +223,7 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 	if replaceAll {
 		replacements = count
 	}
-	updated := strings.Replace(content, matchString, newString, replacements)
+	updated := strings.Replace(content, matchString, replaceText, replacements)
 	if err := os.WriteFile(targetPath, []byte(updated), 0o644); err != nil {
 		return newToolOutput("edit", command, "", start, false, err), err
 	}
@@ -235,11 +235,11 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 	}
 	out := newToolOutput("edit", command, result, start, false, nil)
 	// The two strings are the whole change, once per occurrence replaced.
-	out.LinesAdded, out.LinesRemoved = LineDelta(oldString, newString)
+	out.LinesAdded, out.LinesRemoved = LineDelta(findText, replaceText)
 	out.LinesAdded *= replacements
 	out.LinesRemoved *= replacements
-	// The file before against the file after — not the two strings. A
-	// replace_all that changed eight call sites is eight hunks in the file and
+	// The file before against the file after — not the two strings. An
+	// all=true that changed eight call sites is eight hunks in the file and
 	// one pair of strings, and it is the eight the reader is owed.
 	out.Diff = UnifiedDiff(content, updated)
 	return out, nil
@@ -252,22 +252,22 @@ func (s *editSkill) ExecuteTool(ctx context.Context, args map[string]any) (Outpu
 	}
 
 	path, pathOK := args["path"].(string)
-	oldString, oldOK := args["old_string"].(string)
-	newString, _ := args["new_string"].(string)
+	findText, oldOK := args["find"].(string)
+	replaceText, _ := args["replace"].(string)
 	mode, _ := args["mode"].(string)
 	if !pathOK || strings.TrimSpace(path) == "" {
 		err := errors.New("path is required")
 		return newToolOutput("edit", "edit", "", time.Now(), false, err), err
 	}
-	// old_string stopped being unconditionally required when append arrived,
+	// find stopped being unconditionally required when append arrived,
 	// so the check moved into Execute where the mode is known. Both entry
 	// points now refuse the same combinations, worded from the same place.
 	if !oldOK {
-		oldString = ""
+		findText = ""
 	}
 	return s.Execute(ctx, Input{
-		"args":        []string{path, oldString, newString},
-		"replace_all": args["replace_all"],
-		"mode":        mode,
+		"args": []string{path, findText, replaceText},
+		"all":  args["all"],
+		"mode": mode,
 	})
 }

@@ -131,7 +131,7 @@ func TestTheRunBenchDelegatesTouchNothing(t *testing.T) {
 	defer mu.Unlock()
 	for _, ev := range events {
 		switch ev.Name {
-		case "write", "edit", "apply_patch", "delete", "shell":
+		case "write", "edit", "edits", "delete", "shell":
 			t.Errorf("the bench ran %q — its delegates work in the user's own sandbox", ev.Name)
 		}
 	}

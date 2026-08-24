@@ -252,7 +252,7 @@ Owner brought external feedback proposing three workstreams (browser mastery, to
 
 ### 15.2 Design — two new built-ins, nothing else
 
-- **`edit`** (`internal/skill/edit.go`) — exact search & replace: model sends `path`/`old_string`/`new_string`; Go verifies `old_string` matches **exactly once** (0 → "not found, re-read the file"; >1 → "add surrounding lines"), then replaces. **Rejected the feedback's suggestion of LLM-generated unified diffs + `go-diff`**: models drift on line numbers, and uniqueness-checked literal replace is both safer and dependency-free (`strings.Count` + `strings.Replace`). `ExecuteTool` deliberately bypasses `stringSlice` (it trims/drops empties, which corrupts whitespace-significant match strings). Classified `RiskHigh`/`EffectWriteWorkspace` in `safety.go` — critical because *unknown* skill names default to `RiskLow`/no-effects there, which would have made `edit` an unprompted file writer.
+- **`edit`** (`internal/skill/edit.go`) — exact search & replace: model sends `path`/`find`/`replace`; Go verifies `find` matches **exactly once** (0 → "not found, re-read the file"; >1 → "add surrounding lines"), then replaces. **Rejected the feedback's suggestion of LLM-generated unified diffs + `go-diff`**: models drift on line numbers, and uniqueness-checked literal replace is both safer and dependency-free (`strings.Count` + `strings.Replace`). `ExecuteTool` deliberately bypasses `stringSlice` (it trims/drops empties, which corrupts whitespace-significant match strings). Classified `RiskHigh`/`EffectWriteWorkspace` in `safety.go` — critical because *unknown* skill names default to `RiskLow`/no-effects there, which would have made `edit` an unprompted file writer.
 - **`grep`** (`internal/skill/grep.go`) — stdlib `regexp` + `filepath.WalkDir` content search returning `path:line:text`, capped (200 results, 1 MB/file, skips dot-dirs and binaries). **Rejected shelling out to ripgrep**: not guaranteed installed, and the stdlib walk is ~100 lines with no dependency. `RiskLow`/`EffectReadWorkspace`.
 
 Both registered in `defaults.go`, path-arg extraction added to `turn.toolCallToArgs` so permission patterns (`{Tool: "edit", Pattern: "docs/*"}`) can match. Tests follow the existing per-skill pattern; the full suite also caught that `stringSlice` trimming issue before it shipped.
@@ -1421,7 +1421,7 @@ The general shape is worth keeping: **an environment variable that names a Windo
 
 ## 49. Decision — The Agent Can Finally Run What It Writes: `shell` and `git` Reach the Model (2026-07-28)
 
-**The gap, and how long it hid.** [ADR 0001](../docs/adr/0001-native-tool-calling-foundation.md) set a phase-1 rule — "`shell` is not exposed as an automatic model tool", available "only through explicit user command paths" — and a phase-3 exit: "keep `shell` manual until narrower tools prove sufficient." The narrower tools shipped: `read`/`grep` (§15), `glob`/`apply_patch`/`diagnostics` (§21, §27). The exit condition was met and never checked, so for the whole life of the desktop product the agent could edit code and **never once run it** — no `go test`, no build, no linter, no package install, no `git diff` of its own work. Explore→Read→Edit→**Verify** was missing its last step, and the loop's own name says so.
+**The gap, and how long it hid.** [ADR 0001](../docs/adr/0001-native-tool-calling-foundation.md) set a phase-1 rule — "`shell` is not exposed as an automatic model tool", available "only through explicit user command paths" — and a phase-3 exit: "keep `shell` manual until narrower tools prove sufficient." The narrower tools shipped: `read`/`grep` (§15), `glob`/`edits`/`diagnostics` (§21, §27). The exit condition was met and never checked, so for the whole life of the desktop product the agent could edit code and **never once run it** — no `go test`, no build, no linter, no package install, no `git diff` of its own work. Explore→Read→Edit→**Verify** was missing its last step, and the loop's own name says so.
 
 Two things made this worse than an unfinished phase:
 
@@ -1444,11 +1444,11 @@ Two things made this worse than an unfinished phase:
 
 §49 asked whether the model has a tool at all. This asks whether the tools it has are as good as the ones it is used to. Every model Aetox drives has been trained against Claude Code's and opencode's tool schemas, so a missing parameter is not only a missing capability — it is a capability the model *expects* and works around badly. All four below were found by dumping Aetox's real tool definitions and diffing them against those two, parameter by parameter, rather than by reading our own source and deciding it looked complete.
 
-**1. `edit` gained `replace_all`.** Renaming a symbol at ten call sites in one file previously meant ten `apply_patch` entries, each carrying enough surrounding context to be unique, or a whole-file `write`. The uniqueness guard stays the default and stays right — a model that meant one call site and matched eight has made a mistake worth stopping — so the error now names `replace_all` as the way through instead of only demanding more context. Line counts multiply by the number of occurrences replaced, because the timeline's "+9 −0" should describe the change that happened.
+**1. `edit` gained `all`.** Renaming a symbol at ten call sites in one file previously meant ten entries in one `edits` call, each carrying enough surrounding context to be unique, or a whole-file `write`. The uniqueness guard stays the default and stays right — a model that meant one call site and matched eight has made a mistake worth stopping — so the error now names `all` as the way through instead of only demanding more context. Line counts multiply by the number of occurrences replaced, because the timeline's "+9 −0" should describe the change that happened.
 
-**2. `read` numbers its lines.** Both references hand the model `cat -n` output; Aetox handed it bare text, so the model could cite a location only by quoting the code back, and "which line is that" cost a second call to `grep`. Numbering is `%6d\t`, the file's own numbers rather than a count from the top of the page — paging that renumbered from 1 would make every citation past page one wrong. **The prefix is not in the file**, which makes it a hazard for the two exact-match tools: `read`, `edit` and `apply_patch` all now say so in their descriptions, and `read_test.go` pins the exact format, because a change to it silently breaks a promise those descriptions make. `fs cat` opts out via a new argument to `readTextLines` — it prints to a human who asked for the file, not to a model that has to cite it.
+**2. `read` numbers its lines.** Both references hand the model `cat -n` output; Aetox handed it bare text, so the model could cite a location only by quoting the code back, and "which line is that" cost a second call to `grep`. Numbering is `%6d\t`, the file's own numbers rather than a count from the top of the page — paging that renumbered from 1 would make every citation past page one wrong. **The prefix is not in the file**, which makes it a hazard for the two exact-match tools: `read`, `edit` and `edits` all now say so in their descriptions, and `read_test.go` pins the exact format, because a change to it silently breaks a promise those descriptions make. `fs cat` opts out via a new argument to `readTextLines` — it prints to a human who asked for the file, not to a model that has to cite it.
 
-**3. `grep` gained `output_mode`, `head_limit` and `offset`.** "Which files mention this" is the commonest question asked of a code search, and answering it with every matching line costs one to two orders of magnitude more tokens than answering it with a list of paths — `files_with_matches` and `count` answer it directly. The paging pair fixes a genuine dead end: the 200-match cap had no way past it, so a search that hit the ceiling left the model inventing a narrower pattern, and the marker now names the offset to resume from. `head_limit` may only tighten the cap, never raise it. In the file modes the cap counts *files*, so a repo-wide search stops walking once it has the page it was asked for.
+**3. `grep` gained `show`, `limit` and `offset`.** "Which files mention this" is the commonest question asked of a code search, and answering it with every matching line costs one to two orders of magnitude more tokens than answering it with a list of paths — `files_with_matches` and `count` answer it directly. The paging pair fixes a genuine dead end: the 200-match cap had no way past it, so a search that hit the ceiling left the model inventing a narrower pattern, and the marker now names the offset to resume from. `limit` may only tighten the cap, never raise it. In the file modes the cap counts *files*, so a repo-wide search stops walking once it has the page it was asked for.
 
 **4. `shell` gained `description` and `timeout_seconds`.** `description` is what the user reads on the timeline row — "run the speech tests" rather than a wrapped command line — which required `description` to outrank `command` in `model.ArgSubjectKeys`; `task` has no `command`, so nothing else moved. `timeout_seconds` is the first per-call override of the 60-second guard, and it lives in `internal/turn` because that is where the deadline is enforced, not in the skill: `toolCallDeadline` reads it for `shell` alone (nothing else knows how long its own work takes), clamps to ten minutes, and falls back to the default on anything absent, unparseable, zero or negative — a bad timeout is not worth refusing to run over. The 60-second default was already too short for this repo's own suite, which §49 recorded and this pays.
 
@@ -1495,13 +1495,13 @@ Every file written by the agent lost its trailing newline; any file whose first 
 
 **Three dead ends, all the same shape: a cap with no way past it.**
 
-- **`glob`** stopped at 300 paths and said "narrow the pattern". It now takes `head_limit`/`offset` and names the offset to resume from, the same as `grep` gained in §50. Sorting happens before paging, so page two continues page one's newest-first order rather than reordering it. A `maxScan` ceiling bounds the walk, and the caveat that past it the ordering is over what the walk reached rather than the whole tree is marked rather than hidden.
+- **`glob`** stopped at 300 paths and said "narrow the pattern". It now takes `limit`/`offset` and names the offset to resume from, the same as `grep` gained in §50. Sorting happens before paging, so page two continues page one's newest-first order rather than reordering it. A `maxScan` ceiling bounds the walk, and the caveat that past it the ordering is over what the walk reached rather than the whole tree is marked rather than hidden.
 - **`list`** returned bare names, so `sub` and `sub.txt` were the same kind of thing on the page and the only way to tell was to call `list` again and see whether it errored. Directories now end in `/`.
 - **`diagnostics`** took one file, so "is anything I just changed broken" meant one call per file — and in practice meant asking about one and assuming the rest. It now accepts a folder, walks it with the same exclusions `grep` and `glob` use, and reports how many files it checked and how many it skipped. Bounded at 40 files because each is a round trip and the turn abandons a tool at 60 seconds; a partial answer that says how far it got beats a complete one that never arrives.
 
 **`web_fetch` gained a cache and a `prompt`.** The cache is 15 minutes, matching Claude Code's, because research is a walk back and forth over the same few pages and the second walk should cost nothing — counted at the test server, since "it returned the same text" is also true of a cache that never worked. `prompt` is the larger one: a documentation page is tens of thousands of characters and the model usually wants one paragraph, and every character of the rest stays in context for the rest of the session. The seam is `RegistryOptions.Digest`, a **function** rather than a `model.Provider` — `internal/skill` has no business knowing how a completion is made, and a func is what a test supplies in one line. Nil is a supported configuration (the CLI builds its registry with no provider in hand) and means the tool behaves exactly as it always did. So does a digester that errors, and so does a page short enough that the round trip would cost more than the page: **every failure returns the full page**, because the question was only ever an optimization and the page is already in hand.
 
-**Left alone, with reasons:** `delete` still refuses directories (`shell` covers it now, under approval); `apply_patch` still cannot create files (`write` does); `web_search` is still a DuckDuckGo HTML scrape, which owes nobody an API key but will break the day their markup changes — worth knowing, not worth pre-emptively rewriting; MCP is still tools-only, no resources or prompts or OAuth, which is where the official Go SDK and every server we have met agree the value is.
+**Left alone, with reasons:** `delete` still refuses directories (`shell` covers it now, under approval); `edits` still cannot create files (`write` does); `web_search` is still a DuckDuckGo HTML scrape, which owes nobody an API key but will break the day their markup changes — worth knowing, not worth pre-emptively rewriting; MCP is still tools-only, no resources or prompts or OAuth, which is where the official Go SDK and every server we have met agree the value is.
 
 ---
 
@@ -2415,7 +2415,7 @@ Both are the same defect: **a layer that names a tool cannot ask whether the too
 
 **The rule this generalises to, written into the package README:** a layer that names a tool takes `Desk` and asks first. The cost of getting it wrong is not a style problem — it is a round the user pays for, ending in the assistant reporting a limit that does not exist.
 
-**And the second half of the audit: say the rule, not the argument for it.** The engine layers had grown essays justifying instructions the model does not need justified — that an edit is cheaper than a rewrite, that a tool call costs a round, that it is allowed to do 20% of 500 in its head. What a model cannot know from the tool list stays: that `apply_patch` is atomic, that grep-with-context usually beats reading the file, what `calc` cannot reach, where the line between short and long arithmetic sits. Trimming that back took ~450 characters off every request at both desks, and the deduplication of the document rule — stated three times in `assistant.md` and once more in `longform`, four statements of one rule — took another ~600 off the assistant's. Nothing Aetox-specific was cut.
+**And the second half of the audit: say the rule, not the argument for it.** The engine layers had grown essays justifying instructions the model does not need justified — that an edit is cheaper than a rewrite, that a tool call costs a round, that it is allowed to do 20% of 500 in its head. What a model cannot know from the tool list stays: that `edits` is atomic, that grep-with-context usually beats reading the file, what `calc` cannot reach, where the line between short and long arithmetic sits. Trimming that back took ~450 characters off every request at both desks, and the deduplication of the document rule — stated three times in `assistant.md` and once more in `longform`, four statements of one rule — took another ~600 off the assistant's. Nothing Aetox-specific was cut.
 
 **Where the rationale goes instead:** the comment above the function. Comments are not sent; prompt text is paid for on every request, forever. That is the whole of the accounting, and it is why this package has always been written with more explanation above the strings than inside them.
 
@@ -2478,21 +2478,21 @@ The other half of Claude Code's shape — the finished job *waking the model up*
 
 Owner: *"เครื่องมือ edit เคยล้มซ้ำ ๆ ด้วยเหตุเดียวกัน … เลี่ยงรูปแบบที่ชนเงื่อนไขนี้ตั้งแต่ครั้งแรก"*
 
-`edit` compared `old_string` to the file byte for byte, and returned *"old_string not found in file; re-read the file and match the text exactly"* when it did not. Both halves of that were wrong on the reference platform, and together they made a loop.
+`edit` compared the `find` text to the file byte for byte, and returned *"find text not found in file; re-read the file and match the text exactly"* when it did not. Both halves of that were wrong on the reference platform, and together they made a loop.
 
-**The match.** Windows checkouts have `core.autocrlf` on and this repository ships no `.gitattributes`, so every text file on the machine Aetox is developed and shipped on ends its lines `\r\n`. `read` returns those bytes as they are — correctly; it is a file reader. But a `\r` is invisible in a way a tab or a trailing space is not: nothing in the rendering of the file distinguishes a CRLF line from an LF one. So the model joins the lines it saw with `\n`, `strings.Count` returns zero, and the edit is refused. **Every multi-line edit, every time.** Single-line `old_string` values contain no newline and were never affected, which is exactly why this survived: it presented as an unreliable model rather than as a deterministic bug, and the deterministic bug is what it was. A test now pins it.
+**The match.** Windows checkouts have `core.autocrlf` on and this repository ships no `.gitattributes`, so every text file on the machine Aetox is developed and shipped on ends its lines `\r\n`. `read` returns those bytes as they are — correctly; it is a file reader. But a `\r` is invisible in a way a tab or a trailing space is not: nothing in the rendering of the file distinguishes a CRLF line from an LF one. So the model joins the lines it saw with `\n`, `strings.Count` returns zero, and the edit is refused. **Every multi-line edit, every time.** Single-line `find` values contain no newline and were never affected, which is exactly why this survived: it presented as an unreliable model rather than as a deterministic bug, and the deterministic bug is what it was. A test now pins it.
 
 **The advice.** Told to re-read, the model re-read, saw the same characters, composed the same `\n`, and failed identically — the same error for the same reason, which is what the owner had been watching. Worse, re-reading is what the system prompt spends a paragraph telling it not to do (*"Do not read a large file end to end just to change one line in it"*, §93's own layer). The tool was contradicting the prompt while asking for the one recovery that could not work.
 
 **Both fixed in [internal/skill/lineendings.go](../internal/skill/lineendings.go), and neither is a leniency.**
 
-*Match on what the caller can observe.* The literal string is tried first and always wins when it matches, so a caller that did send the file's line endings is never second-guessed; only then are the LF and CRLF forms tried. A line ending is the file's business, not the caller's — if `old_string` identifies exactly one place once that is set aside, that is the place it meant. The uniqueness rule is untouched: two matches are still two matches and still refused.
+*Match on what the caller can observe.* The literal string is tried first and always wins when it matches, so a caller that did send the file's line endings is never second-guessed; only then are the LF and CRLF forms tried. A line ending is the file's business, not the caller's — if the `find` text identifies exactly one place once that is set aside, that is the place it meant. The uniqueness rule is untouched: two matches are still two matches and still refused.
 
-*Write back in the file's own convention.* This half is not optional, and getting it wrong would be worse than the original bug: replacement text arrives with whatever newlines the model typed, and dropping an LF line into a CRLF file leaves a mixed file that shows up in everybody's diff and that nobody typed. So `new_string` is converted to the file's dominant ending on every edit, not only on the fallback path.
+*Write back in the file's own convention.* This half is not optional, and getting it wrong would be worse than the original bug: replacement text arrives with whatever newlines the model typed, and dropping an LF line into a CRLF file leaves a mixed file that shows up in everybody's diff and that nobody typed. So `replace` is converted to the file's dominant ending on every edit, not only on the fallback path.
 
 *Say what is wrong, from the file you are holding.* The tool has the content in hand at the moment it fails, and the failure is almost never "I misremembered the text" — it is one invisible difference. So the error now names it: a line-number prefix carried over from `read`, indentation that is tabs where the caller wrote spaces, a first line that matches with a later line that does not, or text that is genuinely absent. That turns a whole re-read into a one-line correction. Kept short on purpose: every character is a tool result paid for on the turn that already failed.
 
-**`apply_patch` carried the identical bug and a heavier bill** — a patch that cannot apply in full writes nothing, so one invisible `\r` threw away every edit in the batch. Same fix, same file.
+**`edits` carried the identical bug and a heavier bill** — a call that cannot apply in full writes nothing, so one invisible `\r` threw away every edit in the batch. Same fix, same file.
 
 **`write` carried the second half of it.** The prompt sends `write` here for the "replacing nearly all of an existing file" case, and it wrote the caller's bytes verbatim — so on a CRLF checkout, replacing one function rewrote every line of the file in git's eyes. The model meant to change a function; the diff said it touched the whole file. Overwriting an existing file now keeps that file's line endings. **A file that does not exist yet is left exactly as typed** — there is no convention to honour, and choosing one there would be the tool overreaching, which is why the check is on the outgoing file rather than on the platform.
 
@@ -4944,11 +4944,11 @@ The wall was two layers deep and only the first was visible from the chat.
 
 **The profile's `tools:` allowlist.** Four of the six bundled agents were narrow: `github` held `github, read, list, glob, web_fetch, web_search, skills_list, skill_view`, and `doc`/`sheet`/`deck` held their own writer plus reading and the senses. None could write a plain file. The clearest evidence that this was a wall rather than a design was inside the `github` agent's own brief, which instructs it to work the repository out from the checkout's `origin` — with no `git` and no `shell` to read one with. A prompt telling a worker to do what its tool list forbids is the fault `automation_agent_test.go` already pins for one agent; it was live in another.
 
-**The office desk's ceiling.** Every agent sits at `specialized` (`mode.Office`), whose manifest named `read, write, list, glob` and kept `doc_write, sheet_write, slides_write, shell, desk_terminal` in `chairs:`. So `edit`, `grep`, `apply_patch`, `delete` and `git` could not reach an agent however its profile was written — widening the profiles alone would have changed nothing, which is why both halves moved together.
+**The office desk's ceiling.** Every agent sits at `specialized` (`mode.Office`), whose manifest named `read, write, list, glob` and kept `doc_write, sheet_write, slides_write, shell, desk_terminal` in `chairs:`. So `edit`, `grep`, `edits`, `delete` and `git` could not reach an agent however its profile was written — widening the profiles alone would have changed nothing, which is why both halves moved together.
 
 ### 145.2 What moved, and what deliberately did not
 
-`chairs:` now carries the whole of the files group and the whole of the shell group: `doc_write, sheet_write, slides_write, edit, grep, apply_patch, delete, shell, git, desk_terminal` — with `read, write, list, glob` still on the desk itself. Every bundled agent's `tools:` names the same general kit beside its specialist tools.
+`chairs:` now carries the whole of the files group and the whole of the shell group: `doc_write, sheet_write, slides_write, edit, grep, edits, delete, shell, git, desk_terminal` — with `read, write, list, glob` still on the desk itself. Every bundled agent's `tools:` names the same general kit beside its specialist tools.
 
 **`chairs:` rather than `tools:` is the whole of the care taken here.** The distinction §84 introduced does the work: these tools are in the room for the desk's agents and still not on the assistant's desk, so the assistant sitting at the office gained nothing and its tool block did not grow by a byte. Widening `tools:` would have been the easy version and would have charged every specialized session for tools it was deliberately not given.
 
@@ -4962,7 +4962,7 @@ Five of the six agents never named `memory`, and `task.go` gates the per-delegat
 
 ### 145.4 Four tests moved, none was weakened
 
-`git`, `shell` and `apply_patch` were each being used somewhere as "the tool the office refuses", and each was true until this change. They are re-pointed at `symbol`, `diagnostics` and `fs`, which the office still refuses — the assertions are the same assertions.
+`git`, `shell` and `edits` were each being used somewhere as "the tool the office refuses", and each was true until this change. They are re-pointed at `symbol`, `diagnostics` and `fs`, which the office still refuses — the assertions are the same assertions.
 
 One is worth reading twice: `desktop/desk_test.go`'s proof that a chair runs on the *target* desk's manifest rather than its caller's now hangs on `fs`, because the office's room has become so nearly co-extensive with the assistant desk that `fs` is the only registered name left that only the caller holds. Its comment says so, and says that the day the office names `fs` too, the test moves to a caller holding something the office refuses rather than being deleted.
 
@@ -4982,7 +4982,7 @@ The answer came from `tool_runs` rather than from an opinion. **Zero calls out o
 
 `read` renders an `.ipynb` as numbered cells through `loadNotebook`/`renderNotebook` — **in the same file as the tool**. Removing `notebook.go` would have taken reading notebooks with it and handed the model raw JSON with every base64 output embedded, which is the exact problem §54 wrote the file to solve.
 
-So the choice was three-way, not two, and the owner took the middle one (*"เห้นด้วยกับ 2 ครับ"*): the type stays compiled in and is **not registered** in `defaults.go`. Notebooks stay readable and become read-only — which is the honest description, because nothing else can edit one. `edit` and `apply_patch` match exact text and the file stores its source JSON-escaped inside an array, so a match either misses or corrupts; `write` would have to re-emit every recorded output to keep them.
+So the choice was three-way, not two, and the owner took the middle one (*"เห้นด้วยกับ 2 ครับ"*): the type stays compiled in and is **not registered** in `defaults.go`. Notebooks stay readable and become read-only — which is the honest description, because nothing else can edit one. `edit` and `edits` match exact text and the file stores its source JSON-escaped inside an array, so a match either misses or corrupts; `write` would have to re-emit every recorded output to keep them.
 
 ### 146.2 A switch, and the reason it is written down in one place
 
@@ -6042,7 +6042,7 @@ The refusal text was wrong too, and had been since the store became a shadow rep
 
 ### 170.2 `write` had no equivalent of `edit`'s safety
 
-`edit` and `apply_patch` were already safe **by construction**: they match `old_string` against the bytes on disk, so an edit aimed at text somebody has since changed fails cleanly and writes nothing. That is optimistic concurrency, arrived at for a different reason and working perfectly.
+`edit` and `edits` were already safe **by construction**: they match the `find` text against the bytes on disk, so an edit aimed at text somebody has since changed fails cleanly and writes nothing. That is optimistic concurrency, arrived at for a different reason and working perfectly.
 
 The whole-file writers had nothing. [skill.FileState](../internal/skill/filestate.go) is the equivalent: what this app last saw each file as, updated by every read and every write — the editor's saves included — and checked by `write`, `doc_write` and `sheet_write` before they truncate.
 
@@ -6054,7 +6054,7 @@ The whole-file writers had nothing. [skill.FileState](../internal/skill/filestat
 
 **Taught in the refusal, not in the tool block.** The block is at its ceiling and the ceiling is a debt marker (§99 and `desktop/tool_budget_test.go`). A permanent sentence in `write`'s description would cost tokens on every request for a case that arises rarely; the error text costs nothing until it fires. [SKILL.md](../internal/skill/skills/aetox/SKILL.md) carries the standing version, under "several chats at once", where the fact it depends on already lives.
 
-### 170.3 `apply_patch` named no file at all
+### 170.3 `edits` named no file at all
 
 Owner: *"แต่ละ edit บางทีก็ไม่แสดงจำนวนไฟล์ที่มีการแก้ไขนะ"*.
 
@@ -6640,3 +6640,43 @@ It is the same instinct as *measure the running app* for UI bugs, pointed at the
 ### 180.5 One more thing this cost
 
 A test written for §180 asserted a miss by searching for "entirely unrelated zzzqqq" — and the page said "unrelated matters" in its filler, so it was a hit dressed as a miss. Caught because it failed loudly, unlike the bug it was written for. The second measurement mistake of the day, after the probe in §178.6, and both of the same kind: **the instrument agreed with what was expected of it.**
+
+## 181. Decision — How a Tool Parameter Gets Its Name (2026-08-25)
+
+A tool's parameter names are read by a model that has one round to get the call right and no way to ask what a word means. So a name is not chosen for how it reads to whoever wrote the tool. It is chosen for **where else that word already exists**.
+
+### 181.1 The rule
+
+Name a parameter after a word the trade already has, and prefer the oldest and most common spelling of it:
+
+| name | where the word already exists |
+|---|---|
+| `find` / `replace` | the two labelled boxes in every search-and-replace dialog ever shipped, and the two halves of `s/…/…/` |
+| `all` | the button beside them |
+| `limit` / `offset` | `LIMIT`/`OFFSET`, how paging has been spelled since SQL |
+| `show` | plain English, over values (`files_with_matches`, `count`) that are grep's own long flags |
+| `context` | `grep -C` |
+| `glob` | POSIX `fnmatch` |
+| `recursive` | `rm -r` |
+| `timeout_seconds` | plain English, with the unit in the name so nobody has to guess milliseconds |
+
+A name invented in this repository has to be learned before it can be used, and there is no round to spare for that. **An invented compound is the thing to avoid, not a foreign origin** — a POSIX flag and a SQL keyword are not borrowed, they are the vocabulary.
+
+### 181.2 One idea, one name, across every tool that has it
+
+`read`, `grep` and `glob` all page. They all spell it `limit`/`offset`, and a reader who learned the pair on one of them must never have to learn it again on the next. Two spellings of the same idea inside one tool set is the same debt as two places answering one question — it is just cheaper to introduce, because each tool looks fine on its own.
+
+`internal/skill/param_names_test.go` is the teeth: it pins the exact parameter list of the five file and search tools, and separately refuses to let any tool that pages spell the pair a second way. Both halves were watched to fail before either was trusted — a parameter was renamed by hand on `edit` and on `grep` and the two tests were made to go red — because an instrument that has only ever agreed with you has not been read yet (§180.5).
+
+What it cannot see: `browser` and `task` are registered by the desktop, out of that package's reach.
+
+### 181.3 A tool's own name is read the same way
+
+The rule does not stop at parameters. **A tool name teaches the call shape before the schema is read**, so a name that belongs to a tool with a different payload teaches the wrong one — a model that has met the word elsewhere composes what the word meant there, and the schema never gets a chance to correct it.
+
+`edits` is named after what it takes: a list of edits. Nothing about it suggests a diff document, a hunk file or a patch format, because it accepts none of those. And it sits directly beside `edit` in the tool block — `Registry.Names()` sorts, so a model scanning the list meets the pair together and can see that one is the other in bulk without being told.
+
+### 181.4 What is still open
+
+`web_search` takes both `query` and `queries` and merges them into one list. One idea, two doors, and this rule does not reach it — both names are perfectly ordinary English. It is a duplicate rather than a naming mistake, and it is still to be decided.
+

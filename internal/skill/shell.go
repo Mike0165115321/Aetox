@@ -56,7 +56,7 @@ func (*shellSkill) Description() string {
 //
 // ADR 0001 deferred this: phase 1 exposed only `time` and `list`, and shell was
 // to stay "available only through explicit user command paths" until narrower
-// tools proved sufficient. They did — read/grep/glob/edit/apply_patch/
+// tools proved sufficient. They did — read/grep/glob/edit/edits/
 // diagnostics all shipped (§15, §21) — but the gate was never revisited, so the
 // agent could edit code and never once run it. That is the whole Verify half of
 // Explore→Read→Edit→Verify: no tests, no build, no linter, no package install.

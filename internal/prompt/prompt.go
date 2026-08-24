@@ -674,7 +674,7 @@ func capability() string {
 // What is stated and what is left out was cut back on 2026-08-09: a model
 // already knows an edit is cheaper than a rewrite, so the layer keeps the
 // instruction and drops the economics lecture behind it. What stays is what a
-// model cannot know from the tool list — that apply_patch is atomic, that
+// model cannot know from the tool list — that edits is atomic, that
 // grep-with-context usually beats reading the file, and the diagnostics step,
 // which is now asked for only where it exists.
 func fileEditing(desk Desk) string {
@@ -682,7 +682,7 @@ func fileEditing(desk Desk) string {
 		"Do NOT re-send the whole file through write — rewriting an 800-line file to fix one line costs " +
 		"800 lines of generation, every time.\n" +
 		"Use write only to create a new file, or when genuinely replacing nearly all of an existing one.\n" +
-		"Changing more than one place? Use apply_patch to make all the edits in a single atomic call — " +
+		"Changing more than one place? Use edits to make all the edits in a single atomic call — " +
 		"either every edit applies or none do, and it costs one round instead of one per edit.\n"
 	if desk.carries("diagnostics") {
 		s += "After changing source files, call diagnostics on them to confirm the change compiles before " +

@@ -120,7 +120,7 @@ func TestGlobPagesThroughResults(t *testing.T) {
 	}
 	s := &globSkill{root: root}
 
-	first, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "*.go", "head_limit": 2})
+	first, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "*.go", "limit": 2})
 	if err != nil {
 		t.Fatalf("page one: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestGlobPagesThroughResults(t *testing.T) {
 		t.Errorf("page one = %q, want the offset to continue from", first.Content)
 	}
 
-	second, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "*.go", "head_limit": 2, "offset": 2})
+	second, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "*.go", "limit": 2, "offset": 2})
 	if err != nil {
 		t.Fatalf("page two: %v", err)
 	}

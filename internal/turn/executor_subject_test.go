@@ -8,7 +8,7 @@ import "testing"
 func TestToolCallSubject(t *testing.T) {
 	cases := []struct{ name, args, want string }{
 		{"write", `{"path":"internal/skill/edit.go","content":"package skill\n..."}`, "internal/skill/edit.go"},
-		{"edit alt key", `{"file_path":"desktop/app.go","old_string":"a","new_string":"b"}`, "desktop/app.go"},
+		{"edit alt key", `{"file_path":"desktop/app.go","find":"a","replace":"b"}`, "desktop/app.go"},
 		{"fetch", `{"url":"https://ollama.com"}`, "https://ollama.com"},
 		{"bash", `{"command":"go build ./..."}`, "go build ./..."},
 		{"no nameable arg", `{"limit":10}`, ""},

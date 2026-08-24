@@ -353,14 +353,14 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 			check: packageHasPart("memo.docx", "word/document.xml", "บันทึกข้อความ"),
 		},
 		"edit": {
-			args:  map[string]any{"path": "notes.txt", "old_string": "beta", "new_string": "BETA"},
+			args:  map[string]any{"path": "notes.txt", "find": "beta", "replace": "BETA"},
 			check: fileContains("notes.txt", "BETA"),
 		},
-		"apply_patch": {
+		"edits": {
 			args: map[string]any{"edits": []any{
-				map[string]any{"path": "patch-me.txt", "old_string": "two", "new_string": "TWO"},
+				map[string]any{"path": "edits-me.txt", "find": "two", "replace": "TWO"},
 			}},
-			check: fileContains("patch-me.txt", "TWO"),
+			check: fileContains("edits-me.txt", "TWO"),
 		},
 		// Kept although the tool is no longer registered (internal/skill/
 		// defaults.go, 2026-08-19). The loop below drives what the dispatcher
@@ -858,7 +858,7 @@ func writeToolFixtures(t *testing.T, root string) {
 		t.Fatalf("fixture dir: %v", err)
 	}
 	write("notes.txt", "alpha\nbeta\ngamma\n")
-	write("patch-me.txt", "one\ntwo\nthree\n")
+	write("edits-me.txt", "one\ntwo\nthree\n")
 	write("victim.txt", "delete me\n")
 	write("main.go", "package main\n\nfunc main() {}\n")
 	write(filepath.Join("sub", "inner.txt"), "alpha inside\n")

@@ -38,13 +38,13 @@ func (*globSkill) ToolDefinition() model.ToolDefinition {
 				"type":        "string",
 				"description": "Relative directory to search from (default: whole sandbox)",
 			},
-			"head_limit": map[string]any{
+			"limit": map[string]any{
 				"type":        "integer",
 				"description": "Return at most this many paths.",
 			},
 			"offset": map[string]any{
 				"type":        "integer",
-				"description": "Skip this many paths first. With head_limit this pages through a result set that hit the cap, instead of having to invent a narrower pattern.",
+				"description": "Skip this many paths first. With limit this pages through a result set that hit the cap, instead of having to invent a narrower pattern.",
 			},
 		},
 		"required":             []string{"pattern"},
@@ -153,7 +153,7 @@ func (s *globSkill) Execute(ctx context.Context, input Input) (Output, error) {
 		maxScan    = 5000 // ceiling on what a single walk will hold in memory
 	)
 	limit := maxResults
-	if want := intArg(input["head_limit"]); want > 0 && want < limit {
+	if want := intArg(input["limit"]); want > 0 && want < limit {
 		limit = want
 	}
 	skip := intArg(input["offset"])
@@ -309,8 +309,8 @@ func (s *globSkill) ExecuteTool(ctx context.Context, args map[string]any) (Outpu
 		callArgs = append(callArgs, strings.TrimSpace(path))
 	}
 	return s.Execute(ctx, Input{
-		"args":       callArgs,
-		"head_limit": args["head_limit"],
-		"offset":     args["offset"],
+		"args":   callArgs,
+		"limit":  args["limit"],
+		"offset": args["offset"],
 	})
 }

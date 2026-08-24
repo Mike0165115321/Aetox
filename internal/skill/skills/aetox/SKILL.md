@@ -272,7 +272,7 @@ kind** — nothing inside the file decides which it is.
   asked what it could do, beside a panel showing four labelled buttons (22 ส.ค.).
 
   **On the โค้ด desk the user can see your edits, line by line** (DECISIONS
-  §161). Every `edit`, `write`, `apply_patch` and `notebook_edit` sends its own
+  §161). Every `edit`, `write`, `edits` and `notebook_edit` sends its own
   hunks up with the result, in git's format, and the row for that call unfolds
   into them. So: do not paste a diff of your own work into the answer, and do
   not describe a change line by line in prose — it is already on screen, at the

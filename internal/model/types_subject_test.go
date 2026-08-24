@@ -2,7 +2,7 @@ package model
 
 // Naming a call that touched more than one file.
 //
-// apply_patch reached the timeline as the bare word "apply_patch": its paths
+// edits reached the timeline as the bare word "edits": its paths
 // live inside edits[] and neither reader looked in there — the completed parse
 // found nothing, and the streaming scan found the first path only by accident
 // of scanning the whole string. Two spellings for one call, which is also how
@@ -17,9 +17,9 @@ func jsonUnmarshal(raw string, out any) error { return json.Unmarshal([]byte(raw
 
 func TestSubjectNamesEveryFileInABatch(t *testing.T) {
 	args := map[string]any{"edits": []any{
-		map[string]any{"path": "one.go", "old_string": "a", "new_string": "b"},
-		map[string]any{"path": "two.go", "old_string": "c", "new_string": "d"},
-		map[string]any{"path": "three.go", "old_string": "e", "new_string": "f"},
+		map[string]any{"path": "one.go", "find": "a", "replace": "b"},
+		map[string]any{"path": "two.go", "find": "c", "replace": "d"},
+		map[string]any{"path": "three.go", "find": "e", "replace": "f"},
 	}}
 	if got, want := SubjectFromArgs(args), "one.go +2"; got != want {
 		t.Errorf("SubjectFromArgs = %q, want %q", got, want)
@@ -30,8 +30,8 @@ func TestSubjectNamesEveryFileInABatch(t *testing.T) {
 // touched one file is worse than no count.
 func TestSubjectCountsFilesNotEdits(t *testing.T) {
 	args := map[string]any{"edits": []any{
-		map[string]any{"path": "one.go", "old_string": "a", "new_string": "b"},
-		map[string]any{"path": "one.go", "old_string": "c", "new_string": "d"},
+		map[string]any{"path": "one.go", "find": "a", "replace": "b"},
+		map[string]any{"path": "one.go", "find": "c", "replace": "d"},
 	}}
 	if got, want := SubjectFromArgs(args), "one.go"; got != want {
 		t.Errorf("SubjectFromArgs = %q, want %q", got, want)
@@ -42,11 +42,11 @@ func TestSubjectCountsFilesNotEdits(t *testing.T) {
 // same string — a row is matched to its streamed guess by label when the engine
 // sends no call id.
 func TestStreamedAndFinishedSubjectsAgree(t *testing.T) {
-	raw := `{"edits":[{"path":"one.go","old_string":"a","new_string":"b"},` +
-		`{"path":"two.go","old_string":"c","new_string":"d"}]}`
+	raw := `{"edits":[{"path":"one.go","find":"a","replace":"b"},` +
+		`{"path":"two.go","find":"c","replace":"d"}]}`
 	streamed, ok := SubjectFromPartialArgs(raw)
 	if !ok {
-		t.Fatal("nothing readable in a complete apply_patch call")
+		t.Fatal("nothing readable in a complete edits call")
 	}
 	var parsed map[string]any
 	if err := jsonUnmarshal(raw, &parsed); err != nil {

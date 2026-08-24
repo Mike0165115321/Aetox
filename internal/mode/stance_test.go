@@ -102,7 +102,7 @@ func TestPlanKeepsWhatOnlyLooksAndDropsWhatChanges(t *testing.T) {
 		}
 	}
 	for _, name := range []string{
-		"write", "edit", "apply_patch", "delete", "notebook_edit",
+		"write", "edit", "edits", "delete", "notebook_edit",
 		"shell", "shell_kill", "git", "desk_terminal",
 		"doc_write", "sheet_write",
 		"n8n_workflow_create", "n8n_server_start", "windmill_flow_update",

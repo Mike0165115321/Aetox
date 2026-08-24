@@ -562,7 +562,7 @@ func TestNoDeskManifestSpellsAToolIdInItsBody(t *testing.T) {
 	// stale, and what this is really holding is the habit.
 	ids := []string{
 		"desk_open", "desk_list", "desk_close", "desk_terminal",
-		"apply_patch", "web_fetch", "web_search", "image_ocr", "video_ocr",
+		"edits", "web_fetch", "web_search", "image_ocr", "video_ocr",
 		"audio_transcribe", "pdf_read", "todo_write", "session_search",
 	}
 	// Bundled only. A desk the user wrote is theirs, and failing this repo's

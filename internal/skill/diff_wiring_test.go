@@ -18,9 +18,9 @@ func TestEditCarriesTheDiffOut(t *testing.T) {
 	s := &editSkill{root: root}
 
 	out, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":       "a.go",
-		"old_string": "println(\"old\")",
-		"new_string": "println(\"new\")",
+		"path":    "a.go",
+		"find":    "println(\"old\")",
+		"replace": "println(\"new\")",
 	})
 	if err != nil {
 		t.Fatalf("ExecuteTool: %v", err)
@@ -39,7 +39,7 @@ func TestEditCarriesTheDiffOut(t *testing.T) {
 	}
 }
 
-// replace_all is the case the two strings cannot describe: one pair of strings,
+// all is the case the two strings cannot describe: one pair of strings,
 // eight places in the file.
 func TestEditDiffShowsEveryOccurrenceItReplaced(t *testing.T) {
 	root := t.TempDir()
@@ -52,10 +52,10 @@ func TestEditDiffShowsEveryOccurrenceItReplaced(t *testing.T) {
 	s := &editSkill{root: root}
 
 	out, err := s.ExecuteTool(context.Background(), map[string]any{
-		"path":        "a.go",
-		"old_string":  "oldName",
-		"new_string":  "newName",
-		"replace_all": true,
+		"path":    "a.go",
+		"find":    "oldName",
+		"replace": "newName",
+		"all":     true,
 	})
 	if err != nil {
 		t.Fatalf("ExecuteTool: %v", err)
@@ -90,19 +90,19 @@ func TestWriteCarriesTheDiffOut(t *testing.T) {
 	}
 }
 
-func TestApplyPatchNamesEachFileItChanged(t *testing.T) {
+func TestEditsNamesEachFileItChanged(t *testing.T) {
 	root := t.TempDir()
 	for _, name := range []string{"a.txt", "b.txt"} {
 		if err := os.WriteFile(filepath.Join(root, name), []byte("keep\ntarget\nkeep\n"), 0o644); err != nil {
 			t.Fatalf("setup: %v", err)
 		}
 	}
-	s := &applyPatchSkill{root: root}
+	s := &editsSkill{root: root}
 
 	out, err := s.ExecuteTool(context.Background(), map[string]any{
 		"edits": []any{
-			map[string]any{"path": "a.txt", "old_string": "target", "new_string": "AAA"},
-			map[string]any{"path": "b.txt", "old_string": "target", "new_string": "BBB"},
+			map[string]any{"path": "a.txt", "find": "target", "replace": "AAA"},
+			map[string]any{"path": "b.txt", "find": "target", "replace": "BBB"},
 		},
 	})
 	if err != nil {
@@ -117,17 +117,17 @@ func TestApplyPatchNamesEachFileItChanged(t *testing.T) {
 
 // Two edits to one file in one call: the diff is measured against what was on
 // disk when the call started, not against the first edit's result.
-func TestApplyPatchDiffsOneFileOnceForTheWholeCall(t *testing.T) {
+func TestEditsDiffsOneFileOnceForTheWholeCall(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("alpha\nbeta\n"), 0o644); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	s := &applyPatchSkill{root: root}
+	s := &editsSkill{root: root}
 
 	out, err := s.ExecuteTool(context.Background(), map[string]any{
 		"edits": []any{
-			map[string]any{"path": "a.txt", "old_string": "alpha", "new_string": "ALPHA"},
-			map[string]any{"path": "a.txt", "old_string": "beta", "new_string": "BETA"},
+			map[string]any{"path": "a.txt", "find": "alpha", "replace": "ALPHA"},
+			map[string]any{"path": "a.txt", "find": "beta", "replace": "BETA"},
 		},
 	})
 	if err != nil {

@@ -75,7 +75,7 @@ var overweight = map[string]int{
 	// comes back at, and coming back over the standard should have to be
 	// noticed rather than inherited.
 	"notebook_edit":    317,
-	"apply_patch":      243,
+	"edits":      243,
 	"edit":             234,
 	"web_fetch":        215,
 	"glob":             206,

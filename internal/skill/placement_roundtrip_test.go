@@ -101,21 +101,21 @@ func TestEveryFileToolFindsWhatWritePlaced(t *testing.T) {
 		}
 	})
 
-	t.Run("apply_patch", func(t *testing.T) {
-		toolCall(t, registry, "apply_patch", map[string]any{
+	t.Run("edits", func(t *testing.T) {
+		toolCall(t, registry, "edits", map[string]any{
 			"edits": []any{map[string]any{
-				"path": "index.html", "old_string": "<p>beta</p>", "new_string": "<p>gamma</p>",
+				"path": "index.html", "find": "<p>beta</p>", "replace": "<p>gamma</p>",
 			}},
 		})
 		data, err := os.ReadFile(placed)
 		if err != nil || !strings.Contains(string(data), "gamma") {
-			t.Errorf("apply_patch did not reach the placed file: %q, %v", data, err)
+			t.Errorf("edits did not reach the placed file: %q, %v", data, err)
 		}
 	})
 
 	t.Run("edit", func(t *testing.T) {
 		toolCall(t, registry, "edit", map[string]any{
-			"path": "index.html", "old_string": "alpha", "new_string": "delta",
+			"path": "index.html", "find": "alpha", "replace": "delta",
 		})
 		data, err := os.ReadFile(placed)
 		if err != nil || !strings.Contains(string(data), "delta") {

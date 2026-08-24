@@ -12,7 +12,7 @@ import (
 // platform, and with `core.autocrlf=true` the default checkout there — every
 // line in that text ends `\r\n`, and a `\r` is invisible in a way a tab or a
 // space is not: nothing in the rendering of the file distinguishes it. So a
-// model composes `old_string` by joining the lines it saw with `\n`, and
+// model composes its `find` text by joining the lines it saw with `\n`, and
 // `strings.Count` reports zero.
 //
 // The old answer was "re-read the file and match the text exactly", which asks
@@ -25,7 +25,7 @@ import (
 // Two rules follow, and neither is a leniency:
 //
 //   - **Match on what the model can see.** A line ending is the file's business,
-//     not the caller's. If `old_string` identifies exactly one place in the file
+//     not the caller's. If the `find` text identifies exactly one place in the file
 //     once line endings are set aside, that is the place it meant.
 //   - **Keep the file's own line endings.** Replacement text arrives with
 //     whatever the model typed; writing it verbatim into a CRLF file leaves a
@@ -58,31 +58,31 @@ func newlinesLike(content, s string) string {
 	return toLF(s)
 }
 
-// resolveOldString returns the text that actually appears in content for the
-// old_string the caller asked for, and how many times it appears.
+// resolveFindText returns the text that actually appears in content for the
+// find text the caller asked for, and how many times it appears.
 //
 // The literal string is tried first and wins whenever it matches, so a caller
 // that did send the file's own line endings is never second-guessed. Only when
 // that finds nothing are the two conversions tried — and the count that comes
 // back is a count of the *converted* text, so the "matches N times" guard
 // upstream keeps meaning what it meant.
-func resolveOldString(content, oldString string) (string, int) {
-	if n := strings.Count(content, oldString); n > 0 {
-		return oldString, n
+func resolveFindText(content, findText string) (string, int) {
+	if n := strings.Count(content, findText); n > 0 {
+		return findText, n
 	}
-	lf := toLF(oldString)
+	lf := toLF(findText)
 	for _, candidate := range []string{lf, strings.ReplaceAll(lf, "\n", "\r\n")} {
-		if candidate == oldString {
+		if candidate == findText {
 			continue
 		}
 		if n := strings.Count(content, candidate); n > 0 {
 			return candidate, n
 		}
 	}
-	return oldString, 0
+	return findText, 0
 }
 
-// whyNoMatch says what is wrong with an old_string that matched nothing, in
+// whyNoMatch says what is wrong with a find text that matched nothing, in
 // place of telling the caller to go and read the file again.
 //
 // Re-reading is the most expensive recovery available and the least likely to
@@ -94,8 +94,8 @@ func resolveOldString(content, oldString string) (string, int) {
 //
 // Deliberately short. Every character of it is a tool result the model pays for
 // on the turn it failed, and a diagnosis nobody can act on is worse than none.
-func whyNoMatch(content, oldString string) string {
-	lines := strings.Split(toLF(oldString), "\n")
+func whyNoMatch(content, findText string) string {
+	lines := strings.Split(toLF(findText), "\n")
 	first := ""
 	for _, l := range lines {
 		if strings.TrimSpace(l) != "" {
@@ -104,7 +104,7 @@ func whyNoMatch(content, oldString string) string {
 		}
 	}
 	if first == "" {
-		return "old_string is only whitespace"
+		return "find text is only whitespace"
 	}
 	if numbered, stripped := stripReadPrefix(first); numbered {
 		return fmt.Sprintf("it still carries read's line-number prefix — strip %q down to %q; the number and tab are not in the file",
@@ -117,13 +117,13 @@ func whyNoMatch(content, oldString string) string {
 			continue
 		}
 		if line == first {
-			return fmt.Sprintf("its first line matches at line %d, so a later line of old_string is what differs — compare from line %d down",
+			return fmt.Sprintf("its first line matches at line %d, so a later line of the find text is what differs — compare from line %d down",
 				i+1, i+1)
 		}
-		return fmt.Sprintf("line %d holds the same text with different leading whitespace: the file has %q, old_string has %q",
+		return fmt.Sprintf("line %d holds the same text with different leading whitespace: the file has %q, find has %q",
 			i+1, truncateForError(line), truncateForError(first))
 	}
-	return "no line of old_string appears in this file — check the path, or that the text has not already been changed"
+	return "no line of the find text appears in this file — check the path, or that the text has not already been changed"
 }
 
 // stripReadPrefix reports whether s starts with the `%6d\t` prefix read puts on

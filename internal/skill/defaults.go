@@ -22,7 +22,7 @@ type RegistryOptions struct {
 	// would be an absurd price. See writeSkill.placed.
 	//
 	// Every skill that consumes an existing file by relative path needs it too,
-	// not just write: read/edit/delete/apply_patch fall back to this folder when
+	// not just write: read/edit/delete/edits fall back to this folder when
 	// the literal path resolves to nothing (PlacedPath). Hand it to any new
 	// file-consuming skill as well, or that skill will fail to find whatever
 	// write just produced.
@@ -123,7 +123,7 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&editSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
 		&grepSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&globSkill{root: opts.SandboxRoot},
-		&applyPatchSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
+		&editsSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
 		// `notebook_edit` is deliberately absent (owner's call, 2026-08-19).
 		// It is 317 tokens in the block of every desk that carries the files
 		// group, paid on every request before the user types, and `tool_runs`
@@ -135,7 +135,7 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		// so removing the file would take reading notebooks with it — the
 		// problem it was written to solve. Notebooks stay readable and become
 		// read-only, which is honest: nothing else can edit one (`edit` and
-		// `apply_patch` match text the file stores JSON-escaped, and `write`
+		// `edits` match text the file stores JSON-escaped, and `write`
 		// would have to re-emit every base64 output to keep them).
 		//
 		// Switching it on again is this line plus the files that name a tool

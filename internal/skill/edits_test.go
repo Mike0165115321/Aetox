@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func patchRoot(t *testing.T, files map[string]string) string {
+func editsRoot(t *testing.T, files map[string]string) string {
 	t.Helper()
 	root := t.TempDir()
 	for rel, body := range files {
@@ -23,24 +23,24 @@ func patchRoot(t *testing.T, files map[string]string) string {
 	return root
 }
 
-func TestApplyPatchAcrossFilesInOneCall(t *testing.T) {
-	root := patchRoot(t, map[string]string{
+func TestEditsAcrossFilesInOneCall(t *testing.T) {
+	root := editsRoot(t, map[string]string{
 		"a.go": "package a\n\nconst Name = \"old\"\n",
 		"b.go": "package b\n\nconst Name = \"old\"\n",
 	})
-	s := &applyPatchSkill{root: root}
+	s := &editsSkill{root: root}
 
 	out, err := s.ExecuteTool(context.Background(), map[string]any{"edits": []any{
-		map[string]any{"path": "a.go", "old_string": `"old"`, "new_string": `"new"`},
-		map[string]any{"path": "b.go", "old_string": `"old"`, "new_string": `"new"`},
+		map[string]any{"path": "a.go", "find": `"old"`, "replace": `"new"`},
+		map[string]any{"path": "b.go", "find": `"old"`, "replace": `"new"`},
 	}})
 	if err != nil {
-		t.Fatalf("apply_patch failed: %v", err)
+		t.Fatalf("edits failed: %v", err)
 	}
 	for _, rel := range []string{"a.go", "b.go"} {
 		body, _ := os.ReadFile(filepath.Join(root, rel))
 		if !strings.Contains(string(body), `"new"`) {
-			t.Errorf("%s was not patched: %s", rel, body)
+			t.Errorf("%s was not changed: %s", rel, body)
 		}
 	}
 	if out.LinesAdded != 2 || out.LinesRemoved != 2 {
@@ -48,21 +48,21 @@ func TestApplyPatchAcrossFilesInOneCall(t *testing.T) {
 	}
 }
 
-// The whole point of a patch over N edit calls: a half-applied one leaves the
+// The whole point of one call over N edit calls: a half-applied one leaves the
 // tree in a state the model then reasons about wrongly.
-func TestApplyPatchWritesNothingWhenAnyEditFails(t *testing.T) {
-	root := patchRoot(t, map[string]string{
+func TestEditsWritesNothingWhenAnyEditFails(t *testing.T) {
+	root := editsRoot(t, map[string]string{
 		"a.go": "package a\n\nconst Name = \"old\"\n",
 		"b.go": "package b\n",
 	})
-	s := &applyPatchSkill{root: root}
+	s := &editsSkill{root: root}
 
 	_, err := s.ExecuteTool(context.Background(), map[string]any{"edits": []any{
-		map[string]any{"path": "a.go", "old_string": `"old"`, "new_string": `"new"`},
-		map[string]any{"path": "b.go", "old_string": "nope", "new_string": "x"},
+		map[string]any{"path": "a.go", "find": `"old"`, "replace": `"new"`},
+		map[string]any{"path": "b.go", "find": "nope", "replace": "x"},
 	}})
 	if err == nil {
-		t.Fatal("expected the patch to be rejected")
+		t.Fatal("expected the call to be rejected")
 	}
 	if !strings.Contains(err.Error(), "nothing was written") {
 		t.Errorf("error should say nothing was written, got: %v", err)
@@ -74,15 +74,15 @@ func TestApplyPatchWritesNothingWhenAnyEditFails(t *testing.T) {
 }
 
 // Two edits to one file in a single patch: the second must see the first.
-func TestApplyPatchSequencesEditsToTheSameFile(t *testing.T) {
-	root := patchRoot(t, map[string]string{"a.go": "one\ntwo\n"})
-	s := &applyPatchSkill{root: root}
+func TestEditsSequencesEditsToTheSameFile(t *testing.T) {
+	root := editsRoot(t, map[string]string{"a.go": "one\ntwo\n"})
+	s := &editsSkill{root: root}
 
 	if _, err := s.ExecuteTool(context.Background(), map[string]any{"edits": []any{
-		map[string]any{"path": "a.go", "old_string": "one", "new_string": "1"},
-		map[string]any{"path": "a.go", "old_string": "two", "new_string": "2"},
+		map[string]any{"path": "a.go", "find": "one", "replace": "1"},
+		map[string]any{"path": "a.go", "find": "two", "replace": "2"},
 	}}); err != nil {
-		t.Fatalf("apply_patch failed: %v", err)
+		t.Fatalf("edits failed: %v", err)
 	}
 	body, _ := os.ReadFile(filepath.Join(root, "a.go"))
 	if string(body) != "1\n2\n" {
@@ -90,11 +90,11 @@ func TestApplyPatchSequencesEditsToTheSameFile(t *testing.T) {
 	}
 }
 
-func TestApplyPatchRejectsAmbiguousMatch(t *testing.T) {
-	root := patchRoot(t, map[string]string{"a.go": "x\nx\n"})
-	s := &applyPatchSkill{root: root}
+func TestEditsRejectsAmbiguousMatch(t *testing.T) {
+	root := editsRoot(t, map[string]string{"a.go": "x\nx\n"})
+	s := &editsSkill{root: root}
 	_, err := s.ExecuteTool(context.Background(), map[string]any{"edits": []any{
-		map[string]any{"path": "a.go", "old_string": "x", "new_string": "y"},
+		map[string]any{"path": "a.go", "find": "x", "replace": "y"},
 	}})
 	if err == nil || !strings.Contains(err.Error(), "matches 2 times") {
 		t.Errorf("ambiguous match should be refused, got: %v", err)
@@ -104,26 +104,26 @@ func TestApplyPatchRejectsAmbiguousMatch(t *testing.T) {
 // The shape a model actually sends when every edit is in one file.
 //
 // From the owner's own log (24 ส.ค. 03:16): `{"path": "notes-test/03-...md",
-// "edits": [{old_string, new_string}, ...]}` came back as "edit 1: path is
+// "edits": [{find, replace}, ...]}` came back as "edit 1: path is
 // required" — a refusal about shape, for a call whose meaning was never in
 // doubt. Several edits to one file is the commonest patch there is, and a model
 // that has just named the file does not expect to name it again on every item.
-func TestApplyPatchTakesThePathOnceForTheWholeCall(t *testing.T) {
+func TestEditsTakesThePathOnceForTheWholeCall(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "notes.md"), []byte("one\ntwo\nthree\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := &applyPatchSkill{root: root}
+	s := &editsSkill{root: root}
 
 	out, err := s.ExecuteTool(context.Background(), map[string]any{
 		"path": "notes.md",
 		"edits": []any{
-			map[string]any{"old_string": "one", "new_string": "ONE"},
-			map[string]any{"old_string": "three", "new_string": "THREE"},
+			map[string]any{"find": "one", "replace": "ONE"},
+			map[string]any{"find": "three", "replace": "THREE"},
 		},
 	})
 	if err != nil {
-		t.Fatalf("apply_patch refused the shape it was sent: %v", err)
+		t.Fatalf("edits refused the shape it was sent: %v", err)
 	}
 	if !out.Success {
 		t.Errorf("Success = false: %+v", out)
@@ -144,16 +144,16 @@ func TestAnEditsOwnPathBeatsTheCallDefault(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	s := &applyPatchSkill{root: root}
+	s := &editsSkill{root: root}
 
 	if _, err := s.ExecuteTool(context.Background(), map[string]any{
 		"path": "a.md",
 		"edits": []any{
-			map[string]any{"old_string": "x", "new_string": "A"},
-			map[string]any{"path": "b.md", "old_string": "x", "new_string": "B"},
+			map[string]any{"find": "x", "replace": "A"},
+			map[string]any{"path": "b.md", "find": "x", "replace": "B"},
 		},
 	}); err != nil {
-		t.Fatalf("apply_patch: %v", err)
+		t.Fatalf("edits: %v", err)
 	}
 	a, _ := os.ReadFile(filepath.Join(root, "a.md"))
 	b, _ := os.ReadFile(filepath.Join(root, "b.md"))
@@ -164,11 +164,11 @@ func TestAnEditsOwnPathBeatsTheCallDefault(t *testing.T) {
 
 // Naming no file anywhere is still the error it always was, and the message now
 // says both places one could go.
-func TestApplyPatchStillNeedsAFileSomewhere(t *testing.T) {
-	s := &applyPatchSkill{root: t.TempDir()}
+func TestEditsStillNeedsAFileSomewhere(t *testing.T) {
+	s := &editsSkill{root: t.TempDir()}
 
 	_, err := s.ExecuteTool(context.Background(), map[string]any{
-		"edits": []any{map[string]any{"old_string": "x", "new_string": "y"}},
+		"edits": []any{map[string]any{"find": "x", "replace": "y"}},
 	})
 	if err == nil {
 		t.Fatal("want a refusal")

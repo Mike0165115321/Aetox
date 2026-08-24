@@ -87,7 +87,7 @@ func (*readSkill) ToolDefinition() model.ToolDefinition {
 		Type: "function",
 		Function: model.ToolFunction{
 			Name: "read",
-			Description: "Read a text file in sandbox root. Every line comes back prefixed with its line number and a tab — that prefix is added by this tool and is not in the file, so strip it before passing text to edit or apply_patch. " +
+			Description: "Read a text file in sandbox root. Every line comes back prefixed with its line number and a tab — that prefix is added by this tool and is not in the file, so strip it before passing text to edit or edits. " +
 				"Returns up to 2000 lines; if the output says it was truncated, call read again with the offset it gives you to get the rest.",
 			Parameters: payload,
 		},
@@ -274,7 +274,7 @@ func readTextLines(f *os.File, offset, limit int, numbered bool) (string, int, e
 				// only cite a location by quoting the code back, and every
 				// "which line is this" question costs a second call to grep.
 				// The prefix is not in the file — read's description and
-				// edit's both say so, because an old_string that includes one
+				// edit's both say so, because a find text that includes one
 				// silently never matches.
 				if numbered {
 					b.WriteString(fmt.Sprintf("%6d\t%s", line, text))
