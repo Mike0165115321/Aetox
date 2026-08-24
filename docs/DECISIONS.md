@@ -6278,3 +6278,118 @@ Motion off, signal kept — the same trade the beam block has always made. The b
 - **`zh.ts` gets no new keys.** It is a `Partial` that falls through to English and it currently translates exactly one workbench string out of ninety. Adding two would be noise dressed as coverage.
 - **The layers are not in Settings.** They live in the browser toolbar behind a ✨, because it is a decision about the panel you are looking at while you are looking at it.
 - **Nothing was added to the tool block.** The model is told none of this, and should not be: it is what the user sees, not what the agent can do.
+
+---
+
+## 175. Decision — The Row Was Named After the Model and Nobody Could Find the Company (2026-08-24)
+
+**Trigger:** owner — *"อัพเดท alibaba cloud ด้วยครับ พยายามตั้งค่าแล้วยังไม่ได้ มีคนฟีดแบ็ค"*, and when asked what the failure looked like, *"มันไม่มีรึเปล่าอ่ะ"*. That answer is the finding. Someone had gone looking for Alibaba Cloud in Aetox and concluded the app did not support it — and so had the owner, of his own app. The row had been there for a year, called `qwen`.
+
+**The picker prints the canonical id and nothing else.** There is no display-name layer anywhere in the provider UI: `Settings.svelte` renders `p.name`, and every row reads as its catalog key — `deepseek`, `zai`, `modelscope`. That is not a bug on its own; it is why the key **is** the name, and why a key named after a model family is a row named after the wrong thing. Alibaba Cloud sells Model Studio; Qwen is what the models are called inside it. A user shops for the first and Aetox only ever said the second.
+
+**So the row was renamed rather than labelled.** `qwen` → `alibaba`, and every old spelling stays an alias: `qwen`, `qwen-code`, `dashscope`, `tongyi`, joined by `alibaba-cloud`, `aliyun`, `bailian`, `model-studio`. This is the noop→aetox mechanism and it needs no migration step — `Normalize` resolves a preference file, an enabled list or a stored credential written under any of them. A display-name field was the alternative and was rejected: it would put two names on one row in a UI where every other row has one, and the row would still sort and search as `qwen`.
+
+**[models_dev.go](../internal/model/models_dev.go) lost a translation line, which is the confirmation.** `modelsDevProvider` existed to map four Aetox names onto models.dev's, with the note *"Aetox names the product a user picks"*. Three of the four are real disagreements (gemini/google, kimi/moonshotai, together/togetherai). The fourth was `qwen` → `alibaba` — not two projects naming a company differently, but this catalog naming it after a model family while the other named the company. The row was misnamed and the table was right.
+
+### 175.1 The other half: a key from the wrong region
+
+The rename explains "I could not find it". It does not explain "I set it up and it still would not work", and the second half was measurable from this machine with no key at all.
+
+`apiKeyURL` sent people to `bailian.console.alibabacloud.com` — page title `Alibaba Cloud Model Studio Console` — while `baseURL` talked to `dashscope.aliyuncs.com`, the China host. A key created by following the row's own link could only ever answer *"Incorrect API key provided"*.
+
+**The first draft of this section said "two account worlds" and that was too small.** Model Studio is **six regions**, chosen from a dropdown in the console's top-right corner, and their own documentation states the consequence: *"Singapore, US (Virginia), and China (Beijing) API keys are not interchangeable."* Worse for a catalog, five of the six put the user's **own workspace id in the host**:
+
+| region | base URL |
+|---|---|
+| US (Virginia) | `https://dashscope-us.aliyuncs.com/compatible-mode/v1` |
+| Singapore | `https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1` |
+| China (Beijing) | `https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` |
+| China (Hong Kong) | `https://{WorkspaceId}.cn-hongkong.maas.aliyuncs.com/compatible-mode/v1` |
+| Japan (Tokyo) | `https://{WorkspaceId}.ap-northeast-1.maas.aliyuncs.com/compatible-mode/v1` |
+| Germany (Frankfurt) | `https://{WorkspaceId}.eu-central-1.maas.aliyuncs.com/compatible-mode/v1` |
+
+A fixed catalog string cannot hold a per-user subdomain. So the default is `dashscope-intl.aliyuncs.com` — the workspace-free international host that has served this endpoint for years — and **whether it is still the right one for a key minted today is the open question on this row.** It answers; only a real key can say whether it answers 200.
+
+Probed 2026-08-24, junk key, five hosts — `dashscope-intl`, `dashscope`, `dashscope-us`, and an **invented** workspace id on both `ap-southeast-1` and `cn-beijing`. All five returned the same 401 body, differing only in the help link (`www.alibabacloud.com/help/en` on four, `help.aliyun.com/zh` on the two China ones). The `maas` hosts are wildcard-routed: a workspace id that does not exist still reaches auth. **Nothing before a valid key distinguishes any of them**, which is why the picker cannot warn in advance.
+
+**So the 401 was made to say it.** `credentialHint` in [account_access.go](../internal/model/account_access.go) appends the region list to Model Studio's rejection — matched on `model-studio/error-code#apikey-error`, the doc link it puts in *every* regional response, so one marker identifies the service rather than the host. It is a sibling of `accountAccessError` and deliberately not the same thing: that one says "the key is fine, the account is not allowed" and **replaces** the provider's message; this one does not dispute the 401 at all — the key really was rejected — it appends what else could have caused it, so the provider keeps the last word. Every other provider's 401 is untouched, because a key really can just be wrong and that is the far more common case.
+
+**No region dial, and deliberately not `AltBaseURL`.** Anyone outside the default pastes their own URL into the base URL field already on the card. `AltRuntime`/`AltBaseURL` were the tempting slot and are the wrong one — they mean *this API speaks a second wire format*, a fact about the protocol, and using them for geography would make the Settings control labelled "wire format" answer a question about which country signed you up.
+
+### 175.1a The wall that stopped verification is Alibaba's, not ours
+
+The owner registered, reached the console, opened **Create API key** — and was refused before the dialog would submit: *"โปรดกรอกข้อมูลบัญชีให้ครบถ้วน หรือดำเนินการตามขั้นตอนในโหมดปลอดภัยให้เสร็จสิ้นก่อนสร้างคีย์ API"* (request id `01A032AB-8C87-5664-AAD7-346599C3793F`, 2026-08-24). Account details must be completed before the account may hold a key at all.
+
+That is worth recording rather than retrying, because it settles what state this row is in. **It is the nvidia state: shipped, reachable, unproven, waiting on an owner-only account step.** Nothing in Aetox can see or fix an account-completion wall on somebody else's website, and an endpoint that reads the bearer header correctly on all five hosts is not the thing that failed here.
+
+Removing the row was considered and rejected. It costs one struct literal and no upkeep, the person who filed the feedback already has an account that works, and deleting it would return the exact complaint this section exists to answer — *Aetox does not have Alibaba Cloud*. A signup we could not finish is not evidence the API is broken.
+
+### 175.2 A rename can lose a key, and it loses it silently
+
+`APIKeyForProvider` normalized the **lookup** name and compared it against the raw map key. Every `credentials.json` written before today keys this provider as `"qwen"`; after the rename the app would ask for `"alibaba"`, find nothing, and draw a card asking for a key that is sitting in the file the user is looking at. Both sides are normalized now, and the same for `ModelBaseURLs`.
+
+The write side is the half that is easy to miss. Saving a key under the canonical name while an entry under the older one survives leaves **two rows answering for one provider**, and the reader walks a map — so which key gets sent could change between two runs of the same binary. `SetAPIKeyForProvider` and `SetBaseURLForProvider` now drop the other spellings first, and reset clears them too, or "back to the catalog default" would do nothing on exactly the machines this rename touched.
+
+Guarded by `TestRenamedProvidersKeepTheirOldNames`, a one-way list: names go in when a row is renamed and never come out.
+
+### 175.3 The fallback model was thirteen months stale
+
+`qwen3-coder-plus` was released 2025-07-23. It is only ever reached when the endpoint cannot be asked — `DiscoverOpenAICompatibleModels` fills the picker — which is exactly the moment a dead id leaves the user with nothing. Now `qwen3.7-plus`, taken from the models.dev catalog fetched 2026-08-24: tool calls, a million tokens of context, text/image/video in, at a sixth of `qwen3.8-max`'s input price. Newest is not the job of a fallback; working is.
+
+Stated plainly because this repo has been wrong this way before (nvidia, 43 of 100 ids): **this was not measured against the live endpoint.** That needs a key and nobody here has one.
+
+### 175.4 Reasoning stays false, deliberately
+
+models.dev marks `reasoningToggle: true` for every current model on this provider — qwen3.5, 3.6, 3.7, 3.8 — and the row still says `Reasoning: false`. That is not an oversight left in place.
+
+This runtime would send OpenAI's `reasoning_effort`. DashScope's documented dial is `enable_thinking` / `thinking_budget`. Which one the endpoint honours cannot be learned through a 401, and the failure mode of guessing is the one [thinking_capabilities.go](../internal/model/thinking_capabilities.go) already has a paragraph about: a four-level picker where every level, "off" included, is inert — *a control that does nothing is worse than an absent one, because it teaches the user that the controls lie.*
+
+One real turn with a real key settles it. Until then the honest answer is no dial.
+
+**Status:** `Done 2026-08-24.` Go suite green, frontend 949 green. Unproven rather than unfinished: no key exists on this side to run a turn with (175.1a), which leaves 175.4 open and the default endpoint choice in 175.1 unconfirmed. Not done: the README provider lists still say "Qwen" (owner's call — that file is what the app IS).
+
+## 176. Decision — How Far One Scroll Goes (2026-08-24)
+
+`scroll` shipped that morning moving exactly one screen (§173.2), and by the afternoon the owner had found the edge of it: *"ผมว่าสกอ ให้ AI เลือกความเร็วได้ด้วยดีมั้ย"*, then the clarification that decides what this is: *"หมายถึงเลื่อน ระยะสกออ่ะครับ"*. Distance, not the speed of the animation.
+
+### 176.1 The old rule was right and was being read too widely
+
+§173.2 said **directions, not pixels**, and the argument holds: a model asked for a number of pixels picks one, and a number picked without seeing the page is a guess.
+
+What was wrong was reading that as *no distance at all*. **A screen is not a pixel count.** It is a unit the model can reason about without seeing the page — it read the first screen, there is obviously more, go three more — and it was already the unit this action moved in. Only the count was nailed to one.
+
+So a feed the agent needed ten screens of was ten calls: ten model round trips, ten tool schemas re-sent, ten sets of tokens, for one intention. `screens` is the count made visible, and nothing else about the action changes.
+
+### 176.2 Presses, not a jump
+
+`scrollBy(5 × screenHeight)` would have been one line and would not work on the pages this action exists for.
+
+Lazy content is fetch-then-render, so **the document is only as deep as what has already rendered.** Jump past the end of it and the browser stops at the end of it, and the four screens that would have loaded never do. So it presses once per screen with the same settle between presses that a single scroll already had after it, and the distance is recomputed on each press because the scroller's own height changes as content arrives.
+
+**It does not stop early, and that is the part worth writing down.** The obvious guard is to give up when the position stops changing — and on a feed that is precisely backwards: *hitting the bottom is the event that triggers the next page*, so the press that moved nothing is routinely the one that makes the next press possible. On a genuinely short page the extra presses move nothing and cost only the wait.
+
+### 176.3 A page that ends early has to say so
+
+A short page just stops. Nothing fails, and a caller told it travelled five screens cannot tell that from having travelled two — so the next `read` coming back short reads as "no more content" when the truth is "you were already at the end".
+
+So a multi-screen scroll says the overshoot is possible, and a one-screen scroll does not: the caveat is only true of a distance that could have overshot, and a note printed on every scroll is one nobody reads by the third.
+
+**Ten is the cap, and it is a time budget rather than a distance one** — every screen costs a settle, so ten is seven seconds inside one call. Still far cheaper than ten calls. Over the cap is clamped **and said**, pointing at `bottom`, which is the action that was actually wanted.
+
+### 176.4 What it cost
+
+**Twelve tokens on every request that carries the browser**, measured rather than guessed: 28 bytes for the `screens` integer in the schema and 19 for the shortened signature line. The first draft cost 20, because the signature explained itself; the explanation moved to `Guidance()`, which is sent once on the first `scroll` of a session rather than on every request for the life of it. The block sits at ~7,730 of its 10,400 ceiling either way.
+
+That split is the answer to the objection the owner raised the moment he saw the cost — *"เดี๋ยว call จะหนักกว่า ตอนมันเรียก scroll อ่ะ ให้ใส่ค่ามาเลย"* — and it is the failure mode that decides whether this was worth building at all. **A model that never sends `screens` makes this strictly worse than not having built it:** it scrolls one screen at a time exactly as before, and every request in the session pays for a field nobody uses. So the block names the parameter without the `?` that invites omission, and the argument for using it — with a rule for choosing the number, not merely permission to — goes where it is paid once.
+
+**And the runtime still accepts an omitted one.** Refusing would cost the round trip it exists to save: the model reads the error and calls again, on the one action whose whole premise is that round trips are the expensive part. Teaching is free and happens once; refusing is not free and happens every time a model forgets. The gap between a signature that asks and a runtime that does not insist is deliberate, and a test holds it open so nobody closes it later on the grounds that the signature looks required.
+
+**The arrow had to learn to wait.** `markLifetimeMS` was a constant on the assumption that one action is one move; a seven-second scroll under a 1.6-second arrow would have said the page had stopped while it was still going. It is now the floor, and a caller that knows its action is long says how long.
+
+**One test takes seven seconds.** `TestClampedScrollSaysSoAndPointsAtBottom` runs a real clamped scroll end to end, so it pays the real ten settles. The cheaper version is a seam through the settle that exists only so a test can run fast, and a timing seam that no production path uses is a thing that quietly stops matching production.
+
+### 176.5 Deliberately not done
+
+- **Still no pixels**, and no `smooth` either. The owner's clarification ruled the second one out before it was built: the ask was distance. A smooth animation would also mean the tool returning while the page was still travelling, which is the one thing the settle exists to prevent.
+- **No report of where it ended up.** §173.2's reasoning is untouched: the loop that already exists — read, act, read again — answers "did more arrive" in the words of the page itself, rather than in a scroll position standing for them.
+- **No horizontal scroll.** Nothing has asked for one.

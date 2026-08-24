@@ -20,7 +20,7 @@ import (
 func TestMarkScriptsClearBeforeTheyDraw(t *testing.T) {
 	for name, js := range map[string]string{
 		"click":  markClickScript(3),
-		"scroll": markScrollScript("down"),
+		"scroll": markScrollScript("down", 0),
 	} {
 		mount := strings.Index(js, "function aetoxMarkMount")
 		clear := strings.Index(js, "aetoxMarkClear();\n    var root")
@@ -38,7 +38,7 @@ func TestMarkScriptsClearBeforeTheyDraw(t *testing.T) {
 func TestMarksMountAtTheRootAndStayFixed(t *testing.T) {
 	for name, js := range map[string]string{
 		"click":  markClickScript(1),
-		"scroll": markScrollScript("up"),
+		"scroll": markScrollScript("up", 0),
 	} {
 		if !strings.Contains(js, "var root=document.documentElement;") {
 			t.Errorf("%s: does not mount on the document element", name)
@@ -58,7 +58,7 @@ func TestMarksMountAtTheRootAndStayFixed(t *testing.T) {
 func TestMarksAskThePageAboutMotion(t *testing.T) {
 	for name, js := range map[string]string{
 		"click":  markClickScript(2),
-		"scroll": markScrollScript("bottom"),
+		"scroll": markScrollScript("bottom", 0),
 	} {
 		if !strings.Contains(js, "prefers-reduced-motion: reduce") {
 			t.Errorf("%s: never asks the machine whether it may move", name)
@@ -84,7 +84,7 @@ func TestScrollMarkPointsTheRightWay(t *testing.T) {
 		{"up", "top:44px", "rotate(-135deg)", "i<1"},
 		{"top", "top:44px", "rotate(-135deg)", "i<2"},
 	} {
-		js := markScrollScript(tc.to)
+		js := markScrollScript(tc.to, 0)
 		for _, want := range []string{tc.place, tc.turn, tc.chevron} {
 			if !strings.Contains(js, want) {
 				t.Errorf("scroll %s: script is missing %q", tc.to, want)
@@ -122,21 +122,32 @@ func TestPageMarksSwitchGatesDrawingOnly(t *testing.T) {
 	// every one of this package's tests constructs an App in — and, more to the
 	// point, the state a session is in before anybody has opened a page.
 	off.markPageClick(AgentTabID("web-agent-1"), 1)
-	off.markPageScroll(AgentTabID("web-agent-1"), "down")
+	off.markPageScroll(AgentTabID("web-agent-1"), "down", 0)
 	off.clearPageMarks(AgentTabID("web-agent-1"))
 	on.markPageClick(AgentTabID("web-agent-1"), 1)
-	on.markPageScroll(AgentTabID("web-agent-1"), "down")
+	on.markPageScroll(AgentTabID("web-agent-1"), "down", 0)
 }
 
 // Nothing of Aetox's own in the photograph. The ring sits directly over the
 // control it points at, and a model handed that picture has no way to know the
 // circle is not part of the site.
 func TestClearScriptRemovesTheMarkByID(t *testing.T) {
-	js := clearMarksScript()
+	js := clearMarksScript("tok-1")
 	if !strings.Contains(js, markElementID) {
 		t.Errorf("the clear does not name the mark it is meant to remove")
 	}
 	if strings.Contains(js, "createElement") {
 		t.Error("the clear draws something")
+	}
+	// The report is what makes this one different from every other mark script,
+	// and it is what capture waits on. Without it the only thing between a stale
+	// ring and the photograph is a sleep that was put there for the raise.
+	if !strings.Contains(js, "aetoxReport(\"tok-1\",0,null)") {
+		t.Errorf("the clear never says it is done:\n%s", js)
+	}
+	// Reported AFTER the removal, or it would be answering for work it had not
+	// done yet.
+	if strings.Index(js, "removeChild") > strings.Index(js, "aetoxReport(\"tok-1\"") {
+		t.Error("it reports before it removes")
 	}
 }

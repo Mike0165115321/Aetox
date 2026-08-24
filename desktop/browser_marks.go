@@ -44,6 +44,7 @@ package main
 // answer the stylesheet gives every other animation in the app.
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -72,6 +73,11 @@ const markAccent = "#378add"
 // sequence: a click already sleeps 300ms afterwards and a scroll 700ms, so a
 // run of them keeps a live mark on screen continuously without ever leaving a
 // stale one beside a fresh one.
+//
+// It is the floor rather than the rule, because one action is no longer one
+// move: `scroll` takes a number of screens now (§176), and an arrow that left
+// after 1.6s of a seven-second scroll would say the page had stopped while it
+// was still going. A caller that knows its action is long says so.
 const markLifetimeMS = 1600
 
 // aetoxMarkJS is the half both marks share: take the old one down, put the new
@@ -83,7 +89,10 @@ const markLifetimeMS = 1600
 // inline styles. Motion goes through element.animate() for the same reason one
 // step further: a @keyframes rule needs a <style> element, which style-src can
 // refuse, while the Web Animations API needs nothing from the page at all.
-func aetoxMarkJS() string {
+func aetoxMarkJS(lifeMS int) string {
+	if lifeMS < markLifetimeMS {
+		lifeMS = markLifetimeMS
+	}
 	return fmt.Sprintf(`
   var AETOX_MARK=%q, AETOX_ACC=%q;
   function aetoxMarkClear(){
@@ -118,7 +127,7 @@ func aetoxMarkJS() string {
     },%d);
     return el;
   }
-`, markElementID, markAccent, markLifetimeMS)
+`, markElementID, markAccent, lifeMS)
 }
 
 // markClickScript draws a ring around the element a click is about to land on.
@@ -153,16 +162,17 @@ func markClickScript(ref int) string {
        happened: it arrives a little wide and settles onto the control. */
     try{d.animate([{transform:"scale(1.14)"},{transform:"scale(1)"}],{duration:260,easing:"cubic-bezier(.2,.8,.3,1)"});}catch(e){}
   }
-})()`, aetoxScanJS, aetoxMarkJS(), ref)
+})()`, aetoxScanJS, aetoxMarkJS(markLifetimeMS), ref)
 }
 
-// markScrollScript draws an arrow in the direction the page is about to move.
+// markScrollScript draws an arrow in the direction the page is about to move,
+// and holds it for as long as the move will take.
 //
 // Two chevrons for the jumps (top, bottom) and one for a screen at a time, so
 // the four directions read as two distances without a word being written. The
 // words are the action bar's job, and this mark is drawn on a page whose
 // language is not the app's.
-func markScrollScript(to string) string {
+func markScrollScript(to string, holdMS int) string {
 	up := to == "up" || to == "top"
 	// The chevron is a square wearing two of its four borders, turned. Built
 	// this way rather than as an SVG because innerHTML is the one thing a page
@@ -195,20 +205,37 @@ func markScrollScript(to string) string {
     try{box.animate([{transform:"translateY(0)"},{transform:"translateY(%s)"}],
       {duration:420,easing:"cubic-bezier(.3,.7,.4,1)"});}catch(e){}
   }
-})()`, aetoxMarkJS(), place, count, turn, travel)
+})()`, aetoxMarkJS(holdMS), place, count, turn, travel)
 }
 
-// clearMarksScript takes down whatever is up and draws nothing.
+// clearMarksScript takes down whatever is up, draws nothing, and says when it
+// is done.
 //
-// It repeats aetoxMarkClear's three lines rather than shipping the whole shared
-// block to say one thing, because the caller that needs this most is `capture`,
-// and what capture needs is for the page to be clean by the time the shutter
-// opens.
-func clearMarksScript() string {
-	return fmt.Sprintf(`(function(){
+// **The report is the whole point of this one.** Every other mark script is
+// fire and forget, which is right for a courtesy nobody waits on. This one has
+// a caller that genuinely cannot proceed without it: `capture` photographs the
+// real page, and a ring left standing goes into the picture the model then
+// reads, with nothing to tell it the circle is not part of the site.
+//
+// Ordering by queue is not enough to prevent that, which is the part worth
+// writing down. Both this and the screenshot go through host.onTab, so they are
+// ENQUEUED in order — but v.eval is ExecuteScript, which hands the script to the
+// page and returns; the page runs it whenever its own thread next gets to it.
+// So "queued first" says nothing about "finished first", and the only thing
+// standing between a stale ring and the photograph was a 400ms sleep put there
+// for something else entirely. A sleep is not an ordering primitive; it is a
+// guess that has been right so far.
+//
+// It reuses aetoxActJS's envelope rather than inventing a second one, so this
+// rides the same token/channel/timeout the click report has always used
+// (browserActOn). ref 0 and a null element: nothing was aimed at.
+func clearMarksScript(token string) string {
+	tok, _ := json.Marshal(token)
+	return fmt.Sprintf(`(function(){%s
   var old=document.getElementById(%q);
   if(old&&old.parentNode)old.parentNode.removeChild(old);
-})()`, markElementID)
+  aetoxReport(%s,0,null);
+})()`, aetoxActJS(), markElementID, string(tok))
 }
 
 // pageMarksOn is the switch, read at the moment of drawing rather than held.
@@ -234,17 +261,27 @@ func (a *App) markPageClick(id AgentTabID, ref int) {
 	a.browserEval(string(id), markClickScript(ref))
 }
 
-func (a *App) markPageScroll(id AgentTabID, to string) {
+func (a *App) markPageScroll(id AgentTabID, to string, holdMS int) {
 	if !a.pageMarksOn() {
 		return
 	}
-	a.browserEval(string(id), markScrollScript(strings.ToLower(strings.TrimSpace(to))))
+	a.browserEval(string(id), markScrollScript(strings.ToLower(strings.TrimSpace(to)), holdMS))
 }
 
 // clearPageMarks runs whether or not the layer is on, and that is deliberate.
 // The switch decides whether a mark is DRAWN; one already on the page has to
 // come off regardless, or turning the layer off mid-run would leave the last
 // mark sitting there for the rest of that page's life.
+//
+// It WAITS, unlike the two that draw. browserActOn bounds that wait at two
+// seconds and treats silence as a third outcome rather than a failure — a page
+// that is busy, gone, or refusing to run scripts simply never answers, and the
+// photograph is still taken. Every return value is dropped on purpose: there is
+// nothing a caller could do differently with any of them, and a capture that
+// refused because a mark could not be confirmed gone would be a courtesy that
+// had grown into a gate.
 func (a *App) clearPageMarks(id AgentTabID) {
-	a.browserEval(string(id), clearMarksScript())
+	_, _, _ = a.browserActOn(string(id), func(token string) string {
+		return clearMarksScript(token)
+	})
 }

@@ -1235,9 +1235,48 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .wb.busy-glow,
 .markdown-body:has(.live) { animation:beam-phase 3s linear infinite; }
 
-.markdown-body .plan-card.live,
-.markdown-body .codeblock.live,
-.markdown-body .drawing-box.live { position:relative; }
+/* Positioned always, not only while lit.
+   These four used to take position:relative along with the `.live` class, which
+   was enough while the ring appeared and vanished with that class. It is not
+   enough now: a ring that fades OUT has to still be there after the class has
+   gone, so the ring is now permanent and only its opacity is a state. The
+   position they take is the one they already took every time they worked, so
+   nothing here is a stacking context they have not had before. */
+.markdown-body .plan-card,
+.markdown-body .codeblock,
+.markdown-body .drawing-box,
+.bgw-card { position:relative; }
+.bgw-card::before,
+.sess-row::before,
+.proj-group-sess::before,
+.proj-chats li button::before,
+.wb::before,
+.markdown-body .plan-card::before,
+.markdown-body .codeblock::before,
+.markdown-body .drawing-box::before {
+  content:''; position:absolute; inset:0; border-radius:inherit; padding:1.5px;
+  pointer-events:none; z-index:1;
+  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;
+  mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite:exclude;
+  /* Steady, not a comet, and this is what the ring is DURING the fade out as
+     well as at rest.
+     The travelling version cannot survive the class being removed: the clock
+     lives on the carrier, so the moment `.live` goes the animation is gone and
+     --beam-phase reverts to 0deg — the comet would jump to the top of the lap
+     and fade from there, which is a flinch exactly where the point was to stop
+     flinching. Swapping to a flat ring in the same frame hides the reset and
+     says the right thing besides: motion stops when the work stops, and what
+     is left is a light going out.
+     No drop-shadow here on purpose — a filter makes a compositing layer, and a
+     transcript can hold a hundred of these at rest. It arrives with the light. */
+  background:color-mix(in srgb, var(--interactive) 55%, transparent);
+  opacity:0;
+  transition:opacity var(--beam-out) ease-in;
+}
+/* Lit. In fast enough to be there before the eye is; out slow enough that two
+   beats of one job do not read as two jobs. */
 .bgw-card.run::before,
 .sess-row.working::before,
 .proj-group-sess.working::before,
@@ -1246,8 +1285,6 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .markdown-body .plan-card.live::before,
 .markdown-body .codeblock.live::before,
 .markdown-body .drawing-box.live::before {
-  content:''; position:absolute; inset:0; border-radius:inherit; padding:1.5px;
-  pointer-events:none; z-index:1;
   /* Two comets, each a long fade-in tail behind a bright head cut off sharply
      at the front — the asymmetry is what says which way it is travelling. */
   background:conic-gradient(from var(--beam-phase),
@@ -1259,16 +1296,14 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
     var(--interactive-bright) 95%,
     transparent 97% 100%);
   filter:drop-shadow(0 0 3px var(--interactive));
-  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite:xor;
-  mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite:exclude;
+  opacity:1;
+  transition:opacity var(--beam-in) ease-out;
 }
 /* The card's ring sits ON its hairline rather than inside it — it has nothing
    clipping it. The three markdown blocks do (a code block hides its overflow
    to keep its header inside its own rounded corners), so theirs sit just
    inside instead of being cut off at the corners. */
-.bgw-card.run::before { inset:-1px; }
+.bgw-card::before { inset:-1px; }
 /* A chat with a turn running in it, wearing the same ring a working delegation
    wears (owner, 18 ส.ค.: "ให้เซสชั่นนั้นมีเอฟเฟคกำลังทำงาน เหมือนตอนซับเอเจนทำงาน").
    It is the same fact both times — this one is still going — so it is the same
@@ -1278,17 +1313,17 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    never positioned, and an absolutely-placed ring would anchor to the scroller
    and travel up the sidebar as the list scrolls. */
 .sess-row { position:relative; }
-.sess-row.working::before { inset:0; }
+.sess-row::before { inset:0; }
 /* The same two lines for the lists that draw a chat row of their own rather
    than reusing .sess-row: the workshop sidebar's nested project chats, and the
    โปรเจกต์ page's list. .proj-group-sess is already positioned (its hover
    actions float over it); the page's button was not, and an unpositioned
    carrier would anchor its ring to the scroller and slide it up the page. */
 .proj-chats li button { position:relative; }
-.proj-group-sess.working::before,
-.proj-chats li button.working::before { inset:0; }
+.proj-group-sess::before,
+.proj-chats li button::before { inset:0; }
 /* A drawing box has no border of its own to inherit a radius from. */
-.markdown-body .drawing-box.live::before { border-radius:var(--r-md); }
+.markdown-body .drawing-box::before { border-radius:var(--r-md); }
 /* Motion off, signal kept: a steady lit outline still says which one is the
    one still working, which is the whole job. */
 @media (prefers-reduced-motion: reduce) {

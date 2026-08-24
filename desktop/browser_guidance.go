@@ -62,7 +62,8 @@ var browserGuidance = map[string]string{
 	// not look like a failure. A feed read without scrolling comes back short
 	// and successful, and nothing in that answer suggests there was more.
 	"scroll": "A page that loads as you go — a feed, a result list, a channel — is one screen deep in the document until something scrolls it. So a short `read` on a page you expected to be long is usually not the whole page: scroll, read again, and repeat until the reading stops growing.\n" +
-		"`to` is down (a screen), up, top or bottom. Every scroll invalidates your refs, exactly like a navigation: read again before you click.",
+		"`to` is down, up, top or bottom. ALWAYS send `screens` with down and up: it is how far to travel in this one call, 1 to 10, and deciding it before you call is the whole point. Ten screens of a feed is ten calls at one screen each or one call at ten — same page, ten times the round trip. Send 1 when you mean to read what comes next; send a bigger number when you are reaching for content that has not loaded yet.\n" +
+		"It presses once per screen with a pause between, so content that arrives as you go still arrives — a single jump of the same distance would skip it. A page shorter than what you asked for stops at its end rather than failing, so a read after a long scroll that looks short may mean you were already at the bottom. Every scroll invalidates your refs, exactly like a navigation: read again before you click.",
 
 	"back": "Returns to the previous page in this tab with what you had typed and scrolled still there. Re-opening its URL is a different thing and loses all of it, and a page that came from a POST cannot be re-opened at all.\n" +
 		"A tab with nothing behind it does not fail — it says there is nowhere back to.",

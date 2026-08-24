@@ -360,7 +360,7 @@ func TestScrollTakesTheFourDirectionsAndRefusesTheRest(t *testing.T) {
 	s := &browserScrollSkill{app: app}
 
 	for _, to := range []string{"down", "up", "top", "bottom", ""} {
-		out, err := s.scroll(to)
+		out, err := s.scroll(to, 0)
 		if err != nil {
 			t.Errorf("scroll %q: %v", to, err)
 			continue
@@ -374,7 +374,7 @@ func TestScrollTakesTheFourDirectionsAndRefusesTheRest(t *testing.T) {
 			t.Errorf("scroll %q does not say to read again: %q", to, out.Content)
 		}
 	}
-	if _, err := s.scroll("sideways"); err == nil {
+	if _, err := s.scroll("sideways", 0); err == nil {
 		t.Error("an unknown direction was accepted")
 	}
 }
@@ -383,16 +383,16 @@ func TestScrollTakesTheFourDirectionsAndRefusesTheRest(t *testing.T) {
 // window — a bare window.scrollBy silently does nothing there, which is the
 // failure that looks exactly like a page with no more content.
 func TestScrollLooksForTheElementThatActuallyScrolls(t *testing.T) {
-	js := scrollScript("down")
+	js := scrollScript("down", 1)
 	for _, want := range []string{"overflowY", "scrollHeight", "scrollingElement"} {
 		if !strings.Contains(js, want) {
 			t.Errorf("the script does not consider %s:\n%s", want, js)
 		}
 	}
-	if !strings.Contains(scrollScript("bottom"), "el.scrollHeight") {
+	if !strings.Contains(scrollScript("bottom", 1), "el.scrollHeight") {
 		t.Error("bottom does not go to the bottom of the scroller it found")
 	}
-	if !strings.Contains(scrollScript("up"), "-(") {
+	if !strings.Contains(scrollScript("up", 1), "-(") {
 		t.Error("up does not move the other way")
 	}
 }

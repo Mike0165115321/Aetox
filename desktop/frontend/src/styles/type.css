@@ -59,6 +59,14 @@
   --dur-hold-success:850ms; /* "it worked" is read before the screen moves on */
   --dur-ground:700ms;       /* the watermark behind an empty room */
   --dur-hold-done:1600ms;   /* a finished setup stands still before it leaves */
+  /* The working light coming up and going down. Asymmetric on purpose, and
+     the asymmetry is the whole point: work STARTS at a moment, so the light
+     should be there by the time the eye arrives, and it stops between beats
+     that belong to one job, so going down slowly is what makes a sequence of
+     them read as one thing rather than as a light with a fault. Owner,
+     24 ส.ค.: *"เจอปุ๊บทำงาน หยุดปุ๊บหาย ... เผื่อมันทำงานหลายจังหวะจะได้ดูต่อเนื่อง"*. */
+  --beam-in:160ms;          /* the working light arriving */
+  --beam-out:750ms;         /* and leaving, slowly enough to bridge a beat */
   /* Overshoot is for something arriving that the user caused. Never for
      something that merely appeared. */
   --ease-overshoot:cubic-bezier(.2,.9,.3,1.5);

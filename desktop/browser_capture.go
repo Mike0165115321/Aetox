@@ -79,9 +79,13 @@ func (s *browserCaptureSkill) capture(ctx context.Context, full bool) (skill.Out
 	// The click ring sits directly over the control it points at, so a capture
 	// taken a moment after a click would hand the model a picture of the page
 	// with a bright circle drawn across the thing it was looking for — and the
-	// model has no way to know the circle is not part of the site. Queued
-	// before the raise below, so the removal has landed well before the shutter
-	// (browser_marks.go).
+	// model has no way to know the circle is not part of the site.
+	//
+	// This one BLOCKS until the page says the mark is gone. It used to be queued
+	// and left to the 400ms raise below to have landed by, which worked and was
+	// not a guarantee: eval hands a script to the page and returns, so the sleep
+	// was doing a job it was never told about. The wait is bounded at two
+	// seconds and silence is not a failure — see clearPageMarks.
 	a.clearPageMarks(id)
 
 	var title, url string
