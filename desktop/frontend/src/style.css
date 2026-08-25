@@ -866,28 +866,87 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 }
 .typing-bubble .reasoning-body { margin-bottom:0; }
 /* per-turn tool timeline (live in the typing bubble, persisted on the reply) */
-.tool-steps { display:flex; flex-direction:column; margin-bottom:8px; }
+.tool-steps { position:relative; display:flex; flex-direction:column; margin-bottom:8px; }
 .typing-bubble .tool-steps { margin-bottom:0; }
-.tool-step { position:relative; display:flex; align-items:center; gap:8px; padding:3px 0; min-width:0; }
+/* 8px, not the 3px these rows carried for a year. At 3px a row was 21px tall —
+   tighter than a line of body text — so a turn with a dozen calls read as one
+   block of grey rather than as a dozen things that happened (owner, 25 ส.ค.,
+   after dialling it himself). The cost is real and was taken with eyes open: a
+   24-call turn is now ~170px taller. The answer to THAT is folding a long list,
+   not taking the air back out. */
+.tool-step { position:relative; display:flex; align-items:center; gap:8px; padding:8px 0; min-width:0; }
+/* The stub of rail between one row and the next, re-measured for the padding
+   above: the gap between two glyph boxes is now 16px, and the line overlaps
+   2px into each so it reads as continuous rather than as a floating tick. */
 .tool-step:not(:first-child)::before {
-  content:''; position:absolute; left:7px; top:-5px; height:9px;
+  content:''; position:absolute; left:7px; top:-10px; height:20px;
   border-left:1px solid var(--border-strong);
 }
-.tool-step .glyph {
-  flex:0 0 auto; width:15px; height:15px; display:inline-flex;
-  align-items:center; justify-content:center; font-size:var(--fs-2xs); color:var(--text-dim);
+/* The block that says which call is live.
+ *
+ * Same shape the delegation card wears, minus the travelling light: a raised
+ * surface under the row and nothing else. It replaced a beam ring at row scale
+ * because a ring around every tool call is four rings on screen at once, and
+ * the card already lost that fight ("มันชิดกันเกินครับ ดูอ้วนมาก").
+ *
+ * Drawn twice, deliberately. This one belongs to the row and is always right —
+ * it handles two calls running at once, and a sub-agent's steps inside a card,
+ * where nothing measures anything. `.glide-on` (toolGlide.ts) hides it and
+ * hands over to a single bar that TRAVELS between rows, which is the version
+ * with the better handover but which can only exist while exactly one row is
+ * live. Both are the same 10px overhang and the same 1px of vertical breath, so
+ * the swap between them is invisible.
+ *
+ * ::after because ::before is the rail above, and z-index:-1 rather than a
+ * wrapper because the row's own children then need no z-index of their own. */
+.tool-step.run::after,
+.tool-glide {
+  content:''; position:absolute; inset:-1px -10px; z-index:-1;
+  background:var(--surface-raised); border-radius:var(--r-sm);
 }
+.tool-steps.glide-on .tool-step.run::after { display:none; }
+.tool-glide {
+  inset:auto; left:-10px; right:-10px; top:0; opacity:0;
+  transition:transform var(--swap-block) var(--ease-arrive),
+             height var(--swap-block) var(--ease-arrive),
+             opacity var(--beam-in) ease-out;
+}
+/* A row arriving. Not keyed, so Svelte updates rows in place and this runs
+   only for one that is genuinely new — which is the moment it is describing. */
+.tool-step { animation:tool-row-in var(--swap-row-in) var(--ease-arrive); }
+@keyframes tool-row-in { from { opacity:0; transform:translateY(-3px); } to { opacity:1; transform:none; } }
+/* The ring and the tick are BOTH here, stacked, fading past each other. They
+   used to be one element whose contents were swapped, so a call finishing
+   changed the row in a single frame — the one thing in the timeline that
+   genuinely looked broken rather than fast. */
+.tool-step .glyph {
+  flex:0 0 auto; width:15px; height:15px; display:grid; place-items:center;
+  font-size:var(--fs-2xs); color:var(--text-dim);
+}
+.tool-step .glyph > * { grid-area:1/1; }
 .tool-step.done .glyph { color:var(--status-success); }
 .tool-step.err .glyph { color:var(--status-danger); }
-.tool-step .glyph.spin {
+.tool-step .glyph .spin {
   width:10px; height:10px; border:1.5px dashed var(--accent); border-radius:50%;
   animation:tool-spin 1.2s linear infinite;
+  transition:opacity var(--swap-glyph) ease, transform var(--swap-glyph) ease;
 }
+.tool-step .glyph .tick {
+  display:inline-flex; opacity:0; transform:scale(.7);
+  transition:opacity var(--swap-glyph) ease, transform var(--swap-glyph) var(--ease-overshoot);
+}
+.tool-step.done .glyph .spin, .tool-step.err .glyph .spin { opacity:0; transform:scale(.55); }
+.tool-step.done .glyph .tick, .tool-step.err .glyph .tick { opacity:1; transform:none; }
 @keyframes tool-spin { to { transform:rotate(360deg); } }
 .tool-step .lbl {
   min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   font-family:var(--mono); font-size:var(--fs-xs); color:var(--text-muted);
+  transition:color var(--swap-glyph) ease;
 }
+/* The live row is the one you are meant to be reading. Weight carries the
+   state as much as the block does, so the row still says which one it is on a
+   screen where the raised surface is barely a shade. */
+.tool-step.run .lbl { color:var(--text-primary); }
 .tool-step .secs { flex:0 0 auto; font-size:var(--fs-xs); color:var(--text-dim); }
 .tool-step .tool-stat { flex:0 0 auto; font-size:var(--fs-xs); font-variant-numeric:tabular-nums; }
 .tool-step .tool-stat .add { color:var(--status-success); }
@@ -1979,7 +2038,20 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
      take more room than the message it is attached to. */
   max-width:min(420px, 100%); overflow:hidden; white-space:pre;
 }
-.attach-thumb { width:32px; height:32px; border-radius:var(--r-sm); object-fit:cover; }
+/* An attached picture, as a tile. Same card, same head, and the picture sits
+   where an attached file's text preview sits — because it is the same thing:
+   what is actually going to the model, before it goes.
+   144px and 4:3 are the owner's, dialled on a live comparison (25 ส.ค.). The
+   fixed ratio is the load-bearing half: a portrait photo and a screenshot then
+   make the composer exactly as tall as each other, so attaching never moves the
+   things below it by a different amount each time. */
+.attach-card.pic { width:144px; }
+.attach-card.pic .attach-head { padding:5px 5px 5px 9px; gap:6px; }
+.attach-card.pic .attach-name { flex:1; min-width:0; max-width:none; font-size:var(--fs-2xs); }
+.attach-preview {
+  display:block; width:100%; aspect-ratio:4/3; object-fit:cover;
+  background:var(--surface-sunken); border-top:1px solid var(--border-subtle);
+}
 .attach-name { color:var(--text-secondary); font-size:var(--fs-sm); max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .attach-remove { color:var(--text-dim); border-radius:var(--r-xs); padding:2px 5px; }
 .attach-remove:hover { background:var(--surface-hover); color:var(--text-primary); }
@@ -2682,8 +2754,12 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   display:flex; align-items:center; gap:8px; width:100%; text-align:left;
   padding:7px 12px; font:inherit; color:inherit; background:none; border:0; cursor:pointer;
 }
+.gp-row { position:relative; }
 .gp-row:hover { background:var(--surface-row-hover); }
-.gp-caret { flex:0 0 auto; display:inline-flex; color:var(--text-dim); }
+/* Fixed width, because this slot holds either a caret or the busy ring and the
+   two are not the same size. The name beside it must not step sideways when a
+   diff starts loading. */
+.gp-caret { flex:0 0 auto; width:12px; display:inline-flex; justify-content:center; color:var(--text-dim); }
 .gp-name {
   font-family:var(--mono); font-size:var(--fs-sm); color:var(--text-primary);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
@@ -2710,6 +2786,29 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .gp-open:hover { border-color:var(--border-strong); color:var(--text-primary); }
 .gp-empty { padding:18px 12px; text-align:center; color:var(--text-muted); font-size:var(--fs-sm); }
 .gp-empty.small { padding:10px 0; text-align:left; font-size:var(--fs-xs); }
+/* A file whose diff is being fetched, in the vocabulary the chat already uses
+   for a call that has not come back: the same raised block, the same dashed
+   ring, the same 2.4s sweep. Nothing new was invented for this room — that was
+   the point of picking it (owner, 25 ส.ค.: the two Git states the USER triggers
+   were left alone, and only this one, the wait nobody chose, was given a voice).
+   The block is inset 6px rather than the timeline's -10px overhang: this row
+   already carries the room's 12px gutter, and an overhang would put it under
+   the pane's edge. */
+.gp-row.busy::before {
+  content:''; position:absolute; inset:1px 6px; z-index:-1;
+  background:var(--surface-raised); border-radius:var(--r-sm);
+}
+.gp-ring {
+  display:block; width:10px; height:10px; border:1.5px dashed var(--accent);
+  border-radius:50%; animation:tool-spin 1.2s linear infinite;
+}
+.gp-skel i {
+  display:block; height:9px; margin:7px 0; border-radius:3px;
+  background:linear-gradient(90deg, var(--surface-raised) 25%, var(--surface-hover) 50%, var(--surface-raised) 75%);
+  background-size:300% 100%;
+  animation:status-shimmer 2.4s linear infinite;
+}
+.gp-skel .w1 { width:78%; } .gp-skel .w2 { width:54%; } .gp-skel .w3 { width:66%; }
 
 /* What an edit actually changed, folded under the row that made it (CodeDiff.svelte).
    These rules and the --diff-* tokens were the Review panel's, which was removed

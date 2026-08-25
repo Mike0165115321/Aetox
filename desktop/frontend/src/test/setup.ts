@@ -21,6 +21,24 @@
 // between. Tests that care about a transition's *timing* would need a real
 // clock; none do, and if one ever does it should say so itself rather than
 // change this for everyone.
+// ResizeObserver. jsdom does not implement it, and every real browser has since
+// 2020 — including the WebView2 the app actually ships in. toolGlide uses one to
+// re-measure the live row when the timeline's width changes, and without this
+// every test that renders a tool timeline died on `ResizeObserver is not
+// defined` (2026-08-25).
+//
+// It never fires, which is correct rather than lazy: jsdom lays nothing out, so
+// there is no resize to observe and a callback would be reporting a measurement
+// that does not exist. What the observer is FOR is covered by the MutationObserver
+// beside it, which jsdom does have.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver
+}
+
 if (typeof Element !== 'undefined' && !Element.prototype.animate) {
   Element.prototype.animate = function (): Animation {
     let finishHandler: ((this: Animation, ev: AnimationPlaybackEvent) => unknown) | null = null

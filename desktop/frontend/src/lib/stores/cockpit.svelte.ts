@@ -250,6 +250,7 @@ export function restoreTranscript(messages: main.SessionMessage[] | null | undef
     // about what happened.
     const ending = endingFor(err)
     out[i].failed = true
+    out[i].stopped = wasStopped(err)
     out[i].failedText = question?.role === 'user' ? question.text : undefined
     out[i].text = out[i].text.trim() ? `${out[i].text}\n\n${ending}` : ending
   }
@@ -1134,6 +1135,11 @@ async function turnEndedBubble(err: unknown, sentText: string, turn: LiveTurnRef
       proposals: stored.proposals?.length ? stored.proposals : live.proposals,
       time: nowLabel(),
       failed: true,
+      // Restated rather than left to the spread: `stored` came through
+      // restoreTranscript and already carries it, but the two lines around
+      // this one are restated for the same reason, and a Stop that reads as a
+      // crash because a spread was reordered is not a bug worth leaving open.
+      stopped: wasStopped(err),
       failedText: sentText,
     }
   }
@@ -1141,7 +1147,7 @@ async function turnEndedBubble(err: unknown, sentText: string, turn: LiveTurnRef
   return {
     role: 'agent',
     text: partial ? `${partial}\n\n${endingFor(err)}` : endingFor(err),
-    time: nowLabel(), failed: true, failedText: sentText,
+    time: nowLabel(), failed: true, stopped: wasStopped(err), failedText: sentText,
     ...live,
   }
 }
@@ -1177,9 +1183,24 @@ const DROPPED_CONNECTION = 'aetox: connection dropped'
  * bug report rather than in the sentence the user reads.
  */
 const EMPTY_COMPLETION = 'response has empty text'
+/**
+ * Did the user press Stop, or did something break?
+ *
+ * Both endings leave the same kind of bubble — no answer, and the question
+ * still live — so both are `failed` to everything that acts on one. But they
+ * are not the same event, and the window had no way to tell them apart after
+ * the sentence was composed: Stop came back wearing the red retry chip the
+ * app uses for a crash, and the owner read his own Stop as the app breaking
+ * (25 ส.ค.). One predicate, read by the live path and by a transcript loaded
+ * back from the database alike, so the two can never disagree about which
+ * happened.
+ */
+function wasStopped(err: unknown): boolean {
+  return /context canceled/i.test(String(err))
+}
 function endingFor(err: unknown): string {
   const text = String(err)
-  if (/context canceled/i.test(text)) return t('cockpit.turnStopped')
+  if (wasStopped(text)) return t('cockpit.turnStopped')
   if (text.includes(DROPPED_CONNECTION)) return t('cockpit.connectionLost')
   if (text.includes(EMPTY_COMPLETION)) return t('cockpit.emptyAnswer')
   return t('cockpit.sendError', { err: text })

@@ -67,6 +67,17 @@
      24 ส.ค.: *"เจอปุ๊บทำงาน หยุดปุ๊บหาย ... เผื่อมันทำงานหลายจังหวะจะได้ดูต่อเนื่อง"*. */
   --beam-in:160ms;          /* the working light arriving */
   --beam-out:750ms;         /* and leaving, slowly enough to bridge a beat */
+  /* One tool finishing and the next one starting, in the timeline under a
+     reply. Three durations rather than one because three things happen at
+     once and they are not the same size of event: a row arrives, the block
+     that marks the live row travels to it, and the spinner on the row that
+     just finished becomes a tick. Held together so they can be tuned as a
+     set — the owner picked this set (25 ส.ค.) over a softer 180/220/160,
+     which is the other tuning that was on the table and the one to try first
+     if this ever reads as abrupt. */
+  --swap-row-in:120ms;      /* the new row fading in */
+  --swap-block:150ms;       /* the block travelling to it */
+  --swap-glyph:110ms;       /* the ring on the finished row becoming a tick */
   /* Overshoot is for something arriving that the user caused. Never for
      something that merely appeared. */
   --ease-overshoot:cubic-bezier(.2,.9,.3,1.5);

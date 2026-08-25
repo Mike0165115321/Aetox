@@ -119,8 +119,22 @@
     <div class="gp-list">
       {#each files as f (f.path)}
         <div class="gp-file">
-          <button class="gp-row" aria-expanded={!!open[f.path]} onclick={() => toggle(f.path)}>
-            <span class="gp-caret"><Icon name={open[f.path] ? 'chevronDown' : 'chevronRight'} size={12} /></span>
+          <!-- Fetching this file's diff wears the same block a running tool
+               call wears in the chat, because it is the same fact: this one is
+               not finished. A second vocabulary here would mean learning two
+               ways to read one thing. -->
+          <button
+            class="gp-row" class:busy={loading[f.path]}
+            aria-expanded={!!open[f.path]} aria-busy={loading[f.path] || undefined}
+            onclick={() => toggle(f.path)}
+          >
+            <span class="gp-caret">
+              {#if loading[f.path]}
+                <i class="gp-ring"></i>
+              {:else}
+                <Icon name={open[f.path] ? 'chevronDown' : 'chevronRight'} size={12} />
+              {/if}
+            </span>
             <span class="gp-name">{name(f.path)}</span>
             {#if dir(f.path)}<span class="gp-dir">{dir(f.path)}</span>{/if}
             <span class="gp-stat">
@@ -131,7 +145,14 @@
           {#if open[f.path]}
             <div class="gp-diff">
               {#if loading[f.path]}
-                <div class="gp-empty small">{t('git.loading')}</div>
+                <!-- The shape of what is coming, rather than a line of text
+                     saying to wait. A diff arriving replaces three grey lines
+                     with three real ones instead of replacing one sentence with
+                     forty lines, and the sweep across them is the 2.4s the
+                     status phrase above the timeline already uses. -->
+                <div class="gp-skel" role="status" aria-label={t('git.loading')}>
+                  <i class="w1"></i><i class="w2"></i><i class="w3"></i>
+                </div>
               {:else if diffs[f.path]}
                 <CodeDiff diff={diffs[f.path]} />
                 <button class="gp-open" onclick={() => openFileTab(f.path, name(f.path))}>

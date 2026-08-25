@@ -32,6 +32,9 @@ describe('pressing Stop mid-turn', () => {
     // Still retryable: a stopped question is one the user may want re-run.
     expect(last?.failed).toBe(true)
     expect(last?.failedText).toBe('ช่วยไล่บั๊คที')
+    // And marked as the user's own doing, so the chip under it is drawn in the
+    // ordinary colour instead of the one the app uses for a crash.
+    expect(last?.stopped).toBe(true)
   })
 
   // The case that actually happens. Nobody presses Stop mid-sentence; they press
@@ -78,6 +81,9 @@ describe('pressing Stop mid-turn', () => {
     const last = cockpit.chat.at(-1)
     expect(last?.text).toContain('เกิดข้อผิดพลาด')
     expect(last?.text).toContain('connection refused')
+    // The half of the split that must stay red: nobody pressed anything here.
+    expect(last?.failed).toBe(true)
+    expect(last?.stopped).toBe(false)
   })
 })
 
@@ -134,6 +140,8 @@ describe('what a stopped turn leaves behind', () => {
     // Still retryable — a stopped question is one the user may want re-run.
     expect(last?.failed).toBe(true)
     expect(last?.failedText).toBe('ทำสไลด์กาแฟสามคลื่น')
+    // Read back through the store, and still the user's own Stop.
+    expect(last?.stopped).toBe(true)
   })
 
   it('will not answer this question with an older turn`s wreckage', async () => {

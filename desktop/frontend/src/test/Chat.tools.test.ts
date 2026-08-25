@@ -347,6 +347,40 @@ describe('tool timeline collapsing', () => {
   })
 })
 
+// The block that marks the live call. It exists twice on purpose — a bar that
+// travels between rows, and a per-row fallback in CSS — and the whole safety of
+// that arrangement is that exactly one of them is ever showing. `glide-on` is
+// the switch, so it is what these check.
+describe('the block on the live tool row', () => {
+  beforeEach(() => { cockpit.toolSteps = [] })
+
+  it('hands the live row to the travelling bar when one call is running', async () => {
+    const { container } = render(Chat, {
+      ...baseProps, awaitingReply: true,
+      messages: [{ role: 'user', text: 'go', time: '10:54' }] as any,
+      toolSteps: [step('browser_read', 'run')],
+    })
+    await tick()
+
+    const list = container.querySelector('.tool-steps')
+    expect(list?.querySelector('.tool-glide')).not.toBeNull()
+    expect(list?.classList.contains('glide-on')).toBe(true)
+  })
+
+  // Providers do issue parallel calls, and one bar cannot be in two places. The
+  // per-row block has to take over, which it only does with the class off.
+  it('falls back to per-row blocks when two calls run at once', async () => {
+    const { container } = render(Chat, {
+      ...baseProps, awaitingReply: true,
+      messages: [{ role: 'user', text: 'go', time: '10:54' }] as any,
+      toolSteps: [step('browser_read', 'run'), step('web_fetch', 'run')],
+    })
+    await tick()
+
+    expect(container.querySelector('.tool-steps')?.classList.contains('glide-on')).toBe(false)
+  })
+})
+
 // The approval mode is switched from the model menu. Shift+Tab is the
 // shortcut, and it must never be able to REACH full-access: that mode never
 // prompts again, so turning it on stays a deliberate pick from the menu.

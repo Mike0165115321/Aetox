@@ -172,6 +172,11 @@ export interface ChatMessage {
    * rather than a reconstruction of it. */
   failed?: boolean
   failedText?: string
+  /** The turn ended because the user pressed Stop. A subset of `failed` — the
+   * bubble and the retry chip are the same ones — but not the same event: the
+   * app did exactly what it was told, and painting that in the danger colour
+   * told the owner his own Stop was a crash (25 ส.ค.). */
+  stopped?: boolean
   /** Files put back before this answer was regenerated, named on the bubble:
    * an answer that quietly undid six files would be the worse surprise. */
   revertedFiles?: string[]

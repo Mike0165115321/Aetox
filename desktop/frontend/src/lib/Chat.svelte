@@ -2,7 +2,8 @@
   import type { BackgroundTask, ChatMessage, TaskState, ModelStatus, ToolStep, TimelineNode, ContextBreakdown } from './types'
   import { groupSteps, isDelegation } from './types'
   import { streamedHtml } from './morph'
-  import { fold } from './fold'
+  import { toolGlide } from './toolGlide'
+  import { fold, unroll } from './fold'
   import TaskTimeline from './TaskTimeline.svelte'
   import BackgroundWork from './BackgroundWork.svelte'
   import Palette from './Palette.svelte'
@@ -1833,11 +1834,15 @@
 <!-- The row's contents, shared by the two elements above so that being
      expandable cannot quietly change what a row says. -->
 {#snippet stepFace(s: ToolStep, live: boolean)}
-  {#if s.state === 'run'}
-    <span class="glyph spin"></span>
-  {:else}
-    <span class="glyph"><Icon name={s.state === 'done' ? 'check' : 'x'} size={12} /></span>
-  {/if}
+  <!-- Both marks, always, stacked in one 15px box: the ring fades out as the
+       tick fades in. Swapping one element's contents changed a finishing call
+       in a single frame, which was the one thing in the timeline that looked
+       broken rather than fast. The box is a fixed size for the same reason it
+       always was — nothing in the row may move when the state does. -->
+  <span class="glyph">
+    <span class="spin"></span>
+    <span class="tick"><Icon name={s.state === 'err' ? 'x' : 'check'} size={12} /></span>
+  </span>
   <span class="lbl">{s.label}</span>
   {#if s.state === 'run' && live}
     <span class="secs">· {liveSecs(s)}s</span>
@@ -1855,7 +1860,10 @@
 {/snippet}
 
 {#snippet toolTimeline(steps: ToolStep[], live: boolean)}
-  <div class="tool-steps">
+  <!-- toolGlide adds the block that travels to whichever row is live. On a
+       finished timeline read back from the store there is no live row, so it
+       measures once, finds nothing, and stays out of the way. -->
+  <div class="tool-steps" use:toolGlide>
     {#each steps as s}
       {@render toolRow(s, live)}
     {/each}
@@ -2240,10 +2248,16 @@
               {/if}
               {#if m.role === 'agent' && m.failed && m.failedText}
                 <!-- A turn that never reached the model. The question above is
-                     still the question, so only this bubble is replaced. -->
+                     still the question, so only this bubble is replaced.
+
+                     Stop takes the same chip in the ordinary colour, and says
+                     "ส่งใหม่" instead of "ลองใหม่". Pressing Stop is the app
+                     obeying, not the app breaking, and a red chip under it was
+                     the window calling the user's own command an error. -->
                 <button
-                  type="button" class="msg-act retry icobtn tiny" disabled={!canRerun}
-                  aria-label={t('chat.retry')} data-tip={t('chat.retry')}
+                  type="button" class="msg-act icobtn tiny" class:retry={!m.stopped} disabled={!canRerun}
+                  aria-label={m.stopped ? t('chat.resend') : t('chat.retry')}
+                  data-tip={m.stopped ? t('chat.resend') : t('chat.retry')}
                   onclick={() => retryFailedTurn(i)}
                 ><Icon name="rotateCw" size={13} /></button>
               {:else if m.role === 'agent' && i === lastIndex && m.text}
@@ -2971,12 +2985,17 @@
            is attached is part of the message being written, not a banner
            floating above the thing you are typing in. -->
       {#if cockpit.pendingImage}
-        <div class="attach-card">
+        <!-- The card's own shape, with the picture where a text preview sits on
+             an attached file: a head that names it, a body showing what is
+             actually in hand. It was a 32px thumbnail beside the name, which is
+             too small to answer the only question the card exists to answer —
+             which picture did I just attach (owner, 25 ส.ค.). -->
+        <div class="attach-card pic" transition:unroll>
           <div class="attach-head">
-            <img src={cockpit.pendingImage.dataUrl} alt="" class="attach-thumb" />
             <span class="attach-name">{cockpit.pendingImage.relPath.split('/').pop()}</span>
             <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingImage}><Icon name="x" size={12} /></button>
           </div>
+          <img src={cockpit.pendingImage.dataUrl} alt="" class="attach-preview" />
         </div>
       {/if}
       {#if cockpit.pendingFile}

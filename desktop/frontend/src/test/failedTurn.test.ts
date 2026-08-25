@@ -131,6 +131,7 @@ describe('a failed turn read back from the store', () => {
 
     expect(chat[1].text).toContain('ครึ่งแรกของคำตอบ')
     expect(chat[1].text).toContain('connection refused')
+    expect(chat[1].stopped).toBe(false)
   })
 
   // The store keeps the error; the wording is composed on this side. A cancel
@@ -145,6 +146,9 @@ describe('a failed turn read back from the store', () => {
     expect(chat[1].text).toBe('หยุดการทำงานแล้ว')
     expect(chat[1].text).not.toContain('เกิดข้อผิดพลาด')
     expect(chat[1].failed).toBe(true)
+    // Not just worded differently — flagged, so the row is drawn differently
+    // too. A reopened session shows the same neutral chip it showed live.
+    expect(chat[1].stopped).toBe(true)
   })
 
   it('leaves a turn that worked completely alone', () => {
