@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"github.com/Mike0165115321/Aetox/internal/proc"
+	"github.com/Mikedev115/Aetox/internal/proc"
 )
 
 // The two endings both run through a tiny hidden PowerShell that first waits

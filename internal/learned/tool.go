@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/model"
-	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/skill"
 )
 
 // Proposal is one change the agent wants made to what it has learned. It is

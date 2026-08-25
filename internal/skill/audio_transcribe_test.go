@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/stt"
+	"github.com/Mikedev115/Aetox/internal/stt"
 )
 
 // fakeEngine stands in for internal/stt so this file tests what is actually

@@ -29,10 +29,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/connect"
-	"github.com/Mike0165115321/Aetox/internal/model"
-	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/connect"
+	"github.com/Mikedev115/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/skill"
 )
 
 type engineServerSkill struct {

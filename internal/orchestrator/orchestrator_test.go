@@ -3,7 +3,7 @@ package orchestrator
 import (
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/cognitive"
+	"github.com/Mikedev115/Aetox/internal/cognitive"
 )
 
 func TestSpawnGetStop(t *testing.T) {

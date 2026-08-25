@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/audit"
-	"github.com/Mike0165115321/Aetox/internal/model"
-	"github.com/Mike0165115321/Aetox/internal/proc"
-	"github.com/Mike0165115321/Aetox/internal/rtk"
+	"github.com/Mikedev115/Aetox/internal/audit"
+	"github.com/Mikedev115/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/proc"
+	"github.com/Mikedev115/Aetox/internal/rtk"
 )
 
 type shellSkill struct {

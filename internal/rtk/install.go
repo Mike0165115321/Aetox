@@ -36,7 +36,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/config"
 )
 
 const releaseAPIURL = "https://api.github.com/repos/rtk-ai/rtk/releases/latest"

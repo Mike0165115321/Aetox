@@ -84,7 +84,7 @@ describe('problems and lessons are two rooms', () => {
 
     await waitFor(() => expect(vi.mocked(BrowserOpenURL)).toHaveBeenCalledTimes(1))
     const url = vi.mocked(BrowserOpenURL).mock.calls[0][0] as string
-    expect(url.startsWith('https://github.com/Mike0165115321/Aetox/issues/new?body=')).toBe(true)
+    expect(url.startsWith('https://github.com/Mikedev115/Aetox/issues/new?body=')).toBe(true)
     const body = decodeURIComponent(url.split('body=')[1])
     expect(body).toContain('ไม่พบโปรแกรม Tesseract')
     expect(body).toContain('เกิด 3 ครั้ง')

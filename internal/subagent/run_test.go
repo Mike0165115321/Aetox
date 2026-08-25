@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/model"
-	"github.com/Mike0165115321/Aetox/internal/safety"
-	"github.com/Mike0165115321/Aetox/internal/skill"
-	"github.com/Mike0165115321/Aetox/internal/turn"
+	"github.com/Mikedev115/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/safety"
+	"github.com/Mikedev115/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/turn"
 )
 
 // The whole argument for runs in one test: the checking round is declared before

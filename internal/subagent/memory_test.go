@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/learned"
-	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/learned"
+	"github.com/Mikedev115/Aetox/internal/skill"
 )
 
 // A delegate runs with its profile plus what it has learned doing this job

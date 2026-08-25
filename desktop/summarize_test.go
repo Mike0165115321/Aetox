@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/learned"
-	"github.com/Mike0165115321/Aetox/internal/turn"
+	"github.com/Mikedev115/Aetox/internal/learned"
+	"github.com/Mikedev115/Aetox/internal/turn"
 )
 
 // failShell records one failed run whose error carries a variable part — the

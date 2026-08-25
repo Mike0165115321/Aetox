@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/model"
-	"github.com/Mike0165115321/Aetox/internal/turn"
+	"github.com/Mikedev115/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/turn"
 )
 
 // What opencode-go actually did at 13:13:45 on 23 ส.ค.: answered a round in 1.4

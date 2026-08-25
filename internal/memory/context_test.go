@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/model"
 )
 
 // No message-count cap: a long conversation within the char budget keeps

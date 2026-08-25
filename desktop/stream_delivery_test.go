@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/safety"
+	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/safety"
 )
 
 // Replace:true means "this is the whole answer, draw exactly this" — the bubble

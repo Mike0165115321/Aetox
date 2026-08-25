@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"errors"
 
-	"github.com/Mike0165115321/Aetox/internal/debuglog"
+	"github.com/Mikedev115/Aetox/internal/debuglog"
 )
 
 // errStopRows ends iteration early and successfully. A caller that has filled

@@ -7,8 +7,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/model"
-	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/skill"
 )
 
 // Delegation as ONE name in the tool block, four rights inside it (§99).

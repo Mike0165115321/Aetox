@@ -5,7 +5,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/Mike0165115321/Aetox/internal/debuglog"
+	"github.com/Mikedev115/Aetox/internal/debuglog"
 )
 
 // The window the app asks for, in the logical (96dpi) units Wails sizes windows

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/learned"
+	"github.com/Mikedev115/Aetox/internal/learned"
 )
 
 // Every test in this package gets an empty data root, and it is set here rather

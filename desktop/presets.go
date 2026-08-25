@@ -4,8 +4,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/command"
-	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/command"
+	"github.com/Mikedev115/Aetox/internal/model"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )

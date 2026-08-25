@@ -48,11 +48,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/learned"
-	"github.com/Mike0165115321/Aetox/internal/mode"
-	"github.com/Mike0165115321/Aetox/internal/safety"
-	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/learned"
+	"github.com/Mikedev115/Aetox/internal/mode"
+	"github.com/Mikedev115/Aetox/internal/safety"
+	"github.com/Mikedev115/Aetox/internal/skill"
 )
 
 // The whole tree rather than the two file patterns it used to name. An agent is

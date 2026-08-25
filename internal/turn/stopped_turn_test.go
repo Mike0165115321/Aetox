@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/command"
-	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/command"
+	"github.com/Mikedev115/Aetox/internal/model"
 )
 
 // Stop used to delete the turn it stopped.

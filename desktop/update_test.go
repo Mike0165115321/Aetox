@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/update"
-	"github.com/Mike0165115321/Aetox/internal/version"
+	"github.com/Mikedev115/Aetox/internal/update"
+	"github.com/Mikedev115/Aetox/internal/version"
 )
 
 // The desktop binding for the version the app calls itself. Trivial, and

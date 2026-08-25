@@ -45,9 +45,9 @@ package subagent
 import (
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/debuglog"
-	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/debuglog"
+	"github.com/Mikedev115/Aetox/internal/skill"
 )
 
 // openDoors are the two progressive-loading tools, which a worker gets its own

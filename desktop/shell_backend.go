@@ -3,7 +3,7 @@ package main
 import (
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/proc"
+	"github.com/Mikedev115/Aetox/internal/proc"
 )
 
 // Which shell this workspace's commands run in.

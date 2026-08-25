@@ -11,7 +11,7 @@ import (
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/Mike0165115321/Aetox/internal/lsp"
+	"github.com/Mikedev115/Aetox/internal/lsp"
 )
 
 // ptySession is the whole of what differs between platforms in this file:

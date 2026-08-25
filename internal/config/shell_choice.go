@@ -4,8 +4,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Mike0165115321/Aetox/internal/debuglog"
-	"github.com/Mike0165115321/Aetox/internal/proc"
+	"github.com/Mikedev115/Aetox/internal/debuglog"
+	"github.com/Mikedev115/Aetox/internal/proc"
 )
 
 // ShellChoice is the live answer to "which shell do this project's commands run

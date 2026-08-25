@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/snapshot"
+	"github.com/Mikedev115/Aetox/internal/snapshot"
 )
 
 // undoApp is the App reduced to what undo touches: a real git project and a

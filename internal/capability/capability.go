@@ -33,7 +33,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/config"
 )
 
 // Kind is how a component's download turns into files on disk.
@@ -136,7 +136,7 @@ func Manifest() []Component {
 			// of which is optional. The official installer looks smaller (48MB)
 			// because NSIS uses solid LZMA where a zip uses deflate; it is the
 			// same program.
-			URL:    "https://github.com/Mike0165115321/Aetox/releases/download/tools-tesseract-5.4.0.20240606/tesseract-win64.zip",
+			URL:    "https://github.com/Mikedev115/Aetox/releases/download/tools-tesseract-5.4.0.20240606/tesseract-win64.zip",
 			SHA256: "550a87a862558fafc783462d6c15cab8348f6e1d9057ec1b2e131dc1b16496fb",
 			Kind:   KindZip,
 			// No SubPath prefix to strip: this archive is ours and has the layout
@@ -175,7 +175,7 @@ func Manifest() []Component {
 			// answered 404 when the live test finally fetched it on 21 August, so
 			// every fresh v1.4.0 install in between had quietly gone without
 			// ffmpeg. A pin is only as durable as the thing it points at.
-			URL:    "https://github.com/Mike0165115321/Aetox/releases/download/tools-ffmpeg-n9.0.1/ffmpeg-win64-lgpl.zip",
+			URL:    "https://github.com/Mikedev115/Aetox/releases/download/tools-ffmpeg-n9.0.1/ffmpeg-win64-lgpl.zip",
 			SHA256: "b91abbbde7ab1b45e7d9b8d3baea9d98362b31303f403acf15642b95f2c11bfd",
 			Kind:   KindZip,
 			// Our archive is bin/ already, so there is no wrapper to strip.

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/config"
 )
 
 // composerDocLine is the exact string cockpit.svelte.ts appends for an attached

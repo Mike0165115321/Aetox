@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/model"
 )
 
 // editMaxFileBytes is generous enough that no source file, lockfile or config

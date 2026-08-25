@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Mike0165115321/Aetox/internal/atrest"
-	"github.com/Mike0165115321/Aetox/internal/debuglog"
+	"github.com/Mikedev115/Aetox/internal/atrest"
+	"github.com/Mikedev115/Aetox/internal/debuglog"
 )
 
 // Credentials are the secrets that used to live in model-preference.json, in

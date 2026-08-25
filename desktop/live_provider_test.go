@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/model"
-	"github.com/Mike0165115321/Aetox/internal/safety"
+	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/safety"
 )
 
 // The whole provider chain against a real OpenAI-compatible local server,

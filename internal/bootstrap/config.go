@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/debuglog"
-	"github.com/Mike0165115321/Aetox/internal/mcp"
-	"github.com/Mike0165115321/Aetox/internal/model"
-	"github.com/Mike0165115321/Aetox/internal/oauth"
+	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/debuglog"
+	"github.com/Mikedev115/Aetox/internal/mcp"
+	"github.com/Mikedev115/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/oauth"
 )
 
 // ContextChars is the retained-history budget in characters, scaled to the

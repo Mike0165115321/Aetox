@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/cognitive"
+	"github.com/Mikedev115/Aetox/internal/cognitive"
 )
 
 // Info is the serializable view of a tracked agent — safe to cross a future

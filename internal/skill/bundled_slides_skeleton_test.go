@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/deck"
+	"github.com/Mikedev115/Aetox/internal/deck"
 )
 
 // The skeleton in the slides skill has to actually be a deck.

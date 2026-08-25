@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/skill"
 )
 
 // writeSubagent drops one worker in the agents home and loads it back — the

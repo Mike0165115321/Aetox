@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/skill"
 )
 
 // The helpers' write door is closed (owner's call, 2026-08-06): Save refuses

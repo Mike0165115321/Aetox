@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/model"
-	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/skill"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 

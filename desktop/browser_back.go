@@ -26,7 +26,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/skill"
 )
 
 type browserBackSkill struct{ app *App }

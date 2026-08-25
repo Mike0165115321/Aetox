@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/provider"
+	"github.com/Mikedev115/Aetox/internal/provider"
 )
 
 // The matrix nobody can hold in their head.

@@ -35,7 +35,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/skill"
 )
 
 // browserLogEntry is one console line or one request. The two shapes share a

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/config"
 )
 
 // Migrate moves the user's agent files out of the sub-agents' home, once.

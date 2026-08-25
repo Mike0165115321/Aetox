@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/oauth"
+	"github.com/Mikedev115/Aetox/internal/oauth"
 )
 
 // signIn writes a credential into an isolated store for the duration of one

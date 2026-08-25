@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/model"
 )
 
 // AddMessage used to rebuild the message field by field, which silently dropped

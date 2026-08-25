@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/oauth"
-	"github.com/Mike0165115321/Aetox/internal/proc"
+	"github.com/Mikedev115/Aetox/internal/oauth"
+	"github.com/Mikedev115/Aetox/internal/proc"
 )
 
 // runAuthCommand handles `aetox login`, `aetox logout`, `aetox auth` and

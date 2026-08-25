@@ -7,7 +7,7 @@ import (
 	"sort"
 	"sync"
 
-	pvdr "github.com/Mike0165115321/Aetox/internal/provider"
+	pvdr "github.com/Mikedev115/Aetox/internal/provider"
 )
 
 // Risk says what a user is agreeing to by signing in, and it is shown on the

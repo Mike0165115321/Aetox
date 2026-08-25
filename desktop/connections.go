@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/connect"
+	"github.com/Mikedev115/Aetox/internal/connect"
 )
 
 // Connection bindings — external accounts the agent works on the user's behalf

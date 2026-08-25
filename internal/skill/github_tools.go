@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	gh "github.com/Mike0165115321/Aetox/internal/github"
-	"github.com/Mike0165115321/Aetox/internal/model"
+	gh "github.com/Mikedev115/Aetox/internal/github"
+	"github.com/Mikedev115/Aetox/internal/model"
 )
 
 const (

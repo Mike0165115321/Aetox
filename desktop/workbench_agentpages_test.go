@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/turn"
+	"github.com/Mikedev115/Aetox/internal/turn"
 )
 
 func recordPage(t *testing.T, a *App, url, output string, ok bool) {

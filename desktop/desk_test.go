@@ -17,14 +17,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/learned"
-	"github.com/Mike0165115321/Aetox/internal/mode"
-	"github.com/Mike0165115321/Aetox/internal/model"
-	"github.com/Mike0165115321/Aetox/internal/prompt"
-	"github.com/Mike0165115321/Aetox/internal/safety"
-	"github.com/Mike0165115321/Aetox/internal/skill"
-	"github.com/Mike0165115321/Aetox/internal/subagent"
+	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/learned"
+	"github.com/Mikedev115/Aetox/internal/mode"
+	"github.com/Mikedev115/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/prompt"
+	"github.com/Mikedev115/Aetox/internal/safety"
+	"github.com/Mikedev115/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/subagent"
 )
 
 // bootDeskApp is a real desktop engine at one desk, with the data root and the

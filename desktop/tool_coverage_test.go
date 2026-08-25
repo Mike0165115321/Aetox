@@ -41,12 +41,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/automation/n8n"
-	"github.com/Mike0165115321/Aetox/internal/automation/windmill"
-	"github.com/Mike0165115321/Aetox/internal/lsp"
-	"github.com/Mike0165115321/Aetox/internal/skill"
-	"github.com/Mike0165115321/Aetox/internal/stt"
-	"github.com/Mike0165115321/Aetox/internal/testpdf"
+	"github.com/Mikedev115/Aetox/internal/automation/n8n"
+	"github.com/Mikedev115/Aetox/internal/automation/windmill"
+	"github.com/Mikedev115/Aetox/internal/lsp"
+	"github.com/Mikedev115/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/stt"
+	"github.com/Mikedev115/Aetox/internal/testpdf"
 )
 
 // cliOnlySkills are registered but have no ToolDefinition, so the model is

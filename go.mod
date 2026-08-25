@@ -1,4 +1,4 @@
-module github.com/Mike0165115321/Aetox
+module github.com/Mikedev115/Aetox
 
 go 1.25.0
 

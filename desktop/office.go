@@ -15,10 +15,10 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/mcp"
-	"github.com/Mike0165115321/Aetox/internal/mode"
-	"github.com/Mike0165115321/Aetox/internal/subagent"
+	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/mcp"
+	"github.com/Mikedev115/Aetox/internal/mode"
+	"github.com/Mikedev115/Aetox/internal/subagent"
 )
 
 // ListModes returns every desk a session can be opened at — bundled first,

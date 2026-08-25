@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/model"
 )
 
 // A coding agent has to see whole files. The old flat 16KB ceiling silently

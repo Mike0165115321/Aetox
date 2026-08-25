@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Mike0165115321/Aetox/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/Mike0165115321/Aetox?color=2f81f7"></a>
+  <a href="https://github.com/Mikedev115/Aetox/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/Mikedev115/Aetox?color=2f81f7"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-proprietary%20%C2%B7%20source%20available-blue"></a>
   <img alt="Tests" src="https://img.shields.io/badge/tests-2%2C295%20Go%20%2B%20953%20UI-brightgreen">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%2B-lightgrey">
@@ -18,7 +18,7 @@
 <p align="center">
   <a href="README.md">English</a> ·
   <a href="https://mike0165115321.github.io/Aetox/">เว็บไซต์</a> ·
-  <a href="https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe">ดาวน์โหลด</a> ·
+  <a href="https://github.com/Mikedev115/Aetox/releases/latest/download/aetox-amd64-installer.exe">ดาวน์โหลด</a> ·
   <a href="https://www.facebook.com/share/g/1BnXC5EiWg/">ชุมชน</a> ·
   <a href="ARCHITECTURE.md">สถาปัตยกรรม</a> ·
   <a href="docs/DECISIONS.md">ทุกการตัดสินใจ และเหตุผล</a>
@@ -77,7 +77,7 @@ Windows 10 ขึ้นไป x64 **ไม่ต้องมี API key ก็�
 พร้อมโมเดลทดสอบห้าตัวที่เดินเครื่องจริงทุกส่วน (เรียกเครื่องมือจริง ส่งงานให้เอเจนจริง
 สตรีมความคิดยาว ๆ จริง) คุณจึงเห็นว่าแอปทำอะไรได้ก่อนจะไปสมัครอะไรกับใคร
 
-**ตัวติดตั้ง** — [aetox-amd64-installer.exe](https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe) (21.3 MB)
+**ตัวติดตั้ง** — [aetox-amd64-installer.exe](https://github.com/Mikedev115/Aetox/releases/latest/download/aetox-amd64-installer.exe) (21.3 MB)
 
 มันจะดาวน์โหลดและตรวจ SHA256 ของโปรแกรมภายนอกที่ Aetox ใช้ให้ด้วย: WebView2, Tesseract
 (พร้อมภาษาไทย), poppler, ffmpeg และโมเดลถอดเสียงตัวเริ่มต้นสำหรับใช้แบบออฟไลน์
@@ -86,10 +86,10 @@ Windows 10 ขึ้นไป x64 **ไม่ต้องมี API key ก็�
 **Scoop**
 
 ```powershell
-scoop install https://raw.githubusercontent.com/Mike0165115321/Aetox/main/scoop/aetox.json
+scoop install https://raw.githubusercontent.com/Mikedev115/Aetox/main/scoop/aetox.json
 ```
 
-**แบบพกพา** — [ไฟล์ zip](https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-windows-amd64-portable.zip)
+**แบบพกพา** — [ไฟล์ zip](https://github.com/Mikedev115/Aetox/releases/latest/download/aetox-windows-amd64-portable.zip)
 แตกออกมาแล้วรัน `aetox.exe` ช่องทางนี้เป็นช่องทางเดียวที่อัปเดตตัวเองในที่เดิมได้
 
 ### ถ้า SmartScreen หรือแอนตี้ไวรัสขึ้นเตือน
@@ -466,7 +466,7 @@ Aetox ใช้ WebView2 ที่ Windows มีอยู่แล้ว — �
 <details>
 <summary>วัดยังไง และอะไรที่ไม่ผ่านเกณฑ์</summary>
 
-**ขนาดในเครื่อง** — ดาวน์โหลด [ไฟล์ zip แบบพกพา](https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-windows-amd64-portable.zip)
+**ขนาดในเครื่อง** — ดาวน์โหลด [ไฟล์ zip แบบพกพา](https://github.com/Mikedev115/Aetox/releases/latest/download/aetox-windows-amd64-portable.zip)
 แตกออกมา แล้วอ่านขนาดของ `aetox.exe` ตัวเดียวข้างใน: 50,818,560 ไบต์ ใครก็ทำซ้ำได้ในหนึ่งนาที
 มันมาแทนตัวเลข 47.5 MB ที่วัดเมื่อ 2026-08-18 ซึ่งถูกต้องในตอนนั้นและไม่ถูกแล้วตอนนี้
 ขนาดของตัวอื่นวัดหลังติดตั้งจากโฟลเดอร์ติดตั้ง ไม่เคยเอามาจากหน้าดาวน์โหลด
@@ -522,7 +522,7 @@ Aetox ใช้ WebView2 ที่ Windows มีอยู่แล้ว — �
 
 ## แจ้งบั๊ก
 
-[เปิด issue](https://github.com/Mike0165115321/Aetox/issues) แอปมีประตูสำหรับเรื่องนี้อยู่แล้ว:
+[เปิด issue](https://github.com/Mikedev115/Aetox/issues) แอปมีประตูสำหรับเรื่องนี้อยู่แล้ว:
 หน้าตั้งค่าจะเติมฟอร์ม issue ให้พร้อมเวอร์ชัน ช่องทางที่ติดตั้ง และระบบปฏิบัติการ
 พับบันทึกภายในล่าสุดลงในบล็อก `<details>` โดยล้างความลับออกแล้ว
 แล้วยื่นให้คุณอ่านก่อนจะส่งจากบัญชีตัวเอง แอปไม่ส่งอะไรออกไปเอง

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/oauth"
-	"github.com/Mike0165115321/Aetox/internal/provider"
+	"github.com/Mikedev115/Aetox/internal/oauth"
+	"github.com/Mikedev115/Aetox/internal/provider"
 )
 
 // ProviderMetadata is the public metadata shape exposed by the model

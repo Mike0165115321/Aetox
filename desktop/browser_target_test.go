@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/statereport"
+	"github.com/Mikedev115/Aetox/internal/statereport"
 )
 
 // The bug these tests exist for: the user clicking between their own tabs

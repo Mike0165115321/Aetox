@@ -12,9 +12,9 @@ import (
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/Mike0165115321/Aetox/internal/bootstrap"
-	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/mode"
+	"github.com/Mikedev115/Aetox/internal/bootstrap"
+	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/mode"
 )
 
 // A โปรเจกต์ at the storefront door: a named folder that groups chats and

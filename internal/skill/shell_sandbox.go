@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/proc"
+	"github.com/Mikedev115/Aetox/internal/proc"
 )
 
 // The shell answers to the same gate every other file tool answers to.

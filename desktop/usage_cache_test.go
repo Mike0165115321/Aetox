@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/model"
 )
 
 // The schema is all CREATE TABLE IF NOT EXISTS, so a database that already has

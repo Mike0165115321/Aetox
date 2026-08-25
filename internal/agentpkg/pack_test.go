@@ -12,7 +12,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/config"
 )
 
 func agentFS(extra map[string]string) fstest.MapFS {

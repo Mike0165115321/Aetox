@@ -466,7 +466,7 @@ One session, three engine layers fixed; OpenCode/Claude Code are the confirmed r
 **Channel ranking:**
 1. **GitHub Releases + NSIS installer** — the foundation every other channel points at. The installer ([desktop/build/windows/installer/project.nsi](../desktop/build/windows/installer/project.nsi)) was already excellent: WebView2 runtime + Tesseract silently installed with pinned SHA256 + Thai traineddata. What was missing was purely the pipeline.
 2. **winget** — widest reach (built into Win 10/11); needs one published release first, then `wingetcreate new <installer-url>` generates the manifest PR. Blocked on the LICENSE decision (winget requires a license field).
-3. **Scoop** — zero-gatekeeper channel; manifest lives in this repo ([scoop/aetox.json](../scoop/aetox.json), `checkver: github` + autoupdate), users run `scoop install https://raw.githubusercontent.com/Mike0165115321/Aetox/main/scoop/aetox.json`.
+3. **Scoop** — zero-gatekeeper channel; manifest lives in this repo ([scoop/aetox.json](../scoop/aetox.json), `checkver: github` + autoupdate), users run `scoop install https://raw.githubusercontent.com/Mikedev115/Aetox/main/scoop/aetox.json`.
 4. **npm — rejected:** wrong audience and wrong shape for a desktop app (per-platform binary wrapper packages, no Start-Menu integration). Revisit only if the CLI ever targets JS-ecosystem devs specifically.
 
 **Shipped:**
@@ -5643,7 +5643,7 @@ The fold-out above answers *"what did that call change"*. The owner, the same ni
 
 ## 162. Decision — The Account Is Ours, and the Doors Are Only Doors (2026-08-22)
 
-The id server ([aetox-cloud](https://github.com/Mike0165115321), private) was already standing on 2026-08-21: `/authorize`, `/callback/{github,google}`, `/token`, `/me`, `/signout`, tokens as opaque strings stored only as hashes, refresh rotated on every use with reuse detection. Nothing in the desktop half had ever called it. This section is that half.
+The id server ([aetox-cloud](https://github.com/Mikedev115), private) was already standing on 2026-08-21: `/authorize`, `/callback/{github,google}`, `/token`, `/me`, `/signout`, tokens as opaque strings stored only as hashes, refresh rotated on every use with reuse detection. Nothing in the desktop half had ever called it. This section is that half.
 
 **Decision: the Aetox account gets its own package, its own file, and no power over anything the app already does.**
 

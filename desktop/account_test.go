@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/account"
+	"github.com/Mikedev115/Aetox/internal/account"
 )
 
 func TestAccountStatusAnswersSignedOutWithoutASession(t *testing.T) {

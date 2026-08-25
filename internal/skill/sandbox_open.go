@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/proc"
+	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/proc"
 )
 
 // The workspace is the whole answer to "which folders may this session touch",

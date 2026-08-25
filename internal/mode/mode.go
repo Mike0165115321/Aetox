@@ -34,10 +34,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/connect"
-	"github.com/Mike0165115321/Aetox/internal/mcp"
-	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/connect"
+	"github.com/Mikedev115/Aetox/internal/mcp"
+	"github.com/Mikedev115/Aetox/internal/skill"
 )
 
 //go:embed modes/*.md

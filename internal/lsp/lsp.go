@@ -25,8 +25,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/debuglog"
-	"github.com/Mike0165115321/Aetox/internal/proc"
+	"github.com/Mikedev115/Aetox/internal/debuglog"
+	"github.com/Mikedev115/Aetox/internal/proc"
 )
 
 // Diagnostic is one problem a server reported, flattened to what a model can

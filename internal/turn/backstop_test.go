@@ -21,7 +21,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/model"
 )
 
 func TestOutputBackstopScalesWithTheBudgetItIsAFractionOf(t *testing.T) {

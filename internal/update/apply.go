@@ -51,7 +51,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/config"
 )
 
 // ErrUpToDate means Apply had nothing to do — the caller raced a fresh check,

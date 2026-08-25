@@ -9,7 +9,7 @@ package main
 // it re-bootstraps in place instead of opening a new session.
 
 import (
-	"github.com/Mike0165115321/Aetox/internal/mode"
+	"github.com/Mikedev115/Aetox/internal/mode"
 )
 
 // Stances reports every stance this build implements, in the order the picker

@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/safety"
+	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/safety"
 )
 
 // captureProvider is a stand-in for a provider's HTTP endpoint that records the

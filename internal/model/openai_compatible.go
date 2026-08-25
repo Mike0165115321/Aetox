@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/debuglog"
+	"github.com/Mikedev115/Aetox/internal/debuglog"
 )
 
 // openAIMessage mirrors Message field for field, tag for tag and — this is the

@@ -38,7 +38,7 @@ import (
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 
-	"github.com/Mike0165115321/Aetox/internal/ooxml"
+	"github.com/Mikedev115/Aetox/internal/ooxml"
 )
 
 // A picture is embedded whole, so it is also the whole file size. The same

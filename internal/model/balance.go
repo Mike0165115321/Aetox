@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/provider"
+	"github.com/Mikedev115/Aetox/internal/provider"
 )
 
 // balanceTimeout is short on purpose: this runs when a settings panel opens,

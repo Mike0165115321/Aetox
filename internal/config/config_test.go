@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/safety"
+	"github.com/Mikedev115/Aetox/internal/safety"
 )
 
 // isolateUserDirs points every "where does this user's data live" lookup at a

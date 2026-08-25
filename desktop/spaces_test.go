@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/prompt"
-	"github.com/Mike0165115321/Aetox/internal/safety"
+	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/prompt"
+	"github.com/Mikedev115/Aetox/internal/safety"
 )
 
 // A โปรเจกต์ at the storefront door (COMPANY.md §84), from the outside.

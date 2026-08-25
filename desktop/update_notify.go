@@ -28,9 +28,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/debuglog"
-	"github.com/Mike0165115321/Aetox/internal/update"
-	"github.com/Mike0165115321/Aetox/internal/version"
+	"github.com/Mikedev115/Aetox/internal/debuglog"
+	"github.com/Mikedev115/Aetox/internal/update"
+	"github.com/Mikedev115/Aetox/internal/version"
 )
 
 const (

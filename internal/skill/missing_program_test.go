@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/statereport"
+	"github.com/Mikedev115/Aetox/internal/statereport"
 )
 
 // "This machine does not have X installed" is weather, not behaviour. No way of

@@ -20,10 +20,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/connect"
-	"github.com/Mike0165115321/Aetox/internal/model"
-	"github.com/Mike0165115321/Aetox/internal/skill"
-	"github.com/Mike0165115321/Aetox/internal/subagent"
+	"github.com/Mikedev115/Aetox/internal/connect"
+	"github.com/Mikedev115/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/subagent"
 )
 
 // DelegateSettings is what the switches look like from the UI's side: one block

@@ -13,7 +13,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/Mike0165115321/Aetox/internal/capability"
+	"github.com/Mikedev115/Aetox/internal/capability"
 )
 
 // capabilityProgress is one update on the wire to the window. Percent is -1

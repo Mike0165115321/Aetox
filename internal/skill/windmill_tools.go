@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/automation/windmill"
-	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/automation/windmill"
+	"github.com/Mikedev115/Aetox/internal/model"
 )
 
 // The Windmill tools. Shaped like the n8n ones next door, and different in the

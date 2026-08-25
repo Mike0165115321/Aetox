@@ -23,7 +23,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/ooxml"
+	"github.com/Mikedev115/Aetox/internal/ooxml"
 )
 
 // How much of a file is worth looking at for a thumbnail. These are display

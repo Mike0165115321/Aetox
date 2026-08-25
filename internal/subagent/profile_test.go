@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/mode"
-	"github.com/Mike0165115321/Aetox/internal/safety"
+	"github.com/Mikedev115/Aetox/internal/mode"
+	"github.com/Mikedev115/Aetox/internal/safety"
 )
 
 // isolate points DataRoot at a fresh temp dir so a developer's real profiles can

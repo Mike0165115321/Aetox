@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/config"
 )
 
 // A screenshot is a byproduct of the agent looking at something, not a file the

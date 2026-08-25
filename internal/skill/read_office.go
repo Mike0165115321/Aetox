@@ -18,7 +18,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/ooxml"
+	"github.com/Mikedev115/Aetox/internal/ooxml"
 )
 
 // officeExt is what read opens rather than refuses. The template variants are

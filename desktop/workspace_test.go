@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/safety"
-	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/safety"
+	"github.com/Mikedev115/Aetox/internal/skill"
 )
 
 // listPath runs the real `list` tool out of the app's live registry, which is

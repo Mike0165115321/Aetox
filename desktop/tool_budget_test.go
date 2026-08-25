@@ -6,11 +6,11 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/connect"
-	"github.com/Mike0165115321/Aetox/internal/oauth"
-	"github.com/Mike0165115321/Aetox/internal/safety"
-	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/connect"
+	"github.com/Mikedev115/Aetox/internal/oauth"
+	"github.com/Mikedev115/Aetox/internal/safety"
+	"github.com/Mikedev115/Aetox/internal/skill"
 )
 
 // The tool block is the one cost nobody sees and everybody pays. Every schema

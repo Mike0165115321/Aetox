@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/runlang"
-	"github.com/Mike0165115321/Aetox/internal/safety"
+	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/runlang"
+	"github.com/Mikedev115/Aetox/internal/safety"
 )
 
 // The Run button on a source block, end to end through the real shell skill.

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/ooxml"
+	"github.com/Mikedev115/Aetox/internal/ooxml"
 )
 
 // readPart pulls one part out of an OOXML package, which is a ZIP. It moved

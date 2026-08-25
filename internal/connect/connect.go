@@ -25,11 +25,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/automation/n8n"
-	"github.com/Mike0165115321/Aetox/internal/automation/windmill"
-	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/debuglog"
-	gh "github.com/Mike0165115321/Aetox/internal/github"
+	"github.com/Mikedev115/Aetox/internal/automation/n8n"
+	"github.com/Mikedev115/Aetox/internal/automation/windmill"
+	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/debuglog"
+	gh "github.com/Mikedev115/Aetox/internal/github"
 )
 
 // Family groups the services that are interchangeable — several products doing

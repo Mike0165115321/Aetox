@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/turn"
+	"github.com/Mikedev115/Aetox/internal/turn"
 )
 
 // Reasoning and its clock were fields on SessionMessage from the day thinking

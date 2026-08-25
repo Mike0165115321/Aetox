@@ -43,11 +43,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/model"
-	"github.com/Mike0165115321/Aetox/internal/proc"
-	"github.com/Mike0165115321/Aetox/internal/statereport"
+	"github.com/Mikedev115/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/proc"
+	"github.com/Mikedev115/Aetox/internal/statereport"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/config"
 )
 
 type imageOCRSkill struct {

@@ -17,7 +17,7 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/config"
 )
 
 // PackageSources returns the folders that make up one worker, the user's own

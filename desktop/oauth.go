@@ -6,8 +6,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Mike0165115321/Aetox/internal/model"
-	"github.com/Mike0165115321/Aetox/internal/oauth"
+	"github.com/Mikedev115/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/oauth"
 )
 
 // Sign-in bindings — "use the plan you already pay for" instead of pasting a

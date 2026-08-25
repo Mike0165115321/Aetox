@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/debuglog"
+	"github.com/Mikedev115/Aetox/internal/debuglog"
 )
 
 // setTestDataRoot isolates a test to its own directory via AETOX_DATA_ROOT

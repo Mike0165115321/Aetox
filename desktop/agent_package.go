@@ -6,8 +6,8 @@ import (
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/Mike0165115321/Aetox/internal/agentpkg"
-	"github.com/Mike0165115321/Aetox/internal/subagent"
+	"github.com/Mikedev115/Aetox/internal/agentpkg"
+	"github.com/Mikedev115/Aetox/internal/subagent"
 )
 
 // Sending a worker somewhere else.

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/config"
 )
 
 func schemaVersion(t *testing.T, db *sql.DB) int {

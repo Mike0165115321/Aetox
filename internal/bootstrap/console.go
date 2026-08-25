@@ -3,7 +3,7 @@ package bootstrap
 import (
 	"errors"
 
-	aetoxapp "github.com/Mike0165115321/Aetox/internal/app"
+	aetoxapp "github.com/Mikedev115/Aetox/internal/app"
 )
 
 // discardConsole is the console for a host that has no terminal: an HTTP

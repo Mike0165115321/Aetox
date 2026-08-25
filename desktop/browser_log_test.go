@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/skill"
 )
 
 func TestFormatBrowserLogRefusesToCallSilenceAnAnswer(t *testing.T) {

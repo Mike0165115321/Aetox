@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/subagent"
+	"github.com/Mikedev115/Aetox/internal/subagent"
 )
 
 // The face an agent wears on the roster (COMPANY.md §4). Two rules, and the

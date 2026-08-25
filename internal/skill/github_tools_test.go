@@ -431,7 +431,7 @@ func TestFetchRepoTreeSurvivesALargeListing(t *testing.T) {
 
 // The URL the user pasted ended in .git; the repo name must not.
 func TestExtractGitHubRepoURLStripsDotGit(t *testing.T) {
-	target, ok := ExtractGitHubRepoURL("https://github.com/Mike0165115321/ui.git")
+	target, ok := ExtractGitHubRepoURL("https://github.com/Mikedev115/ui.git")
 	if !ok {
 		t.Fatal("a .git clone URL was not recognised")
 	}

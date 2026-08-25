@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/debuglog"
-	"github.com/Mike0165115321/Aetox/internal/provider"
+	"github.com/Mikedev115/Aetox/internal/debuglog"
+	"github.com/Mikedev115/Aetox/internal/provider"
 )
 
 // Quota is how much of one rate-limit window is left.

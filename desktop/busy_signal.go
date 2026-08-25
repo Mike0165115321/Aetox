@@ -24,7 +24,7 @@ package main
 import (
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/config"
 )
 
 // BusyLayer is one switch as the window draws it: a stable id to send back, the

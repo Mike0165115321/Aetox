@@ -35,7 +35,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/config"
 )
 
 // MaxBytes is the ceiling on one scope's file.

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/proc"
-	"github.com/Mike0165115321/Aetox/internal/rtk"
+	"github.com/Mikedev115/Aetox/internal/proc"
+	"github.com/Mikedev115/Aetox/internal/rtk"
 )
 
 // isolateAuditLog keeps shellSkill.Execute's unconditional audit.WriteShell

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/account"
+	"github.com/Mikedev115/Aetox/internal/account"
 )
 
 // runAccountCommand handles `aetox account`, which is a different thing from

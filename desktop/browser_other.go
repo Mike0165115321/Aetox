@@ -5,7 +5,7 @@ package main
 import (
 	"errors"
 
-	"github.com/Mike0165115321/Aetox/internal/debuglog"
+	"github.com/Mikedev115/Aetox/internal/debuglog"
 )
 
 // The stand-in host for platforms whose real one is not written yet. It keeps

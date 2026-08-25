@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/automation/n8n"
-	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/automation/n8n"
+	"github.com/Mikedev115/Aetox/internal/model"
 )
 
 // The n8n tools: read what is on the user's instance, and write to it.

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/model"
 )
 
 // markdownSkill wraps an externally discovered SKILL.md file (opencode/Claude

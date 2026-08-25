@@ -21,7 +21,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/Mike0165115321/Aetox/internal/debuglog"
+	"github.com/Mikedev115/Aetox/internal/debuglog"
 	"github.com/wailsapp/go-webview2/pkg/edge"
 )
 

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/debuglog"
+	"github.com/Mikedev115/Aetox/internal/debuglog"
 )
 
 // Does the ChatGPT backend actually stream its thinking, and under which event

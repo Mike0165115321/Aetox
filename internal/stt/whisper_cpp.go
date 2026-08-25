@@ -18,9 +18,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/proc"
-	"github.com/Mike0165115321/Aetox/internal/statereport"
+	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/proc"
+	"github.com/Mikedev115/Aetox/internal/statereport"
 )
 
 // preferredWhisperModel is what the missing-model error tells the user to

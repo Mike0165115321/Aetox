@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/proc"
+	"github.com/Mikedev115/Aetox/internal/proc"
 )
 
 // Background commands: the third of the three tools a coding agent needs from a

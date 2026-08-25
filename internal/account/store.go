@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/Mike0165115321/Aetox/internal/atrest"
-	"github.com/Mike0165115321/Aetox/internal/oauth"
+	"github.com/Mikedev115/Aetox/internal/atrest"
+	"github.com/Mikedev115/Aetox/internal/oauth"
 )
 
 // User is the person the id server says is signed in. It mirrors the server's

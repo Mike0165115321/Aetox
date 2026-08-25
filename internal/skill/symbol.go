@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/lsp"
-	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/lsp"
+	"github.com/Mikedev115/Aetox/internal/model"
 )
 
 // symbolSkill answers "what is this, and where does it come from" using the

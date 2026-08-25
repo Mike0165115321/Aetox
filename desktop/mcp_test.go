@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/config"
 )
 
 // newMCPTestApp builds an App with a temp config dir so binding tests never touch
@@ -213,7 +213,7 @@ func buildEchoServer(t *testing.T) string {
 	// status" and the whole end-to-end MCP test goes red for a reason that has
 	// nothing to do with MCP.
 	cmd := exec.Command("go", "build", "-buildvcs=false", "-o", bin,
-		"github.com/Mike0165115321/Aetox/internal/mcp/testdata/echoserver")
+		"github.com/Mikedev115/Aetox/internal/mcp/testdata/echoserver")
 	// The caches must be named explicitly, because isolateUserDirs has already
 	// pointed HOME at this test's own t.TempDir(). A child `go` derives
 	// GOPATH=$HOME/go from it and writes its module cache there — with

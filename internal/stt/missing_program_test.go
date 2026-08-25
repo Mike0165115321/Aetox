@@ -3,7 +3,7 @@ package stt
 import (
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/statereport"
+	"github.com/Mikedev115/Aetox/internal/statereport"
 )
 
 // Same rule as the tool layer's missing binaries (internal/skill): a whisper

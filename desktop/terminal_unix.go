@@ -11,7 +11,7 @@ import (
 
 	"github.com/creack/pty"
 
-	"github.com/Mike0165115321/Aetox/internal/proc"
+	"github.com/Mikedev115/Aetox/internal/proc"
 )
 
 // unixPTY adapts creack/pty to ptySession. The master is already an

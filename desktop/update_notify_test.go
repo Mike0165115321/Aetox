@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/update"
+	"github.com/Mikedev115/Aetox/internal/update"
 )
 
 // captureEmit swaps the App's event seam for a recorder, and puts the real one

@@ -25,11 +25,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/config"
 )
 
 const (
-	repoOwner = "Mike0165115321"
+	repoOwner = "Mikedev115"
 	repoName  = "Aetox"
 
 	// ReleasesPage is the fallback every channel we cannot upgrade for gets

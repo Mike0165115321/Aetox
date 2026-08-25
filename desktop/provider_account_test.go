@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/model"
 )
 
 // "Never answered" and "answered, states no limits" both arrive as an empty

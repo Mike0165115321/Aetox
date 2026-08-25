@@ -3,7 +3,7 @@ package mode
 import (
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/skill"
 )
 
 // Stance is the second axis (DECISIONS.md §106): not *what is on the desk* —

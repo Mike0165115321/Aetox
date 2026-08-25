@@ -3022,14 +3022,14 @@
     ]},
   ])
 
-  const SPONSOR_URL = 'https://github.com/Mike0165115321/Aetox/blob/main/SPONSOR.md'
+  const SPONSOR_URL = 'https://github.com/Mikedev115/Aetox/blob/main/SPONSOR.md'
   // The repository, not the marketing site: the site is one page now, and the
   // place a supporter actually wants to land — the code, the releases, the
   // issues, the name on the commits — is here.
-  const SITE_URL = 'https://github.com/Mike0165115321/Aetox'
+  const SITE_URL = 'https://github.com/Mikedev115/Aetox'
   // The one link that is right on every channel, whether or not a check ran.
-  const RELEASES_URL = 'https://github.com/Mike0165115321/Aetox/releases'
-  const ISSUES_URL = 'https://github.com/Mike0165115321/Aetox/issues'
+  const RELEASES_URL = 'https://github.com/Mikedev115/Aetox/releases'
+  const ISSUES_URL = 'https://github.com/Mikedev115/Aetox/issues'
 
   // What the user has to say about Aetox goes to the developer — as a GitHub
   // issue the user submits, not as anything the app sends. Two rows, one

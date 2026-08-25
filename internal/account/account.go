@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/oauth"
+	"github.com/Mikedev115/Aetox/internal/oauth"
 )
 
 // ClientID is what this build calls itself to the id server. The server holds

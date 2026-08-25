@@ -3,7 +3,7 @@ package model
 import (
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/provider"
+	"github.com/Mikedev115/Aetox/internal/provider"
 )
 
 // Which models can be handed a whole document to read.

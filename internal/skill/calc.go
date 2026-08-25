@@ -11,7 +11,7 @@ import (
 
 	"github.com/dop251/goja"
 
-	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/model"
 )
 
 // calc is arithmetic that actually happened.

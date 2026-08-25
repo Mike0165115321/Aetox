@@ -30,4 +30,4 @@ const Current = "1.5.8"
 // Settings → About reads this through App.AppCredit rather than restating it,
 // because the one string in the running app that names the licence must not be
 // able to name a different licence than the LICENSE file does.
-const Credit = "© 2026 Chayaphon Phromsawana (Mike) · All rights reserved · github.com/Mike0165115321/Aetox"
+const Credit = "© 2026 Chayaphon Phromsawana (Mike) · All rights reserved · github.com/Mikedev115/Aetox"

@@ -3,8 +3,8 @@ package main
 import (
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/debuglog"
-	"github.com/Mike0165115321/Aetox/internal/subagent"
+	"github.com/Mikedev115/Aetox/internal/debuglog"
+	"github.com/Mikedev115/Aetox/internal/subagent"
 )
 
 // The tray over background delegations (§105). A delegate outlives the turn

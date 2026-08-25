@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/runlang"
-	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mikedev115/Aetox/internal/runlang"
+	"github.com/Mikedev115/Aetox/internal/skill"
 )
 
 // RunBlockResult is what the chat's Run button gets back: the same fields the

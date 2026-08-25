@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/account"
+	"github.com/Mikedev115/Aetox/internal/account"
 )
 
 // Aetox account bindings. Separate from oauth.go next door on purpose: that

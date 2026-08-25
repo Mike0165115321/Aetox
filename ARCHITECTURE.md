@@ -162,7 +162,7 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    subgraph rootmod["root module: github.com/Mike0165115321/Aetox"]
+    subgraph rootmod["root module: github.com/Mikedev115/Aetox"]
         direction TB
         subgraph fronts["Front ends"]
             cmd["cmd/aetox\nCLI entry"]

@@ -10,7 +10,7 @@ package main
 import (
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/config"
 )
 
 func layersByID(t *testing.T, list []BusyLayer) map[string]BusyLayer {

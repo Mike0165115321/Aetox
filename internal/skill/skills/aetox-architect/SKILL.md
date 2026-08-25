@@ -1,7 +1,7 @@
 ---
 name: aetox-architect
 description: อ่านระบบที่มีอยู่จริงแล้วกางออกมาเป็นเอกสารสถาปัตยกรรม - เดินเก้าขั้นจากรับโจทย์ ไปสำรวจของจริง ถามสิ่งที่ยังไม่รู้ วาดแผนที่โมดูลกับการไหลของข้อมูล ประเมินหนี้ทางเทคนิคกับความเสี่ยง แล้วเขียนเป็นแม่แบบเอกสาร ใช้ตอนต้องเข้าใจโค้ดเบสก่อนลงมือ ตรวจระบบปัจจุบัน ส่งงานต่อให้คนอื่น หรือทานแผนที่เสนอมากับหลักฐานในระบบจริง
-source: https://github.com/Mike0165115321 (senior-architect-agent)
+source: https://github.com/Mikedev115 (senior-architect-agent)
 license: MIT
 copyright: Copyright (c) 2026 Aetox Skills
 ---

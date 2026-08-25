@@ -19,7 +19,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/stt"
+	"github.com/Mikedev115/Aetox/internal/stt"
 )
 
 // SpeechModelInfo is one installed model, shaped for the picker.

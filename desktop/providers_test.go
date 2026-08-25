@@ -5,8 +5,8 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/Mike0165115321/Aetox/internal/model"
-	"github.com/Mike0165115321/Aetox/internal/oauth"
+	"github.com/Mikedev115/Aetox/internal/model"
+	"github.com/Mikedev115/Aetox/internal/oauth"
 )
 
 // desktopProviders is an allowlist, so a provider added to the engine catalog

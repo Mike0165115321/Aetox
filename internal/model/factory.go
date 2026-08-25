@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/oauth"
-	pvdr "github.com/Mike0165115321/Aetox/internal/provider"
+	"github.com/Mikedev115/Aetox/internal/oauth"
+	pvdr "github.com/Mikedev115/Aetox/internal/provider"
 )
 
 type ProviderOptions struct {

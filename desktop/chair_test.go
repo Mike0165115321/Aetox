@@ -9,7 +9,7 @@ package main
 // engine the app actually builds.
 
 import (
-	"github.com/Mike0165115321/Aetox/internal/subagent"
+	"github.com/Mikedev115/Aetox/internal/subagent"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/config"
 )
 
 // A direct chat with a chair must send the model the chair's cut — profile ∩

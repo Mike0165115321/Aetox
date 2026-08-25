@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Mike0165115321/Aetox/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/Mike0165115321/Aetox?color=2f81f7"></a>
+  <a href="https://github.com/Mikedev115/Aetox/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/Mikedev115/Aetox?color=2f81f7"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-proprietary%20%C2%B7%20source%20available-blue"></a>
   <img alt="Tests" src="https://img.shields.io/badge/tests-2%2C295%20Go%20%2B%20953%20UI-brightgreen">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%2B-lightgrey">
@@ -18,7 +18,7 @@
 <p align="center">
   <a href="README.th.md">ภาษาไทย</a> ·
   <a href="https://mike0165115321.github.io/Aetox/">Website</a> ·
-  <a href="https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe">Download</a> ·
+  <a href="https://github.com/Mikedev115/Aetox/releases/latest/download/aetox-amd64-installer.exe">Download</a> ·
   <a href="https://www.facebook.com/share/g/1BnXC5EiWg/">Community</a> ·
   <a href="ARCHITECTURE.md">Architecture</a> ·
   <a href="docs/DECISIONS.md">Every decision, and why</a>
@@ -80,7 +80,7 @@ ships five test models that exercise the real machinery (real tool calls, a real
 sub-agent, a long reasoning stream), so you can see what the app does before signing up for
 anything.
 
-**Installer** — [aetox-amd64-installer.exe](https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe) (21.3 MB)
+**Installer** — [aetox-amd64-installer.exe](https://github.com/Mikedev115/Aetox/releases/latest/download/aetox-amd64-installer.exe) (21.3 MB)
 
 It also fetches and SHA256-verifies the outside programs Aetox uses: WebView2, Tesseract (with
 Thai), poppler, ffmpeg, and a starter whisper model for offline speech. Any one of them failing
@@ -89,10 +89,10 @@ skips that step with an explanation rather than aborting the install.
 **Scoop**
 
 ```powershell
-scoop install https://raw.githubusercontent.com/Mike0165115321/Aetox/main/scoop/aetox.json
+scoop install https://raw.githubusercontent.com/Mikedev115/Aetox/main/scoop/aetox.json
 ```
 
-**Portable** — [the zip](https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-windows-amd64-portable.zip),
+**Portable** — [the zip](https://github.com/Mikedev115/Aetox/releases/latest/download/aetox-windows-amd64-portable.zip),
 unpack, run `aetox.exe`. This is the only channel that can update itself in place.
 
 ### If SmartScreen or your antivirus complains
@@ -477,7 +477,7 @@ handed a second browser to store.
 <details>
 <summary>How these were measured, and what does not qualify</summary>
 
-**Disk** — download [the portable zip](https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-windows-amd64-portable.zip),
+**Disk** — download [the portable zip](https://github.com/Mikedev115/Aetox/releases/latest/download/aetox-windows-amd64-portable.zip),
 unpack it, and read the size of the one `aetox.exe` inside: 50,818,560 bytes. Anyone can reproduce
 it in a minute. It replaces the 47.5 MB figure measured on 2026-08-18, which was correct then and
 is not now. Competitor sizes are measured after install from the install folder, never
@@ -534,7 +534,7 @@ still better filed as issues, because an issue carries the version and the log w
 
 ## Reporting bugs
 
-[Open an issue](https://github.com/Mike0165115321/Aetox/issues). The app has a door for this:
+[Open an issue](https://github.com/Mikedev115/Aetox/issues). The app has a door for this:
 Settings prefills a GitHub issue with your version, install channel and OS, folds the recent
 internal log into a `<details>` block with secrets already stripped, and hands it to you to read
 before you send it from your own account. Nothing is transmitted by the app.

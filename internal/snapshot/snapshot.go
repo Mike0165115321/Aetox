@@ -37,8 +37,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/proc"
+	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/proc"
 )
 
 // ErrUnavailable is returned when snapshots cannot work here at all: no git on

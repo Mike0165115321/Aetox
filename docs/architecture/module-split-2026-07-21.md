@@ -5,7 +5,7 @@
 
 ## Why Split?
 
-Current single-module `github.com/Mike0165115321/Aetox` has one real architecture flaw:
+Current single-module `github.com/Mikedev115/Aetox` has one real architecture flaw:
 
 ```
 internal/model ──imports──→ internal/provider
@@ -20,20 +20,20 @@ Other than this, the rest of `internal/` is well-structured. The split isn't fix
 ```
 aetox/                          ← go.work workspace root
 │
-├── engine/                     ← go.mod: github.com/Mike0165115321/Aetox/engine
+├── engine/                     ← go.mod: github.com/Mikedev115/Aetox/engine
 │   ● Cognitive loop (agent, think, plan, turn)
 │   ● Skill registry & dispatcher (skill, command)
 │   ● Memory & safety (memory, safety)
 │   ● Model interface (model/types.go — Provider, Message, Request, Response)
 │   ● Config & audit (config, audit, debuglog, grammar)
 │
-├── providers/                  ← go.mod: github.com/Mike0165115321/Aetox/providers
+├── providers/                  ← go.mod: github.com/Mikedev115/Aetox/providers
 │   ● depends on: engine (for model interface)
 │   ● Provider implementations (OpenAI, Ollama, OpenRouter, Anthropic, Gemini)
 │   ● Provider factory + catalog (SupportedProviders, DefaultModel, etc.)
 │   ● Thinking level normalization
 │
-├── cli/                        ← go.mod: github.com/Mike0165115321/Aetox/cli
+├── cli/                        ← go.mod: github.com/Mikedev115/Aetox/cli
 │   ● depends on: engine + providers
 │   ● CLI entry point (flag parsing, interactive menu, stdin/stdout)
 │   ● Currently in: cmd/aetox/
@@ -132,7 +132,7 @@ Key property: **engine/ has zero dependency on providers/** — the dependency a
 ## What This Unlocks
 
 1. **CLI without Wails** — `go build ./cli` doesn't download webview2/sqlite
-2. **Engine as library** — `import "github.com/Mike0165115321/Aetox/engine"` for embedding
+2. **Engine as library** — `import "github.com/Mikedev115/Aetox/engine"` for embedding
 3. **Provider plugin model** — providers/ module is the contract for third-party providers
 4. **Desktop stays heavy** — desktop/ keeps all GUI deps, doesn't infect other modules
 5. **Directional Cognition isolation** — cognitive code in engine/ can be developed/tested without provider implementations
