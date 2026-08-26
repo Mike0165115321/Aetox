@@ -52,7 +52,7 @@
   // Deliberately alongside the issue button rather than instead of it: an issue
   // carries the version and the log, the group carries the half-formed question
   // that is not a bug report yet.
-  import { COMMUNITY_URL } from './links'
+  import { COMMUNITY_URL, PAGE_URL, YOUTUBE_URL } from './links'
   import promptPayQR from '../assets/images/promptpay-qr.png'
   import { config, main, subagent } from '../../wailsjs/go/models'
   import { cockpit, startChatWith, setActiveView, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat, setProviderBaseURL, retryActiveProvider, completeSignIn, signOutProvider, importSignIn, SETTINGS_SECTION_KEY } from './stores/cockpit.svelte'
@@ -6194,12 +6194,28 @@
           <button class="ctrl" onclick={() => BrowserOpenURL(RELEASES_URL)}>{t('settings.aboutOpenRelease')}</button>
         </div>
 
+        <!-- Three ways to follow along, as one row rather than three.
+             They are the same kind of thing — a place to go and look — and a
+             full-width row each would have taken half the page to say so, with
+             a fourth already coming. The icons are what distinguishes them, so
+             the buttons carry both the mark and the word: an icon-only row is a
+             guessing game, and these three are not guessable from a glyph. -->
         <div class="set-row">
           <div class="set-txt">
-            <div class="t">{t('settings.community')}</div>
-            <div class="d">{t('settings.communityDesc')}</div>
+            <div class="t">{t('settings.follow')}</div>
+            <div class="d">{t('settings.followDesc')}</div>
           </div>
-          <button class="ctrl" onclick={() => BrowserOpenURL(COMMUNITY_URL)}>{t('settings.communityOpen')}</button>
+          <div class="follow-row">
+            <button class="ctrl" onclick={() => BrowserOpenURL(COMMUNITY_URL)}>
+              <Icon name="facebook" size={14} /> {t('settings.followGroup')}
+            </button>
+            <button class="ctrl" onclick={() => BrowserOpenURL(PAGE_URL)}>
+              <Icon name="facebook" size={14} /> {t('settings.followPage')}
+            </button>
+            <button class="ctrl" onclick={() => BrowserOpenURL(YOUTUBE_URL)}>
+              <Icon name="youtube" size={14} /> {t('settings.followYoutube')}
+            </button>
+          </div>
         </div>
 
         <div class="set-row">

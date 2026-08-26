@@ -573,3 +573,59 @@ func TestLastCheckedAtIsZeroBeforeTheFirstCheck(t *testing.T) {
 		t.Errorf("LastCheckedAt = %v on a machine that has never checked", got)
 	}
 }
+
+// The offer could not answer the only question a person asks when they see it:
+// what do I get. A version number and a date are facts about the release,
+// neither is a reason to press the button, and the invitation beside them is
+// the same sentence for every release ever cut (owner, 26 ส.ค.).
+//
+// The answer was already in the response GitHub sends — the release body, which
+// is docs/release-notes/vX.Y.Z.md — and the decoder was skipping the field.
+func TestHighlightsAreTheReleaseNotesOwnHeadings(t *testing.T) {
+	body := "# 🧩 Aetox v1.5.10\n\nรุ่นย่อยสามเรื่อง\n\n" +
+		"## แนบไฟล์ได้หลายไฟล์\n\nกล่องพิมพ์มีช่องเดียว\n\n" +
+		"## ผู้ช่วยต้องรู้ว่าอ่านข้อมูลมาจากไหน\n\nผลค้นหาคือบทสรุป\n\n" +
+		"## พรอมป์ระบบมีตราชั่งแล้ว\n\nวัดแล้ว\n"
+	got := highlights(body)
+	want := []string{"แนบไฟล์ได้หลายไฟล์", "ผู้ช่วยต้องรู้ว่าอ่านข้อมูลมาจากไหน", "พรอมป์ระบบมีตราชั่งแล้ว"}
+	if len(got) != len(want) {
+		t.Fatalf("highlights = %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("highlights[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// generate_release_notes appends its own sections to every release body. They
+// are about commits and contributors, which is not what somebody deciding
+// whether to restart wants to read.
+func TestHighlightsSkipGitHubsOwnSections(t *testing.T) {
+	body := "## เขียนไฟล์ยาว\n\nx\n\n## What's Changed\n\n* fix by @someone\n\n## New Contributors\n\n* @someone\n"
+	got := highlights(body)
+	if len(got) != 1 || got[0] != "เขียนไฟล์ยาว" {
+		t.Errorf("highlights = %q, want only the project's own heading", got)
+	}
+}
+
+// Four is a glance; the release page is one click away for the rest.
+func TestHighlightsStopAtFour(t *testing.T) {
+	body := ""
+	for _, h := range []string{"หนึ่ง", "สอง", "สาม", "สี่", "ห้า", "หก"} {
+		body += "## " + h + "\n\nเนื้อหา\n\n"
+	}
+	if got := highlights(body); len(got) != maxHighlights {
+		t.Errorf("highlights returned %d lines, want %d", len(got), maxHighlights)
+	}
+}
+
+// A release tagged without its notes file, or written in another shape, must
+// still be offered. The card falls back to the invitation it always showed.
+func TestHighlightsOfAnUnusableBodyAreEmpty(t *testing.T) {
+	for _, body := range []string{"", "just a paragraph, no headings at all", "# only an h1\n", "## \n## ``\n"} {
+		if got := highlights(body); len(got) != 0 {
+			t.Errorf("highlights(%q) = %q, want none", body, got)
+		}
+	}
+}

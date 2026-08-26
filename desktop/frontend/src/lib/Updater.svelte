@@ -63,6 +63,12 @@
       : '',
   )
 
+  // Empty for a release whose notes GitHub could not give us, or whose body
+  // was written in some other shape. The card then reads exactly as it did
+  // before this existed, which is the only acceptable failure here: an offer
+  // must never be withheld because its notes were malformed.
+  const notes = $derived(updater.status?.highlights ?? [])
+
   const MB = 1024 * 1024
   const mb = (bytes: number) => (bytes / MB).toFixed(1)
   const pct = $derived(updatePct())
@@ -116,8 +122,30 @@
     {/if}
 
     {#if updater.error}
-      <div class="upd-err">{updater.error}</div>
+      <!-- The reassurance first, the machine's own words second and quiet.
+           It was the other way round and drawn in --status-danger, so a failed
+           download opened with a red line about a checksum: alarming, in
+           vocabulary the reader did not ask for, above the sentence that
+           actually answers what they want to know (owner, 26 ส.ค.). The detail
+           stays — it is what a bug report needs — it just stops shouting. -->
       <div class="upd-note">{t('update.failedSafe')}</div>
+      <div class="upd-err">{updater.error}</div>
+    {/if}
+
+    <!-- What this release changes, in the words of its own notes. A version
+         number and a date are facts about the release; neither is a reason to
+         press the button, and the invitation below is the same sentence for
+         every release ever cut. Absent when the notes were not in the shape
+         this reads (update.highlights) — then the card is exactly what it was.
+         Drawn in every phase but the two busy ones: the answer to "what am I
+         getting" does not stop being wanted once the download starts. -->
+    {#if notes.length}
+      <div class="upd-new">
+        <div class="upd-new-head">{t('update.whatsNew')}</div>
+        <ul class="upd-new-list">
+          {#each notes as line}<li>{line}</li>{/each}
+        </ul>
+      </div>
     {/if}
 
     {#if updater.phase === 'idle'}

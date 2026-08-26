@@ -469,6 +469,11 @@ export const en: Record<keyof typeof th, string> = {
   'settings.accountSignOutPartial': 'Signed out on this machine, but the server could not be told. The session there expires on its own.',
   'settings.community': 'Community',
   'settings.communityDesc': 'A Facebook group for questions, ideas, and problems that are not yet shaped like a bug report.',
+  'settings.follow': 'Where to follow along',
+  'settings.followDesc': 'The group is for questions and problems, the page for news, the channel for seeing it in use.',
+  'settings.followGroup': 'Group',
+  'settings.followPage': 'Page',
+  'settings.followYoutube': 'YouTube',
   'settings.communityOpen': 'Open the group',
   // The dot on the account row. Offline is not signed out, and the words have
   // to say so: a session survives a flight, only the sign-in itself needs the
@@ -1392,6 +1397,7 @@ Check your own work before answering; say so plainly if unsure.
   'update.offerAuto': 'Download it now and keep working. You pick when to restart.',
   'update.offerCommand': 'Update with this command in a terminal',
   'update.offerManual': 'Open the release page and install it over this one',
+  'update.whatsNew': 'What this one changes',
   'update.later': 'Later',
   'update.now': 'Download',
   'update.hide': 'Hide this',

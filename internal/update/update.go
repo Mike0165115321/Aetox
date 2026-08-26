@@ -110,6 +110,21 @@ type Status struct {
 	// whether this is a week old or an hour old — and that is most of what
 	// somebody deciding whether to restart now actually wants to know.
 	PublishedAt string `json:"publishedAt"`
+	// Highlights is what the release actually changed, in the words of its own
+	// release notes — one line per heading in docs/release-notes/vX.Y.Z.md,
+	// which is the body GitHub serves with the release.
+	//
+	// It exists because the offer could not answer the only question a person
+	// asks when they see it: what do I get. A version number and a date are
+	// facts about the release; neither is a reason to press the button, and the
+	// invitation beside them is the same sentence for every release ever cut.
+	//
+	// Headings rather than a summary, and no model anywhere near it: a
+	// generated one-liner would be this app describing itself in words nobody
+	// wrote and nobody reviewed, on the one screen where being wrong reads as
+	// the update lying about itself. The headings were written by hand, in the
+	// same commit as the code, which is exactly the review this needs.
+	Highlights []string `json:"highlights,omitempty"`
 	// CanAuto means Apply can take it from here: this channel knows how to
 	// download, verify and swap itself, and the release actually carries the
 	// file this install would need. The UI's one-click restart-and-update
@@ -223,6 +238,7 @@ func checkOn(ctx context.Context, current string, ch Channel) (Status, []Asset, 
 			TagName     string `json:"tag_name"`
 			HTMLURL     string `json:"html_url"`
 			PublishedAt string `json:"published_at"`
+			Body        string `json:"body"`
 			Draft       bool   `json:"draft"`
 			Pre         bool   `json:"prerelease"`
 			Assets      []struct {
@@ -259,6 +275,7 @@ func checkOn(ctx context.Context, current string, ch Channel) (Status, []Asset, 
 		next.ETag = resp.Header.Get("ETag")
 		next.Latest = strings.TrimPrefix(strings.TrimSpace(rel.TagName), "v")
 		next.PublishedAt = rel.PublishedAt
+		next.Highlights = highlights(rel.Body)
 		if rel.HTMLURL != "" {
 			next.URL = rel.HTMLURL
 		}
@@ -279,12 +296,57 @@ func checkOn(ctx context.Context, current string, ch Channel) (Status, []Asset, 
 	st.Latest = next.Latest
 	st.CheckedAt = next.CheckedAt
 	st.PublishedAt = next.PublishedAt
+	st.Highlights = next.Highlights
 	if next.URL != "" {
 		st.URL = next.URL
 	}
 	st.Available = Newer(next.Latest, current)
 	st.CanAuto = st.Available && canAuto(Channel(st.Channel), next.Assets)
 	return st, next.Assets, nil
+}
+
+// maxHighlights is what fits in the offer card without turning it into the
+// release page. Four headings is one glance; the page is one click away for
+// anybody who wants the rest.
+const maxHighlights = 4
+
+// highlights pulls the section headings out of a release body.
+//
+// Aetox's release notes are one `## heading` per thing that changed, with the
+// prose underneath (docs/release-notes/). The headings alone are the answer to
+// "what is in this" — they were written to be exactly that — so this takes them
+// and nothing else rather than trying to shorten the prose.
+//
+// Deliberately tolerant: a body that is empty, in another shape, or written by
+// generate_release_notes because somebody tagged without a notes file, returns
+// nothing and the card falls back to the invitation it has always shown. A
+// release must never fail to be offered because its notes were malformed.
+func highlights(body string) []string {
+	var out []string
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "## ") {
+			continue
+		}
+		// GitHub's own generated sections are about commits and contributors,
+		// not about what the user gets, and they arrive under headings this
+		// project never writes.
+		h := strings.TrimSpace(strings.TrimPrefix(line, "## "))
+		if h == "" || strings.EqualFold(h, "What's Changed") || strings.EqualFold(h, "New Contributors") {
+			continue
+		}
+		// A heading is plain text by the time it reaches a card: the markdown
+		// that survives would be printed literally.
+		h = strings.NewReplacer("`", "", "**", "", "*", "", "_", "").Replace(h)
+		if h = strings.TrimSpace(h); h == "" {
+			continue
+		}
+		out = append(out, h)
+		if len(out) == maxHighlights {
+			break
+		}
+	}
+	return out
 }
 
 // isAppTag reports whether a release tag names a version of this application.
@@ -360,8 +422,9 @@ type cacheEntry struct {
 	Latest      string  `json:"latest,omitempty"`
 	URL         string  `json:"url,omitempty"`
 	CheckedAt   string  `json:"checked_at,omitempty"`
-	PublishedAt string  `json:"published_at,omitempty"`
-	Assets      []Asset `json:"assets,omitempty"`
+	PublishedAt string   `json:"published_at,omitempty"`
+	Highlights  []string `json:"highlights,omitempty"`
+	Assets      []Asset  `json:"assets,omitempty"`
 }
 
 func cachePath() (string, error) {

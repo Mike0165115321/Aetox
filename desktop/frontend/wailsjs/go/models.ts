@@ -2352,6 +2352,7 @@ export namespace update {
 	    url: string;
 	    checkedAt: string;
 	    publishedAt: string;
+	    highlights?: string[];
 	    canAuto: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -2369,6 +2370,7 @@ export namespace update {
 	        this.url = source["url"];
 	        this.checkedAt = source["checkedAt"];
 	        this.publishedAt = source["publishedAt"];
+	        this.highlights = source["highlights"];
 	        this.canAuto = source["canAuto"];
 	    }
 	}

@@ -3754,6 +3754,12 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .group-count { font-size:var(--fs-xs); color:var(--text-dim); }
 .settings-page .ctrl, .page-shell .ctrl { appearance:none; -webkit-appearance:none; background:var(--surface-sunken); border:1px solid var(--border-strong); border-radius:var(--r-sm); color:var(--text-secondary); font:inherit; font-size:var(--fs-md); padding:5px 8px; cursor:pointer; }
 .settings-page input.ctrl, .page-shell input.ctrl { cursor:text; }
+/* The three ways to follow the project, side by side in one row's action slot.
+   Wraps rather than squeezing: a fourth channel is already expected, and a
+   narrow settings pane must drop them onto a second line instead of shrinking
+   three buttons until none of them can be read. */
+.follow-row { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
+.follow-row .ctrl { display:inline-flex; align-items:center; gap:6px; }
 .settings-page .key-input { flex:1; min-width:0; }
 
 /* Button hierarchy. .ctrl alone used to be every button, input, select and file
@@ -4276,10 +4282,34 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   border:1px solid var(--border-subtle); color:var(--text-primary);
   font-family:var(--mono); font-size:var(--fs-xs); word-break:break-all;
 }
+/* The machine's own words about what failed. Muted, not red: the line above
+   it has already said the running app is untouched, and a checksum mismatch
+   drawn in --status-danger reads as damage rather than as a download to try
+   again (owner, 26 ส.ค.). Kept verbatim, because it is what a bug report
+   needs; --status-danger stays for the things that are actually wrong. */
 .upd-err {
   padding:8px 10px; border-radius:var(--r-md); background:var(--surface-sunken);
-  border:1px solid var(--border-subtle); color:var(--status-danger);
-  font-size:var(--fs-sm); line-height:1.5; word-break:break-word;
+  border:1px solid var(--border-subtle); color:var(--text-muted);
+  font-size:var(--fs-xs); line-height:1.5; word-break:break-word;
+}
+
+/* What the release changes, from its own notes. A list rather than a
+   paragraph: these are headings, and the eye is meant to run down them and
+   stop at whichever one it recognises. */
+.upd-new { display:flex; flex-direction:column; gap:5px; }
+.upd-new-head {
+  font-size:var(--fs-xs); font-weight:600; letter-spacing:.02em; color:var(--text-muted);
+}
+.upd-new-list { margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:4px; }
+.upd-new-list li {
+  position:relative; padding-left:14px;
+  font-size:var(--fs-sm); line-height:1.45; color:var(--text-secondary);
+}
+/* A dot in the accent, not a bullet glyph: it lines up at any font size and
+   carries the one colour that means "this is the news". */
+.upd-new-list li::before {
+  content:''; position:absolute; left:2px; top:.58em;
+  width:4px; height:4px; border-radius:50%; background:var(--accent);
 }
 .upd-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:2px; }
 /* .ctrl is scoped to .settings-page and these two live outside it, so they
