@@ -1,11 +1,13 @@
 package turn
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os/exec"
 	"runtime"
+	"time"
 	"strings"
 	"testing"
 
@@ -149,5 +151,38 @@ func TestSoftFailureCanDeclareItselfAWorldReport(t *testing.T) {
 	won := skill.Output{Success: true, FromWorld: true}
 	if got := classifyToolOutcome(won, nil); got != "" {
 		t.Errorf("a successful call classified as %q, want unmarked", got)
+	}
+}
+
+// A tool that died because the turn was stopped failed at nothing: the user
+// pressed the brake, and every call in flight at that moment reports the same
+// sentence at the same second. One Stop over three parallel web_fetch calls
+// became "ล้มซ้ำ 3 ครั้ง" on the problems page (25 ส.ค.) — a card asking the
+// user to report their own Stop to the developer.
+func TestAStoppedTurnClassifiesAsCancelNotAsALesson(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// The honest form: a tool that wraps ctx.Err().
+	if got := classifyToolError(fmt.Errorf("fetch %s: %w", "https://x", ctx.Err())); got != ErrorFromCancel {
+		t.Errorf("a wrapped cancellation classified as %q, want %q", got, ErrorFromCancel)
+	}
+	// The flattened form: a tool that stringified it somewhere on the way up —
+	// which is what the real web_fetch rows carried.
+	if got := classifyToolError(errors.New("context canceled")); got != ErrorFromCancel {
+		t.Errorf("a flattened cancellation classified as %q, want %q", got, ErrorFromCancel)
+	}
+	// The Stop outranks even an author's own mark: whatever the tool was doing,
+	// the stop is why it ended.
+	if got := classifyToolError(fmt.Errorf("%w: %s", ctx.Err(), statereport.New("x").Error())); got != ErrorFromCancel {
+		t.Errorf("a canceled state-probe classified as %q, want %q", got, ErrorFromCancel)
+	}
+	// A deadline is not a Stop. A tool that keeps timing out is a real
+	// pattern worth clustering, so it stays unmarked.
+	dctx, dcancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer dcancel()
+	<-dctx.Done()
+	if got := classifyToolError(fmt.Errorf("fetch: %w", dctx.Err())); got != "" {
+		t.Errorf("a timeout classified as %q, want unmarked — repeated timeouts are worth hearing about", got)
 	}
 }

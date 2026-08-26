@@ -285,3 +285,25 @@ func TestDelegateFailuresLandInTheDelegatesScope(t *testing.T) {
 		t.Errorf("scope = %q, want the delegate that failed", issues[0].Scope)
 	}
 }
+
+// One Stop kills every call in flight at that second — three parallel
+// web_fetch calls, one press, three identical rows. That is the user's own
+// hand, not a failing tool, and a card asking them to report it to the
+// developer spends their attention on nothing (the real card, 25 ส.ค.).
+func TestAStoppedTurnsCasualtiesAreNotRaised(t *testing.T) {
+	a := newJobApp(t)
+	mark := a.maxToolRunID(a.cur())
+	for _, ref := range []string{"c1", "c2", "c3"} {
+		a.recordToolRun(a.cur(), turn.ToolRun{Ref: ref, Name: "web_fetch",
+			Args:      `{"url":"https://caniuse.com"}`,
+			OK:        false,
+			Error:     "context canceled",
+			ErrorKind: turn.ErrorFromCancel,
+		})
+	}
+	a.recordJobs(a.cur(), 1, "หาข้อมูล", "หยุดกลางทาง", mark, time.Second)
+
+	if issues := a.ListSystemIssues(); len(issues) != 0 {
+		t.Fatalf("the user's own Stop was raised as a problem to report: %+v", issues)
+	}
+}

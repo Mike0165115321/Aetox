@@ -530,13 +530,35 @@ const ErrorFromProgram = "exit"
 // the error through internal/statereport.
 const ErrorFromWorld = "state"
 
+// ErrorFromCancel marks a tool that died because the turn ended — Stop
+// pressed, almost always. It is nobody's failure at all: not the tool's, not
+// a program's, not the machine's, and it carries exactly nothing to learn.
+//
+// The problems page is where the absence bit (2026-08-25): one Stop killed
+// three parallel web_fetch calls in the same second, and the summarizer —
+// which reads every unmarked failure as a sentence with a remedy in it —
+// raised "เครื่องมือ web_fetch ล้มซ้ำด้วยเหตุเดียวกัน: context canceled" as a
+// problem worth reporting to a developer. Every card in that queue spends the
+// user's attention; a card about their own Stop spends it on nothing.
+const ErrorFromCancel = "canceled"
+
 // classifyToolError asks the error what it is rather than reading its text.
 // Two cases answer definitively: an author's own statereport mark (checked
-// first — an explicit statement outranks inference), and *exec.ExitError,
-// which exists only when a process was started and returned a status.
-// Everything else stays unmarked, which keeps the default the conservative
-// one: unmarked errors are still read as lessons.
+// first among the authored kinds — an explicit statement outranks inference),
+// and *exec.ExitError, which exists only when a process was started and
+// returned a status. Everything else stays unmarked, which keeps the default
+// the conservative one: unmarked errors are still read as lessons.
 func classifyToolError(err error) string {
+	// Before everything, because it outranks everything: whatever the tool
+	// was doing when the turn was stopped, the stop is why it ended, and no
+	// mark an author put on the error changes that. errors.Is first, per this
+	// function's own rule — with a suffix fallback because not every tool
+	// wraps ctx.Err() with %w, and Go's one spelling of the sentinel is what
+	// such a tool flattens into its string ("...: context canceled").
+	if err != nil && (errors.Is(err, context.Canceled) ||
+		strings.HasSuffix(err.Error(), context.Canceled.Error())) {
+		return ErrorFromCancel
+	}
 	if statereport.Is(err) {
 		return ErrorFromWorld
 	}
