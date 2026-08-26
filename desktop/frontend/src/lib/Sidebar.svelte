@@ -125,6 +125,21 @@
     void checkNow()
   }
 
+  // The button, which is a different question than the one above. Opening the
+  // menu asks "has anybody checked yet"; pressing the button asks "check now",
+  // and the answer to the second is never "somebody already did".
+  //
+  // Both were wired to refreshUpdate, so from the first answer onwards its
+  // guard returned before reaching checkNow and the button did nothing at all
+  // — for the whole run, silently, with the row still reading ตรวจอัปเดต. The
+  // owner found it the only way it can be found: by giving up and walking to
+  // Settings → About, whose button has always called checkNow directly (owner,
+  // 26 ส.ค.). `disabled` already covers the in-flight case.
+  function checkUpdateNow() {
+    loadCurrentVersion()
+    void checkNow()
+  }
+
   function closeProfileOnOutsideClick(e: MouseEvent) {
     if (!(e.target as HTMLElement).closest('.side-footer-wrap')) profileOpen = false
   }
@@ -638,7 +653,7 @@
             <span class="ic"><Icon name="package" size={14} /></span>
             <span class="ver-name">Aetox {updater.current ? 'v' + updater.current : '—'}</span>
             <button
-              class="ver-check" onclick={refreshUpdate}
+              class="ver-check" onclick={checkUpdateNow}
               disabled={updater.checking || updateBusy}
             >
               {updater.checking ? t('update.checking') : t('update.check')}

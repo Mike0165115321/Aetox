@@ -76,6 +76,23 @@ describe('the version row in the profile menu', () => {
     expect(text(container, '.ver-note')).toBe('ใช้เวอร์ชันล่าสุดอยู่แล้ว')
   })
 
+  // The other half of the rule above, and the half that was broken. Opening the
+  // menu asks once; the button asks whenever it is pressed. Both were wired to
+  // the same guarded function, so from the first answer on the button did
+  // nothing at all — silently, for the whole run, while still reading
+  // ตรวจอัปเดต. It was found by giving up on it and walking to Settings → About
+  // (owner, 26 ส.ค.).
+  it('asks again every time the button is pressed, however recent the answer is', async () => {
+    vi.mocked(CheckForUpdate).mockResolvedValue(status({ available: false, latest: '1.5.8' }) as never)
+    const container = await openMenu()
+    await waitFor(() => expect(vi.mocked(CheckForUpdate)).toHaveBeenCalledTimes(1))
+
+    await fireEvent.click(container.querySelector('.ver-check') as HTMLElement)
+    await waitFor(() => expect(vi.mocked(CheckForUpdate)).toHaveBeenCalledTimes(2))
+    await fireEvent.click(container.querySelector('.ver-check') as HTMLElement)
+    await waitFor(() => expect(vi.mocked(CheckForUpdate)).toHaveBeenCalledTimes(3))
+  })
+
   // The whole point of the row: the news arrives where people already look,
   // and the act is one click from it.
   it('shows a newer release and downloads it on one click, then offers the restart', async () => {
