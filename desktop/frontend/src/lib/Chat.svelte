@@ -394,6 +394,18 @@
     }
   }
 
+  // Same catch as the two rows above it. Without one the refusal a busy turn
+  // answers with (errTurnBusyModel) died as an unhandled rejection and the
+  // row just looked broken.
+  async function handleThinkChange(value: string) {
+    switchError = ''
+    try {
+      await onSwitchThinkLevel(value)
+    } catch (err) {
+      switchError = String(err)
+    }
+  }
+
   async function submitApiKey() {
     if (!apiKeyDraft.trim()) return
     await onSubmitAPIKey(model.provider, apiKeyDraft.trim())
@@ -3115,7 +3127,7 @@
               oninsert={insertFromPalette}
               onclose={() => { palette = ''; inputEl?.focus() }}
               onopenmodel={() => { palette = ''; modelMenuOpen = true; refreshThinkLevels() }}
-              onswitchthink={(lvl) => onSwitchThinkLevel(lvl)}
+              onswitchthink={(lvl) => handleThinkChange(lvl)}
             />
           {/if}
           <button
@@ -3330,7 +3342,7 @@
                 {#if thinkLevels.length > 1}
                   <div class="mm-row">
                     <span class="lbl">{t('chat.thinkLevel')}</span>
-                    {@render upSelect('thinkLevel', thinkLevels.map((lvl) => ({ value: lvl, label: lvl })), model.thinkLevel, onSwitchThinkLevel)}
+                    {@render upSelect('thinkLevel', thinkLevels.map((lvl) => ({ value: lvl, label: lvl })), model.thinkLevel, handleThinkChange)}
                   </div>
                 {/if}
               </div>

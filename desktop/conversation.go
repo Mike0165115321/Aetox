@@ -115,6 +115,14 @@ type conversation struct {
 	// not add it a second time.
 	turnOpened bool
 
+	// pendingCfg is a re-bootstrap that arrived while this chat's turn was
+	// running — a connection toggled, an MCP server switched, a sign-in
+	// landing. applyConfig parks it here instead of swapping the engine out
+	// from under the turn, and endTurn applies it, the same way a workspace
+	// widened mid-turn waits (§185). Guarded by App.turnMu, not free-standing:
+	// it is read and cleared at the moment the turn ends.
+	pendingCfg *config.Config
+
 	// lastSnapshot is the tree as it stood before THIS chat's last turn — what
 	// its undo goes back to. "" when there is nothing to go back to.
 	//

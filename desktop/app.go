@@ -1771,6 +1771,15 @@ var errTurnBusy = fmt.Errorf("เอเจนกำลังทำงานอ�
 // having broken rather than as having been postponed.
 var errTurnBusyUpdate = fmt.Errorf("เอเจนกำลังทำงานอยู่ — รอให้เสร็จ หรือกดหยุดก่อน แล้วค่อยอัปเดต (การอัปเดตต้องปิดแอป)")
 
+// errTurnBusyModel is the same refusal again, for the model menu's engine
+// dials — model, provider, thinking depth, wire format. SetStance has carried
+// this guard since stances existed, and its reason is these dials' reason
+// word for word: a turn running in this conversation would finish on an agent
+// it was not started with. The dials just never got the same sentence — which
+// is how a model switch mid-turn could kill the turn's delegates, orphan its
+// interjections, and snapshot its context half-written (§185).
+var errTurnBusyModel = fmt.Errorf("เอเจนกำลังทำงานอยู่ — รอให้เสร็จ หรือกดหยุดก่อน แล้วค่อยสลับโมเดล")
+
 // beginTurn marks one turn in flight and stamps it with the session it was
 // born in. Refuses when a turn is already running: two turns share one agent
 // context, one turnOpened flag and one transcript, and interleaving them
@@ -1853,7 +1862,19 @@ func (a *App) endTurn(sessionID string) {
 		sessionID = a.cur().id
 	}
 	delete(a.turns, sessionID)
+	var parked *config.Config
+	parkedConv := a.convs.find(sessionID)
+	if parkedConv != nil {
+		parked = parkedConv.pendingCfg
+		parkedConv.pendingCfg = nil
+	}
 	a.turnMu.Unlock()
+	// A config change that arrived mid-turn lands now, before anything lets go
+	// of this conversation: applyConfig writes conv.cfg, which is what a
+	// released chat is rebuilt from when it is next opened.
+	if parked != nil {
+		a.applyConfig(parkedConv, *parked)
+	}
 	a.emitEvent("agent:done", TurnStatus{Running: false, SessionID: sessionID})
 	// The work was what kept this chat's engine alive while the user was
 	// elsewhere. With the work over and the chat still off screen, there is
@@ -3022,6 +3043,13 @@ func (a *App) TestProviderConnection(providerName, modelName string) (string, er
 // after §155 is only "what a new chat is born with" and may name a model
 // somebody chose in another conversation.
 func (a *App) SwitchModel(modelName string) (ModelInfo, error) {
+	// Same gate, same reason as SetStance: the rebuild would swap the agent a
+	// running turn is finishing on. Narrowed to THIS chat — a turn in another
+	// conversation is no longer this dial's business (§150).
+	if a.turnRunningIn(a.cur().id) {
+		info, _ := a.modelSwitchResult()
+		return info, errTurnBusyModel
+	}
 	next := a.cur().cfg
 	next.ModelName = strings.TrimSpace(modelName)
 	if next.ModelName == "" {
@@ -3267,6 +3295,10 @@ func (a *App) RetryActiveProvider() ModelInfo {
 
 // SwitchProvider re-bootstraps the engine on a different provider, using its default model.
 func (a *App) SwitchProvider(provider string) (ModelInfo, error) {
+	if a.turnRunningIn(a.cur().id) {
+		info, _ := a.modelSwitchResult()
+		return info, errTurnBusyModel
+	}
 	next := a.cur().cfg
 	next.ModelProvider = model.NormalizeProvider(provider)
 	next.ModelBaseURL = resolveBaseURLForProvider(next.ModelProvider)
@@ -3296,6 +3328,10 @@ func (a *App) ProviderWireFormats(providerName string) []string {
 // selected model. A no-op format (provider has no alt, or format is already
 // current) still re-bootstraps — cheap, and keeps behavior predictable.
 func (a *App) SetProviderWireFormat(format string) (ModelInfo, error) {
+	if a.turnRunningIn(a.cur().id) {
+		info, _ := a.modelSwitchResult()
+		return info, errTurnBusyModel
+	}
 	next := a.cur().cfg
 	format = strings.TrimSpace(format)
 	if info, ok := model.LookupProviderInfo(model.NormalizeProvider(next.ModelProvider)); ok && format == info.Runtime {
@@ -3308,6 +3344,10 @@ func (a *App) SetProviderWireFormat(format string) (ModelInfo, error) {
 
 // SwitchThinkLevel changes the reasoning depth for the current provider/model.
 func (a *App) SwitchThinkLevel(level string) (ModelInfo, error) {
+	if a.turnRunningIn(a.cur().id) {
+		info, _ := a.modelSwitchResult()
+		return info, errTurnBusyModel
+	}
 	next := a.cur().cfg
 	next.ThinkLevel = model.NormalizeThinkingLevel(next.ModelProvider, next.ModelName, level)
 	a.applyConfig(a.cur(), next)
@@ -3477,6 +3517,24 @@ func (a *App) workbenchSkills(conv *conversation, sandboxRoot string) []skill.Sk
 // point at when the event fires. That is the sentence §134.4 wrote down as the
 // missing half of this work, and it is one parameter.
 func (a *App) applyConfig(conv *conversation, cfg config.Config) {
+	// Never under a turn in flight. endTurn wrote the reason down for the
+	// workspace case and it is true of every caller: this function swaps the
+	// agent, the registry and the dispatcher, kills the delegations register,
+	// and snapshots a context that is half-written — doing that mid-turn
+	// discards work the user is waiting on. The model-menu dials refuse
+	// loudly before getting here (errTurnBusyModel); everything else — a
+	// connection toggled, an MCP server switched on, a sign-in completing —
+	// parks its config and endTurn applies it, exactly as a workspace widened
+	// mid-turn already waits. Checked and parked under one lock so a turn
+	// cannot end between the check and the write and strand the config.
+	a.turnMu.Lock()
+	if _, running := a.turns[conv.id]; running && conv.id != "" {
+		conv.pendingCfg = &cfg
+		a.turnMu.Unlock()
+		return
+	}
+	conv.pendingCfg = nil // this rebuild supersedes anything parked
+	a.turnMu.Unlock()
 	// Rebuilt with the engine, because the work tree it watches is the sandbox
 	// root and that is exactly what a re-bootstrap can change. An error here is
 	// the ordinary "this folder is not a repository" case — no undo, no fuss,

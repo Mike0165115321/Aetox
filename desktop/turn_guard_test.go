@@ -700,3 +700,69 @@ func TestATaskChipStaysInTheChatThatRaisedIt(t *testing.T) {
 		t.Errorf("the first chat's tray = %+v, want what it raised kept", got)
 	}
 }
+
+// The model menu's engine dials get the same sentence SetStance has carried
+// since stances existed: a rebuild mid-turn would swap the agent the running
+// turn is finishing on, kill its delegates and snapshot its context
+// half-written. The owner could not reproduce the reported switch bug because
+// he switched between turns — this is the half that only shows while one runs
+// (§185).
+func TestModelDialsRefuseWhileTheirTurnRuns(t *testing.T) {
+	a := newTestApp(t, t.TempDir())
+	conv := a.cur()
+	before := conv.cfg
+
+	if err := a.beginTurn(conv.id); err != nil {
+		t.Fatalf("beginTurn() = %v", err)
+	}
+	defer a.endTurn(conv.id)
+
+	if _, err := a.SwitchModel("some-other-model"); !errors.Is(err, errTurnBusyModel) {
+		t.Errorf("SwitchModel mid-turn = %v, want the busy refusal", err)
+	}
+	if _, err := a.SwitchProvider("deepseek"); !errors.Is(err, errTurnBusyModel) {
+		t.Errorf("SwitchProvider mid-turn = %v, want the busy refusal", err)
+	}
+	if _, err := a.SwitchThinkLevel("high"); !errors.Is(err, errTurnBusyModel) {
+		t.Errorf("SwitchThinkLevel mid-turn = %v, want the busy refusal", err)
+	}
+	if _, err := a.SetProviderWireFormat("anthropic"); !errors.Is(err, errTurnBusyModel) {
+		t.Errorf("SetProviderWireFormat mid-turn = %v, want the busy refusal", err)
+	}
+	if conv.cfg.ModelName != before.ModelName || conv.cfg.ModelProvider != before.ModelProvider ||
+		conv.cfg.ThinkLevel != before.ThinkLevel || conv.cfg.ModelWireFormat != before.ModelWireFormat {
+		t.Errorf("a refused dial still moved the config: %+v -> %+v", before, conv.cfg)
+	}
+}
+
+// Every other door that rebuilds the engine — a connection toggled, an MCP
+// server switched on, a sign-in landing — does not refuse; it parks. The
+// config applies the moment the turn ends, the same way a workspace widened
+// mid-turn already waits for endTurn (§185).
+func TestAConfigChangeMidTurnWaitsForTheTurnToEnd(t *testing.T) {
+	a := newTestApp(t, t.TempDir())
+	conv := a.cur()
+
+	if err := a.beginTurn(conv.id); err != nil {
+		t.Fatalf("beginTurn() = %v", err)
+	}
+	next := conv.cfg
+	next.ModelName = "parked-model"
+	a.applyConfig(conv, next)
+
+	if conv.cfg.ModelName == "parked-model" {
+		t.Fatal("applyConfig swapped the engine under a running turn")
+	}
+	if conv.pendingCfg == nil {
+		t.Fatal("a mid-turn config change was dropped rather than parked")
+	}
+
+	a.endTurn(conv.id)
+
+	if conv.pendingCfg != nil {
+		t.Error("the parked config is still parked after the turn ended")
+	}
+	if conv.cfg.ModelName != "parked-model" {
+		t.Errorf("conv.cfg.ModelName = %q after endTurn, want the parked value", conv.cfg.ModelName)
+	}
+}
