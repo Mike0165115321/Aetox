@@ -35,7 +35,8 @@ beforeEach(() => {
   // being closed. Which is exactly right in the app and exactly why each test
   // has to start from a machine that is not mid-update.
   Object.assign(updater, {
-    status: null, dismissed: false, phase: 'idle', done: 0, total: 0, staged: '', error: '',
+    current: '', status: null, announced: false, checking: false, checkError: '',
+    dismissed: false, phase: 'idle', done: 0, total: 0, staged: '', error: '',
   })
 })
 

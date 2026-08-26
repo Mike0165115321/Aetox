@@ -73,6 +73,10 @@ const CHECKS: [label: string, fg: string, bg: string, min: number, why: string][
   ['reply text', '--text-primary', '--surface-app', 4.5, 'agent text now sits on the app surface'],
   ['toggle label', '--text-muted', '--surface-app', 3.0, '"thought for 34s" / "used N tools"'],
   ['user bubble text', '--text-primary', '--surface-raised', 4.5, ''],
+  // The profile menu's version row. Both lines are read rather than noticed —
+  // which build this is, and whether a newer one exists — so neither may sit at
+  // the --text-dim tone the stamps use.
+  ['version row', '--text-muted', '--surface-panel', 3.0, '"Aetox v1.5.8" / "you are on the latest version"'],
 ]
 
 

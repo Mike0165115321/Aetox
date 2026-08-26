@@ -1393,4 +1393,16 @@ Check your own work before answering; say so plainly if unsure.
   'update.failedSafe': 'The version you are running is still installed and untouched.',
   'update.retry': 'Try again',
 
+  // The version row in the profile menu: the one place somebody who never
+  // opens Settings still learns which Aetox they are running, and whether a
+  // newer one is out.
+  'update.check': 'Check for updates',
+  'update.checking': 'Checking...',
+  // A check that could not run is not a broken app, so it says so briefly and
+  // leaves the button armed.
+  'update.checkFailed': 'Could not check just now. Try again anytime.',
+  'update.checkOff': 'Update checking is off',
+  'update.upToDate': 'You are on the latest version',
+  'update.downloadingPct': 'Downloading {pct}%',
+
 }

@@ -40,7 +40,7 @@
     SignInMethods, SignInStatus, StartSignIn, CancelSignIn, ImportableSignIns,
     Connections, ConnectAccount, SetConnectionTargets, VerifyConnection, DisconnectAccount,
     SetConnectionStartCommand, StartConnectionServer, CheckConnectionServer,
-    AppVersion, AppCredit, CheckForUpdate, RecentDebugLog,
+    AppVersion, AppCredit, RecentDebugLog,
     LearningEnabled, SetLearningEnabled, ListPendingChanges, ListDecidedChanges,
     ApprovePendingChange, RejectPendingChange, LearnedEntries, LearnedScopeInfos, SaveLearnedEntry, OpenMemoryFolder,
     ForgetMemoryScope, AdoptMemoryScope, RecentProjects,
@@ -54,13 +54,13 @@
   // that is not a bug report yet.
   import { COMMUNITY_URL } from './links'
   import promptPayQR from '../assets/images/promptpay-qr.png'
-  import { config, update, main, subagent } from '../../wailsjs/go/models'
+  import { config, main, subagent } from '../../wailsjs/go/models'
   import { cockpit, startChatWith, setActiveView, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat, setProviderBaseURL, retryActiveProvider, completeSignIn, signOutProvider, importSignIn, SETTINGS_SECTION_KEY } from './stores/cockpit.svelte'
   import {
     identity, loadIdentityFiles, openIdentityFile, saveIdentityFile,
     createIdentityFile, deleteIdentityFile, identityTemplates,
   } from './identity.svelte'
-  import { updater, updatePct, startDownload, restartToUpdate } from './selfUpdate.svelte'
+  import { updater, updatePct, startDownload, restartToUpdate, checkNow } from './selfUpdate.svelte'
 
   let { onClose }: { onClose: () => void } = $props()
 
@@ -654,16 +654,19 @@
   // take the whole Settings page down with it for nothing.
   let appVersion = $state('')
   let appCredit = $state('')
-  let updateStatus = $state<update.Status | null>(null)
-  let updateChecking = $state(false)
-  let updateError = $state('')
   let hintCopied = $state(false)
-  // Downloading / verifying / swapping / it failed does NOT live here. That
-  // state belongs to the act, not to this page: the same update can be started
-  // from the notice the automatic check raises, and two private copies of
-  // "42%, restarting, here is what went wrong" are two answers to one question
-  // waiting to disagree. selfUpdate.svelte owns it; this page reads it, and the
-  // progress dialog it drives (Updater.svelte) covers this window either way.
+  // Neither the answer NOR the act lives here. The same update can be started
+  // from the notice the automatic check raises and from the version row in the
+  // profile menu, and three private copies of "there is a v1.5.9 / 42% /
+  // restarting / here is what went wrong" are three answers to one question
+  // waiting to disagree. selfUpdate.svelte owns all of it; this page is a view.
+  //
+  // The check moved there on 2026-08-26, when the profile menu became the third
+  // door: a menu that had asked GitHub itself would have been free to show a
+  // release this page had never heard of, which is the same debt one layer up.
+  const updateStatus = $derived(updater.status)
+  const updateChecking = $derived(updater.checking)
+  const updateError = $derived(updater.checkError)
   onMount(() => {
     void (async () => {
       try {
@@ -681,21 +684,6 @@
     portable: 'settings.aboutChannelPortable',
     store: 'settings.aboutChannelStore',
     unknown: 'settings.aboutChannelUnknown',
-  }
-
-  async function checkForUpdate() {
-    updateChecking = true
-    updateError = ''
-    try {
-      updateStatus = await CheckForUpdate()
-    } catch (err) {
-      // Offline, rate-limited, proxy in the way: say so and change nothing
-      // else. A failed check is not a broken app.
-      updateStatus = null
-      updateError = String(err)
-    } finally {
-      updateChecking = false
-    }
   }
 
   async function copyUpgradeHint(command: string) {
@@ -6012,7 +6000,7 @@
               {/if}
             </div>
           </div>
-          <button class="ctrl" disabled={updateChecking} onclick={checkForUpdate}>
+          <button class="ctrl" disabled={updateChecking} onclick={checkNow}>
             {updateChecking ? t('settings.aboutChecking') : t('settings.aboutCheck')}
           </button>
         </div>

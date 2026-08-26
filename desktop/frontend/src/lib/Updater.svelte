@@ -24,7 +24,7 @@
   import Logo from './Logo.svelte'
   import Icon from './Icon.svelte'
   import {
-    updater, updateOffered, updatePct, dismissUpdate, startDownload, restartToUpdate,
+    updater, updateAnnounced, updatePct, dismissUpdate, startDownload, restartToUpdate,
   } from './selfUpdate.svelte'
 
   const busy = $derived(updater.phase !== 'idle')
@@ -49,7 +49,12 @@
     }
   })
 
-  const show = $derived(!hidden && (busy || updateOffered()))
+  // updateAnnounced, not updateOffered: an offer the user went looking for is
+  // answered by the door they opened (Settings → About, or the version row in
+  // the profile menu), and a card repeating it on top would be the same news
+  // twice. A download, once started, is carried here whichever door started it
+  // — the menu it began in closes the moment the user clicks anything else.
+  const show = $derived(!hidden && (busy || updateAnnounced()))
   const published = $derived(
     updater.status?.publishedAt
       ? new Date(updater.status.publishedAt).toLocaleDateString(undefined, {

@@ -39,7 +39,8 @@ const stillDownloading = () =>
 beforeEach(() => {
   vi.clearAllMocks()
   Object.assign(updater, {
-    status: null, dismissed: false, phase: 'idle', done: 0, total: 0, staged: '', error: '',
+    current: '', status: null, announced: false, checking: false, checkError: '',
+    dismissed: false, phase: 'idle', done: 0, total: 0, staged: '', error: '',
   })
 })
 
@@ -49,6 +50,17 @@ describe('the offer', () => {
   it('shows nothing at all until a newer release turns up', () => {
     const { container } = render(Updater)
     expect(container.querySelector('.upd-card')).toBeNull()
+  })
+
+  // The card carries news nobody asked for. An offer the user went and asked
+  // for is answered where they asked — Settings → About, or the version row in
+  // the profile menu — and a card repeating it on top would be the same news
+  // twice, over a window the user is looking at for a different reason.
+  it('stays out of the way when the user asked the question themselves', async () => {
+    const { container } = render(Updater)
+    updater.status = status() as never
+    updater.announced = false
+    await waitFor(() => expect(container.querySelector('.upd-card')).toBeNull())
   })
 
   it('offers the update once the check announces one — without having downloaded it', async () => {

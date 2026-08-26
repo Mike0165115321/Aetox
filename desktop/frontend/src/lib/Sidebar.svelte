@@ -18,6 +18,10 @@
   import { dayBucket } from './dayBucket'
   import { theme, applyTheme, THEMES, type ThemeName } from './theme.svelte'
   import { isShortcut, shortcutLabel } from './shortcuts'
+  import {
+    updater, updatePct, checkNow, startDownload, restartToUpdate, loadCurrentVersion,
+  } from './selfUpdate.svelte'
+  import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
   import Icon from './Icon.svelte'
 
   let { onOpenSettings }: { onOpenSettings: () => void } = $props()
@@ -94,6 +98,31 @@
   function saveName() {
     profileName = nameDraft.trim()
     void SetUserName(profileName)
+  }
+
+  // ---------- which Aetox is this, and is there a newer one ----------
+  // The version used to be answerable only from Settings -> About, a page most
+  // people never open — so "a new Aetox is out" was news that reached only
+  // whoever went looking for it. It belongs here for the same reason the
+  // account and the language do: this menu is where the app says what it IS,
+  // and which build you are running is part of that sentence.
+  //
+  // Nothing about the update is decided here. selfUpdate.svelte owns the answer
+  // and both acts, internal/update decides which action a channel deserves, and
+  // this row draws what they say.
+  const updateBusy = $derived(updater.phase === 'downloading' || updater.phase === 'restarting')
+  const newVersion = $derived(updater.staged || updater.status?.latest || '')
+
+  // Asked once per run, the first time the menu is opened — not on every open,
+  // and never on a timer of its own: the daily check (update_notify.go) is what
+  // keeps this current, and this only covers the gap before its first answer
+  // lands. A menu that opens saying nothing about a release that came out
+  // yesterday is the whole problem this row exists to fix. The button re-asks
+  // whenever the user wants it re-asked.
+  function refreshUpdate() {
+    loadCurrentVersion()
+    if (updater.status || updater.checking || updater.checkError) return
+    void checkNow()
   }
 
   function closeProfileOnOutsideClick(e: MouseEvent) {
@@ -526,7 +555,7 @@
   {/if}
 
   <div class="side-footer-wrap">
-    <button type="button" class="side-footer" onclick={() => { profileOpen = !profileOpen; if (profileOpen) { loadAccount(); loadAetoxAccount() } }}>
+    <button type="button" class="side-footer" onclick={() => { profileOpen = !profileOpen; if (profileOpen) { loadAccount(); loadAetoxAccount(); refreshUpdate() } }}>
       <span class="avatar">{avatarInitial}</span>
       <!-- The name you chose wins; the account name stands in when you never
            chose one, so a signed-in sidebar stops asking for something it
@@ -599,6 +628,92 @@
             {/each}
           </select>
         </div>
+        <div class="menu-sep"></div>
+        <!-- One row, one sentence: which Aetox this is, and the only thing
+             worth knowing beside it. The second line appears only when there IS
+             something to say — an up-to-date app has no news, and a row that
+             reports "no news" every day teaches people to stop reading it. -->
+        <div class="ver-menu">
+          <div class="ver-row">
+            <span class="ic"><Icon name="package" size={14} /></span>
+            <span class="ver-name">Aetox {updater.current ? 'v' + updater.current : '—'}</span>
+            <button
+              class="ver-check" onclick={refreshUpdate}
+              disabled={updater.checking || updateBusy}
+            >
+              {updater.checking ? t('update.checking') : t('update.check')}
+            </button>
+          </div>
+
+          {#if updateBusy}
+            <!-- Percent, not megabytes: the card carries the bytes, and this
+                 row has one line to spend. -->
+            <div class="ver-news">
+              <span class="ver-note">
+                {updater.phase === 'restarting'
+                  ? t('update.restarting')
+                  : updatePct() >= 0
+                    ? t('update.downloadingPct', { pct: String(updatePct()) })
+                    : t('update.downloading', { version: newVersion })}
+              </span>
+            </div>
+            <div
+              class="ver-bar" class:indeterminate={updatePct() < 0}
+              role="progressbar" aria-valuemin="0" aria-valuemax="100"
+              aria-valuenow={updatePct() >= 0 ? updatePct() : undefined}
+              aria-label={t('update.progress')}
+            >
+              <span class="ver-bar-fill" style={updatePct() >= 0 ? `width:${updatePct()}%` : ''}></span>
+            </div>
+          {:else if updater.phase === 'ready'}
+            <!-- Already on disk. The restart is the user's to time, so this
+                 offers it rather than taking it. -->
+            <div class="ver-news">
+              <span class="ver-new">{t('update.readyToRestart', { version: newVersion })}</span>
+              <button class="ver-go" onclick={restartToUpdate}>{t('update.restartNow')}</button>
+            </div>
+          {:else if updater.error}
+            <div class="ver-news">
+              <span class="ver-note ver-warn">{t('update.failed')}</span>
+              <button class="ver-go" onclick={startDownload}>{t('update.retry')}</button>
+            </div>
+          {:else if updater.status?.available}
+            <!-- The three endings internal/update already decided between: one
+                 click when this channel can finish the job, the package
+                 manager's own command when it installed us, the release page
+                 for everything else. -->
+            <div class="ver-news">
+              <span class="ver-new">{t('update.ready', { version: newVersion })}</span>
+              {#if updater.status.canAuto}
+                <button class="ver-go" onclick={startDownload}>{t('update.now')}</button>
+              {:else if !updater.status.hint}
+                <button class="ver-go" onclick={() => BrowserOpenURL(updater.status?.url ?? '')}>
+                  {t('update.openRelease')}
+                </button>
+              {/if}
+            </div>
+            {#if !updater.status.canAuto && updater.status.hint}
+              <code class="ver-cmd">{updater.status.hint}</code>
+            {/if}
+          {:else if updater.checkError}
+            <!-- Offline, rate-limited, a proxy in the way. Muted and in one
+                 line: a check that could not run is not a broken app. -->
+            <div class="ver-news"><span class="ver-note">{t('update.checkFailed')}</span></div>
+          {:else if updater.status?.disabled}
+            <div class="ver-news">
+              <span class="ver-note">{t('update.checkOff')}</span>
+              {#if updater.status.url}
+                <button class="ver-go" onclick={() => BrowserOpenURL(updater.status?.url ?? '')}>
+                  {t('update.openRelease')}
+                </button>
+              {/if}
+            </div>
+          {:else if updater.status}
+            <div class="ver-news"><span class="ver-note">{t('update.upToDate')}</span></div>
+          {/if}
+        </div>
+
+        <div class="menu-sep"></div>
         <!-- Parked 2026-08-14, see MobileRemote.svelte: the entry point comes
              back when the phone surface has been designed, not before. -->
         <button class="plus-menu-item" onclick={() => { profileOpen = false; onOpenSettings() }}>
