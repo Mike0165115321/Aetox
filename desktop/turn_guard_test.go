@@ -127,16 +127,17 @@ func TestTheDoorsThatStillRefuseWhileATurnRuns(t *testing.T) {
 		t.Fatalf("beginTurn() = %v", err)
 	}
 
+	// OpenProjectPath and ClearProjectFocus used to be on this list. They are
+	// not doors that leave the running turn's chat — they open a NEW chat
+	// somewhere else and leave the working one running, which is the whole
+	// point of per-conversation engines. See the note where guardSessionSwitch
+	// used to be (app.go).
 	busy := func(name string, err error) {
 		t.Helper()
 		if err == nil || !strings.Contains(err.Error(), "กำลังทำงานอยู่") {
 			t.Errorf("%s mid-turn = %v, want the busy refusal", name, err)
 		}
 	}
-	_, err := a.OpenProjectPath(t.TempDir())
-	busy("OpenProjectPath", err)
-	_, err = a.ClearProjectFocus()
-	busy("ClearProjectFocus", err)
 	busy("DeleteSession(open)", a.DeleteSession(working))
 	// Restarting into a new build kills the process, and the process is where
 	// the turn lives. Downloading one does not, and StageUpdate is deliberately
@@ -383,7 +384,15 @@ func TestTheHistoryListOpensWhileATurnRuns(t *testing.T) {
 // open mid-turn (TestTheHistoryListOpensWhileATurnRuns). Opening one that lives
 // in ANOTHER project moves the sandbox, the workspace and the shell — the
 // machine the running turn is working on — and that half still refuses.
-func TestOpeningAChatInAnotherProjectStillRefusesMidTurn(t *testing.T) {
+// A chat in ANOTHER project opens while a turn runs, like every other chat.
+//
+// This test asserted the opposite until 2026-08-26, and the behaviour it locked
+// in was the last thing standing between the owner and the feature he built
+// (26 ส.ค.: "คือสั่งมันทำงานได้เซสชั่นนี้ แล้วสร้างเซสชั่นใหม่แล้วสั่งอีกงานได้").
+// Opening the chat no longer re-roots the one that is working: it points what a
+// new chat is born with at the other project (retargetTemplate) and builds the
+// incoming conversation from that, beside the running one.
+func TestOpeningAChatInAnotherProjectOpensMidTurn(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
 	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "คำถามในโปรเจกต์เก่า", Time: "10:00"},
@@ -406,9 +415,15 @@ func TestOpeningAChatInAnotherProjectStillRefusesMidTurn(t *testing.T) {
 	}
 	defer a.endTurn(working)
 
-	_, err := a.LoadSessionAnyProject(elsewhere)
-	if err == nil || !strings.Contains(err.Error(), "กำลังทำงานอยู่") {
-		t.Errorf("a cross-project open mid-turn = %v, want the busy refusal", err)
+	if _, err := a.LoadSessionAnyProject(elsewhere); err != nil {
+		t.Fatalf("a cross-project open mid-turn = %v, want it to open", err)
+	}
+	// And the turn is still where it was, on the engine it started with.
+	if !a.turnRunningIn(working) {
+		t.Error("opening another project's chat ended the running turn")
+	}
+	if a.cur().id != elsewhere {
+		t.Errorf("a.cur().id = %q after the open, want %q", a.cur().id, elsewhere)
 	}
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -65,7 +66,10 @@ func TestAnnounceUpdateCarriesTheWholeStatus(t *testing.T) {
 	if !ok {
 		t.Fatalf("payload is %T, want update.Status — the UI decodes this shape", got[0])
 	}
-	if st != want {
+	// DeepEqual rather than !=: Status carries the release's own headings now
+	// (update.Status.Highlights), and a struct holding a slice is not
+	// comparable. Nothing about what this test asserts changed.
+	if !reflect.DeepEqual(st, want) {
 		t.Errorf("payload = %+v, want %+v", st, want)
 	}
 }

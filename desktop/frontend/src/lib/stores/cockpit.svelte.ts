@@ -143,12 +143,41 @@ function markOnScreen(id: string): void {
   for (const s of cockpit.spaceHistory) s.active = s.id === id
 }
 
+/** The row for a chat that exists but has not been answered yet.
+ *
+ * A session gets its row in the store when its first turn is written down, so
+ * between pressing "new chat" and the first reply landing there was nothing in
+ * the list at all — you made a chat and the column did not change, then minutes
+ * later a row appeared on its own (owner, 26 ส.ค.: "มันไม่มีเหมือนแบบบอกเลยว่า
+ * แชทนั้นจะไปเริ่มที่ไหน").
+ *
+ * So the lists carry the open chat whether or not the store has heard of it.
+ * `draft` is what says which kind of row this is; nothing else about it is
+ * invented — the id is the engine's own, and the title is a placeholder that
+ * the real row replaces the moment there is one, the same way every other AI
+ * app fills in a name after the first message.
+ *
+ * Returns nothing when the open chat is already in the list, which is the
+ * ordinary case and the reason this is cheap to call from every refresh. */
+function draftRow(current: string, rows: Session[], projectName?: string): Session[] {
+  const id = onScreenSession(current)
+  if (!id || rows.some((r) => r.id === id)) return rows
+  return [{
+    id, title: t('sidebar.draftChat'), ago: t('sidebar.draftChatAgo'),
+    // Stamped now, not left blank: the flat list buckets rows by day and an
+    // undated one falls to เก่ากว่านั้น, which would file the chat you just
+    // made at the very bottom of its own history.
+    updatedAt: new Date().toISOString(),
+    active: true, draft: true, projectName,
+  }, ...rows]
+}
+
 /** Pull this project's chat history (sessions are stored per project in Go). */
 export async function refreshSessions(): Promise<void> {
   const [metas, current] = await Promise.all([ListSessions(), CurrentSessionID()])
-  cockpit.sessions = metas.map((m) => ({
+  cockpit.sessions = draftRow(current, metas.map((m) => ({
     id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt, active: m.id === onScreenSession(current), mode: m.mode, agent: m.agent,
-  }))
+  })))
   // Keeps the workbench layout keyed to whichever session is actually live —
   // restores it on app start, migrates it when the engine re-keys the chat.
   await adoptWorkbenchSession(current)
@@ -171,9 +200,12 @@ export async function refreshGlobalHistory(): Promise<void> {
   const [metas, current] = await Promise.all([
     ListSessionsForDoor(deskFilterFor(shell.name)), CurrentSessionID(),
   ])
-  cockpit.history = metas.map((m) => ({
+  // The project name comes from the open project rather than from a row,
+  // because a draft chat has no row to read it off — and it is what files the
+  // placeholder under the right heading in the sidebar's project groups.
+  cockpit.history = draftRow(current, metas.map((m) => ({
     id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt, active: m.id === onScreenSession(current), projectName: m.projectName, mode: m.mode, agent: m.agent,
-  }))
+  })), cockpit.project.name)
 }
 
 /** Full-text search this door's chat history across every project. */
@@ -686,15 +718,19 @@ export async function applyAgentDone(status: { sessionId: string }): Promise<voi
   await drainStraggler()
 }
 
-/** The one gate in front of every door that leaves the running turn's chat.
+/** The gate in front of the one door that rewrites the chat on screen.
  *
- * The engine refuses these too (desktop/app.go guardSessionSwitch) — one brain,
- * one turn, and every switch rewrites the memory that turn is thinking with.
- * Checking here as well is not a second answer to the same question: it is how
- * the refusal reaches doors whose engine call the UI never awaits with an
- * error surface (Ctrl+N, the desk buttons), as a sentence instead of a click
- * that did nothing. Cleared when the turn ends, where every live panel resets.
- */
+ * It used to stand in front of the project doors too, mirroring an engine-side
+ * gate that stood on the same belief: one brain, one turn, every switch
+ * rewrites the memory that turn is thinking with. Both are gone. Opening a
+ * project opens a new chat beside the working one and rewrites nothing, so
+ * refusing it was refusing the feature (owner, 26 ส.ค.).
+ *
+ * What is left is the stance picker, which really does rebuild this chat's
+ * engine and carry its context across. `awaitingReply` is the chat ON SCREEN,
+ * which is exactly the chat that would be rebuilt — the same narrow question
+ * SetStance asks in Go. Cleared when the turn ends, where every live panel
+ * resets. */
 function turnStillRunning(): boolean {
   if (!cockpit.awaitingReply) return false
   cockpit.sessionError = t('cockpit.turnBusy')
@@ -872,14 +908,11 @@ function writeLive(id: string, change: (live: ParkedTurn) => void): void {
 
 /** Let the user pick a real folder via the native dialog; re-points the engine at it. */
 export async function openFolder(): Promise<void> {
-  if (turnStillRunning()) return
-  // The local guard above answers for the chat ON SCREEN; the engine's
-  // guardSessionSwitch answers for every chat at once, and re-rooting is
-  // refused while a turn runs ANYWHERE. So the call still gets refused with a
-  // chat working off screen — and without this catch that refusal was an
-  // unhandled rejection: the click did nothing, said nothing, and read as a
-  // dead button (owner, 22 ส.ค.: "มี Chat นึงกำลังทำงาน แต่กดแชตใหม่ไม่ได้").
-  // Same shape as setStance's, which is the one door that already did this.
+  // No gate. Opening a project opens a NEW chat in it and leaves the working
+  // one running — that is what "หลายเซสชันพร้อมกัน" means, and this line was
+  // what stood in front of it (owner, 26 ส.ค.). The catch stays: the engine can
+  // still refuse for reasons of its own, and a click that says nothing reads as
+  // a dead button.
   try {
     Object.assign(cockpit.project, await OpenProjectFolder())
   } catch (err) {
@@ -897,14 +930,11 @@ export async function openFolder(): Promise<void> {
 
 /** Switch straight to a previously-opened project (sidebar's project list), no dialog. */
 export async function openProject(path: string): Promise<void> {
-  if (turnStillRunning()) return
-  // The local guard above answers for the chat ON SCREEN; the engine's
-  // guardSessionSwitch answers for every chat at once, and re-rooting is
-  // refused while a turn runs ANYWHERE. So the call still gets refused with a
-  // chat working off screen — and without this catch that refusal was an
-  // unhandled rejection: the click did nothing, said nothing, and read as a
-  // dead button (owner, 22 ส.ค.: "มี Chat นึงกำลังทำงาน แต่กดแชตใหม่ไม่ได้").
-  // Same shape as setStance's, which is the one door that already did this.
+  // No gate. Opening a project opens a NEW chat in it and leaves the working
+  // one running — that is what "หลายเซสชันพร้อมกัน" means, and this line was
+  // what stood in front of it (owner, 26 ส.ค.). The catch stays: the engine can
+  // still refuse for reasons of its own, and a click that says nothing reads as
+  // a dead button.
   try {
     Object.assign(cockpit.project, await OpenProjectPath(path))
   } catch (err) {
@@ -923,14 +953,11 @@ export async function openProject(path: string): Promise<void> {
 /** Drop project focus: the AI keeps full machine access (files/git/terminal)
  * but is no longer tied to any project — like opening Claude/Codex bare. */
 export async function clearProjectFocus(): Promise<void> {
-  if (turnStillRunning()) return
-  // The local guard above answers for the chat ON SCREEN; the engine's
-  // guardSessionSwitch answers for every chat at once, and re-rooting is
-  // refused while a turn runs ANYWHERE. So the call still gets refused with a
-  // chat working off screen — and without this catch that refusal was an
-  // unhandled rejection: the click did nothing, said nothing, and read as a
-  // dead button (owner, 22 ส.ค.: "มี Chat นึงกำลังทำงาน แต่กดแชตใหม่ไม่ได้").
-  // Same shape as setStance's, which is the one door that already did this.
+  // No gate. Opening a project opens a NEW chat in it and leaves the working
+  // one running — that is what "หลายเซสชันพร้อมกัน" means, and this line was
+  // what stood in front of it (owner, 26 ส.ค.). The catch stays: the engine can
+  // still refuse for reasons of its own, and a click that says nothing reads as
+  // a dead button.
   try {
     Object.assign(cockpit.project, await ClearProjectFocus())
   } catch (err) {

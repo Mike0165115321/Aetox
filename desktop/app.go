@@ -1759,7 +1759,7 @@ func (a *App) focusNone() {
 	// Cleared rather than carried: the added folders belong to the project that
 	// is being left, and this mode reaches the machine anyway.
 	a.setWorkspaceRoots(nil)
-	a.reload(config.ConfigOptions{RootPath: root, ApprovalMode: string(safety.ApprovalFullAccess)})
+	a.retargetTemplate(config.ConfigOptions{RootPath: root, ApprovalMode: string(safety.ApprovalFullAccess)})
 }
 
 // TurnReply is one finished turn as the UI receives it: the answer, and the
@@ -1960,25 +1960,31 @@ func (a *App) turnRunningIn(id string) bool {
 	return running
 }
 
-// guardSessionSwitch is what is left of the door-check that used to stand in
-// front of every session, desk and project switch.
+// The door-check that used to stand in front of every session, desk and
+// project switch is gone, and the record of why is worth keeping.
 //
-// The sentence it was built on — "the engine has one agent context, so every
-// switch rewrites it" — stopped being true on 2026-08-19. Opening a chat, or
-// starting one, builds or attaches to that chat's own engine and leaves a turn
-// running in another one exactly where it was, so those doors no longer ask.
+// It rested on one sentence: the engine has one agent context, so every switch
+// rewrites it. That stopped being true on 2026-08-19, when a chat started
+// carrying its own engine. Opening a chat has not rewritten anything since;
+// the gate was moved out of that path and left standing in front of the
+// project doors, on the belief that re-rooting was still app-wide.
 //
-// What still asks is the one thing that really is shared: **the project**.
-// Re-rooting moves the sandbox, the workspace roots and the shell backend, and
-// those belong to the machine rather than to a conversation — a turn running
-// anywhere would find the ground moved under it mid-tool-call. That is stage 4
-// of §134.4, and it is deliberately still shut.
-func (a *App) guardSessionSwitch() error {
-	if a.turnBusy() {
-		return errTurnBusy
-	}
-	return nil
-}
+// It was not. Those doors do not move the running chat anywhere — they open a
+// NEW one somewhere else, and all they ever needed from a re-root was the root
+// the new chat is born with. That is retargetTemplate now, and it touches no
+// conversation. Whatever is running keeps the engine it was built with, roots
+// and all, because OpenSandbox and ExtraRoots are read at its bootstrap and
+// the sandbox policy is stored per root.
+//
+// What the gate cost was the feature it was standing in front of (owner,
+// 26 ส.ค.: "กุให้มันคุยได้หลายเซสชั่นพร้อมกัน กุทำตั้งนาน"): press + on a
+// project while a chat is working and the answer was a red bar.
+//
+// The gates that remain are the narrow ones, and they are all the same shape —
+// around the thing being rewritten, never around the app. SetStance asks
+// whether THIS conversation is mid-turn, because it rebuilds this
+// conversation's engine. applyConfig asks the same question one level down and
+// parks the config rather than refusing. Any new door belongs in that shape.
 
 // TurnStatus is the engine's answer to "are you busy, and with which chat" —
 // what a window that just loaded asks before deciding what to draw. A webview
@@ -2729,9 +2735,6 @@ func (a *App) GetProjectStatus() ProjectStatus {
 // at unfocusedRoot, but the chat is no longer tied to any project.
 // Starts a fresh session, same as switching projects does.
 func (a *App) ClearProjectFocus() (ProjectStatus, error) {
-	if err := a.guardSessionSwitch(); err != nil {
-		return ProjectStatus{}, err
-	}
 	a.focusNone()
 	a.startNewSession()
 	return a.currentProjectStatus(), nil
@@ -2740,9 +2743,6 @@ func (a *App) ClearProjectFocus() (ProjectStatus, error) {
 // OpenProjectFolder lets the user pick a real folder via the native OS dialog, then
 // re-bootstraps the engine to run inside it (same model/provider preference).
 func (a *App) OpenProjectFolder() (ProjectStatus, error) {
-	if err := a.guardSessionSwitch(); err != nil {
-		return ProjectStatus{}, err
-	}
 	dir, err := wailsruntime.OpenDirectoryDialog(a.ctx, wailsruntime.OpenDialogOptions{
 		Title: "Open Aetox Project Folder",
 	})
@@ -2753,10 +2753,11 @@ func (a *App) OpenProjectFolder() (ProjectStatus, error) {
 		return projectStatus(a.cur().cfg.SandboxRoot), nil
 	}
 	// Sessions are per project — turns are already persisted incrementally, so
-	// just re-point the engine and start a fresh session for the new project.
+	// point what a new chat is born with at this folder and open one there.
+	// Nothing that is already running is touched; see retargetTemplate.
 	a.projectFocused = true
 	a.setWorkspaceRoots(a.storedWorkspaceFolders(dir))
-	a.reload(config.ConfigOptions{RootPath: dir, ApprovalMode: string(safety.ApprovalFullAccess)})
+	a.retargetTemplate(config.ConfigOptions{RootPath: dir, ApprovalMode: string(safety.ApprovalFullAccess)})
 	a.startNewSession()
 	a.touchProject(a.cur().cfg.SandboxRoot)
 	return a.currentProjectStatus(), nil
@@ -2765,16 +2766,18 @@ func (a *App) OpenProjectFolder() (ProjectStatus, error) {
 // OpenProjectPath switches straight to a previously-opened project by path —
 // used by the sidebar's recent-projects list, skipping the OS folder dialog.
 func (a *App) OpenProjectPath(root string) (ProjectStatus, error) {
-	if err := a.guardSessionSwitch(); err != nil {
-		return ProjectStatus{}, err
-	}
 	root = strings.TrimSpace(root)
 	if root == "" {
 		return ProjectStatus{}, fmt.Errorf("empty project path")
 	}
+	// No gate. Opening a project makes a new chat in it; the chat that was on
+	// screen is left running exactly where it was. projectFocused and the
+	// workspace folders are read at bootstrap and baked into the engine built
+	// with them, so moving them here reaches the chat about to be born and
+	// nothing that is already alive.
 	a.projectFocused = true
 	a.setWorkspaceRoots(a.storedWorkspaceFolders(root))
-	a.reload(config.ConfigOptions{RootPath: root, ApprovalMode: string(safety.ApprovalFullAccess)})
+	a.retargetTemplate(config.ConfigOptions{RootPath: root, ApprovalMode: string(safety.ApprovalFullAccess)})
 	a.startNewSession()
 	a.touchProject(a.cur().cfg.SandboxRoot)
 	return a.currentProjectStatus(), nil
@@ -3081,6 +3084,9 @@ func (a *App) SwitchModel(modelName string) (ModelInfo, error) {
 		next.ModelName = model.ResolveDefaultModel(next.ModelProvider, next.ModelBaseURL, next.ModelAPIKey)
 	}
 	next.ThinkLevel = model.NormalizeThinkingLevel(next.ModelProvider, next.ModelName, next.ThinkLevel)
+	// Filed under the provider it was chosen on, before the rebuild: this is
+	// what makes switching away and back come back here.
+	rememberModelForProvider(next.ModelProvider, next.ModelName)
 	a.applyConfig(a.cur(), next)
 	return a.modelSwitchResult()
 }
@@ -3267,6 +3273,43 @@ func resolveBaseURLForProvider(canonicalProvider string) string {
 	return model.DefaultBaseURL(canonicalProvider)
 }
 
+// resolveModelForProvider is the model to open a provider on: the one it was
+// last used with, or its catalog default for a provider never picked before.
+//
+// Switching provider used to resolve the default every time, so a provider you
+// had chosen a model on opened on somebody else's idea of first — and browsing
+// three providers meant scrolling back to your own model three times (owner,
+// 26 ส.ค.). Same shape as resolveBaseURLForProvider directly above, for the
+// same reason: a per-provider choice needs a per-provider slot to survive in.
+//
+// The remembered name is not trusted blindly — a model can be withdrawn, or
+// the endpoint changed under it — but that is already handled downstream: the
+// engine falls back and modelSwitchResult reports what it actually got.
+func resolveModelForProvider(canonicalProvider, baseURL, apiKey string) string {
+	if pref, ok, _ := config.LoadModelPreference(); ok {
+		if v := pref.ModelForProvider(canonicalProvider); v != "" {
+			return v
+		}
+	}
+	return model.ResolveDefaultModel(canonicalProvider, baseURL, apiKey)
+}
+
+// rememberModelForProvider files the user's pick under the provider it was
+// made on, so switching away and back returns to it.
+func rememberModelForProvider(canonicalProvider, modelName string) {
+	if strings.TrimSpace(canonicalProvider) == "" || strings.TrimSpace(modelName) == "" {
+		return
+	}
+	pref, ok, _ := config.LoadModelPreference()
+	if !ok {
+		pref = config.ModelPreference{}
+	}
+	pref.SetModelForProvider(canonicalProvider, modelName)
+	// Best effort: a preference file that cannot be written is not a reason to
+	// refuse the switch the user just asked for.
+	_ = config.SaveModelPreference(pref)
+}
+
 func resolveAPIKeyForProvider(canonicalProvider string) string {
 	if pref, ok, _ := config.LoadModelPreference(); ok {
 		if key := pref.APIKeyForProvider(canonicalProvider); key != "" {
@@ -3329,7 +3372,7 @@ func (a *App) SwitchProvider(provider string) (ModelInfo, error) {
 	next.ModelBaseURL = resolveBaseURLForProvider(next.ModelProvider)
 	next.ModelWireFormat = "" // reset to the new provider's default format
 	next.ModelAPIKey = resolveAPIKeyForProvider(next.ModelProvider)
-	next.ModelName = model.ResolveDefaultModel(next.ModelProvider, next.ModelBaseURL, next.ModelAPIKey)
+	next.ModelName = resolveModelForProvider(next.ModelProvider, next.ModelBaseURL, next.ModelAPIKey)
 	next.ThinkLevel = model.NormalizeThinkingLevel(next.ModelProvider, next.ModelName, "")
 	a.applyConfig(a.cur(), next)
 	return a.modelSwitchResult()
@@ -3427,6 +3470,34 @@ func (a *App) reload(opts config.ConfigOptions) {
 		a.applyConfig(a.cur(), next)
 	}
 	go a.sweepAttachments(a.cur().cfg.SandboxRoot)
+}
+
+// retargetTemplate points `what a NEW chat is born with` at another project,
+// and touches no conversation at all.
+//
+// It exists because every door that opens a project was calling reload() — and
+// reload rebuilds the chat ON SCREEN. Those doors then immediately open a
+// different chat anyway (startNewSession, or LoadSession), so the rebuild was
+// never the point: it was how App.cfg got the new root, and the conversation
+// it passed through was collateral.
+//
+// That collateral is what needed the gate, and the gate is what the owner has
+// been hitting all evening (26 ส.ค.: "กุให้มันคุยได้หลายเซสชั่นพร้อมกัน").
+// Pressing + on a project while a chat is working is not a request to move the
+// working chat anywhere — it is a request for a second chat, in that project,
+// beside the first. Rebuilding the first is the only reason that was ever
+// refused, and now nothing rebuilds it.
+//
+// The two branches mirror reload's, for the same reason: a launch that has not
+// resolved a provider yet has nothing to inherit from, so the config is
+// resolved whole rather than patched.
+func (a *App) retargetTemplate(opts config.ConfigOptions) {
+	if a.cur().cfg.ModelProvider == "" {
+		a.cfg = resolveConfig(opts)
+	} else {
+		a.cfg.SandboxRoot = config.Load(opts).SandboxRoot
+	}
+	go a.sweepAttachments(a.cfg.SandboxRoot)
 }
 
 // deskTools is the installed registry seen through the open session's desk —

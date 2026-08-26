@@ -761,26 +761,13 @@ func (a *App) LoadSessionAnyProject(id string) ([]SessionMessage, error) {
 		return nil, fmt.Errorf("ไม่พบเซสชันนี้")
 	}
 	if key != projectKey(a.cur().cfg.SandboxRoot) {
-		// Only this branch needs the gate, and only this branch ever did. It
-		// re-roots the whole engine (reload/focusNone) — the sandbox, the
-		// workspace folders, the shell backend — and those belong to the
-		// machine rather than to a conversation, so a turn running ANYWHERE
-		// would find the ground moved under it mid-tool-call.
+		// This branch used to be gated, on the belief that it re-rooted "the
+		// engine" — one machine, one brain, and a turn running anywhere would
+		// find the ground moved under it. It re-roots what a NEW chat is born
+		// with (retargetTemplate), and the chat being opened is then built from
+		// that. Whatever is running keeps the engine it was built with, roots
+		// and all, because those were read at its bootstrap.
 		//
-		// It used to sit at the top of the function, which made every row in
-		// the history list unclickable while anything was working: the sidebar
-		// sends every click through this door, and the overwhelming majority of
-		// them are chats in the project already open, where nothing is re-rooted
-		// and nothing was ever at risk. That is the refusal the owner hit again
-		// after the switch was supposed to be open (20 ส.ค.: "ตอนมันทำงานผมกด
-		// ไปเซสชั่นอื่นไม่ได้เลย") — the door below had opened and this one was
-		// still shut in front of it.
-		//
-		// Before the re-root, not after: a refusal that fires afterwards has
-		// already moved the machine the turn is running on.
-		if err := a.guardSessionSwitch(); err != nil {
-			return nil, err
-		}
 		// Sessions chatted "ไม่โฟกัสโปรเจกต์" live in the unfocused bucket,
 		// which never gets a projects-table row — switch back to unfocused
 		// mode for those instead of treating them as an orphaned project.
@@ -802,8 +789,9 @@ func (a *App) LoadSessionAnyProject(id string) ([]SessionMessage, error) {
 			a.focusNone()
 			return a.LoadSession(id)
 		}
-		a.reload(config.ConfigOptions{RootPath: rootPath, ApprovalMode: string(safety.ApprovalFullAccess)})
+		a.retargetTemplate(config.ConfigOptions{RootPath: rootPath, ApprovalMode: string(safety.ApprovalFullAccess)})
 		a.projectFocused = true
+		a.setWorkspaceRoots(a.storedWorkspaceFolders(rootPath))
 		a.touchProject(a.cur().cfg.SandboxRoot)
 	}
 	return a.LoadSession(id)
