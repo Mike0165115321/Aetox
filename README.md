@@ -17,7 +17,7 @@
 
 <p align="center">
   <a href="README.th.md">ภาษาไทย</a> ·
-  <a href="https://mike0165115321.github.io/Aetox/">Website</a> ·
+  <a href="https://mikedev115.github.io/Aetox/">Website</a> ·
   <a href="https://github.com/Mikedev115/Aetox/releases/latest/download/aetox-amd64-installer.exe">Download</a> ·
   <a href="https://www.facebook.com/share/g/1BnXC5EiWg/">Community</a> ·
   <a href="ARCHITECTURE.md">Architecture</a> ·
