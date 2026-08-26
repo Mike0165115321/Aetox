@@ -106,6 +106,30 @@ describe('the slides room', () => {
     expect(doc.documentElement.scrollTop).toBeGreaterThan(0)
   })
 
+  // ห้องเดินสไลด์ ก็ต้องบอกเด็คด้วยว่าใบไหนอยู่บนเวที — เด็คทรงซ้อนแขวนเอนทรานซ์
+  // ไว้กับคลาสนี้ ถ้าป้ายไม่ย้าย ทุกใบหลังใบแรกก็นิ่งเป็นภาพเดียว (อาการ 2026-08-26)
+  it('marks the slide on screen with onstage, and moves the mark as it pages', async () => {
+    const flowing = `<!DOCTYPE html><html><body>
+      <section class="slide">หนึ่ง</section><section class="slide">สอง</section></body></html>`
+    render(SlidesPane, { path: 'output/s1/flow.html', name: 'flow.html', content: flowing })
+    const doc = await loadDeck(flowing)
+    Object.defineProperty(doc.documentElement, 'scrollHeight', { value: 1440, configurable: true })
+    Object.defineProperty(doc.documentElement, 'clientHeight', { value: 720, configurable: true })
+    await fireEvent.load(document.querySelector('iframe') as HTMLIFrameElement)
+
+    const slides = [...doc.querySelectorAll('section.slide')] as HTMLElement[]
+    slides[1].getBoundingClientRect = () => ({ top: 720, height: 720 }) as DOMRect
+
+    // ตอนโหลด ใบแรกอยู่บนเวที ใบอื่นยังไม่
+    await waitFor(() => expect(slides[0].classList.contains('onstage')).toBe(true))
+    expect(slides[1].classList.contains('onstage')).toBe(false)
+
+    // กด Next แล้วป้ายต้องย้ายไปใบสอง ไม่ค้างที่ใบแรก
+    await fireEvent.click(screen.getByLabelText('Next slide'))
+    await waitFor(() => expect(slides[1].classList.contains('onstage')).toBe(true))
+    expect(slides[0].classList.contains('onstage')).toBe(false)
+  })
+
   // อาการที่เจ้าของรายงาน 2026-08-20: "กดสไลด์ขึ้นมาแล้ว พอโหลดสไลด์แล้วมันดัน"
   // แถบซ้ายของแอปถูกดันออกนอกจอ และขวาก็โดนด้วย
   //

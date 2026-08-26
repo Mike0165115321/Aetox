@@ -113,6 +113,15 @@ class waiting in a library: read it as the intent, spell it however the deck
 spells everything else, and follow the resting-state rule in `aetox-slides` so
 it survives the export.
 
+The export-safe spellings live in one place — the entrance kit in `aetox-slides`.
+Map a row's intent onto it rather than inventing a name: `fade-up` and `stagger`
+are `rise` and a staggered `rise`; `scale` and `stagger-scale` are `grow`, which
+starts at `.96` and never `0`; `count` is a number whose final value is its DOM
+text with the tally run over it; `chart` is a line drawing itself on
+`stroke-dashoffset`. `ken-burns` and `pulse` are the exception: ambient loops the
+export freezes on whatever frame it lands, so use them for screen life only,
+never to carry a point a `.pdf` reader has to receive.
+
 ### Reading the decision tables
 
 The tables below are the knowledge; there is no search tool to run over them.
@@ -150,11 +159,13 @@ where those facts live; this skill decides what goes *on* the slides.
    b. Query slide-typography.csv → type scale
    c. Query slide-color-logic.csv → color treatment
    d. Query slide-backgrounds.csv → image if needed
-   e. Apply animation class from slide-animations.css
+   e. Apply an entrance from the kit in aetox-slides (spelled in the deck; there
+      is no slide-animations.css to import)
         ↓
 4. Generate HTML with design tokens
         ↓
-5. Validate with slide-token-validator.py
+5. Validate by reading, then by capture (see "Checking a finished deck"
+   below) — there is no slide-token-validator.py to run
 ```
 
 ### Pattern Breaking (Duarte Sparkline)
