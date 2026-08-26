@@ -3,27 +3,45 @@
 package update
 
 import (
-	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
-	"unicode/utf16"
 
 	"github.com/Mikedev115/Aetox/internal/proc"
 )
 
-// The two endings both run through a tiny hidden PowerShell that first waits
-// for THIS process to exit. That ordering is the whole point: the new instance
-// must never overlap the old one on the session database, and an installer
-// must never race the app it is replacing. PowerShell because it is on every
-// Windows, and -EncodedCommand because a path quoted through cmd.exe's parsing
-// rules is a bug generator this package refuses to own.
+// The two endings both run through a tiny PowerShell that first waits for THIS
+// process to exit. That ordering is the whole point: the new instance must
+// never overlap the old one on the session database, and an installer must
+// never race the app it is replacing. PowerShell because it is on every
+// Windows.
+//
+// The script goes across as readable text. It used to go as -EncodedCommand,
+// base64, on the theory that a path quoted through cmd.exe's parsing rules is
+// a bug generator this package refuses to own. That theory was answering a
+// problem it does not have: exec.Command never goes through cmd.exe, it builds
+// the command line itself, and psq below leaves a script with no double quote
+// in it for anything to trip over.
+//
+// What base64 did buy was a command line indistinguishable from a dropper's.
+// Hidden-window PowerShell running an encoded payload is ASR rule
+// 5beb7efe-fd9a-4556-801d-275e5ffc04cc, "Block execution of potentially
+// obfuscated scripts" — the same family of shape that got our unsigned
+// installer classified as Program:Win32/Wacapew.C!ml on 2026-08-20. And
+// internal/skill/shell_sandbox.go already refuses -EncodedCommand from the
+// agent, in those words: nothing that needs base64 to say what it runs is
+// being written for a human to read. That applied to us too.
+//
+// The window is suppressed by proc.HideConsole (CREATE_NO_WINDOW) rather than
+// by -WindowStyle Hidden, for the same reason. The flag is a word on a command
+// line every detection rule in the industry reads; the creation flag is how a
+// GUI-subsystem app has always started a console child it does not want drawn.
 
 // relaunchAfterExit starts exe once the current process is gone — the portable
 // channel's ending, where the exe on disk is already the new build.
 func relaunchAfterExit(exe string) error {
-	return runHiddenPS(fmt.Sprintf(
+	return runWaiter(fmt.Sprintf(
 		"Wait-Process -Id %d -ErrorAction SilentlyContinue; Start-Process -FilePath '%s'",
 		os.Getpid(), psq(exe)))
 }
@@ -38,22 +56,23 @@ func handOffToInstaller(installer string) error {
 	if err != nil {
 		return err
 	}
-	return runHiddenPS(fmt.Sprintf(
+	return runWaiter(fmt.Sprintf(
 		"Wait-Process -Id %d -ErrorAction SilentlyContinue; "+
 			"try { Start-Process -Wait -FilePath '%s' -ArgumentList '/S' } catch {}; "+
 			"Start-Process -FilePath '%s'",
 		os.Getpid(), psq(installer), psq(exe)))
 }
 
-// psq escapes one string for a single-quoted PowerShell literal.
+// psq escapes one string for a single-quoted PowerShell literal. Single quotes
+// throughout is also what keeps the script free of double quotes, which is
+// what lets it cross as one plain argument.
 func psq(s string) string {
 	return strings.ReplaceAll(s, "'", "''")
 }
 
-func runHiddenPS(script string) error {
+func runWaiter(script string) error {
 	// proc-detached: the relaunch has to survive this process exiting; that is its whole job
-	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive",
-		"-WindowStyle", "Hidden", "-EncodedCommand", encodePS(script))
+	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
 	proc.HideConsole(cmd)
 	// Breakaway is what makes the line above true, not just intended: every
 	// child normally joins the app's KILL_ON_JOB_CLOSE job, and a waiter
@@ -64,14 +83,4 @@ func runHiddenPS(script string) error {
 	// Start, never Run: this process is about to exit, and the waiter's whole
 	// job begins at that moment.
 	return cmd.Start()
-}
-
-// encodePS is PowerShell's -EncodedCommand format: UTF-16LE, base64.
-func encodePS(script string) string {
-	codes := utf16.Encode([]rune(script))
-	b := make([]byte, 0, len(codes)*2)
-	for _, c := range codes {
-		b = append(b, byte(c), byte(c>>8))
-	}
-	return base64.StdEncoding.EncodeToString(b)
 }

@@ -102,15 +102,22 @@ Two different warnings, two different causes.
 **"Windows protected your PC", unknown publisher.** The installer is not code-signed yet, so
 Windows has no publisher name to show for it — **More info → Run anyway**.
 
-**"Virus detected", or the name `Program:Win32/Wacapew.C!ml`.** A cloud machine-learning verdict,
-not a signature: nobody analysed this file and judged it dangerous. It fires because the installer
-is unsigned, brand new, and at install time fetches Tesseract, poppler, ffmpeg and a speech model,
-which is the shape of a downloader. Those four are pinned to immutable release tags and every
-download is verified against a SHA256 hardcoded in
-[the installer script](desktop/build/windows/installer/project.nsi) before it is used; a mismatch
-skips that component rather than proceeding. This build has been reported to Microsoft as a false
-positive, but a new release carries a new hash, so it can come back until code signing exists. The
-portable zip is the way past it in the meantime.
+**"Virus detected", or a name ending in `!ml` such as `Program:Win32/Wacapew.C!ml`.** A cloud
+machine-learning verdict, not a signature: nobody analysed this file and judged it dangerous. The
+`!ml` ending says so. It fires on what the file *is* rather than what it does — an unsigned binary
+whose hash the world has never seen before, which every release is by definition. Desktop apps
+built with Go and Wails hit this across the ecosystem; an empty Wails app with no code in it at all
+is [reported as the same detection](https://github.com/wailsapp/wails/issues/3308).
+
+The installer itself no longer fetches anything third-party. It did until v1.5.7, and that is what
+earned the original verdict; [the installer script](desktop/build/windows/installer/project.nsi)
+carries the whole story. Tesseract, poppler, ffmpeg and the speech model are now downloaded by the
+app, only for a capability you tick, each pinned to an immutable release tag and verified against a
+SHA256 compiled into the binary before it is used — a mismatch skips that component rather than
+proceeding.
+
+A verdict cleared with Microsoft applies to one file, and the next release is a different file, so
+it can come back until code signing exists. The portable zip is the way past it in the meantime.
 
 Releases *are* signed: an ed25519 public key is compiled into the binary and the updater verifies
 the signature over `checksums.txt` before it trusts a single hash. An empty or wrong key refuses

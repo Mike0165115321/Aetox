@@ -11,6 +11,23 @@ import (
 	"github.com/Mikedev115/Aetox/internal/proc"
 )
 
+// Both launchers below pass -ExecutionPolicy RemoteSigned, and the value is
+// the point.
+//
+// The field holds a command line the user could type, which includes the path
+// of a .ps1 they wrote — and a script file IS subject to execution policy,
+// where a -Command string is not. So the switch cannot simply be dropped: on a
+// default Windows client (Restricted) their own start.ps1 would stop running.
+//
+// It used to say Bypass, which does the job and also writes the single most
+// recognisable word in malicious-PowerShell detection onto our command line —
+// Splunk, Elastic and Rapid7 all ship a rule that keys on it, and Aetox is an
+// unsigned binary with no reputation that already spawns shells for a living.
+// RemoteSigned buys the same thing for the case that exists (a local script
+// they wrote, which carries no mark-of-the-web and runs unsigned) and refuses
+// the case that should be refused anyway: an unsigned script downloaded from
+// the internet.
+
 // launchDetached starts the user's own command in a window of its own and
 // returns without waiting for it.
 //
@@ -39,7 +56,7 @@ func launchDetached(command string) error {
 	// a failure readable: without it a server that refuses to start closes its
 	// own window before anybody can see the reason.
 	// proc-detached: a server the user started from Settings; its console is how they stop it
-	cmd := exec.Command("powershell.exe", "-NoLogo", "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", command)
+	cmd := exec.Command("powershell.exe", "-NoLogo", "-NoExit", "-ExecutionPolicy", "RemoteSigned", "-Command", command)
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: newConsole}
 	if err := cmd.Start(); err != nil {
 		return err
@@ -84,7 +101,7 @@ func launchLogged(command, logPath string) error {
 		return err
 	}
 	// proc-detached: a server the user started from Settings; its console is how they stop it
-	cmd := exec.Command("powershell.exe", "-NoLogo", "-ExecutionPolicy", "Bypass", "-Command", command)
+	cmd := exec.Command("powershell.exe", "-NoLogo", "-ExecutionPolicy", "RemoteSigned", "-Command", command)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	proc.HideConsole(cmd)
