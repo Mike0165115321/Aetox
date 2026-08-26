@@ -125,7 +125,7 @@ func limitLines(content string, maxLines int) (string, bool) {
 	}
 
 	return strings.Join(lines[:maxLines], "\n") +
-		fmt.Sprintf("\n... (truncated — showed the first %d of %d lines)", maxLines, len(lines)), true
+		fmt.Sprintf("\n... (truncated, showed the first %d of %d lines)", maxLines, len(lines)), true
 }
 
 // limitLinesKeepingEnds is limitLines for output whose answer is at the bottom.
@@ -169,7 +169,7 @@ func limitLinesKeepingEnds(content string, maxLines int) (string, bool) {
 	dropped := len(lines) - maxLines
 
 	return strings.Join(lines[:head], "\n") +
-		fmt.Sprintf("\n... (truncated — %d lines from the middle are not shown; the last %d of %d follow)\n",
+		fmt.Sprintf("\n... (truncated, %d lines from the middle are not shown; the last %d of %d follow)\n",
 			dropped, tail, len(lines)) +
 		strings.Join(lines[len(lines)-tail:], "\n"), true
 }

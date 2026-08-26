@@ -1,6 +1,7 @@
 package prompt
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -136,4 +137,33 @@ func logLayerSizes(t *testing.T, prompt string) {
 	}
 	t.Logf("  listed layers account for %d of %d B — the rest is the desk's direction, the environment and whatever is folded in",
 		accounted, len(prompt))
+}
+
+// No em dash anywhere the model reads.
+//
+// Not a style preference about the source: it is about the model's output. The
+// prompt is the longest piece of prose any model here reads before it writes a
+// word, and what it reads there it imitates — so 68 em dashes in these layers
+// came back out in Thai answers, in an app whose own UI strings banned the
+// character (owner, 26 ส.ค.: "โมเดลชอบเอามาใส่").
+//
+// Comments are deliberately not checked. They are for whoever reads this file
+// and never reach a model, so sweeping them would be a large diff that changes
+// nothing about the thing being fixed.
+func TestThePromptCarriesNoEmDash(t *testing.T) {
+	for _, desk := range []Desk{
+		{Name: "assistant", Direction: "This session is assistant work.", Carries: func(string) bool { return true }},
+		{Name: "coding", Direction: "This session is coding work.", Carries: func(string) bool { return true }},
+		{Name: "quiet", Direction: "This session is assistant work.", ToolLess: true},
+	} {
+		got := BuildForDesk(SurfaceDesktop, Scope{Root: t.TempDir()}, desk)
+		if !strings.Contains(got, "—") {
+			continue
+		}
+		for _, line := range strings.Split(got, "\n") {
+			if strings.Contains(line, "—") {
+				t.Errorf("%s desk: em dash in the prompt: %q", desk.Name, line)
+			}
+		}
+	}
 }

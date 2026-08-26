@@ -136,7 +136,7 @@ func (b *backgroundShells) start(backend proc.Backend, workDir, commandLine stri
 		}
 		if running >= maxBackgroundShells {
 			b.mu.Unlock()
-			return nil, fmt.Errorf("%d background commands are already running — read or kill one before starting another", running)
+			return nil, fmt.Errorf("%d background commands are already running, read or kill one before starting another", running)
 		}
 		// Only finished jobs are holding the slots; forget the oldest of them
 		// rather than refusing to run.
@@ -315,7 +315,7 @@ func (s *shellOutputSkill) ExecuteTool(ctx context.Context, args map[string]any)
 	}
 	job, ok := s.shells.get(id)
 	if !ok {
-		err := fmt.Errorf("no background command %q — %s", id, describeRunning(s.shells))
+		err := fmt.Errorf("no background command %q, %s", id, describeRunning(s.shells))
 		return newToolOutput("shell_output", command, "", start, false, err), err
 	}
 
@@ -338,20 +338,20 @@ func (s *shellOutputSkill) ExecuteTool(ctx context.Context, args map[string]any)
 	}
 
 	done, killed, exitErr, elapsed := job.status()
-	header := fmt.Sprintf("[%s] %s — running for %s", id, job.command, elapsed.Round(time.Second))
+	header := fmt.Sprintf("[%s] %s, running for %s", id, job.command, elapsed.Round(time.Second))
 	switch {
 	case killed:
-		header = fmt.Sprintf("[%s] %s — killed after %s", id, job.command, elapsed.Round(time.Second))
+		header = fmt.Sprintf("[%s] %s, killed after %s", id, job.command, elapsed.Round(time.Second))
 	case done && exitErr != nil:
-		header = fmt.Sprintf("[%s] %s — exited with %v after %s", id, job.command, exitErr, elapsed.Round(time.Second))
+		header = fmt.Sprintf("[%s] %s, exited with %v after %s", id, job.command, exitErr, elapsed.Round(time.Second))
 	case done:
-		header = fmt.Sprintf("[%s] %s — finished in %s", id, job.command, elapsed.Round(time.Second))
+		header = fmt.Sprintf("[%s] %s, finished in %s", id, job.command, elapsed.Round(time.Second))
 	}
 	if waitNote != "" {
 		header += "\n" + waitNote
 	}
 	if overflowed {
-		header += "\n(earlier output was dropped — this command prints faster than it is being read)"
+		header += "\n(earlier output was dropped, this command prints faster than it is being read)"
 	}
 
 	body := strings.TrimRight(fresh, "\r\n")
@@ -392,7 +392,7 @@ func waitOnJob(ctx context.Context, job *backgroundJob, target string, timeout t
 			// line printed on the way out is a match, not a missed one. The job
 			// is done, so this second look is the final word.
 			if re != nil && !re.MatchString(job.peek()) {
-				return fmt.Sprintf("(/%s/ never appeared — the command ended first)", target), nil
+				return fmt.Sprintf("(/%s/ never appeared, the command ended first)", target), nil
 			}
 			if re != nil {
 				return fmt.Sprintf("(wait_for /%s/ matched after %s)", target, time.Since(began).Round(time.Second)), nil
@@ -408,7 +408,7 @@ func waitOnJob(ctx context.Context, job *backgroundJob, target string, timeout t
 			if re != nil {
 				what = "/" + target + "/"
 			}
-			return fmt.Sprintf("(waited %s for %s — not yet; the command is still running and was NOT stopped)",
+			return fmt.Sprintf("(waited %s for %s, not yet; the command is still running and was NOT stopped)",
 				timeout.Round(time.Second), what), nil
 		case <-tick.C:
 		}
@@ -467,7 +467,7 @@ func (s *shellKillSkill) ExecuteTool(_ context.Context, args map[string]any) (Ou
 	}
 	job, ok := s.shells.get(id)
 	if !ok {
-		err := fmt.Errorf("no background command %q — %s", id, describeRunning(s.shells))
+		err := fmt.Errorf("no background command %q, %s", id, describeRunning(s.shells))
 		return newToolOutput("shell_kill", command, "", start, false, err), err
 	}
 	if done, _, _, elapsed := job.status(); done {

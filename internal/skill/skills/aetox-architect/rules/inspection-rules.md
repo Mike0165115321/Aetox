@@ -16,8 +16,8 @@ intent without reading the real project.
 6. If a file cannot be read, record that limitation.
 7. Keep inspection focused on the requested scope when the project is large.
 8. Prefer the narrowest useful scope before mapping the whole system.
-9. Use available inspection tools — including codebase graph queries when a
-   codebase intelligence MCP is available — to gather evidence faster, then
+9. Use available inspection tools, including codebase graph queries when a
+   codebase intelligence MCP is available, to gather evidence faster, then
    interpret the evidence before making architecture claims.
 10. Reuse existing architecture maps, handoff notes, ADRs, current-state docs,
     and Mermaid sources before re-mapping stable areas.

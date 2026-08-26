@@ -161,7 +161,7 @@ func (n *notebook) save(path string) error {
 // answer often enough to be worth keeping; a base64 PNG never is.
 func renderNotebook(nb *notebook, shown string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s — %d cells\n", shown, len(nb.Cells))
+	fmt.Fprintf(&b, "%s, %d cells\n", shown, len(nb.Cells))
 	for i, cell := range nb.Cells {
 		fmt.Fprintf(&b, "\n[%d] %s\n", i, cell.CellType)
 		text := strings.TrimRight(cell.sourceText(), "\n")
@@ -253,7 +253,7 @@ func (*notebookEditSkill) ToolDefinition() model.ToolDefinition {
 			},
 			"cell": map[string]any{
 				"type":        "integer",
-				"description": "Which cell, counting from 0 — the number read shows in brackets. For insert, the new cell lands at this position; omit it to append at the end.",
+				"description": "Which cell, counting from 0, the number read shows in brackets. For insert, the new cell lands at this position; omit it to append at the end.",
 			},
 			"mode": map[string]any{
 				"type":        "string",
@@ -262,7 +262,7 @@ func (*notebookEditSkill) ToolDefinition() model.ToolDefinition {
 			},
 			"source": map[string]any{
 				"type":        "string",
-				"description": "The cell's new content as plain text, newlines and all. Not JSON-escaped — this tool does that.",
+				"description": "The cell's new content as plain text, newlines and all. Not JSON-escaped, this tool does that.",
 			},
 			"cell_type": map[string]any{
 				"type":        "string",
@@ -279,7 +279,7 @@ func (*notebookEditSkill) ToolDefinition() model.ToolDefinition {
 		Function: model.ToolFunction{
 			Name: "notebook_edit",
 			Description: "Change one cell of a Jupyter notebook. Use this rather than edit or write for .ipynb: the file is JSON with the code escaped inside it, so an exact-string edit either fails to match or corrupts the notebook. " +
-				"read shows a notebook as numbered cells — those numbers are what this takes. Outputs, metadata and format version are left untouched.",
+				"read shows a notebook as numbered cells, those numbers are what this takes. Outputs, metadata and format version are left untouched.",
 			Parameters: payload,
 		},
 	}
@@ -314,7 +314,7 @@ func (s *notebookEditSkill) ExecuteTool(_ context.Context, args map[string]any) 
 	path = PlacedPath(s.root, s.outputSubdir, path)
 	command := "notebook_edit " + path
 	if !strings.EqualFold(filepath.Ext(path), notebookExt) {
-		err := errors.New("notebook_edit only works on .ipynb files — use edit for anything else")
+		err := errors.New("notebook_edit only works on .ipynb files, use edit for anything else")
 		return newToolOutput("notebook_edit", command, "", start, false, err), err
 	}
 	target, err := resolveSandboxPath(s.root, path)
@@ -403,7 +403,7 @@ func (s *notebookEditSkill) ExecuteTool(_ context.Context, args map[string]any) 
 		return out, nil
 
 	default:
-		err := fmt.Errorf("unknown mode %q — use replace, insert or delete", mode)
+		err := fmt.Errorf("unknown mode %q, use replace, insert or delete", mode)
 		return newToolOutput("notebook_edit", command, "", start, false, err), err
 	}
 

@@ -362,7 +362,7 @@ func refuseSkillShelf(target, home string) error {
 	}
 	if withinRoot(target, filepath.Join(home, skillShelf)) {
 		return fmt.Errorf(
-			"%s is the skill shelf, and skills are not read as files in any mode — "+
+			"%s is the skill shelf, and skills are not read as files in any mode, "+
 				"open them with skills_list and skill_view, which is the door rather than a workaround",
 			skillShelf)
 	}
@@ -389,7 +389,7 @@ func refuseSkillShelf(target, home string) error {
 var ownSecretFiles = []string{
 	"credentials.json",      // provider API keys
 	"oauth.json",            // OAuth refresh tokens
-	"account.json",          // the Aetox account session — a bearer token, and the string is the whole credential
+	"account.json",          // the Aetox account session, a bearer token, and the string is the whole credential
 	".env",                  // whatever the user put in it
 	"model-preference.json", // held the keys before they were split out
 	// The MCP config. It reads like plumbing — a name and a command — but its
@@ -593,7 +593,7 @@ func refuseAgentKnowledge(target string) error {
 		return nil
 	}
 	return fmt.Errorf(
-		"%s is %s's own knowledge and is not reachable through file tools — an agent's skills are handed to that agent as tools, and to nobody else",
+		"%s is %s's own knowledge and is not reachable through file tools, an agent's skills are handed to that agent as tools, and to nobody else",
 		filepath.ToSlash(rel), parts[0])
 }
 
@@ -715,7 +715,7 @@ func ownSecretHint(name string) string {
 	case ".env":
 		return "The user edits this file themselves; you can tell them the path."
 	case "webview":
-		return "This is the in-app browser's profile — cookies and saved logins for sites the user " +
+		return "This is the in-app browser's profile, cookies and saved logins for sites the user " +
 			"signed into. Use the browser tools to visit a page instead of reading the profile."
 	}
 	return "The user manages this from Settings."

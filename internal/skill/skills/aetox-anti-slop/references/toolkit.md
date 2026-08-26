@@ -1,12 +1,12 @@
-# Reference: Toolkit — concrete swap-ins
+# Reference: Toolkit, concrete swap-ins
 
 Positive alternatives to reach for instead of the defaults: font pairings, palettes,
 scales, icon choices, and aesthetic stances.
 
-> **Read this first — the anti-monoculture rule.** These are a **menu to calibrate
+> **Read this first, the anti-monoculture rule.** These are a **menu to calibrate
 > against, not a default to apply.** If you always pick option 1, you've only traded the
 > purple-Inter monoculture for a new one. In testing, unguided use of this file made ~8/10
-> outputs converge on **warm cream paper + a terracotta/clay accent + Fraunces** — that
+> outputs converge on **warm cream paper + a terracotta/clay accent + Fraunces**, that
 > combination is now *itself* a tell. So:
 >
 > 1. **Treat the whole second-order kit as banned-by-default**, exactly like purple/Inter:
@@ -14,10 +14,10 @@ scales, icon choices, and aesthetic stances.
 >    (terracotta/clay/ember/radish) + mono micro-labels + a corner page-counter + a "colored
 >    last word" headline + a "sample data" disclaimer.** Any two of these together is a smell;
 >    the full set is the current tell. Only use warm-editorial if the brief genuinely calls for
->    it *and* nothing else fits — and then vary the rest.
+>    it *and* nothing else fits, and then vary the rest.
 > 2. **Derive from the brief first.** Let the specific product, audience, and emotional
 >    tone pick the direction. Cold, loud, mono, dark, maximal, and neutral are all on the
->    table — reach past the first warm-minimal instinct.
+>    table, reach past the first warm-minimal instinct.
 > 3. **Vary deliberately.** If you built something terracotta/serif last time, go somewhere
 >    else this time. Feel free to derive fresh hexes/faces; the exact values below matter
 >    less than *deciding on purpose*. These are altitude calibration, not a shopping list.
@@ -37,7 +37,7 @@ scales, icon choices, and aesthetic stances.
 >    serif truly fits one piece, use a *different* serif than any tutorial default, and don't
 >    let it spread to the others.
 
-## Typography — pick a real pairing (highest leverage)
+## Typography, pick a real pairing (highest leverage)
 
 Never the system stack or Inter/Geist/Poppins used flat. Pick a **display face for
 headings + a distinct, readable body face.** Some pairings with personality:
@@ -53,12 +53,12 @@ headings + a distinct, readable body face.** Some pairings with personality:
 
 Rules: self-host or load deliberately; set tracking **per role**, not blanket negative
 letter-spacing; use a real modular scale (below), not `clamp()` on everything; **sentence
-case** for headings. One display + one body is enough — resist a third face.
+case** for headings. One display + one body is enough, resist a third face.
 
-## Color — decide a dominant + one ownable accent
+## Color, decide a dominant + one ownable accent
 
 Method: choose **one dominant color** that carries the mood and **one accent** that is
-slightly *off* from the obvious — a hue no averaging model lands on. Make color
+slightly *off* from the obvious, a hue no averaging model lands on. Make color
 **functional** (it signals meaning), and name tokens semantically (`--action`, `--surface`,
 `--emphasis`), never `--purple`. Avoid: Tailwind `slate` as-is, `#6366f1/#8b5cf6/#818cf8`,
 `sky-400 → indigo-400`, and the generic green/amber/red trio at matching opacity.
@@ -76,28 +76,28 @@ Example palettes that are *not* the default (each commits to a point of view):
 - **Monochrome + one pop:** true grayscale ramp, plus a single saturated accent used on
   <5% of the surface. Restraint reads as confidence.
 
-Contrast and accessibility still matter — verify text contrast regardless of palette.
+Contrast and accessibility still matter, verify text contrast regardless of palette.
 
-## Scales — hierarchy, not uniformity
+## Scales, hierarchy, not uniformity
 
 - **Radius hierarchy:** small controls `4px`, cards `8–10px`, large containers `16px`.
   Not one radius everywhere; not 24px on a small chip.
 - **Spacing:** an 8px base scale (4, 8, 12, 16, 24, 32, 48, 64). Vary padding by
-  importance — the primary panel gets more room than a secondary one.
+  importance, the primary panel gets more room than a secondary one.
 - **Type scale:** a real ratio (e.g. 1.25 major-third): 14 / 16 / 20 / 25 / 31 / 39 / 49.
   Pick sizes from the scale; don't emit `clamp(min, vw, max)` on every element.
 - **Elevation:** 2–3 defined shadow levels tied to real layering intent. Not one
   0.1-opacity shadow on everything, and not a hairline border *and* a shadow on the same card.
 
-## Icons — real set, chosen with intent
+## Icons, real set, chosen with intent
 
 Never emoji-as-icons, never CSS rotated-square bullets. Choose ONE set and a consistent
 weight/style: e.g. Phosphor (has weights), Lucide (if you restyle stroke/size so it's not
 the shadcn default look), Tabler, Radix, or Heroicons. Use icons **sparingly and with
-meaning** — not one centered above every heading. Better still for hero/product moments:
+meaning**, not one centered above every heading. Better still for hero/product moments:
 real screenshots or a custom illustration over any icon.
 
-## Motion — a small, purposeful kit
+## Motion, a small, purposeful kit
 
 - Transition **specific properties** (`transform`, `opacity`, `background-color`) with
   tuned easing (`cubic-bezier(0.2, 0, 0, 1)` for entrances, faster for exits). Never
@@ -111,7 +111,7 @@ real screenshots or a custom illustration over any icon.
 Taking an ownable position is the opposite of averaging. Choose per brief:
 - **Swiss / editorial:** strong grid, generous whitespace, one accent, big type, few effects.
 - **Neo-brutalist:** visible structure, thick borders, blunt oversized type, high-contrast
-  clashing color — *only if the imperfection is clearly intentional*.
+  clashing color, *only if the imperfection is clearly intentional*.
 - **Warm-minimal:** paper tones, serif display, soft real photography, quiet motion.
 - **Technical-precise:** mono type, dense data, exact alignment, restrained color (Stripe-like).
 - **Maximal-expressive:** a signature color and shape language used boldly and consistently.

@@ -41,7 +41,7 @@ func (*windmillWorkspacesSkill) Description() string {
 
 func (s *windmillWorkspacesSkill) ToolDefinition() model.ToolDefinition {
 	return toolDef("windmill_workspace_list",
-		"List the user's Windmill workspaces. Every other Windmill tool needs one, and it needs the id — the display name is a different string and using it fails as if the flow did not exist.",
+		"List the user's Windmill workspaces. Every other Windmill tool needs one, and it needs the id, the display name is a different string and using it fails as if the flow did not exist.",
 		map[string]any{}, nil)
 }
 
@@ -108,7 +108,7 @@ func (s *windmillListSkill) ExecuteTool(ctx context.Context, args map[string]any
 	for _, f := range flows {
 		fmt.Fprintf(&b, "%s", f.Path)
 		if f.Summary != "" {
-			fmt.Fprintf(&b, "  — %s", f.Summary)
+			fmt.Fprintf(&b, " , %s", f.Summary)
 		}
 		if f.Archived {
 			b.WriteString("  (เก็บเข้าคลังแล้ว)")
@@ -129,7 +129,7 @@ func (*windmillReadSkill) Description() string {
 
 func (s *windmillReadSkill) ToolDefinition() model.ToolDefinition {
 	return toolDef("windmill_flow_read",
-		"Read one Windmill flow whole — every module and its input_transforms — as JSON. Also the accurate way to learn a step's real shape before writing one.",
+		"Read one Windmill flow whole, every module and its input_transforms, as JSON. Also the accurate way to learn a step's real shape before writing one.",
 		map[string]any{
 			"workspace": map[string]any{"type": "string", "description": "Workspace id."},
 			"path":      map[string]any{"type": "string", "description": "Flow path, e.g. u/mike/daily."},
@@ -210,7 +210,7 @@ func (*windmillUpdateSkill) Description() string {
 
 func (s *windmillUpdateSkill) ToolDefinition() model.ToolDefinition {
 	return toolDef("windmill_flow_update",
-		"Replace a Windmill flow. FULL REPLACE, not a patch: read it first, change what you mean to, send it all back. Deploys immediately — there is no staging step, so a colleague with an unsaved draft at that path can be surprised. "+windmillPathHint,
+		"Replace a Windmill flow. FULL REPLACE, not a patch: read it first, change what you mean to, send it all back. Deploys immediately, there is no staging step, so a colleague with an unsaved draft at that path can be surprised. "+windmillPathHint,
 		map[string]any{
 			"workspace": map[string]any{"type": "string", "description": "Workspace id."},
 			"path":      map[string]any{"type": "string", "description": "The flow to replace."},
@@ -256,7 +256,7 @@ type windmillSkill struct {
 func (*windmillSkill) Name() string { return "windmill" }
 
 func (*windmillSkill) Description() string {
-	return "จัดการ flow บน Windmill ของผู้ใช้ — ดู workspace ดูรายการ อ่าน สร้าง และแก้"
+	return "จัดการ flow บน Windmill ของผู้ใช้, ดู workspace ดูรายการ อ่าน สร้าง และแก้"
 }
 
 func (s *windmillSkill) allowedActions() []string {
@@ -279,11 +279,11 @@ func (s *windmillSkill) ToolDefinition() model.ToolDefinition {
 	allowed := s.allowedActions()
 
 	lines := map[string]string{
-		"workspaces": "`workspaces` — the user's workspaces and their IDs. Every other action is scoped to a workspace, and it takes the id — the display name is a different string and using it fails as if the flow did not exist.",
-		"list":       "`list` (workspace) — the flows in one workspace.",
-		"read":       "`read` (workspace, path) — one flow whole, every module and its input_transforms, as JSON. Also the accurate way to learn a step's real shape before writing one.",
-		"create":     "`create` (workspace, path, summary?, value?, schema?) — a new flow. value.modules is the list of steps; each step needs a stable id, because that is how later steps refer to its results.",
-		"update":     "`update` (workspace, path, summary?, value?, schema?) — FULL REPLACE, not a patch: read it first, change what you mean to, send it all back. Deploys immediately — there is no staging step.",
+		"workspaces": "`workspaces`, the user's workspaces and their IDs. Every other action is scoped to a workspace, and it takes the id, the display name is a different string and using it fails as if the flow did not exist.",
+		"list":       "`list` (workspace), the flows in one workspace.",
+		"read":       "`read` (workspace, path), one flow whole, every module and its input_transforms, as JSON. Also the accurate way to learn a step's real shape before writing one.",
+		"create":     "`create` (workspace, path, summary?, value?, schema?), a new flow. value.modules is the list of steps; each step needs a stable id, because that is how later steps refer to its results.",
+		"update":     "`update` (workspace, path, summary?, value?, schema?), FULL REPLACE, not a patch: read it first, change what you mean to, send it all back. Deploys immediately, there is no staging step.",
 	}
 	var actions strings.Builder
 	for _, a := range allowed {
@@ -294,7 +294,7 @@ func (s *windmillSkill) ToolDefinition() model.ToolDefinition {
 		"Work the flows on the user's Windmill. Actions:\n"+actions.String()+"\n"+windmillPathHint,
 		map[string]any{
 			"action":    map[string]any{"type": "string", "enum": allowed, "description": "What to do"},
-			"workspace": map[string]any{"type": "string", "description": "Workspace id from `workspaces` — every action but workspaces needs it"},
+			"workspace": map[string]any{"type": "string", "description": "Workspace id from `workspaces`, every action but workspaces needs it"},
 			"path":      map[string]any{"type": "string", "description": "action=read/create/update: the flow's path, e.g. u/mike/daily"},
 			"summary":   map[string]any{"type": "string", "description": "action=create/update: one line the user will see in the list"},
 			"value":     map[string]any{"type": "object", "description": "action=create/update: the flow itself: {\"modules\": [...]}. On update: EVERY module it should have afterwards."},
@@ -329,11 +329,11 @@ func (s *windmillSkill) ExecuteTool(ctx context.Context, args map[string]any) (O
 func (s *windmillSkill) innerFor(action string) (Tool, error) {
 	p := packs["windmill"]
 	if _, known := p.names[action]; !known {
-		return nil, fmt.Errorf("unknown windmill action %q — this session may use: %s",
+		return nil, fmt.Errorf("unknown windmill action %q, this session may use: %s",
 			action, strings.Join(s.allowedActions(), ", "))
 	}
 	if !slices.Contains(s.allowedActions(), action) {
-		return nil, fmt.Errorf("windmill %s is not available here — this session may use: %s",
+		return nil, fmt.Errorf("windmill %s is not available here, this session may use: %s",
 			action, strings.Join(s.allowedActions(), ", "))
 	}
 	switch action {

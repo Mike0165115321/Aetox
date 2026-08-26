@@ -18,7 +18,7 @@ Component state definitions and variant patterns.
 | selected | User marks it chosen | Persistent accent treatment, distinct from hover/active |
 
 Every row above needs the matching ARIA attribute, not just the visual
-treatment — see `accessibility.md` for the full state-to-ARIA table.
+treatment, see `accessibility.md` for the full state-to-ARIA table.
 
 ### State Priority
 

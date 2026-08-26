@@ -102,8 +102,8 @@ func mergeShelf(base, extra []DiscoveredSkill) []DiscoveredSkill {
 func (s *skillsListSkill) Name() string { return "skills_list" }
 
 func (s *skillsListSkill) Description() string {
-	return "List the skill documents installed on this machine — task instructions the user has added. " +
-		"Returns one line per skill: name — description. Read one with skill_view before doing a task it covers."
+	return "List the skill documents installed on this machine, task instructions the user has added. " +
+		"Returns one line per skill: name, description. Read one with skill_view before doing a task it covers."
 }
 
 func (s *skillsListSkill) Execute(ctx context.Context, _ Input) (Output, error) {
@@ -137,7 +137,13 @@ func (s *skillsListSkill) ExecuteTool(_ context.Context, _ map[string]any) (Outp
 	for _, d := range discovered {
 		b.WriteString(d.Name)
 		if d.Description != "" {
-			b.WriteString(" — ")
+			// A colon, not a comma: these descriptions are full of commas, and
+			// a comma separator would leave the model guessing where the name
+			// ends. It was an em dash, which read perfectly here and is exactly
+			// the character the sweep took out of everything a model reads
+			// (owner, 26 ส.ค.). The separator still has a job, so it gets the
+			// punctuation that does that job without the tell.
+			b.WriteString(": ")
 			b.WriteString(d.Description)
 		}
 		b.WriteString("\n")
@@ -171,7 +177,7 @@ func (s *skillsListSkill) ExecuteTool(_ context.Context, _ map[string]any) (Outp
 // package can count honestly — the number is there to be compared against what
 // arrived, not to be budgeted with.
 func endMarker(d DiscoveredSkill, carries int) string {
-	m := fmt.Sprintf("\n\n[end of %s — this is the whole document, %d characters]", d.Name, len(d.body))
+	m := fmt.Sprintf("\n\n[end of %s, this is the whole document, %d characters]", d.Name, len(d.body))
 	if d.Dir == "" {
 		m += "\n[it ships inside Aetox and has no folder on disk, so there is nothing further to find with glob or shell]"
 		if carries > 0 {
@@ -257,7 +263,7 @@ func readSkillFile(d DiscoveredSkill, sub string) (string, error) {
 		for cut > 0 && !utf8.RuneStart(data[cut]) {
 			cut--
 		}
-		return string(data[:cut]) + fmt.Sprintf("\n\n[cut — file is %d bytes, showed the first %d]", len(data), cut), nil
+		return string(data[:cut]) + fmt.Sprintf("\n\n[cut, file is %d bytes, showed the first %d]", len(data), cut), nil
 	}
 	return string(data), nil
 }
@@ -292,7 +298,7 @@ func readEmbeddedSkillFile(d DiscoveredSkill, sub string) (string, error) {
 		for cut > 0 && !utf8.RuneStart(data[cut]) {
 			cut--
 		}
-		return string(data[:cut]) + fmt.Sprintf("\n\n[cut — file is %d bytes, showed the first %d]", len(data), cut), nil
+		return string(data[:cut]) + fmt.Sprintf("\n\n[cut, file is %d bytes, showed the first %d]", len(data), cut), nil
 	}
 	return string(data), nil
 }
@@ -443,7 +449,7 @@ func (s *skillViewSkill) ExecuteTool(_ context.Context, args map[string]any) (Ou
 	name, _ := args["name"].(string)
 	name = strings.TrimSpace(name)
 	if name == "" {
-		err := fmt.Errorf("name is required — call skills_list to see what is installed")
+		err := fmt.Errorf("name is required, call skills_list to see what is installed")
 		return newToolOutput(s.Name(), s.Name(), err.Error(), start, false, err), err
 	}
 	sub, _ := args["path"].(string)
@@ -464,7 +470,7 @@ func (s *skillViewSkill) ExecuteTool(_ context.Context, args map[string]any) (Ou
 		body := d.body
 		files := supportingFiles(d)
 		if len(files) > 0 {
-			body += "\n\nFiles in this skill — read one with skill_view {\"name\": \"" + d.Name +
+			body += "\n\nFiles in this skill, read one with skill_view {\"name\": \"" + d.Name +
 				"\", \"path\": \"…\"}:\n- " + strings.Join(files, "\n- ") + "\n"
 		}
 		body += endMarker(d, len(files))
@@ -481,9 +487,9 @@ func (s *skillViewSkill) ExecuteTool(_ context.Context, args map[string]any) (Ou
 	sort.Strings(names)
 	var err error
 	if len(names) == 0 {
-		err = fmt.Errorf("skill %q not found — no skills are installed", name)
+		err = fmt.Errorf("skill %q not found, no skills are installed", name)
 	} else {
-		err = fmt.Errorf("skill %q not found — installed skills: %s", name, strings.Join(names, ", "))
+		err = fmt.Errorf("skill %q not found, installed skills: %s", name, strings.Join(names, ", "))
 	}
 	return newToolOutput(s.Name(), s.Name(), err.Error(), start, false, err), err
 }

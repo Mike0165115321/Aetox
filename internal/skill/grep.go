@@ -82,11 +82,11 @@ func (*grepSkill) ToolDefinition() model.ToolDefinition {
 			"show": map[string]any{
 				"type":        "string",
 				"enum":        []string{"content", "files_with_matches", "count"},
-				"description": "content (default) returns the matching lines; files_with_matches returns only the file paths; count returns a per-file tally. Use one of the latter two when you are mapping where something lives — they cost a fraction of the tokens.",
+				"description": "content (default) returns the matching lines; files_with_matches returns only the file paths; count returns a per-file tally. Use one of the latter two when you are mapping where something lives, they cost a fraction of the tokens.",
 			},
 			"limit": map[string]any{
 				"type":        "integer",
-				"description": "Return at most this many entries — matches in content mode, files otherwise.",
+				"description": "Return at most this many entries, matches in content mode, files otherwise.",
 			},
 			"offset": map[string]any{
 				"type":        "integer",
@@ -355,7 +355,7 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 	if capped {
 		// Naming the next offset, not just the fact of the cap: the whole point
 		// of paging is that the caller can continue without guessing.
-		output += "\n... (result cap reached — continue with offset=" + strconv.Itoa(skip+limit) + ")"
+		output += "\n... (result cap reached, continue with offset=" + strconv.Itoa(skip+limit) + ")"
 		truncated = true
 	}
 

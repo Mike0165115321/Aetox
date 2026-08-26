@@ -7,9 +7,9 @@ Manage an incident from detection through postmortem.
 
 Three phases, depending on where the incident is:
 
-- **new** — start a new incident from a description
-- **update** — post a status update on a running one
-- **postmortem** — generate the postmortem from what the incident recorded
+- **new**, start a new incident from a description
+- **update**, post a status update on a running one
+- **postmortem**, generate the postmortem from what the incident recorded
 
 If it is unclear which phase this is, ask.
 
@@ -55,7 +55,7 @@ If it is unclear which phase this is, ask.
 
 Provide clear, factual updates at regular cadence. Include: what's happening, who's affected, what we're doing, when the next update is.
 
-## Output — Status Update
+## Output, Status Update
 
 ```markdown
 ## Incident Update: [Title]
@@ -79,7 +79,7 @@ Provide clear, factual updates at regular cadence. Include: what's happening, wh
 | [HH:MM] | [Event] |
 ```
 
-## Output — Postmortem
+## Output, Postmortem
 
 ```markdown
 ## Postmortem: [Incident Title]
@@ -140,6 +140,6 @@ If **~~chat** is connected:
 
 ## Tips
 
-1. **Start writing immediately** — Don't wait for complete information. Update as you learn more.
-2. **Keep updates factual** — What we know, what we've done, what's next. No speculation.
-3. **Postmortems are blameless** — Focus on systems and processes, not individuals.
+1. **Start writing immediately**, Don't wait for complete information. Update as you learn more.
+2. **Keep updates factual**, What we know, what we've done, what's next. No speculation.
+3. **Postmortems are blameless**, Focus on systems and processes, not individuals.

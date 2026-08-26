@@ -1607,7 +1607,7 @@ fun SwipeableCard(
 
 ## อ้างอิง: details
 
-# mobile-android-design — detailed sections
+# mobile-android-design, detailed sections
 
 ## Core Concepts
 

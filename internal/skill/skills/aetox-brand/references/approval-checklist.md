@@ -158,7 +158,7 @@ The `validate-asset.cjs` script can auto-check:
 - Basic metadata
 
 Check these by looking: `glob` the folder for the naming convention, `read`
-the file for its real format and dimensions. There is no validator to run —
+the file for its real format and dimensions. There is no validator to run
 the four items above are the whole check, and reading is how it is done.
 
 ## Archival

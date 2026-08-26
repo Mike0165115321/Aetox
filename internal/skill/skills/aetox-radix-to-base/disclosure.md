@@ -22,21 +22,21 @@ Part mapping: `Root → Root`, `Item → Item`, `Header → Header`, `Trigger �
 | Radix prop | Type / default | Base UI equivalent | Migration note |
 |---|---|---|---|
 | `asChild` | `boolean` / `false` | `render` | Signature changed. Pass element to `render` instead of wrapping a child. |
-| `type` (required) | `"single" \| "multiple"` / — | `multiple` | Signature changed. `type="multiple"` → `multiple` (boolean, default `false`); `type="single"` → omit. |
-| `value` | `string` (single) or `string[]` (multiple) / — | `value` | Signature changed. Base UI is ALWAYS an array (`Value[]`, `Value = any`), even in single mode: `value="a"` → `value={["a"]}`. |
-| `defaultValue` | `string` or `string[]` / — | `defaultValue` | Same array caveat as `value`. |
-| `onValueChange` | `(value: string) => void` or `(value: string[]) => void` / — | `onValueChange` | Signature changed: `(value: Value[], eventDetails: Accordion.Root.ChangeEventDetails) => void`. Always receives an array; unwrap `value[0]` for single mode. |
-| `collapsible` | `boolean` / `false` | — dropped | Base UI single mode is always collapsible. To forbid closing the last open item (Radix `collapsible={false}` default), control `value` and ignore updates where the array is empty, or call `eventDetails.cancel()` when `value.length === 0`. |
+| `type` (required) | `"single" \| "multiple"` /, | `multiple` | Signature changed. `type="multiple"` → `multiple` (boolean, default `false`); `type="single"` → omit. |
+| `value` | `string` (single) or `string[]` (multiple) /, | `value` | Signature changed. Base UI is ALWAYS an array (`Value[]`, `Value = any`), even in single mode: `value="a"` → `value={["a"]}`. |
+| `defaultValue` | `string` or `string[]` /, | `defaultValue` | Same array caveat as `value`. |
+| `onValueChange` | `(value: string) => void` or `(value: string[]) => void` /, | `onValueChange` | Signature changed: `(value: Value[], eventDetails: Accordion.Root.ChangeEventDetails) => void`. Always receives an array; unwrap `value[0]` for single mode. |
+| `collapsible` | `boolean` / `false` |, dropped | Base UI single mode is always collapsible. To forbid closing the last open item (Radix `collapsible={false}` default), control `value` and ignore updates where the array is empty, or call `eventDetails.cancel()` when `value.length === 0`. |
 | `disabled` | `boolean` / `false` | `disabled` (default `false`) | Same. |
-| `dir` | `"ltr" \| "rtl"` / `"ltr"` | — dropped | Use DOM `dir` attribute / `DirectionProvider`. |
-| `orientation` | `"vertical" \| "horizontal"` / `"vertical"` | — dropped (prop exists but deprecated no-op) | Base UI removed roving arrow-key focus per the APG guidance update, so `orientation` (and `loopFocus`) no longer affect keyboard behavior. Do not carry it over. |
+| `dir` | `"ltr" \| "rtl"` / `"ltr"` |, dropped | Use DOM `dir` attribute / `DirectionProvider`. |
+| `orientation` | `"vertical" \| "horizontal"` / `"vertical"` |, dropped (prop exists but deprecated no-op) | Base UI removed roving arrow-key focus per the APG guidance update, so `orientation` (and `loopFocus`) no longer affect keyboard behavior. Do not carry it over. |
 
 ## Accordion.Item → Accordion.Item
 
 | Radix prop | Type / default | Base UI equivalent | Migration note |
 |---|---|---|---|
 | `asChild` | `boolean` / `false` | `render` | Signature changed. |
-| `value` (required) | `string` / — | `value` | Renamed constraint: Base UI `value` is `any` and OPTIONAL (auto-generated from index when omitted). Keep passing strings for parity. |
+| `value` (required) | `string` /, | `value` | Renamed constraint: Base UI `value` is `any` and OPTIONAL (auto-generated from index when omitted). Keep passing strings for parity. |
 | `disabled` | `boolean` / `false` | `disabled` (default `false`) | Same. |
 
 ## Accordion.Header → Accordion.Header
@@ -56,7 +56,7 @@ Part mapping: `Root → Root`, `Item → Item`, `Header → Header`, `Trigger �
 | Radix prop | Type / default | Base UI equivalent | Migration note |
 |---|---|---|---|
 | `asChild` | `boolean` / `false` | `render` | Signature changed. |
-| `forceMount` | `true \| undefined` / — | `keepMounted` (boolean, default `false`) | Renamed. `forceMount` → `keepMounted` (closed panel stays in DOM, hidden). Also available on `Root` to apply to all panels. |
+| `forceMount` | `true \| undefined` /, | `keepMounted` (boolean, default `false`) | Renamed. `forceMount` → `keepMounted` (closed panel stays in DOM, hidden). Also available on `Root` to apply to all panels. |
 
 ## Base UI only props worth knowing
 
@@ -74,8 +74,8 @@ Part mapping: `Root → Root`, `Item → Item`, `Header → Header`, `Trigger �
 | `Trigger [data-state="open"]` | `Trigger [data-panel-open]` | Renamed. Trigger specifically uses `data-panel-open`, NOT `data-open`. |
 | `[data-disabled]` | `[data-disabled]` | Same (Root, Item, Header, Trigger, Panel). |
 | `[data-orientation]` (all parts) | `Root`, `Panel`: `data-orientation` | Deprecated along with orientation; avoid relying on it. |
-| — | `Item/Header/Panel [data-index]` | Base UI only: numeric item index. |
-| — | `Panel [data-starting-style]`, `[data-ending-style]` | Base UI only: CSS-transition animation hooks (replace Radix mount/unmount animation pattern). |
+|, | `Item/Header/Panel [data-index]` | Base UI only: numeric item index. |
+|, | `Panel [data-starting-style]`, `[data-ending-style]` | Base UI only: CSS-transition animation hooks (replace Radix mount/unmount animation pattern). |
 
 ## CSS var mapping
 
@@ -95,10 +95,10 @@ Part mapping: `Root → Root`, `Trigger → Trigger`, `Content → Panel`.
 | Radix prop | Type / default | Base UI equivalent | Migration note |
 |---|---|---|---|
 | `asChild` | `boolean` / `false` | `render` | Signature changed. |
-| `defaultOpen` | `boolean` / — | `defaultOpen` (default `false`) | Same. |
-| `open` | `boolean` / — | `open` | Same. |
-| `onOpenChange` | `(open: boolean) => void` / — | `onOpenChange` | Signature changed: `(open: boolean, eventDetails: Collapsible.Root.ChangeEventDetails) => void`. |
-| `disabled` | `boolean` / — | `disabled` (default `false`) | Same. |
+| `defaultOpen` | `boolean` /, | `defaultOpen` (default `false`) | Same. |
+| `open` | `boolean` /, | `open` | Same. |
+| `onOpenChange` | `(open: boolean) => void` /, | `onOpenChange` | Signature changed: `(open: boolean, eventDetails: Collapsible.Root.ChangeEventDetails) => void`. |
+| `disabled` | `boolean` /, | `disabled` (default `false`) | Same. |
 
 ## Collapsible.Trigger → Collapsible.Trigger
 
@@ -111,7 +111,7 @@ Part mapping: `Root → Root`, `Trigger → Trigger`, `Content → Panel`.
 | Radix prop | Type / default | Base UI equivalent | Migration note |
 |---|---|---|---|
 | `asChild` | `boolean` / `false` | `render` | Signature changed. |
-| `forceMount` | `true \| undefined` / — | `keepMounted` (boolean, default `false`) | Renamed. |
+| `forceMount` | `true \| undefined` /, | `keepMounted` (boolean, default `false`) | Renamed. |
 
 ## Base UI only props worth knowing
 
@@ -125,8 +125,8 @@ Part mapping: `Root → Root`, `Trigger → Trigger`, `Content → Panel`.
 |---|---|---|
 | `Root/Content [data-state="open" \| "closed"]` | `Panel [data-open]` / `[data-closed]` | Renamed to presence attributes. Base UI Root renders a plain `<div>`; state attrs live on Panel/Trigger. |
 | `Trigger [data-state="open"]` | `Trigger [data-panel-open]` | Renamed; trigger-specific name. |
-| `[data-disabled]` | — (not emitted on collapsible parts) | Gate styles on the `disabled` prop / `:disabled` on the trigger instead. |
-| — | `Panel [data-starting-style]`, `[data-ending-style]` | Base UI only: animation hooks. |
+| `[data-disabled]` |, (not emitted on collapsible parts) | Gate styles on the `disabled` prop / `:disabled` on the trigger instead. |
+|, | `Panel [data-starting-style]`, `[data-ending-style]` | Base UI only: animation hooks. |
 
 ## CSS var mapping
 
@@ -146,11 +146,11 @@ Part mapping: `Root → Root`, `List → List`, `Trigger → Tab`, `Content → 
 | Radix prop | Type / default | Base UI equivalent | Migration note |
 |---|---|---|---|
 | `asChild` | `boolean` / `false` | `render` | Signature changed. |
-| `defaultValue` | `string` / — | `defaultValue` | Signature changed: Base UI value type is `Tabs.Tab.Value` (`any`), default `0` (first tab active by default; Radix has no default active tab). Strings still work unchanged. |
-| `value` | `string` / — | `value` | Same shape for string values; type widened to `any`. |
-| `onValueChange` | `(value: string) => void` / — | `onValueChange` | Signature changed: `(value: Tabs.Tab.Value, eventDetails: Tabs.Root.ChangeEventDetails) => void`. |
+| `defaultValue` | `string` /, | `defaultValue` | Signature changed: Base UI value type is `Tabs.Tab.Value` (`any`), default `0` (first tab active by default; Radix has no default active tab). Strings still work unchanged. |
+| `value` | `string` /, | `value` | Same shape for string values; type widened to `any`. |
+| `onValueChange` | `(value: string) => void` /, | `onValueChange` | Signature changed: `(value: Tabs.Tab.Value, eventDetails: Tabs.Root.ChangeEventDetails) => void`. |
 | `orientation` | `"horizontal" \| "vertical"` / `"horizontal"` | `orientation` (default `'horizontal'`) | Same. |
-| `dir` | `"ltr" \| "rtl"` / — | — dropped | Use DOM `dir` / `DirectionProvider`. |
+| `dir` | `"ltr" \| "rtl"` /, |, dropped | Use DOM `dir` / `DirectionProvider`. |
 | `activationMode` | `"automatic" \| "manual"` / `"automatic"` | moved + renamed: `List.activateOnFocus` (boolean, default `false`) | Moved from Root to List and inverted DEFAULT: Radix defaults to automatic, Base UI 1.6.0 defaults to `false` (manual). To preserve Radix default behavior set `<Tabs.List activateOnFocus>`; `activationMode="manual"` → omit. |
 
 ## Tabs.List → Tabs.List
@@ -165,7 +165,7 @@ Part mapping: `Root → Root`, `List → List`, `Trigger → Tab`, `Content → 
 | Radix prop | Type / default | Base UI equivalent | Migration note |
 |---|---|---|---|
 | `asChild` | `boolean` / `false` | `render` (+ `nativeButton`, default `true`) | Signature changed. |
-| `value` (required) | `string` / — | `value` (required) | Type widened to `Tabs.Tab.Value` (`any`); strings unchanged. |
+| `value` (required) | `string` /, | `value` (required) | Type widened to `Tabs.Tab.Value` (`any`); strings unchanged. |
 | `disabled` | `boolean` / `false` | `disabled` | Same. |
 
 ## Tabs.Content → Tabs.Panel
@@ -173,8 +173,8 @@ Part mapping: `Root → Root`, `List → List`, `Trigger → Tab`, `Content → 
 | Radix prop | Type / default | Base UI equivalent | Migration note |
 |---|---|---|---|
 | `asChild` | `boolean` / `false` | `render` | Signature changed. |
-| `value` (required) | `string` / — | `value` (required) | Type widened; strings unchanged. |
-| `forceMount` | `true \| undefined` / — | `keepMounted` (boolean, default `false`) | Renamed. Hidden panels stay in DOM with `data-hidden`. |
+| `value` (required) | `string` /, | `value` (required) | Type widened; strings unchanged. |
+| `forceMount` | `true \| undefined` /, | `keepMounted` (boolean, default `false`) | Renamed. Hidden panels stay in DOM with `data-hidden`. |
 
 ## Base UI only props worth knowing
 
@@ -190,8 +190,8 @@ Part mapping: `Root → Root`, `List → List`, `Trigger → Tab`, `Content → 
 | `Content [data-state="active" \| "inactive"]` | `Panel [data-hidden]` (presence when hidden) | Inverted polarity: Radix marks the active state, Base UI marks the hidden state. |
 | `[data-orientation]` (all parts) | `[data-orientation]` (Root, List, Tab, Panel, Indicator) | Same. |
 | `Trigger [data-disabled]` | `Tab [data-disabled]` | Same. |
-| — | `[data-activation-direction]` (`'left' \| 'right' \| 'up' \| 'down' \| 'none'`, all parts) | Base UI only: direction of the last tab change, useful for directional animations. |
-| — | `Panel [data-index]`, `[data-starting-style]`, `[data-ending-style]` | Base UI only. |
+|, | `[data-activation-direction]` (`'left' \| 'right' \| 'up' \| 'down' \| 'none'`, all parts) | Base UI only: direction of the last tab change, useful for directional animations. |
+|, | `Panel [data-index]`, `[data-starting-style]`, `[data-ending-style]` | Base UI only. |
 
 ## CSS var mapping
 
@@ -208,10 +208,10 @@ Part mapping: `Toggle.Root → Toggle` (single-part; Base UI export is directly 
 | Radix prop | Type / default | Base UI equivalent | Migration note |
 |---|---|---|---|
 | `asChild` | `boolean` / `false` | `render` (+ `nativeButton`, default `true`) | Signature changed. |
-| `defaultPressed` | `boolean` / — | `defaultPressed` (default `false`) | Same. |
-| `pressed` | `boolean` / — | `pressed` | Same. |
-| `onPressedChange` | `(pressed: boolean) => void` / — | `onPressedChange` | Signature changed: `(pressed: boolean, eventDetails: Toggle.ChangeEventDetails) => void`. |
-| `disabled` | `boolean` / — | `disabled` (default `false`) | Same. |
+| `defaultPressed` | `boolean` /, | `defaultPressed` (default `false`) | Same. |
+| `pressed` | `boolean` /, | `pressed` | Same. |
+| `onPressedChange` | `(pressed: boolean) => void` /, | `onPressedChange` | Signature changed: `(pressed: boolean, eventDetails: Toggle.ChangeEventDetails) => void`. |
+| `disabled` | `boolean` /, | `disabled` (default `false`) | Same. |
 
 ## Base UI only props worth knowing
 
@@ -240,14 +240,14 @@ Part mapping: `ToggleGroup.Root → ToggleGroup` (callable single export), `Togg
 | Radix prop | Type / default | Base UI equivalent | Migration note |
 |---|---|---|---|
 | `asChild` | `boolean` / `false` | `render` | Signature changed. |
-| `type` (required) | `"single" \| "multiple"` / — | `multiple` (boolean, default `false`) | Signature changed, same pattern as accordion. |
-| `value` | `string` (single) or `string[]` (multiple) / — | `value` | Signature changed: always `readonly Value[]` (array), even single mode. `value="bold"` → `value={["bold"]}`. |
-| `defaultValue` | `string` or `string[]` / — | `defaultValue` | Same array caveat. |
-| `onValueChange` | `(value: string) => void` or `(value: string[]) => void` / — | `onValueChange` | Signature changed: `(groupValue: Value[], eventDetails: ToggleGroup.ChangeEventDetails) => void`. Always an array; single mode with nothing pressed = `[]` (Radix single mode signals this as `""`). |
+| `type` (required) | `"single" \| "multiple"` /, | `multiple` (boolean, default `false`) | Signature changed, same pattern as accordion. |
+| `value` | `string` (single) or `string[]` (multiple) /, | `value` | Signature changed: always `readonly Value[]` (array), even single mode. `value="bold"` → `value={["bold"]}`. |
+| `defaultValue` | `string` or `string[]` /, | `defaultValue` | Same array caveat. |
+| `onValueChange` | `(value: string) => void` or `(value: string[]) => void` /, | `onValueChange` | Signature changed: `(groupValue: Value[], eventDetails: ToggleGroup.ChangeEventDetails) => void`. Always an array; single mode with nothing pressed = `[]` (Radix single mode signals this as `""`). |
 | `disabled` | `boolean` / `false` | `disabled` (default `false`) | Same. |
-| `rovingFocus` | `boolean` / `true` | — dropped | Roving focus is always on in Base UI; no opt-out. If you relied on `rovingFocus={false}` (every item tabbable), there is no direct workaround. |
+| `rovingFocus` | `boolean` / `true` |, dropped | Roving focus is always on in Base UI; no opt-out. If you relied on `rovingFocus={false}` (every item tabbable), there is no direct workaround. |
 | `orientation` | `"horizontal" \| "vertical"` / `undefined` | `orientation` (default `'horizontal'`) | Same name; Base UI has an explicit default. |
-| `dir` | `"ltr" \| "rtl"` / — | — dropped | Use DOM `dir` / `DirectionProvider`. |
+| `dir` | `"ltr" \| "rtl"` /, |, dropped | Use DOM `dir` / `DirectionProvider`. |
 | `loop` | `boolean` / `true` | `loopFocus` (default `true`) | Renamed. |
 
 ## ToggleGroup.Item → Toggle
@@ -255,8 +255,8 @@ Part mapping: `ToggleGroup.Root → ToggleGroup` (callable single export), `Togg
 | Radix prop | Type / default | Base UI equivalent | Migration note |
 |---|---|---|---|
 | `asChild` | `boolean` / `false` | `render` (+ `nativeButton`, default `true`) | Signature changed. |
-| `value` (required) | `string` / — | `value` | Same meaning; on Base UI's `Toggle` it is optional in the type but required in practice for group membership. |
-| `disabled` | `boolean` / — | `disabled` (default `false`) | Same. |
+| `value` (required) | `string` /, | `value` | Same meaning; on Base UI's `Toggle` it is optional in the type but required in practice for group membership. |
+| `disabled` | `boolean` /, | `disabled` (default `false`) | Same. |
 
 Note: the item also gains the full standalone `Toggle` API (`pressed`, `defaultPressed`, `onPressedChange` with `eventDetails`) since it IS the Toggle primitive; inside a group the group value normally drives pressed state.
 
@@ -273,7 +273,7 @@ Note: the item also gains the full standalone `Toggle` API (`pressed`, `defaultP
 | `Item [data-state="on" \| "off"]` | `Toggle [data-pressed]` (presence) | Renamed. |
 | `Item [data-disabled]` | `Toggle [data-disabled]` | Same. |
 | `Root/Item [data-orientation]` | `ToggleGroup [data-orientation]` | On the group only; items (Toggles) do not emit it. |
-| — | `ToggleGroup [data-disabled]`, `[data-multiple]` | Base UI only. |
+|, | `ToggleGroup [data-disabled]`, `[data-multiple]` | Base UI only. |
 
 ## CSS var mapping
 
@@ -291,7 +291,7 @@ Part mapping: `Root → Root`, `Button → Button`, `Link → Link`, `Separator 
 |---|---|---|---|
 | `asChild` | `boolean` / `false` | `render` | Signature changed. |
 | `orientation` | `"horizontal" \| "vertical"` / `"horizontal"` | `orientation` (default `'horizontal'`) | Same. |
-| `dir` | `"ltr" \| "rtl"` / — | — dropped | Use DOM `dir` / `DirectionProvider`. |
+| `dir` | `"ltr" \| "rtl"` /, |, dropped | Use DOM `dir` / `DirectionProvider`. |
 | `loop` | `boolean` / `true` | `loopFocus` (default `true`) | Renamed. |
 
 ## Toolbar.Button → Toolbar.Button
@@ -311,25 +311,25 @@ Part mapping: `Root → Root`, `Button → Button`, `Link → Link`, `Separator 
 | Radix prop | Type / default | Base UI equivalent | Migration note |
 |---|---|---|---|
 | `asChild` | `boolean` / `false` | `render` | Signature changed. |
-| `type` (required) | `"single" \| "multiple"` / — | `multiple` (boolean, default `false`) | Moved: use the standalone `ToggleGroup` component inside `Toolbar.Root`; same mapping as toggle-group above. |
-| `value` / `defaultValue` | `string` or `string[]` / — | `value` / `defaultValue` on `ToggleGroup` | Always an array (see toggle-group). |
-| `onValueChange` | `(value: string \| string[]) => void` / — | `onValueChange` on `ToggleGroup` | `(groupValue: Value[], eventDetails) => void`. |
+| `type` (required) | `"single" \| "multiple"` /, | `multiple` (boolean, default `false`) | Moved: use the standalone `ToggleGroup` component inside `Toolbar.Root`; same mapping as toggle-group above. |
+| `value` / `defaultValue` | `string` or `string[]` /, | `value` / `defaultValue` on `ToggleGroup` | Always an array (see toggle-group). |
+| `onValueChange` | `(value: string \| string[]) => void` /, | `onValueChange` on `ToggleGroup` | `(groupValue: Value[], eventDetails) => void`. |
 | `disabled` | `boolean` / `false` | `disabled` on `ToggleGroup` | Same. |
 
 ## Toolbar.ToggleItem → Toolbar.Button render={<Toggle />}
 
 | Radix prop | Type / default | Base UI equivalent | Migration note |
 |---|---|---|---|
-| `asChild` | `boolean` / `false` | — | Moved: the composition IS the render prop: `<Toolbar.Button render={<Toggle />} value="bold" />`. Toolbar.Button supplies toolbar focus behavior, Toggle supplies pressed state. |
-| `value` (required) | `string` / — | `value` (on the composed element) | Same. |
-| `disabled` | `boolean` / — | `disabled` (on `Toolbar.Button`, default `false`) | Same; note `focusableWhenDisabled` defaults to `true` (disabled items stay focusable, Radix disabled items are not). |
+| `asChild` | `boolean` / `false` |, | Moved: the composition IS the render prop: `<Toolbar.Button render={<Toggle />} value="bold" />`. Toolbar.Button supplies toolbar focus behavior, Toggle supplies pressed state. |
+| `value` (required) | `string` /, | `value` (on the composed element) | Same. |
+| `disabled` | `boolean` /, | `disabled` (on `Toolbar.Button`, default `false`) | Same; note `focusableWhenDisabled` defaults to `true` (disabled items stay focusable, Radix disabled items are not). |
 
 ## Toolbar.Separator → Toolbar.Separator
 
 | Radix prop | Type / default | Base UI equivalent | Migration note |
 |---|---|---|---|
 | `asChild` | `boolean` / `false` | `render` | Signature changed. |
-| — | — | `orientation` | Base UI only: defaults to the OPPOSITE of the toolbar's orientation (horizontal toolbar → vertical separator), which matches Radix's automatic behavior; usually omit. |
+|, |, | `orientation` | Base UI only: defaults to the OPPOSITE of the toolbar's orientation (horizontal toolbar → vertical separator), which matches Radix's automatic behavior; usually omit. |
 
 ## Base UI only props worth knowing
 
@@ -346,7 +346,7 @@ Part mapping: `Root → Root`, `Button → Button`, `Link → Link`, `Separator 
 | `[data-orientation]` (Root, Button, ToggleGroup, ToggleItem, Separator) | `[data-orientation]` (Root, Button, Link, Input, Group, Separator) | Same; Separator's value is perpendicular to the toolbar. |
 | `ToggleItem [data-state="on" \| "off"]` | `[data-pressed]` (presence, from the composed `Toggle`) | Renamed. |
 | `ToggleItem [data-disabled]` | `[data-disabled]` (Root, Button, Input, Group) | Same. |
-| — | `Button/Input [data-focusable]` | Base UI only: present when focusable-while-disabled. |
+|, | `Button/Input [data-focusable]` | Base UI only: present when focusable-while-disabled. |
 
 ## CSS var mapping
 

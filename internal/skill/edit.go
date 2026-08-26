@@ -164,7 +164,7 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 	// enough to take a desktop app down. Refuse early and say what to do
 	// instead, rather than OOM mid-edit.
 	if info, statErr := os.Stat(targetPath); statErr == nil && info.Size() > editMaxFileBytes {
-		err = fmt.Errorf("file is %d MB, too large to edit safely (limit %d MB) — narrow the change with shell tools instead", info.Size()>>20, int64(editMaxFileBytes)>>20)
+		err = fmt.Errorf("file is %d MB, too large to edit safely (limit %d MB), narrow the change with shell tools instead", info.Size()>>20, int64(editMaxFileBytes)>>20)
 		return newToolOutput("edit", command, "", start, false, err), err
 	}
 
@@ -209,7 +209,7 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 	replaceText = newlinesLike(content, replaceText)
 	switch {
 	case count == 0:
-		err = fmt.Errorf("find text not found in file — %s", whyNoMatch(content, findText))
+		err = fmt.Errorf("find text not found in file, %s", whyNoMatch(content, findText))
 		return newToolOutput("edit", command, "", start, false, err), err
 	case count > 1 && !replaceAll:
 		// Still the default, and still the safer one: a model that meant to

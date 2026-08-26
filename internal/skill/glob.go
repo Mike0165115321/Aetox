@@ -252,7 +252,7 @@ func (s *globSkill) Execute(ctx context.Context, input Input) (Output, error) {
 	}
 	output, truncated := limitLines(output, defaultToolOutputLineLimit)
 	if capped {
-		output += "\n... (result cap reached — continue with offset=" + strconv.Itoa(skip+limit) + ")"
+		output += "\n... (result cap reached, continue with offset=" + strconv.Itoa(skip+limit) + ")"
 		truncated = true
 	}
 	return newToolOutput("glob", command, output, start, truncated, nil), nil

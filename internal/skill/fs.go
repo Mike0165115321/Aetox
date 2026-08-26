@@ -232,7 +232,7 @@ func (s *fsSkill) execCat(start time.Time, params []string) (Output, error) {
 		return newToolOutput("fs", command, "", start, false, err), err
 	}
 	if binary {
-		err = errors.New("read target is a binary file — there is no text to read")
+		err = errors.New("read target is a binary file, there is no text to read")
 		return newToolOutput("fs", command, "", start, false, err), err
 	}
 
@@ -245,7 +245,7 @@ func (s *fsSkill) execCat(start time.Time, params []string) (Output, error) {
 		content = "(no output)"
 	}
 	if next > 0 {
-		content += fmt.Sprintf("\n... (truncated — read %s with offset=%d for more)", requestPath, next)
+		content += fmt.Sprintf("\n... (truncated, read %s with offset=%d for more)", requestPath, next)
 	}
 	return newToolOutput("fs", command, content, start, next > 0, nil), nil
 }

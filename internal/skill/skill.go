@@ -121,7 +121,7 @@ const (
 	SourceBuiltin   Source = "builtin"   // tools compiled into the engine
 	SourceWorkbench Source = "workbench" // tools only the desktop app can offer
 	SourceMCP       Source = "mcp"       // tools bridged from an MCP server
-	SourceSkill     Source = "skill"     // a SKILL.md the user added — instructions, not a tool
+	SourceSkill     Source = "skill"     // a SKILL.md the user added, instructions, not a tool
 )
 
 type registryEntry struct {

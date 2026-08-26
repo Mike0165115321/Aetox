@@ -83,7 +83,7 @@ func (*editsSkill) ToolDefinition() model.ToolDefinition {
 		Type: "function",
 		Function: model.ToolFunction{
 			Name: "edits",
-			Description: "Apply several edits across one or more files in a single atomic call — either all of them " +
+			Description: "Apply several edits across one or more files in a single atomic call, either all of them " +
 				"apply or none do. Prefer this over repeated edit calls when a change touches more than one place.",
 			Parameters: payload,
 		},
@@ -159,10 +159,10 @@ func (s *editsSkill) ExecuteTool(_ context.Context, args map[string]any) (Output
 		case 1:
 			// unique match, safe to replace
 		case 0:
-			err := fmt.Errorf("edit %d (%s): find text not found; nothing was written — %s", i+1, e.Path, whyNoMatch(content, e.Find))
+			err := fmt.Errorf("edit %d (%s): find text not found; nothing was written, %s", i+1, e.Path, whyNoMatch(content, e.Find))
 			return newToolOutput("edits", command, "", start, false, err), err
 		default:
-			err := fmt.Errorf("edit %d (%s): find text matches %d times; nothing was written — add surrounding lines to make it unique", i+1, e.Path, count)
+			err := fmt.Errorf("edit %d (%s): find text matches %d times; nothing was written, add surrounding lines to make it unique", i+1, e.Path, count)
 			return newToolOutput("edits", command, "", start, false, err), err
 		}
 
@@ -234,10 +234,10 @@ func parseEditItems(raw any, fallbackPath string) ([]editItem, error) {
 		}
 		e := edits[i]
 		if strings.TrimSpace(e.Path) == "" {
-			return nil, fmt.Errorf("edit %d: path is required — name the file on the edit, or once at the top level for all of them", i+1)
+			return nil, fmt.Errorf("edit %d: path is required, name the file on the edit, or once at the top level for all of them", i+1)
 		}
 		if e.Find == "" {
-			return nil, fmt.Errorf("edit %d (%s): find text is required — use write to create a file", i+1, e.Path)
+			return nil, fmt.Errorf("edit %d (%s): find text is required, use write to create a file", i+1, e.Path)
 		}
 	}
 	return edits, nil
@@ -250,7 +250,7 @@ func parseEditItems(raw any, fallbackPath string) ([]editItem, error) {
 // what to pass it. `edit` says the same thing in its own block entry, which is
 // where a model that only ever edits one file at a time meets it.
 func (*editsSkill) Guidance(map[string]any) string {
-	return "read prefixes every line with its number and a tab — strip that prefix before matching, it is not in the file.\n" +
+	return "read prefixes every line with its number and a tab, strip that prefix before matching, it is not in the file.\n" +
 		"Every edit must match exactly once, and if any one of them does not, NOTHING is written: the call is atomic on purpose, so a half-applied change cannot exist. When one fails, the report names which edit and why.\n" +
 		"Several edits to one file is the ordinary case: name the file once at the top level and leave `path` off the edits."
 }

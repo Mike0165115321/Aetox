@@ -57,7 +57,7 @@ type imageOCRSkill struct {
 func (*imageOCRSkill) Name() string { return "image_ocr" }
 
 func (*imageOCRSkill) Description() string {
-	return "อ่านข้อความจากในรูปภาพ (OCR) — ใช้เมื่อโมเดลปัจจุบันมองไม่เห็นรูปภาพโดยตรง"
+	return "อ่านข้อความจากในรูปภาพ (OCR), ใช้เมื่อโมเดลปัจจุบันมองไม่เห็นรูปภาพโดยตรง"
 }
 
 func (*imageOCRSkill) ToolDefinition() model.ToolDefinition {
@@ -428,14 +428,14 @@ func tryAutoInstallTesseract(ctx context.Context) bool {
 func missingTesseractError() error {
 	switch runtime.GOOS {
 	case "darwin":
-		return statereport.New("ไม่พบ Tesseract และติดตั้งอัตโนมัติไม่สำเร็จ (ต้องมี Homebrew) — รันเอง: brew install tesseract tesseract-lang")
+		return statereport.New("ไม่พบ Tesseract และติดตั้งอัตโนมัติไม่สำเร็จ (ต้องมี Homebrew), รันเอง: brew install tesseract tesseract-lang")
 	case "linux":
 		if hint := linuxInstallHint("tesseract-ocr tesseract-ocr-tha", "tesseract tesseract-langpack-tha", "tesseract-data-tha tesseract"); hint != "" {
-			return statereport.Newf("ไม่พบโปรแกรม Tesseract ในเครื่อง — ติดตั้งด้วย: %s", hint)
+			return statereport.Newf("ไม่พบโปรแกรม Tesseract ในเครื่อง, ติดตั้งด้วย: %s", hint)
 		}
-		return statereport.New("ไม่พบโปรแกรม Tesseract ในเครื่อง — ติดตั้งผ่าน package manager ของดิสโทรคุณ (แพ็กเกจ tesseract-ocr หรือ tesseract พร้อมชุดภาษาไทย)")
+		return statereport.New("ไม่พบโปรแกรม Tesseract ในเครื่อง, ติดตั้งผ่าน package manager ของดิสโทรคุณ (แพ็กเกจ tesseract-ocr หรือ tesseract พร้อมชุดภาษาไทย)")
 	default: // windows and anything else
-		return statereport.New("ไม่พบโปรแกรม Tesseract ในเครื่อง — ติดตั้งจาก https://github.com/UB-Mannheim/tesseract/wiki แล้วลองใหม่")
+		return statereport.New("ไม่พบโปรแกรม Tesseract ในเครื่อง, ติดตั้งจาก https://github.com/UB-Mannheim/tesseract/wiki แล้วลองใหม่")
 	}
 }
 

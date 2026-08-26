@@ -129,7 +129,7 @@ const styles = StyleSheet.create({
 
 ## อ้างอิง: details
 
-# react-native-design — detailed sections
+# react-native-design, detailed sections
 
 ## Core Concepts
 

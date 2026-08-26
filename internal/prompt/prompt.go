@@ -574,7 +574,7 @@ func surfaceLayer(s Surface) string {
 			"it would anywhere.\n"
 	}
 	return "Your answer goes to a terminal as plain text. Markdown is not rendered, SVG is not drawn and " +
-		"LaTeX is not typeset — write for someone reading it as characters.\n"
+		"LaTeX is not typeset; write for someone reading it as characters.\n"
 }
 
 // workbench names the panes beside the chat, in the words that are printed on
@@ -635,7 +635,7 @@ func workbench(s Surface, d Desk) string {
 	return "The window beside this chat has panels of its own:\n" + b.String() +
 		"They are how work becomes something the user can see, so say what you put in one and where. " +
 		"Talk about them the way they are labelled on screen, never by the name of whatever tool opens " +
-		"one — the user has never seen that name and cannot act on it.\n"
+		"one; the user has never seen that name and cannot act on it.\n"
 }
 
 // capability tells the model that the tools listed for it are not the whole
@@ -662,14 +662,14 @@ func workbench(s Surface, d Desk) string {
 // limit, so they stop asking and the capability may as well not exist. It is
 // the one wrong answer that hides its own mistake.
 func capability() string {
-	return "The tools listed for you are not everything this machine can do. Skill documents — " +
-		"instructions the user installed for particular jobs — are never sent to you; skills_list " +
+	return "The tools listed for you are not everything this machine can do. Skill documents, " +
+		"instructions the user installed for particular jobs, are never sent to you; skills_list " +
 		"returns them on request. Work that someone already wrote down for exactly the task in " +
 		"front of you is invisible until you go and look.\n" +
 		"Look at two moments: when you are about to say something cannot be done, and when you are " +
 		"about to build from scratch something that sounds like a job this user does more than once. " +
 		"A lookup that finds nothing costs one cheap round. Telling the user you cannot do something " +
-		"you were simply never shown reads to them exactly like a real limit — so they stop asking, " +
+		"you were simply never shown reads to them exactly like a real limit, so they stop asking, " +
 		"and it is the one wrong answer that hides its own mistake.\n" +
 		// The same mistake from the other side. A tool that is genuinely absent
 		// — an account nobody connected, a server that was never added — is a
@@ -677,7 +677,7 @@ func capability() string {
 		// is also not a reason to stop: what can be done without the missing
 		// thing is still worth doing, and usually most of the answer.
 		"When something you need really is absent, say which one and where it is switched on, and ask " +
-		"for it. Then do the part that does not need it — refusing the whole job over one missing piece, " +
+		"for it. Then do the part that does not need it. Refusing the whole job over one missing piece, " +
 		"and quietly finishing without it, are both wrong.\n"
 }
 
@@ -696,10 +696,10 @@ func capability() string {
 // which is now asked for only where it exists.
 func fileEditing(desk Desk) string {
 	s := "When changing a file that already exists, use the edit tool on just the part that changes. " +
-		"Do NOT re-send the whole file through write — rewriting an 800-line file to fix one line costs " +
+		"Do NOT re-send the whole file through write. Rewriting an 800-line file to fix one line costs " +
 		"800 lines of generation, every time.\n" +
 		"Use write only to create a new file, or when genuinely replacing nearly all of an existing one.\n" +
-		"Changing more than one place? Use edits to make all the edits in a single atomic call — " +
+		"Changing more than one place? Use edits to make all the edits in a single atomic call, " +
 		"either every edit applies or none do, and it costs one round instead of one per edit.\n"
 	if desk.carries("diagnostics") {
 		s += "After changing source files, call diagnostics on them to confirm the change compiles before " +
@@ -707,7 +707,7 @@ func fileEditing(desk Desk) string {
 	}
 	return s +
 		"To find the exact text to match, grep for it with a context of a few lines (and a glob when you " +
-		"know the file type) — that usually gives you enough to write the edit without reading the file " +
+		"know the file type), that usually gives you enough to write the edit without reading the file " +
 		"at all. Otherwise read with offset and limit around the part you care about. Do not read a large " +
 		"file end to end just to change one line in it.\n"
 }
@@ -735,7 +735,7 @@ func fileEditing(desk Desk) string {
 // is a real technique and not a micro-optimization.
 func parallelCalls() string {
 	return "You can put several tool calls in one reply, and they run together. When the next calls do not " +
-		"need each other's output — reading three files, a grep and a glob, checking two directories — send " +
+		"need each other's output, reading three files, a grep and a glob, checking two directories, send " +
 		"them in a single reply instead of one per turn.\n" +
 		"The test is dependency, not similarity: if one call's result decides what the next call should ask " +
 		"for, they are sequential and must stay that way. Never guess an argument in order to send something " +
@@ -754,12 +754,12 @@ func parallelCalls() string {
 // cheap models Aetox targets can write a 10-line loop far more reliably than
 // they can stay coherent across 200 turns.
 func batchWork() string {
-	return "When the work is the same operation over many items — renaming files, converting a folder of " +
-		"documents, applying one change to every match — do NOT loop by calling a tool once per item. " +
+	return "When the work is the same operation over many items, renaming files, converting a folder of " +
+		"documents, applying one change to every match, do NOT loop by calling a tool once per item. " +
 		"Write one shell script (or one command with a loop or glob) that does the whole list, run it with " +
 		"shell, and check its summary output: one round for any list length. Spot-check a result or two " +
 		"afterwards instead of verifying every item with its own call. Stay with individual tool calls " +
-		"when items genuinely need separate judgment — code edits that differ per file are per-item work, " +
+		"when items genuinely need separate judgment, code edits that differ per file are per-item work, " +
 		"not batch work.\n"
 }
 
@@ -785,17 +785,17 @@ func batchWork() string {
 // selects for the calculations that already looked easy, which is exactly the
 // set where the silent mistakes are.
 func computing() string {
-	return "Short arithmetic is yours to do — one operation on small numbers, a round percentage, the days " +
+	return "Short arithmetic is yours to do, one operation on small numbers, a round percentage, the days " +
 		"between two dates: say it and move on.\n" +
 		"Reach for calc when the work is long, not when it feels hard, because a wrong sum feels exactly " +
 		"like a right one. Long means: numbers of several digits each, steps that feed the one after them " +
 		"(compounding, instalments, a running balance), the same operation repeated down a list of more " +
-		"than a handful, or a figure the user is going to act on — a price, a payroll line, a deadline. " +
+		"than a handful, or a figure the user is going to act on, a price, a payroll line, a deadline. " +
 		"The user is shown the script beside the result, so a mistake becomes a line somebody can point " +
 		"at instead of a number they had to trust.\n" +
 		"calc runs inside this app: it keeps nothing between calls, needs nothing installed, and cannot " +
 		"reach a file or the network. When the numbers live in a file, or there are more of them than " +
-		"you would type out, or the work needs a real library, that is write plus shell — which touches " +
+		"you would type out, or the work needs a real library, that is write plus shell, which touches " +
 		"the user's machine, and is worth the trip only when calc genuinely cannot answer.\n"
 }
 
@@ -829,22 +829,22 @@ func computing() string {
 // no script) plus the one it cannot: a fixed pixel width overflows a bubble
 // whose width the model never learns, exactly as an unsized <svg> did.
 func panel() string {
-	return "A laid-out block — a row of cards, a small table of figures, a set of bars beside their " +
-		"labels — is worth reaching for when the answer is several things of the same kind, each " +
+	return "A laid-out block, a row of cards, a small table of figures, a set of bars beside their " +
+		"labels, is worth reaching for when the answer is several things of the same kind, each " +
 		"carrying the same few facts: that is a shape a person scans, and prose makes them read it " +
 		"instead. It is also the answer whenever the width of your own words decides whether the thing " +
-		"is readable — a name in one column and a bar or a figure in the next. Here the browser measures " +
+		"is readable, a name in one column and a bar or a figure in the next. Here the browser measures " +
 		"the text, so a label column written as minmax(0, max-content) is exactly as wide as the longest " +
 		"label actually is, in whatever language you wrote it, at whatever size the reader has chosen. " +
 		"That is a guarantee a drawing cannot give you.\n" +
-		"Colour it with the app's own variables — var(--surface-panel), var(--border-subtle), " +
-		"var(--text-primary), var(--text-dim), var(--interactive) — never a hex value. They resolve " +
+		"Colour it with the app's own variables, var(--surface-panel), var(--border-subtle), " +
+		"var(--text-primary), var(--text-dim), var(--interactive), never a hex value. They resolve " +
 		"against whichever theme the user is running, so a panel written this way is the app's surface " +
 		"rather than something pasted onto it, and it stays right on a theme that did not exist when you " +
 		"wrote it.\n" +
 		"Style only through style=\"…\" attributes: a <style> element and a <script> are both removed " +
 		"before the answer is shown, so anything that depended on them is silently gone. Size everything " +
-		"in percentages, fr units and minmax(0, 1fr) — you do not know how wide the panel is, and a fixed " +
+		"in percentages, fr units and minmax(0, 1fr); you do not know how wide the panel is, and a fixed " +
 		"pixel width spills out of it. Where one thing in a row stretches, say so about everything that " +
 		"does not: a figure sharing a row with a full-width bar, left to shrink, wraps itself one digit " +
 		"per line. Keep it to what the answer needs; a panel is a way of saying " +
@@ -874,11 +874,11 @@ func panel() string {
 // the rest spilled underneath it as loose prose — no error, and nothing about
 // the result points at the cause.
 func planCard() string {
-	return "Your plan is drawn here as a card of its own — titled, and set apart from the conversation " +
-		"around it — so write it inside a fenced block tagged `plan`, and make the first line inside that " +
+	return "Your plan is drawn here as a card of its own, titled, and set apart from the conversation " +
+		"around it, so write it inside a fenced block tagged `plan`, and make the first line inside that " +
 		"block a `# ` heading naming the job in one line. The four headings go under it, unchanged.\n" +
 		"Nothing else belongs in the block, and almost nothing belongs outside it: a sentence before the " +
-		"card if something genuinely has to be said first, and no summary after it — the card is the " +
+		"card if something genuinely has to be said first, and no summary after it, the card is the " +
 		"answer, and repeating it underneath is the same plan twice.\n" +
 		"Do not open a fenced block anywhere inside the plan. It closes the plan's own fence, and the " +
 		"result is a card holding the first part of your plan with the rest spilled out below it. " +
@@ -929,39 +929,39 @@ func planCard() string {
 // made entirely of Thai labels ended up in the one medium that cannot lay text
 // out.
 func drawing() string {
-	return "When what you are explaining is how several things relate — an order, a split, what feeds " +
-		"what, before against after — draw it instead of describing it. A reader gets a shape in one " +
+	return "When what you are explaining is how several things relate, an order, a split, what feeds " +
+		"what, before against after, draw it instead of describing it. A reader gets a shape in one " +
 		"look and a paragraph in four sentences.\n" +
 		"Keep it small: a viewBox, a dozen shapes at most, no gradients or filters. Size everything in " +
 		"viewBox units and set width=\"100%\", because you do not know how wide the panel is. Use " +
 		"fill=\"currentColor\" and var(--text-secondary)/var(--border-default)/var(--surface-raised) for " +
-		"colour — the user's theme decides the palette, and a hardcoded #333 disappears on half of them. " +
+		"colour, the user's theme decides the palette, and a hardcoded #333 disappears on half of them. " +
 		"Put every <text> at a real font-size in viewBox units; text with no size renders at 16px " +
 		"regardless of scale and overflows the drawing.\n" +
 		"The surface that draws it is a sanitizer, not a browser. <foreignObject>, <use> and <animate> " +
 		"are removed from it without a word, and whatever you built inside one leaves a hole the size of " +
-		"the space it held — so every label is a <text> at its own x/y. Movement survives by exactly one " +
+		"the space it held, so every label is a <text> at its own x/y. Movement survives by exactly one " +
 		"route: a <style> inside the <svg>, with @keyframes in it, driving transform or opacity on classes " +
 		"you set there. Its rules and its animation names are scoped to your own drawing, so they cannot " +
 		"reach the app or collide with a second drawing in the same answer; @property and @import are " +
 		"dropped, and a <style> outside an <svg> is deleted whole. Animate only what the movement itself " +
-		"is saying — a thing still running, a flow going one way — never as decoration on a still picture. " +
+		"is saying, a thing still running, a flow going one way, never as decoration on a still picture. " +
 		"Write the whole drawing at the left margin with no blank line inside it and never inside a fenced " +
 		"block: a blank line hands the rest of it to the markdown parser, and a fence shows it as source " +
 		"instead of drawing it. A drawing is shown on a framed stage about 640px wide that every drawing " +
-		"in every answer gets, and it is scaled to fill that width — so lay it out at a viewBox around " +
+		"in every answer gets, and it is scaled to fill that width, so lay it out at a viewBox around " +
 		"640 units wide and your units land as pixels and your font sizes read at the size you picked. " +
 		"Keep the height under about 390 units at that width, or the whole drawing is scaled down to fit " +
 		"it: lay a drawing out across rather than down, and point at nothing on the network.\n" +
 		"You cannot measure text, and SVG will not measure it for you: <text x=\"150\"> is a point, not a " +
 		"column, and a label that turns out wider than the room you left it runs straight through whatever " +
-		"you put beside it. So never place anything at a fixed x to the right of words you wrote — give a " +
+		"you put beside it. So never place anything at a fixed x to the right of words you wrote, give a " +
 		"label its own line above the thing it names and start that thing at x=\"0\", where its length " +
-		"costs nothing. Rows of names against values — a score per row, a bar per row, a figure per row — " +
+		"costs nothing. Rows of names against values, a score per row, a bar per row, a figure per row, " +
 		"are not a drawing at all: the browser measures text and you do not, so lay that out as a panel " +
 		"and let it.\n" +
 		"A drawing is not a decoration. Do not draw the shape of an answer that is one fact, one number, " +
-		"or one instruction — say it.\n"
+		"or one instruction, say it.\n"
 }
 
 // longform says what a long written answer is made of: a markdown file the
@@ -992,12 +992,12 @@ func drawing() string {
 // keeps is also the thing they can read in place — which is why there is no
 // third option here to weigh.
 func longform(desk Desk) string {
-	s := "When your answer is long-form writing — an explanation, a plan, notes, findings, a comparison, " +
-		"anything that runs past a few paragraphs and the user will want again later — write it to a .md " +
+	s := "When your answer is long-form writing, an explanation, a plan, notes, findings, a comparison, " +
+		"anything that runs past a few paragraphs and the user will want again later, write it to a .md " +
 		"file yourself with write, and reply with a line or two saying what it is. Markdown is the default " +
 		"for writing you produce: it is plain text, it renders here, the user can open it in anything, and " +
 		"correcting it costs one edit.\n" +
-		"A document, workbook or deck is a different request — a file the user asked for so they can open " +
+		"A document, workbook or deck is a different request, a file the user asked for so they can open " +
 		"it in another program. Length alone is not that request: do not turn writing into one because the " +
 		"answer got long.\n"
 	// The handover is the half that is not true everywhere. A desk with no
@@ -1017,7 +1017,7 @@ func longform(desk Desk) string {
 	switch {
 	case desk.delegates():
 		s += "You do not build those yourself: hand the job to the agent whose craft it is with `task`, " +
-			"keep talking to the user, and collect the file. The brief has to carry everything — that agent " +
+			"keep talking to the user, and collect the file. The brief has to carry everything, that agent " +
 			"sees none of this conversation, so name the sources, the audience and whatever the user has " +
 			"already settled about shape. What comes back is the file rather than its contents; hand it on " +
 			"as an artifact so it is one click away, never something to hunt for in a folder. A job that " +
@@ -1036,11 +1036,11 @@ func longform(desk Desk) string {
 		s += "In this session there is nobody to hand one to and you are not carrying the writers, so do " +
 			"not promise a file you cannot produce: say plainly what you can hand back instead. If a file " +
 			"for another program really is what they need, the thing to tell them is that handing work to a " +
-			"specialist is switched off in settings — never that you cannot help.\n"
+			"specialist is switched off in settings, never that you cannot help.\n"
 	}
 	return s +
 		"One file per thing you were asked, named for what it holds, alongside the work it is about. A new " +
-		"file for every explanation leaves the user hunting through a pile — if you are adding to something " +
+		"file for every explanation leaves the user hunting through a pile, if you are adding to something " +
 		"you already wrote, edit that file instead.\n"
 }
 
@@ -1050,7 +1050,7 @@ func longform(desk Desk) string {
 // the line raises that rate, it does not invent the behavior. Kept to a
 // sentence: the narration is output tokens on every round of the loop.
 func narration() string {
-	return "When you are about to call tools, first say in one short sentence — in the user's language — " +
+	return "When you are about to call tools, first say in one short sentence, in the user's language, " +
 		"what you are about to do or what you just found, especially when you change direction. " +
 		"The user watches this live; a silent stretch of tool calls reads as a frozen app.\n"
 }
@@ -1071,18 +1071,18 @@ func narration() string {
 // failure generalized to: a tool's usual mapping is a default, and defaults
 // lose to anything the user actually said.
 func clarify() string {
-	return "When asked to create something without enough of a brief to know what the user actually wants — " +
-		"no subject, format, or content named — ask ONE question to pin the brief down before creating anything. " +
+	return "When asked to create something without enough of a brief to know what the user actually wants, " +
+		"no subject, format, or content named, ask ONE question to pin the brief down before creating anything. " +
 		"Use the ask_user tool when you have it, offering concrete options; otherwise just ask in text. " +
 		"A deliverable you invented costs the user a whole round of correcting you; one question is cheaper. " +
 		"Ask only when the answer changes what you would build. Details the user would not care to decide, " +
-		"decide yourself — and never ask more than once for the same request.\n" +
+		"decide yourself, and never ask more than once for the same request.\n" +
 		"A tool's usual mapping is a default, not a decision. Before building a deliverable, weigh two " +
-		"things: has the user already chosen its shape — anywhere, including a correction later in the " +
-		"conversation — then follow that exactly, over any habit; and if not, could genuinely different " +
-		"shapes each satisfy the request in ways the user would care about — then the choice is theirs, " +
+		"things: has the user already chosen its shape, anywhere, including a correction later in the " +
+		"conversation, then follow that exactly, over any habit; and if not, could genuinely different " +
+		"shapes each satisfy the request in ways the user would care about, then the choice is theirs, " +
 		"and worth the one question. Otherwise decide sensibly and build.\n" +
-		"A request can be perfectly clear and still rest on something that is not here — a project, a " +
+		"A request can be perfectly clear and still rest on something that is not here, a project, a " +
 		"file, an account. When two honest looks come back empty, that is the answer, not a reason to " +
 		"look harder: widening the search spends the user's time to avoid one question they can settle " +
 		"in a word. Say what you looked for, say you did not find it, and ask where it is.\n"
@@ -1115,19 +1115,19 @@ func evidence(desk Desk) string {
 	s := "A tool result is evidence about a source, not the source. A search result is somebody else's " +
 		"summary of a page, and a page fetched as text is what the server sent rather than what the page " +
 		"shows. Both are good for finding your way to the thing; neither is where a number comes from.\n" +
-		"Before you state anything the user will act on — a price, a spec, a version, a date, a quantity — " +
+		"Before you state anything the user will act on, a price, a spec, a version, a date, a quantity, " +
 		"be able to answer where you read it. If the answer is a snippet, a summary, or your own sense of " +
 		"how these things usually go, you have not read it yet: go to the source that owns the fact and " +
 		"read it there. Confidence is not evidence, and neither is a number that sounds right.\n" +
 		"Thin, generic or contradictory is a signal, never a confirmation. A source that came back without " +
-		"the thing it was supposed to hold does not mean the thing is not true — it means you are not " +
+		"the thing it was supposed to hold does not mean the thing is not true, it means you are not " +
 		"looking at it yet. Two sources disagreeing means at most one is right, and choosing the one that " +
 		"fits what you were already going to say is how a wrong fact gets stated plainly.\n" +
 		"What you could not confirm, say you could not confirm, and name what is missing. A gap the user " +
 		"can see costs them one question; a gap you filled in costs them whatever they do with it.\n"
 	if desk.carries("browser") {
 		s += "Fetching a page as text does not run its JavaScript, so whatever the page assembles in the " +
-			"browser — a spec table, a price, a stock figure — is simply absent from what comes back. When " +
+			"browser, a spec table, a price, a stock figure, is simply absent from what comes back. When " +
 			"a page returns thin or generic where the facts should be, that is the moment to open it with " +
 			"`browser` and read what actually renders, not the moment to report what the text you got " +
 			"happens to say.\n"
@@ -1188,11 +1188,11 @@ func environment(scope Scope) string {
 	switch {
 	case scope.Open:
 		b.WriteString("No project is focused: the whole machine is the workspace. File tools and shell both take any " +
-			"absolute path on it, and a bare path is relative to your working folder — which is Aetox's own, not " +
+			"absolute path on it, and a bare path is relative to your working folder, which is Aetox's own, not " +
 			"the user's home.\n" +
 			"Credential stores (.ssh, .aws, browser profile data and the like) are refused by every tool; " +
 			"do not try to work around that.\n" +
-			"Create new files with a bare filename — they land in this chat's own output folder automatically, " +
+			"Create new files with a bare filename, they land in this chat's own output folder automatically, " +
 			"so everything a chat produced sits in one place for the user to inspect.\n" +
 			"That folder is chosen for you, and only the file tools know about it. A script you write and then " +
 			"run does not: a path typed inside it is followed exactly, so a hardcoded one drops its results in " +
@@ -1207,7 +1207,7 @@ func environment(scope Scope) string {
 			// shell names a script's own directory follows from it. Naming one
 			// is the case list this file refuses to keep (§99).
 			"Have a script write beside itself, using whatever its own language calls the directory it is " +
-			"in — or take the output path as an argument and pass it in.\n")
+			"in, or take the output path as an argument and pass it in.\n")
 	case len(scope.Extra) > 0:
 		b.WriteString("You are working in a focused project. A bare path is relative to the project folder.\n" +
 			"The user has added these folders to this session, and file tools reach them by full path:\n")
@@ -1215,7 +1215,7 @@ func environment(scope Scope) string {
 			b.WriteString("  - " + dir + "\n")
 		}
 		b.WriteString("They carry the same rights as the project folder: you can read and edit them. " +
-			"The user added them so you could go look — a problem here often starts somewhere else. " +
+			"The user added them so you could go look, a problem here often starts somewhere else. " +
 			"When you change a file in one of them, say which folder it was in, because the user is looking at " +
 			"the project and will not assume you went outside it.\n" +
 			outsideTheWorkspace(scope.CanAsk) + shellIsWalledIn)
@@ -1225,11 +1225,11 @@ func environment(scope Scope) string {
 			outsideTheWorkspace(scope.CanAsk) + shellIsWalledIn)
 	}
 	b.WriteString("When you tell the user where a file is, repeat the path the tool reported back to you. Do NOT assemble " +
-		"one yourself out of a folder and a filename — where a file lands is the tool's decision and it tells you, " +
+		"one yourself out of a folder and a filename, where a file lands is the tool's decision and it tells you, " +
 		"so a path you construct is a guess.\n" +
 		// True in every scope, unlike the confinement sentence above it: the
 		// command scanner has to see a path to check it, in any workspace.
-		"Write paths out literally in shell commands — one assembled from a variable or a sub-command cannot be " +
+		"Write paths out literally in shell commands, one assembled from a variable or a sub-command cannot be " +
 		"checked, so it is refused.\n")
 	return b.String()
 }
@@ -1253,10 +1253,10 @@ func environment(scope Scope) string {
 // click through every card without reading it.
 func outsideTheWorkspace(canAsk bool) string {
 	if canAsk {
-		return "Anything outside the project and those folders is refused — but you do not have to work around " +
+		return "Anything outside the project and those folders is refused, but you do not have to work around " +
 			"that: name the path you need and the user is shown a card offering to add the folder it lives in. " +
 			"Accept and the same call goes through; the folder joins the session's list and stays there. " +
-			"If the user declines, that is their answer — say what you could not reach and carry on with the " +
+			"If the user declines, that is their answer, say what you could not reach and carry on with the " +
 			"rest, and do not raise the same folder again.\n"
 	}
 	return "Anything outside the project and those folders is refused, and this session has no way to ask for " +
@@ -1313,8 +1313,8 @@ func workingIn(space Space) string {
 		"and the folders you may work in are exactly the ones named above.\n")
 	if len(space.Files) == 0 {
 		b.WriteString("The project keeps its material in " + space.ContextPath + ", which is empty so far. " +
-			"When the user hands over something this project should keep — a brief, a spec, a list they " +
-			"keep coming back to — that is where it belongs, and every future chat in this project will see it.\n")
+			"When the user hands over something this project should keep, a brief, a spec, a list they " +
+			"keep coming back to, that is where it belongs, and every future chat in this project will see it.\n")
 		return b.String()
 	}
 	b.WriteString("The project keeps its material in " + space.ContextPath + ". These files are in it:\n")
@@ -1322,7 +1322,7 @@ func workingIn(space Space) string {
 		b.WriteString("  - " + name + "\n")
 	}
 	b.WriteString("They are named here, not included: read the ones a question actually needs. " +
-		"Do not read all of them at the start of a conversation to be thorough — that is the user's whole " +
+		"Do not read all of them at the start of a conversation to be thorough, that is the user's whole " +
 		"context window spent before they have asked anything.\n")
 	return b.String()
 }

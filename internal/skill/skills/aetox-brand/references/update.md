@@ -44,12 +44,12 @@ Edit `docs/brand-guidelines.md`:
 
 ### Step 3: Sync to Design Tokens
 
-Carry the change into the project's token files by hand, in this order — the
+Carry the change into the project's token files by hand, in this order, the
 guidelines file changed first, and the tokens follow it:
 
-- `assets/design-tokens.json` (or wherever the project keeps them) — the new
+- `assets/design-tokens.json` (or wherever the project keeps them), the new
   colour names and values.
-- `assets/design-tokens.css` — the CSS variables that read from them.
+- `assets/design-tokens.css`, the CSS variables that read from them.
 
 `aetox-design-system` is the skill that says how the three token layers fit
 together. Nothing here generates those files; `edit` and `write` do.

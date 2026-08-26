@@ -202,7 +202,7 @@ func (d *Dispatcher) teach(key, name string, s Skill, args map[string]any, out O
 	// the file it just touched. Unlabelled, this reads as output — and output
 	// from a tool is data the model is right to be suspicious of, which is the
 	// wrong footing for the one text here that is genuinely ours.
-	header := "[" + key + " — how to use this well, sent once]\n" + strings.TrimSpace(guide) + "\n\n"
+	header := "[" + key + ", how to use this well, sent once]\n" + strings.TrimSpace(guide) + "\n\n"
 	out.Content = header + out.Content
 	out.RawOutput = header + out.RawOutput
 	return out

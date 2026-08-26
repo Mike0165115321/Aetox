@@ -87,7 +87,7 @@ func (s *deleteSkill) Execute(_ context.Context, input Input) (Output, error) {
 			// Named rather than assumed: a model that thought it was deleting
 			// one generated file and passed a folder path takes the whole
 			// folder with it, and there is no smaller mistake to make here.
-			err = errors.New("delete target is a directory — pass recursive to remove it and everything inside")
+			err = errors.New("delete target is a directory, pass recursive to remove it and everything inside")
 			return newToolOutput("delete", "delete "+requestPath, "", start, false, err), err
 		}
 		// The sandbox root itself is not a thing to delete: it is the project.

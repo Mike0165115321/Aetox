@@ -1,6 +1,6 @@
 ---
 name: aetox-code-review
-description: รีวิวโค้ดที่เปลี่ยน หา bug จริงก่อน merge — ความปลอดภัย (injection, auth, path traversal), ประสิทธิภาพ (N+1, ความซับซ้อน, index), ความถูกต้อง, edge case, concurrency, error handling รับ PR/diff/ไฟล์ ทริกด้วย "รีวิวก่อนเมิร์จ" หรือ "โค้ดนี้ปลอดภัยไหม"
+description: รีวิวโค้ดที่เปลี่ยน หา bug จริงก่อน merge, ความปลอดภัย (injection, auth, path traversal), ประสิทธิภาพ (N+1, ความซับซ้อน, index), ความถูกต้อง, edge case, concurrency, error handling รับ PR/diff/ไฟล์ ทริกด้วย "รีวิวก่อนเมิร์จ" หรือ "โค้ดนี้ปลอดภัยไหม"
 source: https://github.com/anthropics/knowledge-work-plugins (engineering/code-review)
 license: Apache-2.0
 copyright: Copyright Anthropic, PBC. Full terms in LICENSE
@@ -114,6 +114,6 @@ If **~~knowledge base** is connected:
 
 ## Tips
 
-1. **Provide context** — "This is a hot path" or "This handles PII" helps me focus.
-2. **Specify concerns** — "Focus on security" narrows the review.
-3. **Include tests** — I'll check test coverage and quality too.
+1. **Provide context**, "This is a hot path" or "This handles PII" helps me focus.
+2. **Specify concerns**, "Focus on security" narrows the review.
+3. **Include tests**, I'll check test coverage and quality too.

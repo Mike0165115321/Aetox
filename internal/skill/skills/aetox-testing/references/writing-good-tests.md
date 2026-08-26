@@ -20,17 +20,17 @@ a mock when the real dependency proves slow or external.
 ## Principle 1: Name the Break
 
 Before writing the test body, answer: **what production change should
-make this test fail — and is that change a bug or a decision?** A test
+make this test fail, and is that change a bug or a decision?** A test
 earns its place by catching a wrong branch, missing side effect, wrong
 argument, boundary case, or broken contract.
 
 **Derive expectations independently.** Use literals and hand-checked
 fixtures; table-driven tests with literal `want` values are the preferred
-shape. An expectation computed by the code under test — or its helpers —
+shape. An expectation computed by the code under test, or its helpers
 passes no matter what that code does:
 
 ```typescript
-// ❌ Mirror assertion: the same builder computes both sides — always true
+// ❌ Mirror assertion: the same builder computes both sides, always true
 const expected = buildSearchQuery({ tag: 'urgent' });
 expect(buildSearchQuery({ tag: 'urgent' })).toBe(expected);
 
@@ -38,8 +38,8 @@ expect(buildSearchQuery({ tag: 'urgent' })).toBe(expected);
 expect(buildSearchQuery({ tag: 'urgent' })).toBe('tag:"urgent"');
 ```
 
-**No change detectors.** If only intentional decisions can fail a test —
-a constant's value, exact message wording, private structure — it fires
+**No change detectors.** If only intentional decisions can fail a test
+a constant's value, exact message wording, private structure, it fires
 on redesign and sleeps through bugs. Test the behavior that depends on
 the decision: not `expect(MAX_RETRIES).toBe(5)` but "a failing call is
 retried 5 times and the 6th attempt never happens."
@@ -52,14 +52,14 @@ agent's behavior (superpowers:writing-skills); prose for humans earns no
 test at all.
 
 **Your code, not the framework.** Test the contract your code makes at
-its boundaries — the route you register, the query you emit, the payload
+its boundaries, the route you register, the query you emit, the payload
 you produce. Upstream mechanics are their maintainers' tests to write
-(the classic: asserting your router invokes a registered handler — that
+(the classic: asserting your router invokes a registered handler, that
 is the framework's test, not yours). When upstream behavior genuinely
 surprised you, write one narrow characterization test naming the
 assumption. The same boundary applies inside your code: constructors,
 getters, constants, and trivial forwarding earn tests only when they
-validate, normalize, default, derive, enforce, or cause side effects —
+validate, normalize, default, derive, enforce, or cause side effects
 otherwise assert the first consumer-visible result that depends on them.
 
 ### Gate Function
@@ -81,7 +81,7 @@ BEFORE writing the test body:
 ## Principle 2: Exercise the Real Thing
 
 **The mock earns no assertions.** A mock assertion passes when the mock
-is present and fails when it is absent — it says nothing about the
+is present and fails when it is absent, it says nothing about the
 component. Assert the real component's behavior; if the mock is what you
 are checking, unmock it or delete the assertion.
 
@@ -112,12 +112,12 @@ vi.mock('MCPServerManager');
 ```
 
 **Make doubles specific.** When arguments, call counts, or ordering are
-part of the contract, assert them — a fake that accepts anything verifies
+part of the contract, assert them, a fake that accepts anything verifies
 nothing. Give each branch (success, error, malformed) its own fixture or
 spy, so the wrong branch cannot satisfy the expectation.
 
 **Mirror real data completely.** Mock the complete structure as it exists
-in reality — all documented fields — not just the ones your test reads.
+in reality, all documented fields, not just the ones your test reads.
 Partial mocks fail silently when downstream code reads an omitted field:
 the test passes while integration breaks.
 
@@ -137,7 +137,7 @@ mock here?"
 ```
 BEFORE adding a mock or test helper:
   List the real method's side effects; keep the ones the test
-  depends on real — mock the slow/external level below them.
+  depends on real, mock the slow/external level below them.
 
   Mock responses mirror the complete real structure.
 
@@ -149,7 +149,7 @@ BEFORE adding a mock or test helper:
 
 ## Tests Ship With the Implementation
 
-The TDD cycle — failing test, minimal implementation, refactor — is what
+The TDD cycle, failing test, minimal implementation, refactor, is what
 "complete" means. Ship the tests the behavior needs and only those:
 trivial code and human prose earn none, and a test written to satisfy
 process costs maintenance forever.
@@ -165,14 +165,14 @@ should fail for each realistic mutation:
 - Empty or default return
 - Missing validation for zero, empty, nil, unauthorized, or malformed input
 
-A mutation nothing catches marks the behavior as unprotected — or the
+A mutation nothing catches marks the behavior as unprotected, or the
 test as tautological.
 
 ## Quick Reference
 
 | When you... | Do |
 |-------------|-----|
-| Write any test | Name the break it catches — a bug, not a decision |
+| Write any test | Name the break it catches, a bug, not a decision |
 | Build an expected value | Derive it by hand; never with the code under test |
 | Test a script or document | Run it / pressure-test its consumer; never grep its text |
 | Reach for a dependency test | Test your boundary contract, not their documented mechanics |

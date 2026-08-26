@@ -1,6 +1,6 @@
 ---
 name: aetox-radix-to-base
-description: ย้ายโปรเจกต์จาก Radix UI ไป Base UI — ตาราง class-mapping และรูปแบบรายคอมโพเนนต์ (form controls, overlays, menus, disclosure, wrapper shapes ฯลฯ) ใช้ตอนจะ migrate Radix→Base จริง ไม่ใช่งานทั่วไป
+description: ย้ายโปรเจกต์จาก Radix UI ไป Base UI, ตาราง class-mapping และรูปแบบรายคอมโพเนนต์ (form controls, overlays, menus, disclosure, wrapper shapes ฯลฯ) ใช้ตอนจะ migrate Radix→Base จริง ไม่ใช่งานทั่วไป
 source: https://github.com/shadcn-ui/ui (skills/migrate-radix-to-base)
 license: MIT
 copyright: Copyright (c) 2023 shadcn. Full terms in LICENSE
@@ -101,7 +101,7 @@ transforming, and record gaps in the report.
 
 **Whole project** (only when explicitly asked): same per-component work in
 dependency order (leaf/shared wrappers like button and label first). After
-wrappers, sweep ALL app code against `consumer-props.md` — the call-site
+wrappers, sweep ALL app code against `consumer-props.md`, the call-site
 break surface is much larger than asChild. Then remove radix deps, install,
 full build.
 

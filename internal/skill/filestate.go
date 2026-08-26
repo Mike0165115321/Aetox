@@ -119,7 +119,7 @@ func (f *FileState) ChangedSinceSeen(path string) bool {
 // state. Without that, a refusal it cannot resolve becomes a retry loop.
 func errStaleWrite(requestPath string) error {
 	return fmt.Errorf(
-		"%s changed on disk since this session last read it — someone else is editing it. "+
+		"%s changed on disk since this session last read it, someone else is editing it. "+
 			"Read it again first: that both shows what they changed and clears this refusal, "+
 			"and then `edit` keeps their work where a whole-file write would replace it",
 		requestPath)

@@ -42,7 +42,7 @@ type videoOCRSkill struct {
 func (*videoOCRSkill) Name() string { return "video_ocr" }
 
 func (*videoOCRSkill) Description() string {
-	return "อ่านข้อความจากในวิดีโอ (แตกเฟรมทุก N วินาทีแล้ว OCR) — ใช้เมื่อโมเดลปัจจุบันดูวิดีโอไม่ได้"
+	return "อ่านข้อความจากในวิดีโอ (แตกเฟรมทุก N วินาทีแล้ว OCR), ใช้เมื่อโมเดลปัจจุบันดูวิดีโอไม่ได้"
 }
 
 func (*videoOCRSkill) ToolDefinition() model.ToolDefinition {
@@ -137,7 +137,7 @@ func (s *videoOCRSkill) run(ctx context.Context, start time.Time, requestPath st
 		return newToolOutput("video_ocr", command, "", start, false, err), err
 	}
 	if len(frames) == 0 {
-		err := errors.New("แตกเฟรมจากวิดีโอไม่ได้ — ไฟล์อาจไม่ใช่วิดีโอหรือเสียหาย")
+		err := errors.New("แตกเฟรมจากวิดีโอไม่ได้, ไฟล์อาจไม่ใช่วิดีโอหรือเสียหาย")
 		return newToolOutput("video_ocr", command, "", start, false, err), err
 	}
 
@@ -175,7 +175,7 @@ func (s *videoOCRSkill) run(ctx context.Context, start time.Time, requestPath st
 		result = appendConfidenceNote(result, confSum/float64(confWords), confWords)
 	}
 	if len(frames) == videoOCRMaxFrames {
-		result += fmt.Sprintf("\n(อ่านถึงเฟรมที่ %d เท่านั้น ≈ วินาทีที่ %d — วิดีโอส่วนท้ายอาจถูกตัด)", videoOCRMaxFrames, videoOCRMaxFrames*intervalSec)
+		result += fmt.Sprintf("\n(อ่านถึงเฟรมที่ %d เท่านั้น ≈ วินาทีที่ %d, วิดีโอส่วนท้ายอาจถูกตัด)", videoOCRMaxFrames, videoOCRMaxFrames*intervalSec)
 	}
 	truncated, wasTruncated := limitLines(result, defaultToolOutputLineLimit)
 	return newToolOutput("video_ocr", command, truncated, start, wasTruncated, nil), nil
@@ -215,10 +215,10 @@ func extractFrames(ctx context.Context, videoPath, outDir string, intervalSec in
 func missingFFmpegError() error {
 	switch runtime.GOOS {
 	case "darwin":
-		return statereport.New("ไม่พบโปรแกรม ffmpeg ในเครื่อง — ติดตั้งด้วย: brew install ffmpeg")
+		return statereport.New("ไม่พบโปรแกรม ffmpeg ในเครื่อง, ติดตั้งด้วย: brew install ffmpeg")
 	case "linux":
-		return statereport.New("ไม่พบโปรแกรม ffmpeg ในเครื่อง — ติดตั้งผ่าน package manager ของดิสโทรคุณ (แพ็กเกจ ffmpeg)")
+		return statereport.New("ไม่พบโปรแกรม ffmpeg ในเครื่อง, ติดตั้งผ่าน package manager ของดิสโทรคุณ (แพ็กเกจ ffmpeg)")
 	default: // windows and anything else
-		return statereport.New("ไม่พบโปรแกรม ffmpeg ในเครื่อง — ติดตั้งด้วย: winget install ffmpeg (หรือ scoop install ffmpeg) แล้วลองใหม่")
+		return statereport.New("ไม่พบโปรแกรม ffmpeg ในเครื่อง, ติดตั้งด้วย: winget install ffmpeg (หรือ scoop install ffmpeg) แล้วลองใหม่")
 	}
 }

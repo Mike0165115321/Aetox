@@ -54,7 +54,7 @@ func (*diagnosticsSkill) ToolDefinition() model.ToolDefinition {
 		Function: model.ToolFunction{
 			Name: "diagnostics",
 			Description: "Check for compile/type errors using the language server (gopls, tsserver, ...). " +
-				"Give it a file, or a folder to check every supported file inside it — \".\" checks the whole project. " +
+				"Give it a file, or a folder to check every supported file inside it, \".\" checks the whole project. " +
 				"Call it after editing source files to confirm the change is valid before moving on. " +
 				"Returns '(no problems)' when everything checked is clean, and says so when no server is installed for that language.",
 			Parameters: payload,
@@ -98,11 +98,11 @@ func (s *diagnosticsSkill) ExecuteTool(ctx context.Context, args map[string]any)
 	// than reporting nothing at all.
 	if !lsp.Configured(path) {
 		return newToolOutput("diagnostics", command,
-			"(no language server exists for this file type — not checked)", start, false, nil), nil
+			"(no language server exists for this file type, not checked)", start, false, nil), nil
 	}
 	if !lsp.Available(ctx, path) {
 		return newToolOutput("diagnostics", command,
-			"(language server for this file type is not installed and could not be installed — NOT checked)", start, false, nil), nil
+			"(language server for this file type is not installed and could not be installed, NOT checked)", start, false, nil), nil
 	}
 
 	diags, err := lsp.Shared(s.root).Diagnose(ctx, path, diagnosticsTimeout)
@@ -157,7 +157,7 @@ func (s *diagnosticsSkill) diagnoseTree(ctx context.Context, shown, absDir, comm
 	}
 	if len(files) == 0 {
 		return newToolOutput("diagnostics", command,
-			"(no files with a language server under "+shown+" — nothing checked)", start, false, nil), nil
+			"(no files with a language server under "+shown+", nothing checked)", start, false, nil), nil
 	}
 	// Sorted so two runs over an unchanged tree report in the same order, and
 	// so the truncation below cuts predictably rather than by walk order.
@@ -209,10 +209,10 @@ func (s *diagnosticsSkill) diagnoseTree(ctx context.Context, shown, absDir, comm
 		summary += fmt.Sprintf(", %d skipped (no server available)", skipped)
 	}
 	if capped {
-		summary += fmt.Sprintf(" — stopped at the first %d files, check a subfolder for the rest", maxDiagnosticsFiles)
+		summary += fmt.Sprintf(", stopped at the first %d files, check a subfolder for the rest", maxDiagnosticsFiles)
 	}
 	if len(lines) == 0 {
-		return newToolOutput("diagnostics", command, "(no problems) — "+summary, start, capped, nil), nil
+		return newToolOutput("diagnostics", command, "(no problems), "+summary, start, capped, nil), nil
 	}
 	out, truncated := limitLines(strings.Join(lines, "\n"), defaultToolOutputLineLimit)
 	return newToolOutput("diagnostics", command, out+"\n\n"+summary, start, truncated || capped, nil), nil

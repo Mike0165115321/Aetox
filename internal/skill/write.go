@@ -127,7 +127,7 @@ func (*writeSkill) ToolDefinition() model.ToolDefinition {
 			// ~100s streamed round thrown away. A cap the model must know
 			// BEFORE it starts writing has to ride where the model always is.
 			// Guidance still carries the why (output limits vary by provider).
-			Description: "Write a file, at most 300 lines per call — over that nothing is written; send 300 and append the rest with edit mode=append. A relative path may land in a per-session output folder; the result names the real path — use it for later reads, edits and opens.",
+			Description: "Write a file, at most 300 lines per call, over that nothing is written; send 300 and append the rest with edit mode=append. A relative path may land in a per-session output folder; the result names the real path, use it for later reads, edits and opens.",
 			Parameters:  payload,
 		},
 	}

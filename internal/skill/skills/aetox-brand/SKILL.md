@@ -21,8 +21,8 @@ Brand identity, voice, messaging, asset management, and consistency frameworks.
 
 ## Quick Start
 
-There is nothing to run. The brand lives in one file in the user's project —
-usually `docs/brand-guidelines.md` — and the work is reading it before writing
+There is nothing to run. The brand lives in one file in the user's project
+usually `docs/brand-guidelines.md`, and the work is reading it before writing
 anything in the brand's name, and editing it when the brand changes.
 
 **Before writing anything branded:** read the guidelines file whole. Voice is
@@ -34,7 +34,7 @@ name or an image size is `glob` and a look; a tone is a judgement, and the
 checklist is what keeps it from being only taste.
 
 **Colours:** the palette is whatever the guidelines file says it is. Reading a
-colour *out of an image* is not something this app can do — say so rather than
+colour *out of an image* is not something this app can do, say so rather than
 guessing at a hex from a description of a picture.
 
 ## Brand Sync Workflow
@@ -42,7 +42,7 @@ guessing at a hex from a description of a picture.
 The guidelines file is the source of truth and the tokens follow it, by hand and
 in that order:
 
-1. Edit the guidelines file — the brand changed there first.
+1. Edit the guidelines file, the brand changed there first.
 2. Carry the change into the project's design tokens. `aetox-design-system` is
    the skill that says how the three token layers fit together.
 3. Read back what you wrote. A token file that disagrees with the guidelines is

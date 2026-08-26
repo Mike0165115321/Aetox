@@ -46,7 +46,7 @@ func (*symbolSkill) ToolDefinition() model.ToolDefinition {
 			},
 			"name": map[string]any{
 				"type":        "string",
-				"description": "The identifier to look up, exactly as written — a function, type, method, variable or field.",
+				"description": "The identifier to look up, exactly as written, a function, type, method, variable or field.",
 			},
 		},
 		"required":             []string{"path", "name"},
@@ -94,11 +94,11 @@ func (s *symbolSkill) ExecuteTool(ctx context.Context, args map[string]any) (Out
 	// be reported as "this symbol does not exist".
 	if !lsp.Configured(path) {
 		return newToolOutput("symbol", command,
-			"(no language server exists for this file type — not checked)", start, false, nil), nil
+			"(no language server exists for this file type, not checked)", start, false, nil), nil
 	}
 	if !lsp.Available(ctx, path) {
 		return newToolOutput("symbol", command,
-			"(language server for this file type is not installed and could not be installed — NOT checked)", start, false, nil), nil
+			"(language server for this file type is not installed and could not be installed, NOT checked)", start, false, nil), nil
 	}
 
 	info, err := lsp.Shared(s.root).Symbol(ctx, path, name, diagnosticsTimeout)
@@ -110,7 +110,7 @@ func (s *symbolSkill) ExecuteTool(ctx context.Context, args map[string]any) (Out
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s — used at %s:%d\n", name, path, info.Occurrence)
+	fmt.Fprintf(&b, "%s, used at %s:%d\n", name, path, info.Occurrence)
 	if info.DefPath != "" {
 		fmt.Fprintf(&b, "declared at %s:%d\n", relativeToRoot(s.root, info.DefPath), info.DefLine)
 	}

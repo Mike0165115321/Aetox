@@ -624,7 +624,7 @@ function ChatLog({ messages }) {
 
 ## อ้างอิง: details
 
-# accessibility-compliance — detailed patterns and worked examples
+# accessibility-compliance, detailed patterns and worked examples
 
 ## Core Capabilities
 

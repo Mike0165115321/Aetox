@@ -107,7 +107,7 @@ func whyNoMatch(content, findText string) string {
 		return "find text is only whitespace"
 	}
 	if numbered, stripped := stripReadPrefix(first); numbered {
-		return fmt.Sprintf("it still carries read's line-number prefix — strip %q down to %q; the number and tab are not in the file",
+		return fmt.Sprintf("it still carries read's line-number prefix, strip %q down to %q; the number and tab are not in the file",
 			truncateForError(first), truncateForError(stripped))
 	}
 
@@ -117,13 +117,13 @@ func whyNoMatch(content, findText string) string {
 			continue
 		}
 		if line == first {
-			return fmt.Sprintf("its first line matches at line %d, so a later line of the find text is what differs — compare from line %d down",
+			return fmt.Sprintf("its first line matches at line %d, so a later line of the find text is what differs, compare from line %d down",
 				i+1, i+1)
 		}
 		return fmt.Sprintf("line %d holds the same text with different leading whitespace: the file has %q, find has %q",
 			i+1, truncateForError(line), truncateForError(first))
 	}
-	return "no line of the find text appears in this file — check the path, or that the text has not already been changed"
+	return "no line of the find text appears in this file, check the path, or that the text has not already been changed"
 }
 
 // stripReadPrefix reports whether s starts with the `%6d\t` prefix read puts on

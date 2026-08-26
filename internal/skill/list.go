@@ -283,7 +283,7 @@ func resolveWithin(root string, requestPath string, mayWiden bool) (string, erro
 	// at all. Either way the credential stores stay shut (sandbox_open.go).
 	policy := sandboxPolicyFor(safeRoot)
 	if !policy.open && !policy.covers(resolvedTarget) && !(mayWiden && widened(safeRoot, policy, resolvedTarget)) {
-		return "", fmt.Errorf("path is outside the folders this session can use — the user has to add it first")
+		return "", fmt.Errorf("path is outside the folders this session can use, the user has to add it first")
 	}
 	if err := refuseResolved(resolvedTarget); err != nil {
 		return "", err

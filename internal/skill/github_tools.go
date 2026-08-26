@@ -559,7 +559,7 @@ func (s *pluginInstallSkill) installPlainSkills(ctx context.Context, client *git
 				return fail(err)
 			}
 		}
-		lines = append(lines, fmt.Sprintf("  %s — %d file(s), %d KB", sk.name, len(sk.files), sk.bytes/1024))
+		lines = append(lines, fmt.Sprintf("  %s, %d file(s), %d KB", sk.name, len(sk.files), sk.bytes/1024))
 	}
 	return newToolOutput("plugin_install", "plugin_install "+repo.FullName, strings.Join(lines, "\n"), start, false, nil), nil
 }
@@ -1024,7 +1024,7 @@ func (s *githubReadFileSkill) read(ctx context.Context, repoURL, path, ref strin
 		content = content[:maxChars] + "\n... (truncated)"
 		truncated = true
 	}
-	header := fmt.Sprintf("%s @ %s — %s\n\n", repo.FullName, ref, cleanPath)
+	header := fmt.Sprintf("%s @ %s, %s\n\n", repo.FullName, ref, cleanPath)
 	return newToolOutput("github_read_file", command, header+content, start, truncated, nil), nil
 }
 
@@ -1128,11 +1128,11 @@ func (s *githubListFilesSkill) list(ctx context.Context, repoURL, path string) (
 	}
 	if err := json.Unmarshal(body, &entries); err != nil {
 		// A file path returns an object, not an array — point the model at the right tool.
-		err := errors.New("path is a file, not a directory — use github_read_file")
+		err := errors.New("path is a file, not a directory, use github_read_file")
 		return newToolOutput("github_list_files", command, "", start, false, err), err
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s/%s — %s:\n", target.Owner, target.Repo, emptyFallback(path, "(root)"))
+	fmt.Fprintf(&b, "%s/%s, %s:\n", target.Owner, target.Repo, emptyFallback(path, "(root)"))
 	for _, e := range entries {
 		if e.Type == "dir" {
 			fmt.Fprintf(&b, "%s/\n", e.Path)

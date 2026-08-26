@@ -40,7 +40,7 @@ const maxOfficeReadBytes = 20 << 20
 // readOffice renders one Office file for the model.
 func (s *readSkill) readOffice(targetPath, shown, ext string, size int64) (string, error) {
 	if size > maxOfficeReadBytes {
-		return "", fmt.Errorf("%s is %d bytes, too large to read into a reply — open it in the program that owns it", shown, size)
+		return "", fmt.Errorf("%s is %d bytes, too large to read into a reply, open it in the program that owns it", shown, size)
 	}
 	data, err := os.ReadFile(targetPath)
 	if err != nil {
@@ -76,7 +76,7 @@ func (s *readSkill) readOffice(targetPath, shown, ext string, size int64) (strin
 // what somebody asking "is this structured properly" is actually looking at.
 func renderDocument(doc *ooxml.ReadDocument, shown string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s — %d block(s)", shown, len(doc.Blocks))
+	fmt.Fprintf(&b, "%s, %d block(s)", shown, len(doc.Blocks))
 	if doc.Pictures > 0 {
 		fmt.Fprintf(&b, ", %d picture(s)", doc.Pictures)
 	}
@@ -102,7 +102,7 @@ func renderDocument(doc *ooxml.ReadDocument, shown string) string {
 		}
 	}
 	if doc.Truncated() {
-		b.WriteString("\n\n... (truncated — the document has more blocks than one read returns)")
+		b.WriteString("\n\n... (truncated, the document has more blocks than one read returns)")
 	}
 	return b.String()
 }
@@ -138,7 +138,7 @@ func blockLabel(block ooxml.ReadBlock) string {
 
 func renderDeck(slides []string, shown string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s — %d slide(s)\n", shown, len(slides))
+	fmt.Fprintf(&b, "%s, %d slide(s)\n", shown, len(slides))
 	for i, text := range slides {
 		fmt.Fprintf(&b, "\n[%d]\n", i+1)
 		if strings.TrimSpace(text) == "" {
@@ -154,7 +154,7 @@ func renderDeck(slides []string, shown string) string {
 
 func renderWorkbook(book *ooxml.WorkbookPreview, shown string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s — %d sheet(s)\n", shown, len(book.Sheets))
+	fmt.Fprintf(&b, "%s, %d sheet(s)\n", shown, len(book.Sheets))
 	for _, sheet := range book.Sheets {
 		fmt.Fprintf(&b, "\n[%s] %d row(s)\n", sheet.Name, sheet.TotalRows)
 		for _, row := range sheet.Rows {

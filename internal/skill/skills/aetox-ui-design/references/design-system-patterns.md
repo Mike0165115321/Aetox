@@ -1164,7 +1164,7 @@ function validateContrast(
 
 ## อ้างอิง: details
 
-# design-system-patterns — detailed patterns and worked examples
+# design-system-patterns, detailed patterns and worked examples
 
 ## Key Patterns
 

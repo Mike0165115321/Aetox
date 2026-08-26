@@ -39,7 +39,7 @@ import (
 // description earns its length by preventing a wasted turn — and this one does:
 // without it the model invents node parameters, the write succeeds, and the
 // failure surfaces much later as a broken run nobody connects back to here.
-const n8nUsageHint = " n8n does not expose node schemas, so wrong node parameters are accepted here and fail at run time — read an existing workflow that uses a node before writing one."
+const n8nUsageHint = " n8n does not expose node schemas, so wrong node parameters are accepted here and fail at run time, read an existing workflow that uses a node before writing one."
 
 type n8nListSkill struct{}
 type n8nReadSkill struct{}
@@ -57,7 +57,7 @@ func (*n8nListSkill) Description() string {
 
 func (s *n8nListSkill) ToolDefinition() model.ToolDefinition {
 	return toolDef("n8n_workflow_list",
-		"List workflows on the user's n8n: id, name, active or not, node count. Paged — pass a returned next_cursor to continue.",
+		"List workflows on the user's n8n: id, name, active or not, node count. Paged, pass a returned next_cursor to continue.",
 		map[string]any{
 			"limit":  map[string]any{"type": "integer", "description": "1-250, default 50."},
 			"cursor": map[string]any{"type": "string", "description": "next_cursor from a previous call."},
@@ -109,7 +109,7 @@ func (*n8nReadSkill) Description() string {
 
 func (s *n8nReadSkill) ToolDefinition() model.ToolDefinition {
 	return toolDef("n8n_workflow_read",
-		"Read one workflow whole — every node with its parameters and the wiring — as JSON. Also the only accurate way to learn a node type's real shape before writing one.",
+		"Read one workflow whole, every node with its parameters and the wiring, as JSON. Also the only accurate way to learn a node type's real shape before writing one.",
 		map[string]any{
 			"id": map[string]any{"type": "string", "description": "Workflow id from n8n_workflow_list."},
 		}, []string{"id"})
@@ -153,7 +153,7 @@ func (*n8nCreateSkill) Description() string {
 
 func (s *n8nCreateSkill) ToolDefinition() model.ToolDefinition {
 	return toolDef("n8n_workflow_create",
-		"Create a workflow on the user's n8n. Created switched off — use n8n_workflow_activate to start it."+n8nUsageHint,
+		"Create a workflow on the user's n8n. Created switched off, use n8n_workflow_activate to start it."+n8nUsageHint,
 		map[string]any{
 			"name":  map[string]any{"type": "string"},
 			"nodes": map[string]any{"type": "array", "description": "Node objects; [] for a blank workflow.", "items": map[string]any{"type": "object"}},
@@ -177,7 +177,7 @@ func (s *n8nCreateSkill) ExecuteTool(ctx context.Context, args map[string]any) (
 	if err != nil {
 		return n8nFail("n8n_workflow_create", start, err)
 	}
-	msg := fmt.Sprintf("สร้างแล้ว: %s (id %s) — ยังไม่เปิดใช้งาน เรียก n8n_workflow_activate เพื่อเริ่ม", created.Name, created.ID)
+	msg := fmt.Sprintf("สร้างแล้ว: %s (id %s), ยังไม่เปิดใช้งาน เรียก n8n_workflow_activate เพื่อเริ่ม", created.Name, created.ID)
 	return newToolOutput("n8n_workflow_create", "n8n_workflow_create", msg, start, false, nil), nil
 }
 
@@ -228,7 +228,7 @@ func (*n8nActivateSkill) Description() string {
 
 func (s *n8nActivateSkill) ToolDefinition() model.ToolDefinition {
 	return toolDef("n8n_workflow_activate",
-		"Switch a workflow on or off. Activation means \"run by itself from now on\", so it needs a webhook, schedule or polling trigger. A Manual Trigger is NOT one of those: a workflow built to be tested from the editor cannot be activated, does not need to be, and is finished without this call — do not make it, and if you did, the refusal is not a fault in the workflow.",
+		"Switch a workflow on or off. Activation means \"run by itself from now on\", so it needs a webhook, schedule or polling trigger. A Manual Trigger is NOT one of those: a workflow built to be tested from the editor cannot be activated, does not need to be, and is finished without this call, do not make it, and if you did, the refusal is not a fault in the workflow.",
 		map[string]any{
 			"id":     map[string]any{"type": "string"},
 			"active": map[string]any{"type": "boolean", "description": "Default true."},
@@ -311,7 +311,7 @@ type n8nSkill struct {
 func (*n8nSkill) Name() string { return "n8n" }
 
 func (*n8nSkill) Description() string {
-	return "จัดการ workflow บน n8n ของผู้ใช้ — ดูรายการ อ่าน สร้าง แก้ และเปิด/ปิดการทำงาน"
+	return "จัดการ workflow บน n8n ของผู้ใช้, ดูรายการ อ่าน สร้าง แก้ และเปิด/ปิดการทำงาน"
 }
 
 func (s *n8nSkill) allowedActions() []string {
@@ -338,11 +338,11 @@ func (s *n8nSkill) ToolDefinition() model.ToolDefinition {
 	// reads it at the exact moment it is about to make that mistake — see
 	// TestTheManualTriggerTrapIsTaughtWhereItIsMet.
 	lines := map[string]string{
-		"list":     "`list` (limit?, cursor?) — workflows on the instance: id, name, active or not, node count. Paged — pass a returned next_cursor to continue.",
-		"read":     "`read` (id) — one workflow whole, every node with its parameters and the wiring, as JSON. Also the only accurate way to learn a node type's real shape before writing one.",
-		"create":   "`create` (name, nodes?, connections?, settings?) — a new workflow. Created switched off — use `activate` to start it. connections is keyed by node NAME with a doubled array: {\"A\":{\"main\":[[{\"node\":\"B\",\"type\":\"main\",\"index\":0}]]}} — outer array = output port, inner = fan-out.",
-		"update":   "`update` (id, name, nodes, connections, settings) — FULL REPLACE of a workflow, not a patch: read it first, change what you mean to, send it all back. Three of five nodes deletes the other two. Does not change active state.",
-		"activate": "`activate` (id, active?) — switch a workflow on or off. Activation means \"run by itself from now on\", so it needs a webhook, schedule or polling trigger. A Manual Trigger is NOT one of those: a workflow built to be tested from the editor cannot be activated, does not need to be, and is finished without this call — do not make it, and if you did, the refusal is not a fault in the workflow.",
+		"list":     "`list` (limit?, cursor?), workflows on the instance: id, name, active or not, node count. Paged, pass a returned next_cursor to continue.",
+		"read":     "`read` (id), one workflow whole, every node with its parameters and the wiring, as JSON. Also the only accurate way to learn a node type's real shape before writing one.",
+		"create":   "`create` (name, nodes?, connections?, settings?), a new workflow. Created switched off, use `activate` to start it. connections is keyed by node NAME with a doubled array: {\"A\":{\"main\":[[{\"node\":\"B\",\"type\":\"main\",\"index\":0}]]}}, outer array = output port, inner = fan-out.",
+		"update":   "`update` (id, name, nodes, connections, settings), FULL REPLACE of a workflow, not a patch: read it first, change what you mean to, send it all back. Three of five nodes deletes the other two. Does not change active state.",
+		"activate": "`activate` (id, active?), switch a workflow on or off. Activation means \"run by itself from now on\", so it needs a webhook, schedule or polling trigger. A Manual Trigger is NOT one of those: a workflow built to be tested from the editor cannot be activated, does not need to be, and is finished without this call, do not make it, and if you did, the refusal is not a fault in the workflow.",
 	}
 	var actions strings.Builder
 	for _, a := range allowed {
@@ -397,11 +397,11 @@ func (s *n8nSkill) ExecuteTool(ctx context.Context, args map[string]any) (Output
 func (s *n8nSkill) innerFor(action string) (Tool, error) {
 	p := packs["n8n"]
 	if _, known := p.names[action]; !known {
-		return nil, fmt.Errorf("unknown n8n action %q — this session may use: %s",
+		return nil, fmt.Errorf("unknown n8n action %q, this session may use: %s",
 			action, strings.Join(s.allowedActions(), ", "))
 	}
 	if !slices.Contains(s.allowedActions(), action) {
-		return nil, fmt.Errorf("n8n %s is not available here — this session may use: %s",
+		return nil, fmt.Errorf("n8n %s is not available here, this session may use: %s",
 			action, strings.Join(s.allowedActions(), ", "))
 	}
 	switch action {

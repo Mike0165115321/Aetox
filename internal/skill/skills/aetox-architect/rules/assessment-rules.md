@@ -2,7 +2,7 @@
 
 Failure modes prevented:
 
-The agent describes the system politely and stops — leaving visible debt,
+The agent describes the system politely and stops, leaving visible debt,
 convention drift, boundary violations, and flow conflicts unnamed. Or the
 opposite: the agent floods the output with taste-based nitpicks to appear
 thorough.
@@ -27,8 +27,8 @@ thorough.
 8. Recommend the smallest safe correction as a proposed change requiring
    approval. Do not design the full fix inside a finding.
 9. Point each recommendation toward the structure that stops the debt from
-   recurring — a clear boundary, a single source of truth, the framework's own
-   mechanism — not just toward deleting the symptom.
+   recurring, a clear boundary, a single source of truth, the framework's own
+   mechanism, not just toward deleting the symptom.
 10. Never soften a supported finding to be agreeable, and never invent a
     finding to fill a section. `None identified` is a valid assessment.
 
@@ -77,7 +77,7 @@ question or recommended next inspection instead.
 ## Graph-Derived Signals
 
 When codebase graph data is available, its signals feed into the same
-dimensions, finding shape, and confidence taxonomy above — no parallel
+dimensions, finding shape, and confidence taxonomy above, no parallel
 system. Graph does not pre-assign severity, bypass `Verify first: Yes` for
 heuristic results, or turn fan-in outliers into findings without inspected
 impact. When graph data and a file read disagree, the file read wins.

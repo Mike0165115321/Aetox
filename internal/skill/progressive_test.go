@@ -58,7 +58,7 @@ func TestSkillsListReportsNameAndDescription(t *testing.T) {
 	if err != nil {
 		t.Fatalf("skills_list: %v", err)
 	}
-	if !containsAll(out.Content, "deploy_notes — How we deploy", "invoice_filing — Where receipts go") {
+	if !containsAll(out.Content, "deploy_notes: How we deploy", "invoice_filing: Where receipts go") {
 		t.Fatalf("listing missing entries: %q", out.Content)
 	}
 	// The listing is L0 — names and descriptions only. A body leaking in here

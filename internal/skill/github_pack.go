@@ -35,7 +35,7 @@ type githubSkill struct {
 func (*githubSkill) Name() string { return "github" }
 
 func (*githubSkill) Description() string {
-	return "ค้นและอ่าน repository บน GitHub — หา repo, สรุปว่ามันคืออะไร, ดูว่ามีไฟล์อะไร และอ่านไฟล์"
+	return "ค้นและอ่าน repository บน GitHub, หา repo, สรุปว่ามันคืออะไร, ดูว่ามีไฟล์อะไร และอ่านไฟล์"
 }
 
 func (s *githubSkill) allowedActions() []string {
@@ -61,10 +61,10 @@ func (s *githubSkill) ToolDefinition() model.ToolDefinition {
 	// description says so out loud: a model that reads a file before finding
 	// out which repository it is in wastes a call on a guessed path.
 	lines := map[string]string{
-		"search":       "`search` (query) — find repositories. GitHub repo search syntax, e.g. 'terminal ui language:go'. Returns name, stars, description and URL for each.",
-		"repo_summary": "`repo_summary` (repo_url) — what one repository is, from its GitHub metadata.",
-		"list_files":   "`list_files` (repo_url, path?) — the files and directories at a path, or at the root. Use it before read_file rather than guessing a path.",
-		"read_file":    "`read_file` (repo_url, path, ref?) — one file's raw content. ref is a branch, tag or commit; without it, the repo's default branch.",
+		"search":       "`search` (query), find repositories. GitHub repo search syntax, e.g. 'terminal ui language:go'. Returns name, stars, description and URL for each.",
+		"repo_summary": "`repo_summary` (repo_url), what one repository is, from its GitHub metadata.",
+		"list_files":   "`list_files` (repo_url, path?), the files and directories at a path, or at the root. Use it before read_file rather than guessing a path.",
+		"read_file":    "`read_file` (repo_url, path, ref?), one file's raw content. ref is a branch, tag or commit; without it, the repo's default branch.",
 	}
 	var actions strings.Builder
 	for _, a := range allowed {
@@ -104,9 +104,9 @@ func (s *githubSkill) ToolDefinition() model.ToolDefinition {
 		Type: "function",
 		Function: model.ToolFunction{
 			Name: "github",
-			Description: "Read a repository on GitHub — anyone's, not just the user's. Actions:\n" +
+			Description: "Read a repository on GitHub, anyone's, not just the user's. Actions:\n" +
 				actions.String() + "\n" +
-				"Public repositories need nothing but a URL. Reading code that is already on this machine is the file tools' job, not this one's — this is for repositories that are not checked out here.",
+				"Public repositories need nothing but a URL. Reading code that is already on this machine is the file tools' job, not this one's, this is for repositories that are not checked out here.",
 			Parameters: payload,
 		},
 	}
@@ -151,11 +151,11 @@ func (s *githubSkill) ExecuteTool(ctx context.Context, args map[string]any) (Out
 func (s *githubSkill) innerFor(action string) (Tool, error) {
 	p := packs["github"]
 	if _, known := p.names[action]; !known {
-		return nil, fmt.Errorf("unknown github action %q — this session may use: %s",
+		return nil, fmt.Errorf("unknown github action %q, this session may use: %s",
 			action, strings.Join(s.allowedActions(), ", "))
 	}
 	if !slices.Contains(s.allowedActions(), action) {
-		return nil, fmt.Errorf("github %s is not available here — this session may use: %s",
+		return nil, fmt.Errorf("github %s is not available here, this session may use: %s",
 			action, strings.Join(s.allowedActions(), ", "))
 	}
 	switch action {

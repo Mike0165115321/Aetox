@@ -24,7 +24,7 @@ Expanded direction:
 A senior architect does not stop at describing the system. Understanding is
 complete only when the agent can also judge it: name the architecture debt,
 the code that drifts from framework and project conventions, the boundaries
-that leak responsibilities, and the flows that contradict each other — all
+that leak responsibilities, and the flows that contradict each other, all
 with evidence, severity, and the smallest safe correction.
 
 Require inspection, classification, questioning, mapping, assessment,
@@ -41,7 +41,7 @@ Sibling skill routing:
 If the request is a pure raw idea with no implementation and no existing
 system evidence, route to `$idea-to-architecture-agent`. If that sibling skill
 is unavailable, state that this skill is scoped to existing-system evidence,
-recommend installing the sibling skill, and only continue if the user asks —
+recommend installing the sibling skill, and only continue if the user asks
 labeling every designed element as proposed, not existing. Do not make this
 skill depend on the sibling skill.
 
@@ -65,7 +65,7 @@ Intake
 ## Operating Rules
 
 0. Default to Scan Mode. Promotion to Focus or Full Mode requires inspected
-   evidence, a named trigger, and a stated risk — never promote on speculation.
+   evidence, a named trigger, and a stated risk, never promote on speculation.
 1. Never design before inspecting the real system.
 2. Never modify code before understanding the relevant architecture.
 3. Never assume silently.
@@ -128,7 +128,7 @@ Use these gates to keep the flow enforceable:
 - Do not redesign or edit before understanding the relevant architecture.
 - Mark suggested changes as proposed until the owner approves them.
 - Name observed debt, convention drift, boundary violations, and flow
-  conflicts with evidence — do not soften findings into vague generalities,
+  conflicts with evidence, do not soften findings into vague generalities,
   and do not invent findings to appear thorough.
 
 Primary outputs:
@@ -318,7 +318,7 @@ For Scan Mode, produce one compact architecture note and nothing else. Steps
 may be merged; only the discipline must survive. The note contains: pass level
 and reason, scope, evidence checked, skipped areas, confirmed facts, inferences
 or assumptions, findings, open questions, risks, and safe next actions. Do not
-expand these into the full report structure, and do not pad sections — write
+expand these into the full report structure, and do not pad sections, write
 `None identified` where nothing was found.
 
 For Focus Mode, document only the relevant module, workflow, boundary, risks,
@@ -369,7 +369,7 @@ source of truth; graph data may be stale or incomplete.
 Useful graph queries during mapping:
 
 - Module dependency chains from entry point to persistence.
-- Caller lists for key functions or modules — the blast radius of a change.
+- Caller lists for key functions or modules, the blast radius of a change.
 - Shared modules with high consumer counts (inspect further; not a finding
   by itself).
 - Validation of the manually built map: divergence between the map and
@@ -378,37 +378,37 @@ Useful graph queries during mapping:
 Always cross-check critical graph findings with direct file reading. Graph is
 a navigation aid, not a replacement for architectural judgment (Rule 13).
 
-If no graph tool is available, map with file search and file reads as usual —
+If no graph tool is available, map with file search and file reads as usual
 the mapping discipline is unchanged.
 
 ## Step 6: Assess
 
-Judge what was mapped. Describing the system is not the end of senior work —
+Judge what was mapped. Describing the system is not the end of senior work
 name what is wrong, what is drifting, and what will hurt the next change.
 
 Assess these dimensions against inspected evidence:
 
-- Architecture debt: structures that work today but tax every future change —
+- Architecture debt: structures that work today but tax every future change
   duplicated responsibilities, hidden coupling, missing quality gates,
   workarounds that became permanent.
 - Separation of concerns: modules or layers that mix responsibilities the
   structure claims to separate, and boundaries that leak (UI reading storage
   directly, business logic inside handlers, shared mutable state).
 - Framework convention drift: code that fights the framework's documented
-  conventions — wrong lifecycle usage, bypassed routing or data layers,
+  conventions, wrong lifecycle usage, bypassed routing or data layers,
   reimplemented framework features.
 - Project convention drift: code that breaks the project's own dominant
-  patterns — naming, module layout, error handling, or data access done one
+  patterns, naming, module layout, error handling, or data access done one
   way in most places and another way in a few.
 - Flow conflicts: trace the main flows from entry point to data and back, and
-  flag contradictions — two sources of truth for the same state, circular
+  flag contradictions, two sources of truth for the same state, circular
   dependencies, dead or unreachable paths, side effects crossing module
   boundaries, flows that bypass declared layers.
 
 Every finding must state:
 
 - Evidence: the files or observed signals that show it.
-- Impact: why it matters — what it breaks, slows, or makes unsafe to change.
+- Impact: why it matters, what it breaks, slows, or makes unsafe to change.
 - Severity: `Critical` (breaks correctness or contradicts the system's own
   flow), `High` (actively harms change safety), `Medium` (taxes future work),
   `Low` (worth noting, not worth acting on now).
@@ -428,7 +428,7 @@ What is not a finding:
 
 Graph-Derived Signals (when available):
 
-Codebase intelligence data feeds into the existing assessment dimensions — it
+Codebase intelligence data feeds into the existing assessment dimensions, it
 does not create new ones. Treat graph results as signals that accelerate
 inspection, not as findings that skip the finding shape.
 
@@ -441,7 +441,7 @@ inspection, not as findings that skip the finding shape.
   as UI importing persistence directly): a candidate for `Separation of
   concerns`. Cross-check with file reading before filing.
 - High-consumer modules (fan-in outlier in this codebase): a signal to
-  inspect — not a finding. Shared utilities are designed to have high fan-in.
+  inspect, not a finding. Shared utilities are designed to have high fan-in.
   Inspect whether the coupling is structural or incidental; file a finding
   only when evidence confirms harm.
 - Zero consumers in graph: `Inferred` + `Verify first: Yes`. Graph cannot
@@ -458,7 +458,7 @@ inspection already surfaced; in Focus Mode, assess the scoped module's
 boundaries, conventions, and flows; in Full Mode, assess systematically across
 every mapped area.
 
-If nothing qualifies, write `None identified` — an honest empty assessment
+If nothing qualifies, write `None identified`, an honest empty assessment
 beats invented findings.
 
 ## Step 7: Document
@@ -540,7 +540,7 @@ add the full structure below on top of it.
 For Focus Mode and Full Mode, report in two layers per the Reporting
 Sequence Rule (Rule 19): reader priority first, process order second.
 
-Layer 1 — Synthesis (always required, 3-5 lines, opens the report):
+Layer 1, Synthesis (always required, 3-5 lines, opens the report):
 
 - Critical/High findings, each with its evidence reference
 - The primary recommendation
@@ -548,7 +548,7 @@ Layer 1 — Synthesis (always required, 3-5 lines, opens the report):
 If no Critical/High findings exist, state that plainly and lead with the
 primary recommendation instead.
 
-Layer 2 — Detail on demand (unchanged content, give only when the user asks
+Layer 2, Detail on demand (unchanged content, give only when the user asks
 for detail or a checkpoint gate requires it in writing):
 
 1. What was inspected

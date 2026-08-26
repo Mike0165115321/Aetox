@@ -32,7 +32,7 @@ type docWriteSkill struct {
 func (*docWriteSkill) Name() string { return "doc_write" }
 
 func (*docWriteSkill) Description() string {
-	return "สร้างไฟล์ Word (.docx) จากโครงเอกสาร — หัวข้อ ย่อหน้า บุลเล็ต ลำดับเลข ตาราง ภาษาไทยไม่เพี้ยน"
+	return "สร้างไฟล์ Word (.docx) จากโครงเอกสาร, หัวข้อ ย่อหน้า บุลเล็ต ลำดับเลข ตาราง ภาษาไทยไม่เพี้ยน"
 }
 
 func (*docWriteSkill) ToolDefinition() model.ToolDefinition {
@@ -343,11 +343,11 @@ func (s *docWriteSkill) parseBlocks(raw any) ([]ooxml.Block, error) {
 			// a real thing to put on an invoice.
 			raw, has := entry["price"]
 			if !has {
-				return nil, fmt.Errorf("block %d: line %q has no price — send one (0 if it is free), because a missing price prints as 0.00", i+1, line.Text)
+				return nil, fmt.Errorf("block %d: line %q has no price, send one (0 if it is free), because a missing price prints as 0.00", i+1, line.Text)
 			}
 			price, ok := raw.(float64)
 			if !ok {
-				return nil, fmt.Errorf("block %d: line %q has a price that is not a number (%v) — send 15000, not \"฿15,000\"", i+1, line.Text, raw)
+				return nil, fmt.Errorf("block %d: line %q has a price that is not a number (%v), send 15000, not \"฿15,000\"", i+1, line.Text, raw)
 			}
 			line.Price = price
 			block.Lines = append(block.Lines, line)

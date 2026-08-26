@@ -105,7 +105,7 @@ charts drawn by whatever already travels inside the file.
 
 ### There is no stylesheet to import
 
-A deck in Aetox is one self-contained `.html` file — nothing is linked in beside
+A deck in Aetox is one self-contained `.html` file, nothing is linked in beside
 it, so every token and every `@keyframes` a slide uses is written into that
 file. The rows below name what a slide should *be*; you write the CSS that makes
 it so. `animation_class` in particular is the entrance a layout wants, not a
@@ -113,7 +113,7 @@ class waiting in a library: read it as the intent, spell it however the deck
 spells everything else, and follow the resting-state rule in `aetox-slides` so
 it survives the export.
 
-The export-safe spellings live in one place — the entrance kit in `aetox-slides`.
+The export-safe spellings live in one place, the entrance kit in `aetox-slides`.
 Map a row's intent onto it rather than inventing a name: `fade-up` and `stagger`
 are `rise` and a staggered `rise`; `scale` and `stagger-scale` are `grow`, which
 starts at `.96` and never `0`; `count` is a number whose final value is its DOM
@@ -125,13 +125,13 @@ never to carry a point a `.pdf` reader has to receive.
 ### Reading the decision tables
 
 The tables below are the knowledge; there is no search tool to run over them.
-Open the one that answers the question you actually have — `skill_view` with the
-file's path — and read the rows. Each file is small enough to read whole, and
+Open the one that answers the question you actually have, `skill_view` with the
+file's path, and read the rows. Each file is small enough to read whole, and
 reading it whole is how you see the row you would not have thought to search
 for.
 
-For the deck's own anatomy — what a slide element is, what the slides room can
-page through, what survives an export — read the `aetox-slides` skill. That is
+For the deck's own anatomy, what a slide element is, what the slides room can
+page through, what survives an export, read the `aetox-slides` skill. That is
 where those facts live; this skill decides what goes *on* the slides.
 
 ### Decision System CSVs
@@ -165,7 +165,7 @@ where those facts live; this skill decides what goes *on* the slides.
 4. Generate HTML with design tokens
         ↓
 5. Validate by reading, then by capture (see "Checking a finished deck"
-   below) — there is no slide-token-validator.py to run
+   below), there is no slide-token-validator.py to run
 ```
 
 ### Pattern Breaking (Duarte Sparkline)
@@ -179,7 +179,7 @@ System calculates pattern breaks at 1/3 and 2/3 positions.
 
 ### Checking a finished deck before calling it done
 
-The `browser` tool's `capture` action photographs a page — open the deck (or
+The `browser` tool's `capture` action photographs a page, open the deck (or
 the slides room showing it), `capture` (`full: true` for the whole document,
 not just the visible part), then look at what came back. Run this before
 saying a deck is finished, the same way any UI change gets verified in a live
@@ -189,7 +189,7 @@ Two cheaper checks worth running even before that: count characters against
 the layout's stated max-width per line (a `slide-layouts.csv` row that says
 "short headline, 2-line max body" is a budget to check text against, not a
 suggestion), and re-read every `css_implementation` route for a chart against
-what the file actually carries — a chart drawn by a CDN-fetched library is the
+what the file actually carries, a chart drawn by a CDN-fetched library is the
 specific failure the export already warns about elsewhere in this document.
 
 ### What every slide owes the room
@@ -202,7 +202,7 @@ specific failure the export already warns about elsewhere in this document.
    without waiting for a third-party host, so a chart drawn by a library fetched
    from a CDN can come out blank. Carry the library into the file, or draw the
    chart in CSS or SVG. The `css_implementation` column names a route of each
-   kind for most rows — either one satisfies this, and the choice is yours.
+   kind for most rows, either one satisfies this, and the choice is yours.
 4. **Nothing of its own for navigation.** The room already pages, presents
    full-screen and exports. A deck that brings its own controls puts two sets in
    one frame and only the room's survives an export.

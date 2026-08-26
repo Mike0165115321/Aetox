@@ -76,7 +76,7 @@ func (*calcSkill) ToolDefinition() model.ToolDefinition {
 		"properties": map[string]any{
 			"script": map[string]any{
 				"type":        "string",
-				"description": "JavaScript. The answer is the last expression, or whatever you return. print(x) adds a line above it. Math, Date, JSON and BigInt only — no files, no network, no libraries.",
+				"description": "JavaScript. The answer is the last expression, or whatever you return. print(x) adds a line above it. Math, Date, JSON and BigInt only, no files, no network, no libraries.",
 			},
 		},
 		"required": []string{"script"},
@@ -92,8 +92,8 @@ func (*calcSkill) ToolDefinition() model.ToolDefinition {
 			// here would outrank it (defaults_test.go:
 			// TestToolDescriptionsStateCapabilityNotWordTriggers) and cost the
 			// tool block on every request besides.
-			Description: "Work a number out instead of recalling it. Runs a short JavaScript program inside this app — " +
-				"nothing to install, no reach to files or the network — and the user sees the script beside the result.",
+			Description: "Work a number out instead of recalling it. Runs a short JavaScript program inside this app, " +
+				"nothing to install, no reach to files or the network, and the user sees the script beside the result.",
 			Parameters: payload,
 		},
 	}
@@ -187,7 +187,7 @@ func runCalc(ctx context.Context, script string) (string, error) {
 	if err != nil {
 		var interrupt *goja.InterruptedError
 		if errors.As(err, &interrupt) {
-			return "", fmt.Errorf("%v — the script was stopped", interrupt.Value())
+			return "", fmt.Errorf("%v, the script was stopped", interrupt.Value())
 		}
 		// A goja error already reads like a JS engine's ("ReferenceError: x is
 		// not defined at <eval>:1:1"), which is the most useful thing to hand
@@ -209,7 +209,7 @@ func runCalc(ctx context.Context, script string) (string, error) {
 	if strings.TrimSpace(out) == "" {
 		// A script that computed nothing and printed nothing ran fine and said
 		// nothing, which the model must be told rather than left to assume.
-		return "(the script produced no value — end it with the expression you want, or call print)", nil
+		return "(the script produced no value, end it with the expression you want, or call print)", nil
 	}
 	return strings.TrimRight(out, "\n"), nil
 }
@@ -239,7 +239,7 @@ func continuationHint(script string) string {
 		if previous != "" && (strings.HasPrefix(line, "(") || strings.HasPrefix(line, "[")) &&
 			!strings.HasSuffix(previous, ";") && !strings.HasSuffix(previous, "{") &&
 			!strings.HasSuffix(previous, "}") && !strings.HasSuffix(previous, ",") {
-			return fmt.Sprintf(" — line %d starts with %q, which JavaScript reads as a continuation of the line above it, not as a new statement. End the line above with ';', or hand the value back with return.", i+1, line[:1])
+			return fmt.Sprintf(", line %d starts with %q, which JavaScript reads as a continuation of the line above it, not as a new statement. End the line above with ';', or hand the value back with return.", i+1, line[:1])
 		}
 		previous = line
 	}

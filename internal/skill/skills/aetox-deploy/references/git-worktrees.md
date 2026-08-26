@@ -22,7 +22,7 @@ BRANCH=$(git branch --show-current)
 **Submodule guard:** `GIT_DIR != GIT_COMMON` is also true inside git submodules. Before concluding "already in a worktree," verify you are not in a submodule:
 
 ```bash
-# If this returns a path, you're in a submodule, not a worktree — treat as normal repo
+# If this returns a path, you're in a submodule, not a worktree, treat as normal repo
 git rev-parse --show-superproject-working-tree 2>/dev/null
 ```
 
@@ -54,7 +54,7 @@ Only proceed to Step 1b if you have no native worktree tool available.
 
 ### 1b. Git Worktree Fallback
 
-**Only use this if Step 1a does not apply** — you have no native worktree tool available. Create a worktree manually using git.
+**Only use this if Step 1a does not apply**, you have no native worktree tool available. Create a worktree manually using git.
 
 #### Directory Selection
 
@@ -156,8 +156,8 @@ Ready to implement <feature-name>
 
 | Excuse | Reality |
 |--------|---------|
-| "I'm obviously not in a worktree — no need to check" | Run Step 0. Harness-created isolation and submodules both fool eyeballing; the detection commands settle it. |
-| "`git worktree add` is quicker than hunting for a native tool" | A native tool (e.g. `EnterWorktree`) owns placement, branching, and cleanup. Bypassing it is the #1 mistake — it creates phantom state your harness can't see or manage. |
+| "I'm obviously not in a worktree, no need to check" | Run Step 0. Harness-created isolation and submodules both fool eyeballing; the detection commands settle it. |
+| "`git worktree add` is quicker than hunting for a native tool" | A native tool (e.g. `EnterWorktree`) owns placement, branching, and cleanup. Bypassing it is the #1 mistake, it creates phantom state your harness can't see or manage. |
 | "The worktree directory is surely ignored already" | Run `git check-ignore`. An unignored worktree directory commits the whole tree into the repo. |
 | "Any directory name works" | Explicit instructions beat an existing project-local directory, which beats the `.worktrees/` default. |
-| "The workspace is fresh — baseline tests can wait" | A dirty baseline makes every later failure ambiguous. Run the tests now; proceeding past failures is your human partner's call. |
+| "The workspace is fresh, baseline tests can wait" | A dirty baseline makes every later failure ambiguous. Run the tests now; proceeding past failures is your human partner's call. |

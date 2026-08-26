@@ -59,7 +59,7 @@ var imageMediaTypes = map[string]string{
 func (*readSkill) Name() string { return "read" }
 
 func (*readSkill) Description() string {
-	return "Read a file under sandbox root — text, notebook, Word, PowerPoint or Excel"
+	return "Read a file under sandbox root, text, notebook, Word, PowerPoint or Excel"
 }
 
 func (*readSkill) ToolDefinition() model.ToolDefinition {
@@ -87,7 +87,7 @@ func (*readSkill) ToolDefinition() model.ToolDefinition {
 		Type: "function",
 		Function: model.ToolFunction{
 			Name: "read",
-			Description: "Read a text file in sandbox root. Every line comes back prefixed with its line number and a tab — that prefix is added by this tool and is not in the file, so strip it before passing text to edit or edits. " +
+			Description: "Read a text file in sandbox root. Every line comes back prefixed with its line number and a tab, that prefix is added by this tool and is not in the file, so strip it before passing text to edit or edits. " +
 				"Returns up to 2000 lines; if the output says it was truncated, call read again with the offset it gives you to get the rest.",
 			Parameters: payload,
 		},
@@ -181,7 +181,7 @@ func (s *readSkill) Execute(_ context.Context, input Input) (Output, error) {
 	// and kept guessing at other ways in. edit already fails the same way on
 	// the same condition.
 	if binary {
-		err = errors.New("read target is a binary file — there is no text to read")
+		err = errors.New("read target is a binary file, there is no text to read")
 		return newToolOutput("read", command, "", start, false, err), err
 	}
 
@@ -200,7 +200,7 @@ func (s *readSkill) Execute(_ context.Context, input Input) (Output, error) {
 		}
 	}
 	if next > 0 {
-		content += fmt.Sprintf("\n... (truncated — continue with offset=%d)", next)
+		content += fmt.Sprintf("\n... (truncated, continue with offset=%d)", next)
 	}
 	return newToolOutput("read", command, content, start, next > 0, nil), nil
 }
@@ -229,11 +229,11 @@ func (s *readSkill) ExecuteTool(ctx context.Context, args map[string]any) (Outpu
 // merely failed to understand a result, and it kept guessing at other ways in.
 func (s *readSkill) readImage(targetPath, shown, command, mediaType string, size int64, start time.Time) (Output, error) {
 	if !s.vision {
-		err := errors.New("read cannot open an image for this model — use image_ocr to get the text out of it")
+		err := errors.New("read cannot open an image for this model, use image_ocr to get the text out of it")
 		return newToolOutput("read", command, "", start, false, err), err
 	}
 	if size > readMaxImageBytes {
-		err := fmt.Errorf("image is %d MB, too large to send (limit %d MB) — use image_ocr if you only need the text",
+		err := fmt.Errorf("image is %d MB, too large to send (limit %d MB), use image_ocr if you only need the text",
 			size>>20, int64(readMaxImageBytes)>>20)
 		return newToolOutput("read", command, "", start, false, err), err
 	}

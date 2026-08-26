@@ -150,7 +150,7 @@ func groupZipSkills(files []*zip.File) (map[string][]zipEntry, error) {
 		skillDirs = append(skillDirs, candidate{prefix: dir})
 	}
 	if len(skillDirs) == 0 {
-		return nil, fmt.Errorf("ไม่พบ %s ในไฟล์ zip — ต้องมีโฟลเดอร์ที่มี %s อยู่ข้างใน", skillFileName, skillFileName)
+		return nil, fmt.Errorf("ไม่พบ %s ในไฟล์ zip, ต้องมีโฟลเดอร์ที่มี %s อยู่ข้างใน", skillFileName, skillFileName)
 	}
 	// A SKILL.md at the top means the archive is one skill, so a nested one is
 	// its material rather than a sibling.

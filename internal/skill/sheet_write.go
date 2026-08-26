@@ -45,7 +45,7 @@ const (
 func (*sheetWriteSkill) Name() string { return "sheet_write" }
 
 func (*sheetWriteSkill) Description() string {
-	return "สร้างไฟล์ Excel (.xlsx) จากตารางข้อมูล — หลายชีตได้ ตัวเลขบวกกันได้จริง ภาษาไทยไม่เพี้ยน"
+	return "สร้างไฟล์ Excel (.xlsx) จากตารางข้อมูล, หลายชีตได้ ตัวเลขบวกกันได้จริง ภาษาไทยไม่เพี้ยน"
 }
 
 func (*sheetWriteSkill) ToolDefinition() model.ToolDefinition {
@@ -111,7 +111,7 @@ func (*sheetWriteSkill) ToolDefinition() model.ToolDefinition {
 			// Capability only, no when-to-pick-me language (owner, 2026-08-04).
 			// The typing rules stay: they are how to hold the tool, and getting
 			// them wrong silently produces a workbook whose SUM returns 0.
-			Description: "Create an Excel file (.xlsx) — opens in Excel, LibreOffice and Google Sheets. " +
+			Description: "Create an Excel file (.xlsx), opens in Excel, LibreOffice and Google Sheets. " +
 				"Send each value with its natural JSON type: a number as a bare number (1234.5, not \"฿1,234.50\") so it can be summed, " +
 				"and a date as an ISO string (\"2026-08-03\" or \"2026-08-03 14:30\") so it becomes a real date. " +
 				"Anything else stays text, which is what identifiers like \"0012\" need. " +

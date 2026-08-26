@@ -60,6 +60,6 @@ If **~~monitoring** is connected:
 
 ## Tips
 
-1. **Run before every deploy** — Even routine ones. Checklists prevent "I forgot to..."
-2. **Customize once, reuse** — Tell me your stack and I'll remember your deploy process.
-3. **Include rollback criteria** — Decide when to roll back before you deploy, not during.
+1. **Run before every deploy**, Even routine ones. Checklists prevent "I forgot to..."
+2. **Customize once, reuse**, Tell me your stack and I'll remember your deploy process.
+3. **Include rollback criteria**, Decide when to roll back before you deploy, not during.

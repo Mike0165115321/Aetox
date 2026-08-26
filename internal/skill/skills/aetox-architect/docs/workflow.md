@@ -1,7 +1,7 @@
 # Workflow
 
 The canonical, complete workflow lives in [`SKILL.md`](../SKILL.md).
-This file is a pointer, not a second copy — do not duplicate step details
+This file is a pointer, not a second copy, do not duplicate step details
 here. When the workflow changes, update `SKILL.md` only.
 
 Core flow:
@@ -27,7 +27,7 @@ and the validation gate, read `SKILL.md`:
 - Step 3: Classify
 - Step 4: Question, loopback rule
 - Step 5: Map
-- Step 6: Assess — debt, convention drift, boundary violations, flow conflicts
+- Step 6: Assess, debt, convention drift, boundary violations, flow conflicts
 - Step 7: Document, artifact budget
 - Step 8: Validate
 - Step 9: Report

@@ -17,13 +17,13 @@ package skill
 func (*docWriteSkill) Guidance(map[string]any) string {
 	return "" +
 		"One block per heading, paragraph, list, table or picture, in reading order.\n" +
-		"lineitems is the block for anything priced — a quotation, an invoice, a receipt. " +
+		"lineitems is the block for anything priced, a quotation, an invoice, a receipt. " +
 		"Send the lines and the rates; every amount, the subtotal and the total are worked " +
 		"out here and never sent, which is the whole reason it exists. A rate is a fraction " +
 		"of the subtotal: 0.07 is VAT at 7%, -0.03 is withholding tax deducted.\n" +
 		"A picture is embedded rather than linked, so the .docx can be mailed on its own, " +
 		"and it is drawn at its own size up to the width of the text column. Its `text` is " +
-		"the caption, in Word's own Caption style — which is what lets a reader insert a " +
+		"the caption, in Word's own Caption style, which is what lets a reader insert a " +
 		"Table of Figures, and what a figure needs to keep its number when the document is " +
 		"edited later.\n" +
 		"`widths` are relative weights, so {4,1,1,1} gives the first column four times the " +

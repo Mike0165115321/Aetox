@@ -42,7 +42,7 @@ type pdfReadSkill struct {
 func (*pdfReadSkill) Name() string { return "pdf_read" }
 
 func (*pdfReadSkill) Description() string {
-	return "อ่านข้อความจากไฟล์ PDF — ใช้แทน read ซึ่งเปิด PDF ไม่ได้เพราะเป็นไฟล์ไบนารี"
+	return "อ่านข้อความจากไฟล์ PDF, ใช้แทน read ซึ่งเปิด PDF ไม่ได้เพราะเป็นไฟล์ไบนารี"
 }
 
 func (*pdfReadSkill) ToolDefinition() model.ToolDefinition {
@@ -62,7 +62,7 @@ func (*pdfReadSkill) ToolDefinition() model.ToolDefinition {
 		Type: "function",
 		Function: model.ToolFunction{
 			Name:        "pdf_read",
-			Description: "Extract the text of a PDF document. Use this for any .pdf — `read` cannot open one, a PDF is a binary container rather than text.",
+			Description: "Extract the text of a PDF document. Use this for any .pdf, `read` cannot open one, a PDF is a binary container rather than text.",
 			Parameters:  payload,
 		},
 	}
@@ -118,7 +118,7 @@ func (s *pdfReadSkill) run(ctx context.Context, start time.Time, requestPath str
 	// images. Returned as an error so it reads as "this route is closed",
 	// which is the whole point of the read fix that sits alongside this.
 	if text == "" {
-		err := errors.New("PDF นี้ไม่มีชั้นข้อความ (น่าจะเป็นไฟล์สแกน) — อ่านด้วย pdf_read ไม่ได้")
+		err := errors.New("PDF นี้ไม่มีชั้นข้อความ (น่าจะเป็นไฟล์สแกน), อ่านด้วย pdf_read ไม่ได้")
 		return newToolOutput("pdf_read", command, "", start, false, err), err
 	}
 
@@ -173,7 +173,7 @@ func runPdfToText(ctx context.Context, pdfPath string, env []string) (string, er
 // the same flags handled fine from a shell. That evidence used to live in a
 // comment on the test fixture, which is where it was found rather than where it
 // is needed.
-var errReaderCrashed = errors.New("pdftotext หยุดกลางคัน — ปัญหาอยู่ที่ตัวอ่าน ไม่ใช่ที่ตัวไฟล์ PDF")
+var errReaderCrashed = errors.New("pdftotext หยุดกลางคัน, ปัญหาอยู่ที่ตัวอ่าน ไม่ใช่ที่ตัวไฟล์ PDF")
 
 func diedMidRun(err error) bool {
 	var exit *exec.ExitError
@@ -244,13 +244,13 @@ func tryAutoInstallPoppler(ctx context.Context) bool {
 func missingPopplerError() error {
 	switch runtime.GOOS {
 	case "darwin":
-		return statereport.New("ไม่พบ pdftotext และติดตั้งอัตโนมัติไม่สำเร็จ (ต้องมี Homebrew) — รันเอง: brew install poppler")
+		return statereport.New("ไม่พบ pdftotext และติดตั้งอัตโนมัติไม่สำเร็จ (ต้องมี Homebrew), รันเอง: brew install poppler")
 	case "linux":
 		if hint := linuxInstallHint("poppler-utils", "poppler-utils", "poppler"); hint != "" {
-			return statereport.Newf("ไม่พบโปรแกรม pdftotext ในเครื่อง — ติดตั้งด้วย: %s", hint)
+			return statereport.Newf("ไม่พบโปรแกรม pdftotext ในเครื่อง, ติดตั้งด้วย: %s", hint)
 		}
-		return statereport.New("ไม่พบโปรแกรม pdftotext ในเครื่อง — ติดตั้งผ่าน package manager ของดิสโทรคุณ (แพ็กเกจ poppler-utils หรือ poppler)")
+		return statereport.New("ไม่พบโปรแกรม pdftotext ในเครื่อง, ติดตั้งผ่าน package manager ของดิสโทรคุณ (แพ็กเกจ poppler-utils หรือ poppler)")
 	default: // windows and anything else
-		return statereport.New("ไม่พบโปรแกรม pdftotext ในเครื่อง — ติดตั้งด้วย: scoop install poppler (หรือดาวน์โหลด poppler for Windows) แล้วลองใหม่")
+		return statereport.New("ไม่พบโปรแกรม pdftotext ในเครื่อง, ติดตั้งด้วย: scoop install poppler (หรือดาวน์โหลด poppler for Windows) แล้วลองใหม่")
 	}
 }

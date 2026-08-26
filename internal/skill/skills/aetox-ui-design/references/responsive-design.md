@@ -1211,7 +1211,7 @@ observer.observe(document.querySelector(".container"));
 
 ## อ้างอิง: details
 
-# responsive-design — detailed patterns and worked examples
+# responsive-design, detailed patterns and worked examples
 
 ## Core Capabilities
 

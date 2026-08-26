@@ -30,8 +30,8 @@ voice and the tokens.
 Invoke `project-management` skill to create persistent TODO tasks via Claude's native task orchestration. Break down into:
 - Requirement analysis task
 - Idea generation task(s)
-- HTML design task(s) — can parallelize per size/variant
-- Screenshot export task(s) — can parallelize per file
+- HTML design task(s), can parallelize per size/variant
+- Screenshot export task(s), can parallelize per file
 - Report generation task
 
 Spawn parallel subagents for independent tasks (e.g., multiple HTML files for different sizes).
@@ -39,12 +39,12 @@ Spawn parallel subagents for independent tasks (e.g., multiple HTML files for di
 ### Step 2: Analyze Requirements
 
 Parse user input for:
-- **Subject/topic** — what the social photo represents
-- **Target platforms** — which sizes needed (default: Instagram Post 1:1 + Story 9:16)
-- **Visual style** — minimalist, bold, gradient, photo-based, etc.
-- **Brand context** — read from `docs/brand-guidelines.md` if exists
-- **Content elements** — headline, subtext, CTA, images, icons
-- **Quantity** — how many variations (default: 3)
+- **Subject/topic**, what the social photo represents
+- **Target platforms**, which sizes needed (default: Instagram Post 1:1 + Story 9:16)
+- **Visual style**, minimalist, bold, gradient, photo-based, etc.
+- **Brand context**, read from `docs/brand-guidelines.md` if exists
+- **Content elements**, headline, subtext, CTA, images, icons
+- **Quantity**, how many variations (default: 3)
 
 ### Step 3: Generate Ideas
 
@@ -55,16 +55,16 @@ Create 3-5 concept ideas that:
 - Align with brand guidelines if available
 
 Show the ideas to the user and wait for a pick before designing. Say them in
-chat, numbered, in one message — there is no question widget here, and
+chat, numbered, in one message, there is no question widget here, and
 designing all of them first is how an hour goes into the three nobody wanted.
 
 ### Step 4: Design HTML Files
 
 Read these first, in this order:
 
-1. **`aetox-brand`** — the brand's colours, type and voice, from the user's own
+1. **`aetox-brand`**, the brand's colours, type and voice, from the user's own
    guidelines file.
-2. **`aetox-design-system`** — the tokens: spacing, typography scale, palette.
+2. **`aetox-design-system`**, the tokens: spacing, typography scale, palette.
 
 Then lay it out yourself. Variety comes from the brief and the platform, not
 from picking a different helper at random.
@@ -82,14 +82,14 @@ output/social-photos/
 
 #### HTML Design Rules
 
-- **Viewport** — Set exact pixel dimensions matching target size
-- **Self-contained** — Inline all CSS, embed fonts via Google Fonts CDN
-- **No scrolling** — Everything fits in one viewport
-- **High contrast** — Text readable at thumbnail size
-- **Brand-aligned** — Use extracted brand colors/fonts
-- **Safe zones** — Critical content within central 80% area
-- **Typography** — Min 24px for headlines, min 16px for body at 1080px width
-- **Visual hierarchy** — One focal point, clear reading flow
+- **Viewport**, Set exact pixel dimensions matching target size
+- **Self-contained**, Inline all CSS, embed fonts via Google Fonts CDN
+- **No scrolling**, Everything fits in one viewport
+- **High contrast**, Text readable at thumbnail size
+- **Brand-aligned**, Use extracted brand colors/fonts
+- **Safe zones**, Critical content within central 80% area
+- **Typography**, Min 24px for headlines, min 16px for body at 1080px width
+- **Visual hierarchy**, One focal point, clear reading flow
 
 #### HTML Template Structure
 
@@ -140,7 +140,7 @@ Measured on 2026-08-22: an 1080x1080 page came back as a 1080x1080 PNG.
 Three things are not optional:
 
 - **`--screenshot` must be a full path.** A relative one fails with
-  "Access is denied" and writes nothing — the run looks like it worked.
+  "Access is denied" and writes nothing, the run looks like it worked.
 - **`--window-size` must match the page's own size**, or the picture is a crop
   of it.
 - **`--virtual-time-budget`** is the wait for web fonts and images. Without it
@@ -190,7 +190,7 @@ Report structure:
 - Style: {chosen style}
 
 ## Ideas Generated
-1. **{Idea name}** — {brief description, rationale}
+1. **{Idea name}**, {brief description, rationale}
 2. ...
 
 ## Design Decisions
@@ -228,13 +228,13 @@ Invoke `assets-organizing` skill to organize all output files and reports:
 
 ### Platform-Specific Tips
 
-- **Instagram** — Visual-first, minimal text (<20%), strong colors, lifestyle feel
-- **Facebook** — Informative, can have more text, eye-catching in feed
-- **Twitter/X** — Bold headlines, contrast for dark/light mode, clear message
-- **LinkedIn** — Professional, clean, data-driven visuals, thought leadership
-- **Pinterest** — Vertical format, text overlay on images, how-to style
-- **YouTube** — Face close-ups perform best, bright colors, readable at small size
-- **TikTok** — Trendy, energetic, bold typography, youth-oriented
+- **Instagram**, Visual-first, minimal text (<20%), strong colors, lifestyle feel
+- **Facebook**, Informative, can have more text, eye-catching in feed
+- **Twitter/X**, Bold headlines, contrast for dark/light mode, clear message
+- **LinkedIn**, Professional, clean, data-driven visuals, thought leadership
+- **Pinterest**, Vertical format, text overlay on images, how-to style
+- **YouTube**, Face close-ups perform best, bright colors, readable at small size
+- **TikTok**, Trendy, energetic, bold typography, youth-oriented
 
 ### Art Direction Styles (Reuse from Banner)
 

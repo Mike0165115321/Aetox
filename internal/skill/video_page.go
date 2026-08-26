@@ -321,7 +321,7 @@ func renderVideoPage(meta videoMeta, transcript string) string {
 		// "no transcript" looks elsewhere, and a model told nothing assumes the
 		// video was empty.
 		b.WriteString("\n## Transcript\nThis video has no caption track, so there is nothing to read. " +
-			"Nothing was transcribed from the audio — say so rather than describing a video you have not heard.\n")
+			"Nothing was transcribed from the audio, say so rather than describing a video you have not heard.\n")
 		return b.String()
 	}
 	b.WriteString("\n## Transcript\n" + transcript + "\n")
@@ -367,6 +367,6 @@ func findVideoTool() (string, error) {
 			return candidate, nil
 		}
 	}
-	return "", fmt.Errorf("reading a video link needs yt-dlp, which is not installed on this machine — " +
+	return "", fmt.Errorf("reading a video link needs yt-dlp, which is not installed on this machine, " +
 		"the user can add it from ตั้งค่า ▸ ความสามารถ, or install it themselves")
 }

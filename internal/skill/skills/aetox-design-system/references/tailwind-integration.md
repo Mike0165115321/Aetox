@@ -1,13 +1,13 @@
 # Tailwind Integration
 
-Map design system tokens to Tailwind CSS configuration — but check which of two
+Map design system tokens to Tailwind CSS configuration, but check which of two
 contexts applies first, because they take different routes entirely.
 
 ## Which route applies
 
 | Context | Route |
 |---|---|
-| A deck, banner, or artifact written as one self-contained `.html` file | No Tailwind, no build step, no `npx`. Write the CSS variables straight into a `<style>` block and consume them with `var(--token)`. Nothing below is reachable — there is no `node_modules`, no config file gets read, and a CDN-fetched `<script>` can render blank on export if the CDN is not reachable at export time. See this skill's own Slide System section: a deck ships as one file with nothing linked in beside it. |
+| A deck, banner, or artifact written as one self-contained `.html` file | No Tailwind, no build step, no `npx`. Write the CSS variables straight into a `<style>` block and consume them with `var(--token)`. Nothing below is reachable, there is no `node_modules`, no config file gets read, and a CDN-fetched `<script>` can render blank on export if the CDN is not reachable at export time. See this skill's own Slide System section: a deck ships as one file with nothing linked in beside it. |
 | A real project on the user's machine that already has Tailwind installed | Everything below applies as written. |
 
 Reading this file while writing a self-contained artifact and reaching for
@@ -241,12 +241,12 @@ if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
 ```
 
 Set the `.dark` class in an inline `<script>` in `<head>`, before first paint
-— not after a framework mounts — or the page flashes the wrong theme for one
+not after a framework mounts, or the page flashes the wrong theme for one
 frame. See `color-and-contrast.md` for how to decide light vs. dark vs.
 system-synced as the *default* in the first place.
 
 **Never hand-write a `dark:` override on a component that already consumes a
-semantic token** (`bg-primary`, not `bg-blue-600 dark:bg-blue-400`) — the
+semantic token** (`bg-primary`, not `bg-blue-600 dark:bg-blue-400`), the
 semantic layer is what should flip when the mode changes, not the component.
 
 ### Concrete numbers for a dark surface

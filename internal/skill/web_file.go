@@ -124,7 +124,7 @@ func describeBinary(u *url.URL, contentType string, size int) string {
 	if kind == "" {
 		kind = "an unknown type"
 	}
-	return fmt.Sprintf("URL: %s\n\n%s is %s, %s — not text, so there is nothing to read here.\n"+
+	return fmt.Sprintf("URL: %s\n\n%s is %s, %s, not text, so there is nothing to read here.\n"+
 		"Its bytes were deliberately not returned: they would be unreadable and would cost the whole reply.\n"+
 		"If the user needs this file, say where it is and let them fetch it.",
 		u.String(), name, kind, humanBytes(size))

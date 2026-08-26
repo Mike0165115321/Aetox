@@ -102,10 +102,10 @@ func (s *shellSkill) ToolDefinition() model.ToolDefinition {
 	// the browser pack follows, and the reason a narrowed tool costs the model
 	// nothing to read.
 	lines := map[string]string{
-		"run":    "`run` (command) — run it and wait. This is the default: a call with no action runs a command.",
-		"output": "`output` (shell_id) — read what a background command has printed since you last read it, and whether it is still running. Output is consumed: each call returns only what is new. Prefer wait_for over polling in a loop.",
-		"kill":   "`kill` (shell_id) — stop a background command and everything it started. Kill a dev server when you are done with it rather than leaving it holding a port.",
-		"list":   "`list` — every background command still remembered, with its handle and state. The way back when a handle is no longer in your context.",
+		"run":    "`run` (command), run it and wait. This is the default: a call with no action runs a command.",
+		"output": "`output` (shell_id), read what a background command has printed since you last read it, and whether it is still running. Output is consumed: each call returns only what is new. Prefer wait_for over polling in a loop.",
+		"kill":   "`kill` (shell_id), stop a background command and everything it started. Kill a dev server when you are done with it rather than leaving it holding a port.",
+		"list":   "`list`, every background command still remembered, with its handle and state. The way back when a handle is no longer in your context.",
 	}
 	var actions strings.Builder
 	for _, a := range allowed {
@@ -198,7 +198,7 @@ func (s *shellSkill) ToolDefinition() model.ToolDefinition {
 			// a distro, and a model told the wrong one writes the wrong dialect on
 			// every command of the turn with no way to find out except by failing.
 			// Guidance sent once could not correct a switch made after it.
-			Description: "Run commands in the working folder — tests, builds, linters, package managers, anything the terminal can do. Actions:\n" +
+			Description: "Run commands in the working folder, tests, builds, linters, package managers, anything the terminal can do. Actions:\n" +
 				actions.String() + "\n" + syntax,
 			Parameters: payload,
 		},
@@ -210,7 +210,7 @@ func (s *shellSkill) ExecuteTool(ctx context.Context, args map[string]any) (Outp
 	action := p.action(args)
 	if action == "" {
 		raw, _ := args["action"].(string)
-		err := fmt.Errorf("unknown shell action %q — this session may use: %s",
+		err := fmt.Errorf("unknown shell action %q, this session may use: %s",
 			strings.TrimSpace(raw), strings.Join(s.allowedActions(), ", "))
 		return newToolOutput("shell", "shell", "", time.Now(), false, err), err
 	}
@@ -219,7 +219,7 @@ func (s *shellSkill) ExecuteTool(ctx context.Context, args map[string]any) (Outp
 	// offered has guessed, and a guess that runs is worse than one that is told
 	// no.
 	if !slices.Contains(s.allowedActions(), action) {
-		err := fmt.Errorf("shell %s is not available here — this session may use: %s",
+		err := fmt.Errorf("shell %s is not available here, this session may use: %s",
 			action, strings.Join(s.allowedActions(), ", "))
 		return newToolOutput("shell", "shell", "", time.Now(), false, err), err
 	}
@@ -290,7 +290,7 @@ func (s *shellSkill) startBackground(commandLine string) (Output, error) {
 		WorkDir: workDir,
 		Success: true,
 	})
-	content := fmt.Sprintf("started in the background as %s — read it with action=output shell_id=%q, stop it with action=kill shell_id=%q",
+	content := fmt.Sprintf("started in the background as %s, read it with action=output shell_id=%q, stop it with action=kill shell_id=%q",
 		job.id, job.id, job.id)
 	return newToolOutput("shell", command, content, start, false, nil), nil
 }

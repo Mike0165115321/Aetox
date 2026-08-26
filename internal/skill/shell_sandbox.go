@@ -188,7 +188,7 @@ func guardTargets(root string, targets, guesses []string, opaque string, gate sh
 	// OpenCode draws.
 	if opaque != "" && !openWorkspace(root) {
 		return fmt.Errorf("this command builds a path while it runs (%s), so it cannot be checked "+
-			"against the folders this session may use — write the path out literally, or run the "+
+			"against the folders this session may use, write the path out literally, or run the "+
 			"step that needs it as its own command", opaque)
 	}
 	for _, target := range targets {
@@ -200,7 +200,7 @@ func guardTargets(root string, targets, guesses []string, opaque string, gate sh
 		if !ok {
 			return fmt.Errorf("%s: this path is inside the shell's own filesystem and has no name "+
 				"this machine can check it by, so it cannot be shown to be inside the folders this "+
-				"session may use — work inside the project folder instead", target)
+				"session may use, work inside the project folder instead", target)
 		}
 		// The refusal names the path as the model wrote it, not as it was
 		// translated: being told that `\\wsl.localhost\mikedev\etc\passwd` was
@@ -221,7 +221,7 @@ func guardTargets(root string, targets, guesses []string, opaque string, gate sh
 			}
 			return fmt.Errorf("%s: this path is inside the shell's own filesystem and has no name "+
 				"this machine can check it by, so it cannot be shown to be inside the folders this "+
-				"session may use — work inside the project folder instead", guess)
+				"session may use, work inside the project folder instead", guess)
 		}
 		if _, err := resolveSandboxPath(root, host); err != nil {
 			if !evidenceForAGuess(guess, gate) {

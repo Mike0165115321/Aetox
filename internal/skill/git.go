@@ -68,7 +68,7 @@ func (*gitSkill) ToolDefinition() model.ToolDefinition {
 			Name: "git",
 			Description: "Read the repository's git state: " + strings.Join(actions, ", ") + ". " +
 				"Use diff to check what your own edits changed before reporting them done. " +
-				"Read-only — committing, checking out or anything else that writes belongs in shell, where the user approves it.",
+				"Read-only, committing, checking out or anything else that writes belongs in shell, where the user approves it.",
 			Parameters: payload,
 		},
 	}

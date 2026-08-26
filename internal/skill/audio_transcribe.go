@@ -40,7 +40,7 @@ type audioTranscribeSkill struct {
 func (*audioTranscribeSkill) Name() string { return "audio_transcribe" }
 
 func (*audioTranscribeSkill) Description() string {
-	return "ถอดเสียงพูดในไฟล์เสียงหรือวิดีโอเป็นข้อความพร้อมเวลากำกับ (ถอดในเครื่อง ไทย+อังกฤษ) — ใช้เมื่อโมเดลปัจจุบันฟังเสียงไม่ได้"
+	return "ถอดเสียงพูดในไฟล์เสียงหรือวิดีโอเป็นข้อความพร้อมเวลากำกับ (ถอดในเครื่อง ไทย+อังกฤษ), ใช้เมื่อโมเดลปัจจุบันฟังเสียงไม่ได้"
 }
 
 func (*audioTranscribeSkill) ToolDefinition() model.ToolDefinition {
@@ -60,7 +60,7 @@ func (*audioTranscribeSkill) ToolDefinition() model.ToolDefinition {
 		Type: "function",
 		Function: model.ToolFunction{
 			Name:        "audio_transcribe",
-			Description: "Transcribe spoken words from an audio or video file into text, offline (auto-detected language, Thai+English). Use this to hear a file's content when you cannot listen to it — including a video whose screen has no text for video_ocr to read. Returns '[m:ss] text' lines.",
+			Description: "Transcribe spoken words from an audio or video file into text, offline (auto-detected language, Thai+English). Use this to hear a file's content when you cannot listen to it, including a video whose screen has no text for video_ocr to read. Returns '[m:ss] text' lines.",
 			Parameters:  payload,
 		},
 	}
@@ -97,7 +97,7 @@ func (s *audioTranscribeSkill) run(ctx context.Context, start time.Time, request
 		return fail(err)
 	}
 	if info, statErr := os.Stat(targetPath); statErr != nil || info.IsDir() {
-		return fail(fmt.Errorf("ไม่พบไฟล์ %s ใน workspace — ตรวจชื่อไฟล์และที่อยู่อีกครั้ง", requestPath))
+		return fail(fmt.Errorf("ไม่พบไฟล์ %s ใน workspace, ตรวจชื่อไฟล์และที่อยู่อีกครั้ง", requestPath))
 	}
 
 	// Resolve the engine before spending ffmpeg time: a missing binary or model
@@ -173,7 +173,7 @@ func extractAudioTrack(ctx context.Context, inputPath, wavPath string) error {
 		if msg == "" {
 			msg = err.Error()
 		}
-		return fmt.Errorf("ดึงเสียงออกจากไฟล์ไม่ได้ — ไฟล์อาจไม่มีแทร็กเสียงหรือเสียหาย (%s)", msg)
+		return fmt.Errorf("ดึงเสียงออกจากไฟล์ไม่ได้, ไฟล์อาจไม่มีแทร็กเสียงหรือเสียหาย (%s)", msg)
 	}
 	return nil
 }
