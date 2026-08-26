@@ -6795,3 +6795,140 @@ Same shape as `whyNoMatch` in `internal/skill/lineendings.go`: a tool holding th
 ### 183.4 The rule this leaves behind
 
 **An error message is a claim about a cause, and a claim can be wrong in a way that costs a round.** The one to distrust is the cause the author already had in mind when they wrote the branch — it gets attached to every miss, including the ones it does not explain, and it reads exactly as authoritative in both cases.
+
+## 184. Decision — A Desk Is a Memory Architecture, Not a Memory Destination (2026-08-25)
+
+Owner: *"ความจำควรอยู่ระดับโหมด ครับ ผู้ช่วย กับโค้ด สถาปัติกรรมความจำต่างกัน"* — and before that, stating what each desk's memory *is*: ผู้ช่วย shares across every session; โค้ด binds to the project, keeping every significant decision and the code patterns that are right there.
+
+### 184.1 What was measured before anything moved
+
+§83 gave the desk a memory file and §116 gave the project one, with the model choosing between them through an optional `where` parameter that defaulted to the shared file. Read back from this machine's own store before changing it (per §180):
+
+- **11** `memory` tool calls ever. **7 sent no `where` at all** — and an unsaid word was indistinguishable from a decision that the fact belongs everywhere.
+- **`this-desk`: chosen 0 times.** `<DataRoot>/memory/modes/` was never created. The desk-as-destination axis shipped 16 ส.ค. and no byte ever reached it.
+- The default put two Aetox-only lines into the `MEMORY.md` every project pays for.
+- `this-project` was chosen twice, correctly, both from โต๊ะโค้ด.
+
+The model was being asked a question only the desk can answer, and mostly declined to answer it.
+
+### 184.2 The shape
+
+**The desk declares its memory architecture in its manifest** (`memory:` in the frontmatter, `mode.MemoryRule`), and that architecture is the *default destination* of an unqualified line:
+
+| desk | `memory:` | an unsaid `where` lands in |
+|---|---|---|
+| assistant | `shared` | `MEMORY.md` — what assistant work learns is who the user is, true in every session |
+| coding | `project` | the focused project's own file — what coding work settles is decisions, true only where they were made (§116) |
+| specialized | *(undeclared)* | shared; a chair never sees this default — its `memory` tool is rebuilt on its own scope (§44) |
+
+`where` still exists, but narrower: `everywhere` and `this-project` only, offered only when a project is focused, and the description states which one the desk's silence means. **`this-desk` is gone from the tool.** A desk answers *where memory goes*, it does not *hold* memory — the split the owner drew is between two architectures, not between four files.
+
+Unrecognised manifest values and the nil legacy desk read as `shared`, the only behaviour that existed before desks declared one. A project-first desk with no project focused goes inert to shared rather than into a junk drawer every unfocused session would share.
+
+### 184.3 What deliberately stayed
+
+- **The read side of the mode scope.** `FileFor`, `Scopes()`, the prompt fold of `modes/<desk>.md`, and the review surfaces all still resolve it — a file a person writes by hand must not go silently unread. Only the write path closed.
+- **โต๊ะโค้ด still reads `MEMORY.md`.** "This machine's shell is PowerShell" is most needed while coding; what changed is where its lines *land*, never what it reads.
+- **ผู้ช่วย can still say `this-project`.** A fact discovered at the assistant desk about the open project is real; it is just not the silence's meaning there.
+
+### 184.4 The rule this leaves behind
+
+**A parameter whose absence is indistinguishable from one of its values is not a choice, it is a bias.** Seven of eleven calls "chose" the shared file by saying nothing. When a default matters, put it where something *knows* the answer — here, the desk — and keep the parameter for the cases where the model genuinely knows better.
+
+### 184.5 The same boundary, read side — found by the owner asking, not by the tests
+
+Owner, reviewing: *"ความทรงจำไม่แชร์ไปหาเอเจนย่อยนะ เอาแค่หน้าผู้ช่วยพอก่อน"*. The write side already held everywhere — a delegate's `memory` tool is rebuilt on its own scope, a delegate's prompt folds only its own file, and both had tests. The read side had a hole with no test over it: a chair's *direct chat* builds its prompt through the same assembler as every main session, and that assembler folded `MEMORY.md` and the focused project's memory unconditionally. A conversation with deck carried the main assistant's memory in every request.
+
+`prompt.Desk.Chair` closes it: a chair session folds no learned layer at all — its own memory is already inside its Direction (`subagent.PromptFor`, one fold, two doors), and everything the assembler could stack on top belongs to somebody else. Identity and the user's own project rules still fold, because a chair is still Aetox, specialised (§44.0); **memory is where the boundary runs, and it runs in both directions — an agent learns inside its own scope, reading as much as writing.**
+
+## 185. Decision — A Dial Is Not Allowed to Swap the Brain Mid-Sentence (2026-08-25)
+
+A user reported model switching going wrong; the owner tried it and saw nothing. Both were right, and the difference is the whole finding: switching **between** turns is sound — applyConfig carries the outgoing agent's full context into the new engine, tool calls and all, provider-neutral enough that every wire format rebuilds its own shape from it — and switching **during** a turn had no guard at any layer.
+
+The codebase already knew. `SetStance` has refused mid-turn since stances existed ("a turn running in THAT conversation would finish on an agent it was not started with"), and `endTurn` defers the workspace rebuild with the reason written out ("doing that under a turn in flight would discard the work the user is waiting on"). The model, provider, thinking and wire-format dials simply never got the same sentence. What a mid-turn `applyConfig` actually did, each one measured against the code rather than guessed: `StopAll` killed the running turn's delegates; the new agent's context was snapshotted half-written — including the shape where an assistant tool call is in and its results are not, which is a hard 400 on the next Anthropic-format request; interjections queued on the old agent were never drained again; and `conv.*` was written under a goroutine still reading it.
+
+### 185.1 The shape
+
+Two behaviours, split by who is watching:
+
+- **The model menu's dials** (`SwitchModel`, `SwitchProvider`, `SwitchThinkLevel`, `SetProviderWireFormat`) refuse while their own chat's turn runs — `errTurnBusyModel`, the third member of the errTurnBusy family, with the tail that names the right door. A person is looking at these; a refusal they can read beats a deferral they cannot see. The think-level row also gained the catch the other rows already had — without it the refusal died as an unhandled promise rejection and the row just looked broken.
+- **Every other door** — a connection toggled, an MCP server switched, a sign-in landing, a delegate switch — parks its config on the conversation (`pendingCfg`) and `endTurn` applies it, exactly as the widened workspace already waited. Checked and parked under one lock, so a turn cannot end between the check and the write and strand the config.
+
+`SwitchApprovalMode` is deliberately in neither list: it stopped rebuilding the engine at all some time ago, precisely so it works mid-turn — the one dial that must.
+
+### 185.2 What stays open
+
+The gate keys on `conv.id`, which is empty until the first turn names the session — so the very first turn of a fresh chat is unguarded, exactly as it is for `SetStance` and `turnRunningIn` today. Pre-existing, narrow, and recorded rather than silently inherited.
+
+## 186. Decision — A File No Session Can Reach Must Say So Where the User Looks (2026-08-25)
+
+Owner, on §184's per-project memory files: *"ผมกลัวไฟล์มันจะกระจัดกระจายและมันจะเกิดหนี้ทางเทคนิค"*. Most of the fear was already fenced — a file exists only after an approved line, 8KB ceiling per file, every non-empty scope on the settings page, plain markdown throughout — but one real debt was live: `config.ProjectKey` is the folder's path, so a project moved or renamed is a new key, and the old memory file sits correct-looking forever, read by nothing, with nothing anywhere saying so. The machine already held the evidence: sessions filed under `aetox-d3a6a5aa`, a key the projects table no longer knows.
+
+The settings page now asks the store the one question that settles it — does any `root_path` this app has ever opened still resolve to this scope, and does that folder still exist — reusing `learned.ProjectScope` as the single spelling of "which project is this folder" rather than growing a second key parser. An orphan gets a quiet amber mark on the file's own name (`--status-warn`, the file-status weight — housekeeping, not an emergency) and its two exits: **ย้ายไปที่…** moves the lines into a project the store still knows (nothing doubled, source deleted only after every line has arrived) and **ลบไฟล์นี้** deletes the file through `learned.Forget`, a door that accepts project scopes only — the main file has a per-line editor, and a whole-file eraser must not be able to reach it by accident. No automatic GC, on the same principle as the write side: memory that vanishes silently is the same fault as memory that appears silently.
+
+## 187. Decision — A Desk Belongs to One Conversation (2026-08-25)
+
+Owner, pointing at a deck from the Tennis project sitting on another chat's desk: *"บางทีมันบั๊คหลุดข้ามเซสชั่น ฝากด้วยครับอันนี้ปัญหาจริงๆ"*. He was right, and the mechanism was exact: the `desk_open` tool is built per conversation and resolves its path against THAT chat's project — and then emitted `workbench:open-file` with no session in it, so the window opened the tab on whichever desk was on screen. The on-screen session's next autosave then persisted the stray as its own layout, which is why the leak survived restarts and looked haunted.
+
+The event names its session now, and the store routes on it: the chat on screen gets the tab live, exactly as before; a background chat's file goes into that session's *saved* desk (localStorage layout) — found waiting when its chat is next opened, which is what "วางไฟล์บนโต๊ะแล้ว" honestly means for a desk nobody is looking at. The Go mirror (`WorkbenchTabsChanged`) is pushed for the background session too, so `desk_list` and `desk close` judge against the desk its user will actually find, not against a desk the file never reached. `desk close` routes the same way and still takes back only the agent's own tab, live or saved.
+
+§187.1: `mine` — the fact "the agent put this here" — now survives the snapshot. It was dropped in the save, so one switch away and back turned every agent-opened tab into the user's, and desk close's own safety rule then refused the agent its own tab. Found while building this, pinned by the same test file.
+
+§187.2: open, not fixed here — the browser and terminal halves of the same hole. `workbench:open-browser` and `workbench:open-terminal` still carry no session and still land on the desk on screen. They are structurally harder: both stand up native resources (a WebView2 window, a live PTY) that the saved-layout parking this decision uses cannot represent, and the browser side sits on ground §182/§183 re-laid this same day. Recorded rather than half-done.
+
+## 188. Decision — A Cap the Model Must Know Before It Starts Writing Rides in Every Request (2026-08-25)
+
+Owner, watching a 114-second red ✗ on a write: *"ปกติมัน พอถึง 200-300 มันจะเริ่มรู้ตัวนี่แม่ง ไม่รู้ตัวอีกแล้ว"*. Measured: two oversized writes that evening (529 and 552 lines) were **two different sessions'** first long write each. The 300-line cap lived only in `Guidance()` — sent once, *after* the first use — so every session was born not knowing the number, streamed the whole oversized call (the ~100 seconds is the model streaming 22KB of arguments; the tool itself refuses in 1ms), and only then learned it. 5 refusals in 166 writes, all of them this shape.
+
+The number now rides in the tool description, which travels with every request from message one — paid for by tightening the same description's placement prose, so `write` stays exactly at its ratchet size (141 tokens, block_standard_test.go) and the §99 budget is untouched. Guidance keeps the why (output limits vary by provider and shrink as context grows); the description carries the what, because a cap is only a cap if it is known *before* the writing starts — the same rule §184 stated for defaults: put the answer where something always is, not where it was said once.
+
+### 187.3 The door, after the owner asked for the architecture instead of the patch
+
+Owner, on the §187 fix: *"จริงๆ ข้างขวาอ่ะควรจะมีการจัดการที่ดีสิ ไม่งั้นอนาคตเพิ่มอะไรมามันก็มั่ว ต้องไล่ตามปรับอีก"*. He was pointing at the real defect: the leak was possible because seven call sites emitted five `workbench:*` event shapes and the question "whose desk is this for" was asked nowhere. Stamping one event (§187) fixed the instance; the next desk surface would have re-created it.
+
+One door on each side now, and a gate that makes the door the only way through:
+
+- **Go:** `deskEvent(sessionID, event, payload)` (desktop/desk_events.go) is the sole emitter of `workbench:*`. It stamps the session on every event, and `""` is an *answer*, not an omission — "this surface has no per-session owner yet", which today is the browser (one shared host, §187.2) and the engine-log terminal. `desk_terminal` gained its owner in the same change: the skill was built per conversation all along and simply never said whose it was. `desk_event_gate_test.go` reads the package source and fails any emission outside the door, so a future surface answers the ownership question on the day it is written.
+- **Window:** `routeDeskEvent(kind, payload)` (workbench.svelte.ts) is the single switch where every kind declares its background policy — file open/close park onto the owning session's saved desk; browser and terminal state *in writing* why they draw live (native resources a saved layout cannot represent); a kind with no policy hits the default, which touches no desk and says so. Workbench.svelte's five handlers collapsed to one subscription line.
+
+What this buys is exactly what the owner asked for: adding a desk surface is now adding one emitter call and one switch case, and both places force the two questions — whose is it, and what does background mean — that every desk bug in this file's history came from skipping.
+
+## 189. Decision — A Tool Killed by the User's Own Stop Failed at Nothing (2026-08-25)
+
+The owner handed over the problems page and one of its two cards was the app reporting the user to themselves: "เครื่องมือ web_fetch ล้มซ้ำด้วยเหตุเดียวกัน: context canceled — เกิด 3 ครั้ง". Read back from tool_runs, the three failures share one second (06:20:56) and one session: one Stop, three parallel web_fetch calls in flight, three identical rows. The summarizer clusters every unmarked failure as a sentence with a remedy in it, and a cancellation carries none — it is the fourth error origin, after the codebase's own refusals, a program's exit status (§ErrorFromProgram) and the machine's state (§ErrorFromWorld), and like the others it is invisible in the text alone.
+
+`ErrorFromCancel` marks it at classification time, where the other origins are marked. Checked before everything including the author's own statereport mark, because a Stop outranks whatever the tool was doing; matched by `errors.Is` first and by Go's one spelling of the sentinel as a suffix fallback, because not every tool wraps `ctx.Err()` with %w — the real rows carried the flattened string. A deadline is deliberately NOT this: a tool that keeps timing out is a pattern worth hearing about, so `context.DeadlineExceeded` stays unmarked. The summarizer needed no change — it has excluded every marked kind since the kinds existed.
+
+The second card on the page (browser scroll ×3, "the page you were working on was closed") dated from the evening before §182/§183 re-laid tab lifetime and diagnosis; it is history, not a live defect.
+
+## 190. Decision — The Version Belongs Where the App Says What It Is (2026-08-26)
+
+Owner, with a screenshot of the profile menu open: *"ผมว่าเพิ่ม ตัวบอก เวอร์ชั่น Aetox ด้วยดีกว่าและ เพิ่ม ตัวตรวจอัปเดตพร้อมให้อัปเดตง่ายๆ ถ้ามีการอัปเดตอะไรก็ให้แสดงตรงนี้ด้วย คนจะได้รู้ว่าเวอร์ชั่นใหม่ออกแล้ว"*.
+
+Everything downstream of the question already existed and had since §107: `internal/update` checks, verifies a signature, downloads and swaps the exe; `update_notify.go` asks once at startup and daily after; a card carries the answer when it arrives. What did not exist was a **resting place** for it. Between the daily check firing and a release actually being cut, the only way to ask "which Aetox is this, and is there a newer one" was Settings → About — a page most people open once, if ever. So the app's own version was a fact it knew and never said, in the one menu that exists to say what the app is: the name, the account, the theme, the language.
+
+The row is now the third door onto one state, and the design work was making sure it stayed one state rather than three views drifting apart:
+
+- **`selfUpdate.svelte` owns the check too.** It already owned the two acts (download / restart) after §107 split them; About kept the *question* privately — `updateStatus`, `updateChecking`, `updateError` — which was fine while there were two doors and would have been the same debt one layer up with three. About is now a pure view (`$derived(updater.status)`), and a menu that had asked GitHub on its own terms could no longer name a release About had never heard of.
+- **A failed check no longer wipes a found one.** The old About code set `updateStatus = null` on error. "Could not reach GitHub just now" is not evidence that the release announced an hour ago stopped existing, and erasing it takes a real offer off the screen because the wifi dropped.
+- **`updater.current` has exactly one writer.** `Status.current` is the same Go constant `AppVersion()` returns, and copying it in as a second source is how one fact gets written twice differently. Caught by the first test run, which is the point of having written the test.
+- **The card is for news nobody asked for.** `updateAnnounced()` (the daily check's event) drives the card; `updateOffered()` drives the doors. An offer the user went and asked for is answered where they asked, and a card repeating it over the window would be the same news twice. A download, once started, still surfaces on the card whichever door started it — the menu closes on the next click, the bytes do not.
+- **One check per run, on first open.** Not per open (a menu is opened all day and GitHub allows 60 unauthenticated requests an hour), not on a timer of its own (`update_notify.go` is that timer). It only covers the gap before the first daily answer lands, which is exactly the case the owner was looking at.
+
+Which action the row offers is still not its decision: `Status.canAuto` / `.hint` already answer it, so the one-click download, the Scoop command, and the release page arrive pre-decided from `internal/update` — including a Store install, which is sent to its own listing and never to GitHub's releases page.
+
+The row says nothing when there is nothing to say. An app on the latest version gets one muted line; a row that reports "no news" loudly every day teaches people to stop reading it. Measured in the running app afterwards (`--text-dim` was 2.54:1 on the menu surface, the same number `.acct-menu-name` was moved off for in §68's sweep): both lines are read rather than glanced at, so both sit at `--text-muted`, 4.56:1, now pinned across all 14 themes by `themeContrast.test.ts`.
+
+## 191. Decision — A Native Surface Has One Hand On It, and a Dev Frontend Is Not It (2026-08-26)
+
+The owner sent a screenshot: every page the agent opened rendered as a ~390px-wide window sitting over the chat column, in a workbench pane twice that size. Ctrl+R healed it; the next page broke it again. "ไม่ควรเป็นแบบนี้เลย ไปค้นดู เผื่อเจอต้นตอ".
+
+The root cause was not in the app's own window at all. `wails dev` serves the frontend to any browser that connects (port 34115), and every connection is a FULL frontend — bindings work, events arrive. Claude's assistant had left such a tab connected after verifying an earlier change. When the agent then browsed, `deskEvent` broadcast `open-browser` to every frontend (it is `EventsEmit`, §187.3 stamps ownership but not audience); the second frontend's store pushed the tab, its inspector auto-uncollapsed, its BrowserPane mounted — and its ResizeObserver reglued the ONE real native window to the second window's geometry. The numbers matched to the pixel: a fresh profile's default inspector (`defaultPx: 384`, minus the 3px pane frame) in a 1280×720 client, pane height ~580. Every reflow in either window was a legitimate writer; last one won. The same class of hole sat in Terminal.svelte, where a second frontend reports ITS cols×rows and ConPTY replays the whole screen per resize (§: conpty-resize).
+
+The fix is a discriminator, not a protocol: nothing served over the wire can tell the two frontends apart, since both run the same bundle against the same Go. What only the real one has is the bridge object its native webview injects — `window.chrome.webview` in WebView2, `window.webkit.messageHandlers` in WebKit — which an external browser never has, and which in production is the only way to reach Go at all (so there the question cannot arise; the websocket bridge that answers anybody is dev-only). `hostWebview.ts` reads it once; a frontend without it is a **spectator**:
+
+- **BrowserPane** never opens, navigates, reglues, zooms, or — the quiet one — hides the native window (`BrowserSetVisible(false)` from a spectator whose strip is on another tab would blank the page the user is looking at). `opened` stays false, which keeps the rest of the file inert by construction. The pane says where the page really is instead of standing as a black void, because a black void where a page should be reads as "rendering broke" — the exact sentence that opened the investigation.
+- **Terminal** still renders and may type, but never calls `TerminalResize`: its own xterm wrapping at a width the PTY never heard of garbles only the spectator's view, which is the right side to pay.
+- **setup.ts** stubs the bridge for every test — jsdom has neither `chrome` nor `webkit`, and without the stub the whole suite would silently render as the stood-down spectator while asserting on calls the app's real window makes. The spectator test deletes it to be the outsider, and asserts the inverse too, so the gate cannot quietly flip polarity.
+
+What is deliberately NOT changed: the broadcast itself. Every frontend legitimately shows the tab strip, the address bar, the titles; watching is the point of connecting a dev browser. The line is drawn where the harm was — the calls that move, size, show, hide, or resize something that exists once.
