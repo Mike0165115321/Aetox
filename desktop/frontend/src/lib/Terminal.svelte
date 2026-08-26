@@ -5,6 +5,7 @@
   import '@xterm/xterm/css/xterm.css'
   import { EventsOn } from '../../wailsjs/runtime/runtime'
   import { TerminalWrite, TerminalResize, TerminalAttach } from '../../wailsjs/go/main/App'
+  import { isHostWebview } from './hostWebview'
 
   let { sessionId, onExit }: { sessionId: string; onExit: () => void } = $props()
 
@@ -13,6 +14,14 @@
   let fit: FitAddon
   let unsubs: Array<() => void> = []
   let resizeObserver: ResizeObserver
+
+  // Same rule as BrowserPane (hostWebview.ts, §191): the PTY exists once, and
+  // ConPTY replays the whole screen on every resize it receives - so a second
+  // wails-dev frontend reporting ITS cols×rows would fight the app's over the
+  // shell's wrap width, forever. A spectator still renders and may even type;
+  // its own xterm wrapping at a width the PTY never heard of garbles only the
+  // spectator's view, which is the right side to pay.
+  const spectator = !isHostWebview()
 
   onMount(() => {
     term = new XTerm({
@@ -26,7 +35,7 @@
     term.loadAddon(fit)
     term.open(container)
     fit.fit()
-    TerminalResize(sessionId, term.cols, term.rows)
+    if (!spectator) TerminalResize(sessionId, term.cols, term.rows)
 
     // Subscribe first, attach second. The session emits nothing until it is
     // attached, so this order is what guarantees the banner and prompt a shell
@@ -67,7 +76,7 @@
       queued = requestAnimationFrame(() => {
         queued = 0
         fit.fit()
-        TerminalResize(sessionId, term.cols, term.rows)
+        if (!spectator) TerminalResize(sessionId, term.cols, term.rows)
       })
     })
     resizeObserver.observe(container)

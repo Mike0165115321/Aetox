@@ -6,9 +6,19 @@
     BrowserOpen, BrowserNavigate, BrowserSetBounds, BrowserSetVisible, BrowserSetZoom,
   } from '../../../wailsjs/go/main/App'
   import { EventsOn } from '../../../wailsjs/runtime/runtime'
+  import { isHostWebview } from '../hostWebview'
+  import { t } from '../i18n.svelte'
   import BrowserStart from './BrowserStart.svelte'
 
   let { tab, active, menuOpen, dragging }: { tab: WorkbenchTab; active: boolean; menuOpen: boolean; dragging: boolean } = $props()
+
+  // The native window this pane glues itself to exists ONCE, inside the real
+  // app window. wails dev hands this same component to every browser that
+  // connects, and each copy believes the window is its to place — so a second
+  // connected frontend kept regluing the app's window to ITS geometry (~390px,
+  // over the chat column) every time the agent opened a page (§191). A
+  // frontend that is not the app's own webview watches; it does not steer.
+  const spectator = !isHostWebview()
 
   let host = $state<HTMLDivElement>()
   let opened = $state(false)
@@ -74,17 +84,19 @@
 
   /** Re-glue the native window to the pane (and re-apply the emulation zoom). */
   function reflow(): void {
-    if (!opened || !host) return
+    if (spectator || !opened || !host) return
     const { rect, scale } = layout(host)
     BrowserSetBounds(tab.id, ...rect)
     BrowserSetZoom(tab.id, scale)
   }
 
   // Open on first URL; navigate on later URL changes (typed in the address bar).
+  // A spectator never opens or steers: `opened` stays false there, which is
+  // what keeps every other native call in this file naturally inert.
   $effect(() => {
     const url = tab.url ?? ''
     const el = host
-    if (!el || !url || url === lastSent) return
+    if (spectator || !el || !url || url === lastSent) return
     lastSent = url
     if (!opened) {
       opened = true
@@ -107,7 +119,7 @@
   // Keep the native window glued to this pane's rect.
   $effect(() => {
     const el = host
-    if (!el) return
+    if (spectator || !el) return
     const ro = new ResizeObserver(reflow)
     ro.observe(el)
     window.addEventListener('resize', reflow)
@@ -155,7 +167,12 @@
 </script>
 
 <div class="native-host" bind:this={host}>
-  {#if tab.viewport}
+  {#if spectator && tab.url}
+    <!-- Without this the pane is a black void, and a black void where a page
+         should be reads as "rendering broke" - the exact sentence that opened
+         the investigation this note came out of. -->
+    <div class="spectator-note">{t('workbench.spectator')}</div>
+  {:else if tab.viewport}
     <!-- CSS letterboxes this to the same box layout() gives the native window,
          so picking a device preset is visible even before a page is loaded —
          otherwise an empty tab makes the whole menu look dead. -->

@@ -303,6 +303,9 @@ export const en: Record<keyof typeof th, string> = {
 
   'workbench.filesTab': 'Files',
   'workbench.newTab': 'New tab',
+  // Shown only in a frontend that connected through wails dev - the real
+  // window is the only one holding the native page (hostWebview.ts).
+  'workbench.spectator': 'The page is shown in the real app window. This one is a spectator.',
   'workbench.addTab': 'Add new tab',
   'workbench.terminalMenu': 'Terminal',
   'workbench.browserMenu': 'Browser',

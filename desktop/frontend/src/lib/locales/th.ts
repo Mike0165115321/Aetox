@@ -297,6 +297,8 @@ export const th = {
 
   'workbench.filesTab': 'ไฟล์',
   'workbench.newTab': 'แท็บใหม่',
+  // ขึ้นเฉพาะใน frontend ที่ต่อเข้ามาทาง wails dev หน้าต่างเว็บจริงอยู่ในแอป และมีได้ชุดเดียว (hostWebview.ts)
+  'workbench.spectator': 'หน้าเว็บแสดงอยู่ในหน้าต่างแอปจริง หน้าต่างนี้เป็นแค่ผู้ชม',
   'workbench.addTab': 'เพิ่มแท็บใหม่',
   'workbench.terminalMenu': 'เทอร์มินัล',
   'workbench.browserMenu': 'เบราว์เซอร์',

@@ -95,3 +95,16 @@ if (typeof Element !== 'undefined' && !Element.prototype.animate) {
     return animation as unknown as Animation
   } as Element['animate']
 }
+
+// The native bridge object. The app's frontend always runs inside its own
+// webview, and WebView2 marks that webview with window.chrome.webview - which
+// is what hostWebview.ts reads to decide whether this frontend may drive the
+// native surfaces (browser windows, the PTY) or is a wails-dev spectator that
+// must stand down (§191). jsdom has neither chrome nor webkit, so without this
+// every component test would render as the stood-down spectator and every
+// existing assertion about BrowserSetBounds / TerminalResize would be asserting
+// against a frontend the app never ships. The spectator test deletes it to BE
+// the outsider.
+if (!(window as any).chrome?.webview) {
+  ;(window as any).chrome = { ...(window as any).chrome, webview: {} }
+}
