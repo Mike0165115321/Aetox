@@ -3452,19 +3452,17 @@ func (a *App) workbenchSkills(conv *conversation, sandboxRoot string) []skill.Sk
 		// `task` builds it a replacement bound to its profile (internal/subagent),
 		// so what a sub-agent learns never lands in this prompt.
 		//
-		// Desk is the second scope this one tool can write to, and it is empty
-		// unless the session was opened at a desk: a fact about the user belongs
-		// in the file every desk reads, while a lesson about this kind of work
-		// belongs where only this kind of work pays for it (§83).
-		//
-		// Project is the third, and empty unless a project is focused. โต๊ะโค้ด
-		// is the same desk in every repository, so the desk scope cannot hold
-		// "we decided X here" without carrying it into the next one.
+		// Project is the second destination, empty unless a project is focused;
+		// which of the two an unqualified line lands in is the desk's own
+		// architecture (§184): ผู้ช่วย learns about the user and writes shared,
+		// โค้ด settles decisions and writes the project. Read off conv rather
+		// than a.cur() — this function is building conv's engine, and the
+		// session on screen is a cursor this file stopped trusting at §150.
 		&learned.MemoryTool{
-			Scope:    learned.MainScope,
-			Desk:     a.cur().desk.DeskName(),
-			Project:  a.focusedProjectRoot(sandboxRoot),
-			Proposer: appProposer{app: a},
+			Scope:        learned.MainScope,
+			Project:      a.focusedProjectRoot(sandboxRoot),
+			ProjectFirst: conv.desk.MemoryRule() == mode.MemoryProject,
+			Proposer:     appProposer{app: a},
 		},
 	}
 }

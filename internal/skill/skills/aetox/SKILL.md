@@ -39,7 +39,7 @@ Skills are the deliberate exception and do **not** live here — see below.
 |---|---|
 | `<DataRoot>/aetox.db` | SQLite: chat history, tool runs, jobs, projects |
 | `<DataRoot>/identity` | every `*.md` here is folded into the system prompt of every session |
-| `<DataRoot>/memory` | `MEMORY.md` (cross-desk), `modes/<desk>.md` (per desk), `projects/<name>-<hash>.md` (per project folder) |
+| `<DataRoot>/memory` | `MEMORY.md` (cross-desk), `projects/<name>-<hash>.md` (per project folder). Where a new line lands is the desk's architecture (§184): ผู้ช่วย → `MEMORY.md`, โค้ด with a project focused → that project's file; `modes/<desk>.md` is hand-written only, still folded into that desk's prompt if present |
 | `<DataRoot>/modes` | user desk manifests; a file here overrides the bundled desk of the same name |
 | `<DataRoot>/agents` | one folder per เอเจน: `<name>/AGENT.md` + `<name>/MEMORY.md` + `<name>/STARTERS.md` + `<name>/skills/` + `<name>/mcp.json` |
 | `<DataRoot>/subagents` | ซับเอเจน — read-only in practice, see below |

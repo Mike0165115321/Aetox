@@ -408,6 +408,12 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		// describe the tools it actually holds.
 		desk = deskFor(opts.Mode, subagent.PromptFor(*opts.Chair), handover)
 		desk.Name = opts.Chair.Name
+		// The chair's memory is already inside that PromptFor — and it is the
+		// only memory this session may read. The flag keeps the assembler from
+		// stacking the main assistant's MEMORY.md and the project's file on
+		// top: an agent learns inside its own scope, reading as much as
+		// writing (owner, 25 ส.ค.).
+		desk.Chair = true
 	}
 	// Last, so it narrows whichever of the two desks above was built. A chair
 	// chat is an ordinary session with a person sitting in it, and gets the dial

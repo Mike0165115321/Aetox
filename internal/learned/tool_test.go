@@ -58,6 +58,22 @@ func TestScopeIsNotSomethingTheModelCanChoose(t *testing.T) {
 	if rec.got[0].Scope != "explore" {
 		t.Fatalf("scope = %q; a delegate must only ever write its own", rec.got[0].Scope)
 	}
+
+	// The `where` words reach a delegate's tool as ordinary arguments — a
+	// model can always send a parameter nobody offered — and every one of
+	// them must still land in the delegate's own file. `everywhere` resolves
+	// to t.Scope, which for a delegate IS its own scope; `this-project` needs
+	// a Project no delegate is ever given.
+	for _, where := range []string{"everywhere", "this-project", "this-desk"} {
+		if _, err := run(t, tool, map[string]any{"text": "x " + where, "where": where}); err != nil {
+			t.Fatalf("add with where=%s: %v", where, err)
+		}
+	}
+	for i, p := range rec.got[1:] {
+		if p.Scope != "explore" {
+			t.Errorf("where=%q wrote a delegate's line into scope %q — memory crossed an agent boundary", []string{"everywhere", "this-project", "this-desk"}[i], p.Scope)
+		}
+	}
 }
 
 func TestEachOpDemandsWhatItNeeds(t *testing.T) {
@@ -235,55 +251,22 @@ func TestTheDescriptionTeachesTheCostNotACaseList(t *testing.T) {
 	}
 }
 
-// A session at a desk can write to two scopes through one tool, and which one
-// it lands in is the model's call — only it knows whether a fact is about the
-// user or about this kind of work (ARCHITECTURE.md §83).
-func TestADeskSessionCanRememberInEitherScope(t *testing.T) {
-	isolate(t)
-	rec := &recorder{}
-	tool := &MemoryTool{Scope: MainScope, Desk: "coding", Proposer: rec}
-
-	if _, err := run(t, tool, map[string]any{"text": "ผู้ใช้ชอบคำตอบสั้น", "why": "บอกไว้"}); err != nil {
-		t.Fatalf("add: %v", err)
-	}
-	if _, err := run(t, tool, map[string]any{"text": "repo นี้เทสด้วยสคริปต์", "where": "this-desk", "why": "เห็นตอนรัน"}); err != nil {
-		t.Fatalf("add to desk: %v", err)
-	}
-	if len(rec.got) != 2 {
-		t.Fatalf("want two proposals, got %d", len(rec.got))
-	}
-	if rec.got[0].Scope != MainScope {
-		t.Errorf("the default scope is %q, want the shared file — a guess must land where it always did", rec.got[0].Scope)
-	}
-	if rec.got[1].Scope != ModeScope("coding") {
-		t.Errorf("this-desk proposed into %q, want the desk's own scope", rec.got[1].Scope)
-	}
-
-	// Anything but the one word means the shared file, including a word the
-	// model invented.
-	if _, err := run(t, tool, map[string]any{"text": "อีกอัน", "where": "somewhere-else"}); err != nil {
-		t.Fatalf("add: %v", err)
-	}
-	if rec.got[2].Scope != MainScope {
-		t.Errorf("an unrecognised where landed in %q, want the shared file", rec.got[2].Scope)
-	}
-}
-
-// The third destination. What makes it worth its own scope is that the desk
-// cannot stand in for it: โต๊ะโค้ด is the same desk in every repository, so a
-// decision kept there would arrive as advice in the next project.
-func TestASessionInAProjectCanKeepADecisionWhereItIsTrue(t *testing.T) {
+// The desk's memory architecture decides where an unsaid `where` lands (§184):
+// a shared-first session writes the file every session reads, and the explicit
+// words still reach both destinations. An invented word means the default,
+// never nowhere.
+func TestASharedFirstSessionDefaultsToTheSharedFile(t *testing.T) {
 	isolate(t)
 	root := filepath.Join(t.TempDir(), "Aetox")
 	rec := &recorder{}
-	tool := &MemoryTool{Scope: MainScope, Desk: "coding", Project: root, Proposer: rec}
+	tool := &MemoryTool{Scope: MainScope, Project: root, Proposer: rec}
 
 	for _, args := range []map[string]any{
-		{"text": "ผู้ใช้ชอบคำตอบสั้น"},
-		{"text": "เจ้าของอ่านดิฟก่อนเสมอ", "where": "this-desk"},
+		{"text": "ผู้ใช้ชอบคำตอบสั้น", "why": "บอกไว้"},
 		{"text": "ที่นี่ตกลงกันว่าใช้ PowerShell", "where": "this-project"},
-		// A word the model invented, and the word for a destination this session
-		// does have — both must land in the shared file rather than nowhere.
+		{"text": "เครื่องนี้ไม่มี Excel", "where": "everywhere"},
+		// A word the model invented must land where an unsaid word would have,
+		// rather than nowhere.
 		{"text": "อีกอัน", "where": "this-folder"},
 	} {
 		if _, err := tool.ExecuteTool(context.Background(), args); err != nil {
@@ -293,59 +276,93 @@ func TestASessionInAProjectCanKeepADecisionWhereItIsTrue(t *testing.T) {
 	if len(rec.got) != 4 {
 		t.Fatalf("want four proposals, got %d", len(rec.got))
 	}
-	want := []string{MainScope, ModeScope("coding"), ProjectScope(root), MainScope}
+	want := []string{MainScope, ProjectScope(root), MainScope, MainScope}
+	for i, w := range want {
+		if rec.got[i].Scope != w {
+			t.Errorf("proposal %d went to scope %q, want %q", i, rec.got[i].Scope, w)
+		}
+	}
+}
+
+// A project-first session — โต๊ะโค้ด with a repository open — lands an unsaid
+// `where` in the project's own file, because its work is settling things and a
+// decision carried into the next repository arrives as advice (§116). The
+// shared file stays one explicit word away, because "this machine has no
+// Excel" is still true everywhere and still discovered while coding.
+func TestAProjectFirstSessionDefaultsToTheProjectsOwnFile(t *testing.T) {
+	isolate(t)
+	root := filepath.Join(t.TempDir(), "Aetox")
+	rec := &recorder{}
+	tool := &MemoryTool{Scope: MainScope, Project: root, ProjectFirst: true, Proposer: rec}
+
+	for _, args := range []map[string]any{
+		{"text": "ที่นี่ตกลงกันว่า package นี้ถือ retry", "why": "ตัดสินใจกันในงานนี้"},
+		{"text": "เครื่องนี้ไม่มี Excel", "where": "everywhere"},
+		// An invented word means the desk's default — here, the project.
+		{"text": "อีกอัน", "where": "this-folder"},
+	} {
+		if _, err := tool.ExecuteTool(context.Background(), args); err != nil {
+			t.Fatalf("add %v: %v", args, err)
+		}
+	}
+	if len(rec.got) != 3 {
+		t.Fatalf("want three proposals, got %d", len(rec.got))
+	}
+	want := []string{ProjectScope(root), MainScope, ProjectScope(root)}
 	for i, w := range want {
 		if rec.got[i].Scope != w {
 			t.Errorf("proposal %d went to scope %q, want %q", i, rec.got[i].Scope, w)
 		}
 	}
 
-	// The parameter offers only what this session actually has, and names the
-	// project so "this-project" means something the model can check.
-	def := tool.ToolDefinition()
-	params := string(def.Function.Parameters)
-	for _, want := range []string{"this-desk", "this-project", "Aetox"} {
+	// The parameter names the project so "this-project" means something the
+	// model can check, and says which destination the unsaid word means.
+	params := string(tool.ToolDefinition().Function.Parameters)
+	for _, want := range []string{"this-project (default)", "Aetox"} {
 		if !strings.Contains(params, want) {
-			t.Errorf("the tool block does not offer %q:\n%s", want, params)
+			t.Errorf("the tool block does not say %q:\n%s", want, params)
 		}
 	}
 }
 
-// A session with a project but no desk offers the project and not the desk, and
-// the other way round. The tool block rides in every request, so an option that
-// cannot be used is a bill with no benefit.
+// A project-first desk with no project focused has nowhere narrower to write:
+// the rule goes inert and the session behaves exactly like the pre-desks one —
+// shared destination, no `where` parameter at all. The alternative was a junk
+// drawer every unfocused session shared.
+func TestProjectFirstWithoutAProjectFallsBackToShared(t *testing.T) {
+	isolate(t)
+	rec := &recorder{}
+	tool := &MemoryTool{Scope: MainScope, ProjectFirst: true, Proposer: rec}
+
+	if _, err := run(t, tool, map[string]any{"text": "ผู้ใช้ชอบคำตอบสั้น"}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if rec.got[0].Scope != MainScope {
+		t.Errorf("an unfocused project-first session proposed into %q, want the shared file", rec.got[0].Scope)
+	}
+	if strings.Contains(string(tool.ToolDefinition().Function.Parameters), "where") {
+		t.Errorf("a session with one destination was sent a choice:\n%s", tool.ToolDefinition().Function.Parameters)
+	}
+}
+
+// The `where` parameter exists only when a project is focused, and never
+// offers a desk: which file an unqualified line lands in is the desk's own
+// architecture, not a destination the model picks (§184). The tool block
+// rides in every request, so an option nobody can use is a bill with no
+// benefit.
 func TestTheWhereParameterOffersOnlyWhatThisSessionHas(t *testing.T) {
 	isolate(t)
 	root := filepath.Join(t.TempDir(), "Aetox")
 
-	projectOnly := string((&MemoryTool{Scope: MainScope, Project: root}).ToolDefinition().Function.Parameters)
-	if !strings.Contains(projectOnly, "this-project") || strings.Contains(projectOnly, "this-desk") {
-		t.Errorf("a session with no desk was offered one:\n%s", projectOnly)
+	focused := string((&MemoryTool{Scope: MainScope, Project: root}).ToolDefinition().Function.Parameters)
+	if !strings.Contains(focused, "this-project") {
+		t.Errorf("a focused session was not offered its project:\n%s", focused)
 	}
-	deskOnly := string((&MemoryTool{Scope: MainScope, Desk: "coding"}).ToolDefinition().Function.Parameters)
-	if !strings.Contains(deskOnly, "this-desk") || strings.Contains(deskOnly, "this-project") {
-		t.Errorf("a session with no project was offered one:\n%s", deskOnly)
+	if strings.Contains(focused, "this-desk") {
+		t.Errorf("a desk is an architecture, not a destination — it must not be offered:\n%s", focused)
 	}
 	bare := string((&MemoryTool{Scope: MainScope}).ToolDefinition().Function.Parameters)
 	if strings.Contains(bare, "where") {
 		t.Errorf("a session with one destination was sent a choice:\n%s", bare)
-	}
-}
-
-// Every session that is not at a desk — a delegate, and everything from before
-// desks existed — must send the tool block it always did. The definition is in
-// every request, so a parameter nobody can use is a bill with no benefit.
-func TestTheMemoryToolGainsNothingWithoutADesk(t *testing.T) {
-	isolate(t)
-	plain := (&MemoryTool{Scope: MainScope}).ToolDefinition()
-	if strings.Contains(string(plain.Function.Parameters), "where") {
-		t.Errorf("a session with no desk was sent the desk parameter: %s", plain.Function.Parameters)
-	}
-	desked := (&MemoryTool{Scope: MainScope, Desk: "coding"}).ToolDefinition()
-	if !strings.Contains(string(desked.Function.Parameters), "where") {
-		t.Errorf("a session at a desk cannot say which scope it means: %s", desked.Function.Parameters)
-	}
-	if !strings.Contains(string(desked.Function.Parameters), "coding") {
-		t.Error("the parameter does not name the desk, so the model cannot tell what this-desk means")
 	}
 }

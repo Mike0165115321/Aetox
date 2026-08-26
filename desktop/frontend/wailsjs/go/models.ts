@@ -1801,6 +1801,7 @@ export namespace mode {
 	    connections?: string[];
 	    chairs?: string[];
 	    dispatch?: string[];
+	    memory?: string;
 	    prompt: string;
 	    path?: string;
 	    builtin: boolean;
@@ -1821,6 +1822,7 @@ export namespace mode {
 	        this.connections = source["connections"];
 	        this.chairs = source["chairs"];
 	        this.dispatch = source["dispatch"];
+	        this.memory = source["memory"];
 	        this.prompt = source["prompt"];
 	        this.path = source["path"];
 	        this.builtin = source["builtin"];

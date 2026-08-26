@@ -57,9 +57,16 @@ const MainScope = ""
 
 // modePrefix marks a scope that belongs to a desk rather than to a delegate
 // (ARCHITECTURE.md §83). A prefix rather than a second field because a scope
-// is a string in three places already — the tool that proposes, the
-// pending_changes row that holds it, and the file it lands in — and adding a
-// dimension to it would mean teaching all three what a desk is.
+// is a string in three places already — the pending_changes row that holds
+// it, the file it lands in, and the review surfaces that name it — and adding
+// a dimension to it would mean teaching all three what a desk is.
+//
+// Since §184 nothing proposes into this scope: a desk is a memory
+// architecture (mode.MemoryRule) rather than a destination, measured after
+// eleven memory calls in which no model ever chose it. The scope itself
+// stays readable — FileFor still resolves it and the prompt still folds
+// modes/<desk>.md — because a file a person writes by hand must not go
+// silently unread.
 //
 // ':' cannot appear in a delegate's scope (validScope refuses it, and a
 // profile name is a filename), so the two namespaces cannot collide.

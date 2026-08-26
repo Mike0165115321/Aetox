@@ -45,68 +45,70 @@ type Proposer interface {
 type MemoryTool struct {
 	Scope    string
 	Proposer Proposer
-	// Desk is the second scope a main-agent session can write to: the desk it
-	// was opened at (§83). Empty everywhere else — a delegate has one scope and
-	// a pre-modes session has one file — and when it is empty this tool's
-	// definition is byte-for-byte what it was before desks existed, because the
-	// tool block is in every request and the common case must not pay for a
-	// feature it cannot use.
-	//
-	// Two scopes rather than one because the split is the point: "the user
-	// prefers X" is true at every desk and belongs in MEMORY.md, while "this
-	// repository's tests need Y first" is worth carrying only where that work
-	// happens. Which of the two a fact is, only the model writing it knows.
-	Desk string
-	// Project is the third destination: the ROOT PATH of the folder this
+	// Project is the second destination: the ROOT PATH of the folder this
 	// session is focused on, empty when none is (the unfocused session, the
 	// pre-project hosts, every delegate). The path rather than a key so there
 	// is one spelling of "which project" in the system — ProjectScope does the
 	// rest.
 	//
-	// The desk above cannot stand in for it. โต๊ะโค้ด is the same desk in every
-	// repository, so a decision made in one would arrive as advice in the next;
-	// this is the axis where "we settled on X here, because Y" can be kept
-	// without being carried anywhere it is not true.
+	// The desk the session was opened at cannot stand in for it, which is why
+	// there is no desk destination here. โต๊ะโค้ด is the same desk in every
+	// repository, so a decision made in one would arrive as advice in the
+	// next; this is the axis where "we settled on X here, because Y" can be
+	// kept without being carried anywhere it is not true.
 	Project string
+	// ProjectFirst is the desk's memory architecture (mode.MemoryRule, §184):
+	// true means an unqualified line lands in Project's own file, and
+	// `everywhere` is the explicit road back to the shared one. The desk
+	// answers this rather than the model because the model demonstrably does
+	// not: measured 25 ส.ค., 7 of the 11 memory calls ever made sent no
+	// `where` at all, and "did not decide" was indistinguishable from
+	// "decided on everywhere". False — the assistant's architecture, and
+	// every session before desks declared one — keeps the shared file as the
+	// default it always was. With no Project it is inert, so an unfocused
+	// coding session falls back to shared rather than to a junk drawer.
+	ProjectFirst bool
 }
 
 func (*MemoryTool) Name() string { return "memory" }
 
 // Destinations the `where` parameter can name, in the order they are offered.
+// There is no desk destination: which file an unqualified line lands in is the
+// desk's own architecture (ProjectFirst), not a choice the model is offered.
 const (
 	whereEverywhere = "everywhere"
-	whereDesk       = "this-desk"
 	whereProject    = "this-project"
 )
 
 func (t *MemoryTool) whereOptions() []string {
 	out := []string{whereEverywhere}
-	if t.Desk != "" {
-		out = append(out, whereDesk)
-	}
 	if t.Project != "" {
 		out = append(out, whereProject)
 	}
 	return out
 }
 
-// whereDescription says what each destination is FOR, in one sentence each.
-// The names alone would not settle it: "this-desk" and "this-project" both
-// sound like "not everywhere", and the whole value of the split is that the
-// model picks between them correctly without being given a list of examples
-// that only covers the cases somebody happened to think of.
+// whereDescription says what each destination is FOR, in one sentence each,
+// and which of them an unsaid word means — because the default is the desk's
+// call now, and a description that left it implicit would teach the assistant
+// desk's default at every desk.
 func (t *MemoryTool) whereDescription() string {
 	b := strings.Builder{}
-	b.WriteString("everywhere (default) for a fact that is true whatever you are working on — this user, " +
-		"this machine, how they like things done.")
-	if t.Desk != "" {
-		b.WriteString(" this-desk for something only " + t.Desk +
-			" work needs, which then costs nothing anywhere else.")
+	projectFirst := t.ProjectFirst && t.Project != ""
+	everywhere := "everywhere for a fact that is true whatever you are working on — this user, " +
+		"this machine, how they like things done."
+	if !projectFirst {
+		everywhere = strings.Replace(everywhere, "everywhere ", "everywhere (default) ", 1)
 	}
+	b.WriteString(everywhere)
 	if t.Project != "" {
-		b.WriteString(" this-project for something that is true only in " + filepath.Base(t.Project) +
+		project := " this-project for something that is true only in " + filepath.Base(t.Project) +
 			" — what was decided here and why, a convention this codebase holds to. " +
-			"It follows nobody into another project.")
+			"It follows nobody into another project."
+		if projectFirst {
+			project = strings.Replace(project, "this-project ", "this-project (default) ", 1)
+		}
+		b.WriteString(project)
 	}
 	return b.String()
 }
@@ -163,9 +165,10 @@ func (t *MemoryTool) ToolDefinition() model.ToolDefinition {
 		"additionalProperties": false,
 	}
 	// The parameter appears only for a session that has somewhere else to put a
-	// line, and lists only the destinations that session actually has. The tool
-	// block rides in every request, so an option nobody can use is a bill with
-	// no benefit — the same rule the desk half has followed since it shipped.
+	// line — a focused project. The tool block rides in every request, so an
+	// option nobody can use is a bill with no benefit; a session with one
+	// destination is offered no choice at all, byte-for-byte the block it
+	// always sent.
 	if where := t.whereOptions(); len(where) > 1 {
 		schema["properties"].(map[string]any)["where"] = map[string]any{
 			"type":        "string",
@@ -240,17 +243,18 @@ func (t *MemoryTool) ExecuteTool(_ context.Context, args map[string]any) (skill.
 	text := strings.TrimSpace(stringArg(args, "text"))
 	old := strings.TrimSpace(stringArg(args, "old"))
 	why := strings.TrimSpace(stringArg(args, "why"))
-	// Anything other than one of the words that asks for a narrower file means
-	// the shared one, including the word being absent: a model that guesses at
-	// this parameter should land on the scope that was the only one before it
-	// existed, and a narrow line kept too widely is a smaller mistake than a
-	// wide one kept where nobody will ever read it again.
+	// The default destination is the desk's architecture, not the model's
+	// guess (§184): a project-first desk lands an unsaid `where` in the
+	// project's own file, everything else lands it in the shared one — the
+	// scope that was the only one before this parameter existed. An invented
+	// word is an unsaid word: it means the desk's default, never nowhere.
 	scope := t.Scope
+	if t.ProjectFirst && t.Project != "" {
+		scope = ProjectScope(t.Project)
+	}
 	switch strings.TrimSpace(stringArg(args, "where")) {
-	case whereDesk:
-		if t.Desk != "" {
-			scope = ModeScope(t.Desk)
-		}
+	case whereEverywhere:
+		scope = t.Scope
 	case whereProject:
 		if t.Project != "" {
 			scope = ProjectScope(t.Project)

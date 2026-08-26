@@ -447,6 +447,60 @@ func TestAFoldedFileIsNamedOnlyWhenTheUserNamedIt(t *testing.T) {
 	}
 }
 
+// A chair chat reads no memory but its own (owner, 25 ส.ค.: ความจำไม่แชร์ไป
+// หาเอเจนย่อย). Its Direction already carries that — subagent.PromptFor, one
+// fold, two doors — so every learned layer the assembler could stack on top
+// is somebody else's: the main assistant's MEMORY.md, a mode file that
+// happens to share the chair's name, the project's decisions. Identity and
+// the user's own project rules still fold, because a chair is still Aetox,
+// specialised (§44.0) — memory is where the boundary runs.
+func TestAChairChatReadsNoMemoryButItsOwn(t *testing.T) {
+	dataRoot := t.TempDir()
+	t.Setenv("AETOX_DATA_ROOT", dataRoot)
+
+	identityDir := filepath.Join(dataRoot, "identity")
+	if err := os.MkdirAll(identityDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(identityDir, "context.md"), "IDENTITY-MARKER")
+
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "AETOX.md"), "PROJECT-RULES-MARKER")
+	for scope, marker := range map[string]string{
+		learned.MainScope:          "MAIN-MEMORY-MARKER",
+		learned.ModeScope("deck"):  "DESK-MEMORY-MARKER",
+		learned.ProjectScope(root): "PROJECT-MEMORY-MARKER",
+	} {
+		if err := learned.Apply(scope, learned.OpAdd, "", marker); err != nil {
+			t.Fatalf("seed %s: %v", scope, err)
+		}
+	}
+
+	text, loaded := BuildWithReport(SurfaceDesktop, Scope{Root: root},
+		Desk{Name: "deck", Direction: "you build decks\n\nCHAIR-OWN-MEMORY-MARKER", Chair: true})
+
+	for _, marker := range []string{"CHAIR-OWN-MEMORY-MARKER", "IDENTITY-MARKER", "PROJECT-RULES-MARKER"} {
+		if !strings.Contains(text, marker) {
+			t.Errorf("%s belongs in a chair's prompt and is missing:\n%s", marker, text)
+		}
+	}
+	for _, marker := range []string{"MAIN-MEMORY-MARKER", "DESK-MEMORY-MARKER", "PROJECT-MEMORY-MARKER"} {
+		if strings.Contains(text, marker) {
+			t.Errorf("%s reached a chair's prompt — memory crossed an agent boundary:\n%s", marker, text)
+		}
+	}
+	// The report must not claim a layer that was not folded: the settings
+	// badge reads these paths, and a path with no layer behind it is a lie.
+	for name, path := range map[string]string{
+		"MemoryPath": loaded.MemoryPath, "DeskMemoryPath": loaded.DeskMemoryPath,
+		"ProjectMemoryPath": loaded.ProjectMemoryPath,
+	} {
+		if path != "" {
+			t.Errorf("%s reports %q for a layer a chair session never folded", name, path)
+		}
+	}
+}
+
 // The sentence that closes shell as an escape route is true in a focused
 // project and false with the machine open — and appended to all three scopes it
 // was the instruction that ended the 2026-08-11 session: after one mistyped

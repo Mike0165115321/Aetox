@@ -2,6 +2,7 @@
 description: โต๊ะผู้ช่วย — ทำได้ทุกอย่างบนเครื่อง ยกเว้นเครื่องมือนักพัฒนา จำระยะยาว เอกสาร เว็บ สื่อ ไฟล์ และเชลล์
 categories: agent, web, media, files, shell
 dispatch: specialized
+memory: shared
 ---
 
 This session is assistant work: answering, remembering, looking things up,

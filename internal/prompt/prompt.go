@@ -63,6 +63,15 @@ type Loaded struct {
 type Desk struct {
 	Name      string
 	Direction string
+	// Chair marks a direct chat with one of the office's agents (§85): Name is
+	// that agent's name and Direction is its own brief, memory already folded
+	// (subagent.PromptFor — one fold, two doors). The learned layers below are
+	// then somebody else's memory: MEMORY.md is the main assistant's, the
+	// project file is the main sessions' — and what an agent learns must stay
+	// inside its own scope in both directions, reading as much as writing
+	// (owner, 25 ส.ค.: ความจำไม่แชร์ไปหาเอเจนย่อย). Name alone cannot carry
+	// this, because a chair's name is indistinguishable from a desk's here.
+	Chair bool
 	// Carries reports whether a tool is on this desk. nil means every tool is,
 	// which is the zero Desk: a session from before desks existed, running the
 	// whole registry.
@@ -420,23 +429,30 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 
 	var loaded Loaded
 	loaded.UserGlobalPaths = foldIdentityLayers(&b)
-	loaded.MemoryPath = foldLearnedMemory(&b, learned.MainScope,
-		"What you have learned and the user approved")
-	if desk.Name != "" {
-		loaded.DeskMemoryPath = foldLearnedMemory(&b, learned.ModeScope(desk.Name),
-			"What working on "+desk.Name+" has taught you, and the user approved")
-	}
-	// What working in THIS project settled. Only for a session focused on one:
-	// an open-sandbox session is rooted at the machine, and a memory keyed to
-	// that folder would be a junk drawer every unfocused session shared.
-	//
-	// Between the desk's memory and the project's own rules on purpose. A desk
-	// is the same desk in every repository, so what one project settled must
-	// not outrank it there; and what the user wrote in AETOX.md outranks
-	// anything the agent concluded about the same code.
-	if !scope.Open && sandboxRoot != "" {
-		loaded.ProjectMemoryPath = foldLearnedMemory(&b, learned.ProjectScope(sandboxRoot),
-			"What working in "+filepath.Base(sandboxRoot)+" has settled, and the user approved")
+	// None of the learned layers reach a chair: its Direction already carries
+	// its own memory (Desk.Chair), and the three below all belong to the main
+	// assistant's sessions. Identity above is deliberately not gated — a chair
+	// is still Aetox, specialised (§44.0); memory is where the boundary runs.
+	if !desk.Chair {
+		loaded.MemoryPath = foldLearnedMemory(&b, learned.MainScope,
+			"What you have learned and the user approved")
+		if desk.Name != "" {
+			loaded.DeskMemoryPath = foldLearnedMemory(&b, learned.ModeScope(desk.Name),
+				"What working on "+desk.Name+" has taught you, and the user approved")
+		}
+		// What working in THIS project settled. Only for a session focused on
+		// one: an open-sandbox session is rooted at the machine, and a memory
+		// keyed to that folder would be a junk drawer every unfocused session
+		// shared.
+		//
+		// Between the desk's memory and the project's own rules on purpose. A
+		// desk is the same desk in every repository, so what one project
+		// settled must not outrank it there; and what the user wrote in
+		// AETOX.md outranks anything the agent concluded about the same code.
+		if !scope.Open && sandboxRoot != "" {
+			loaded.ProjectMemoryPath = foldLearnedMemory(&b, learned.ProjectScope(sandboxRoot),
+				"What working in "+filepath.Base(sandboxRoot)+" has settled, and the user approved")
+		}
 	}
 	if path := ProjectContextFile(sandboxRoot); path != "" {
 		if content := readCapped(path); content != "" {

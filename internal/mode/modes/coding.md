@@ -1,6 +1,7 @@
 ---
 description: โต๊ะเขียนโค้ด — ไฟล์ เชลล์ เครื่องมือโค้ด และเว็บ ไม่แบกเครื่องมือสไลด์/เอกสาร
 categories: files, shell, code, web, agent
+memory: project
 ---
 
 This session is coding work: reading, changing, running and verifying code.

@@ -50,6 +50,34 @@ var bundledModes embed.FS
 // has to be able to say — everything else about a desk is data.
 const Office = "specialized"
 
+// The two memory architectures a desk can declare (Mode.Memory, §184).
+//
+//   - MemoryShared: an unqualified remembered line lands in MEMORY.md, the
+//     file every session reads. The assistant's architecture, and the only
+//     behaviour that existed before desks declared one — which is why it is
+//     also what an empty or unrecognised value means: a manifest that says
+//     nothing gets what every manifest got.
+//   - MemoryProject: an unqualified line lands in the focused project's own
+//     file, because this desk's work is settling things — and "we decided X
+//     here" carried into another repository is not knowledge, it is a rumour
+//     (§116). With no project focused it falls back to MemoryShared, since
+//     ProjectScope of nothing is the shared file by construction.
+const (
+	MemoryShared  = "shared"
+	MemoryProject = "project"
+)
+
+// MemoryRule reports this desk's memory architecture, nil-safe and never an
+// unknown word: the legacy full desk (nil) and any manifest value that is not
+// MemoryProject both mean MemoryShared, so a half-written user manifest
+// degrades to the oldest behaviour rather than to a junk destination.
+func (m *Mode) MemoryRule() string {
+	if m == nil || m.Memory != MemoryProject {
+		return MemoryShared
+	}
+	return MemoryProject
+}
+
 // Default is the desk a window opens at when nothing has been remembered yet —
 // a first run, or a preference file that predates the field.
 //
@@ -131,9 +159,21 @@ type Mode struct {
 	// decided to open. ผู้ช่วย declares the office; โค้ด declares nothing and so
 	// talks to no one.
 	Dispatch []string `json:"dispatch,omitempty"`
-	Prompt   string   `json:"prompt"`         // direction folded into the system prompt
-	Path     string   `json:"path,omitempty"` // on-disk path; "" for a bundled mode
-	Builtin  bool     `json:"builtin"`
+	// Memory is this desk's memory architecture (§184): where a remembered
+	// line lands when the model does not say. The two desks answer it
+	// differently on purpose — assistant work learns about the user and the
+	// machine, so its lines belong in the file every session reads; coding
+	// work settles decisions, and a decision kept anywhere but the project it
+	// was made in arrives as advice in the next one (§116).
+	//
+	// A rule, not a destination: the desk never has a memory file of its own.
+	// `modes/<desk>.md` remains readable (internal/learned.FileFor folds it
+	// into the prompt if a person writes one) but nothing proposes into it —
+	// measured before removal, 25 ส.ค.: 11 memory calls ever, zero chose it.
+	Memory  string `json:"memory,omitempty"`
+	Prompt  string `json:"prompt"`         // direction folded into the system prompt
+	Path    string `json:"path,omitempty"` // on-disk path; "" for a bundled mode
+	Builtin bool   `json:"builtin"`
 	// Overrides marks a user file shadowing a bundled mode of the same name.
 	// Deleting one is a revert — the bundled mode comes back — not a removal,
 	// and the settings page must not lie about that.
@@ -424,6 +464,7 @@ func parse(name, raw string) Mode {
 		Connections: config.ConnectionsForDesk(name, connect.IDs()),
 		Chairs:      splitList(fields["chairs"]),
 		Dispatch:    splitList(fields["dispatch"]),
+		Memory:      strings.ToLower(strings.TrimSpace(fields["memory"])),
 		Prompt:      body,
 	}
 }

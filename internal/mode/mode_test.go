@@ -581,3 +581,40 @@ func TestNoDeskManifestSpellsAToolIdInItsBody(t *testing.T) {
 		}
 	}
 }
+
+// The two working desks answer "where does an unqualified remembered line
+// land" differently, and that difference is the product decision §184 records:
+// assistant work learns about the user, so its lines cross into every session;
+// coding work settles decisions, and a decision must stay in the project that
+// made it (§116). The office declares nothing — a chair writes its own file,
+// and the office assistant keeps the oldest behaviour.
+func TestEachDeskDeclaresItsMemoryArchitecture(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir()) // an empty user dir; bundled only
+
+	byName := map[string]Mode{}
+	for _, m := range List() {
+		byName[m.Name] = m
+	}
+	for name, want := range map[string]string{
+		"assistant":   MemoryShared,
+		"coding":      MemoryProject,
+		"specialized": MemoryShared,
+	} {
+		m := byName[name]
+		if got := m.MemoryRule(); got != want {
+			t.Errorf("desk %q keeps its memory %q, want %q", name, got, want)
+		}
+	}
+
+	// The rule can never be an unknown word: nil is the legacy full desk, and
+	// a half-written user manifest degrades to the oldest behaviour rather
+	// than to a junk destination.
+	var full *Mode
+	if got := full.MemoryRule(); got != MemoryShared {
+		t.Errorf("the full desk's memory rule is %q, want %q", got, MemoryShared)
+	}
+	odd := parse("odd", "---\nmemory: somewhere-else\n---\nbody")
+	if got := odd.MemoryRule(); got != MemoryShared {
+		t.Errorf("an unrecognised memory rule read as %q, want %q", got, MemoryShared)
+	}
+}
