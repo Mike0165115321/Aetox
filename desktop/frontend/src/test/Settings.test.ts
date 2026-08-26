@@ -149,8 +149,12 @@ const seedRestrictedSignIn = () => seedSignIn(
 )
 
 const openSection = async (container: HTMLElement, label: string) => {
-  const item = Array.from(container.querySelectorAll('.settings-nav-item'))
-    .find((el) => el.textContent?.includes(label))
+  // Exact label first, substring only as a fallback: "สกิล" (Skills) is a
+  // substring of "ปรับสกิลอัตโนมัติ" (Skill tuning), so a bare includes() would
+  // open the wrong page for whichever nav item happens to come first.
+  const items = Array.from(container.querySelectorAll('.settings-nav-item'))
+  const item = items.find((el) => el.textContent?.trim() === label)
+    ?? items.find((el) => el.textContent?.includes(label))
   if (!item) throw new Error(`nav item "${label}" not found`)
   await fireEvent.click(item)
 }

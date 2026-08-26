@@ -196,6 +196,13 @@ type ModelPreference struct {
 	// preference files, and defaulting it off would have made the feature
 	// invisible to everyone who already had one.
 	LearningDisabled bool `json:"learning_disabled,omitempty"`
+	// SkillTuneAuto lets the self-optimize loop draft a skill fix in the
+	// background after a skill is rated bad enough times, rather than waiting for
+	// the user to ask. Positive, so absent means off: the feature ships manual —
+	// drafting spends a model call, and a background spend nobody asked for is
+	// exactly what an absent-means-off default is for. The user turns it on in
+	// settings; either way a drafted fix only ever applies on their approval.
+	SkillTuneAuto bool `json:"skill_tune_auto,omitempty"`
 	// The assistant's reach: one switch per kind, plus the per-worker trim. Each
 	// is spelled so that ABSENT means what the product ships — the same rule
 	// LearningDisabled above follows, applied twice with opposite answers.

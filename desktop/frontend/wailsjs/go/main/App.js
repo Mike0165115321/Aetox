@@ -422,6 +422,10 @@ export function ListDecidedIssues(arg1) {
   return window['go']['main']['App']['ListDecidedIssues'](arg1);
 }
 
+export function ListDecidedSkillProposals(arg1) {
+  return window['go']['main']['App']['ListDecidedSkillProposals'](arg1);
+}
+
 export function ListDecks() {
   return window['go']['main']['App']['ListDecks']();
 }
@@ -472,6 +476,10 @@ export function ListSessionsAt(arg1) {
 
 export function ListSessionsForDoor(arg1) {
   return window['go']['main']['App']['ListSessionsForDoor'](arg1);
+}
+
+export function ListSkillProposals() {
+  return window['go']['main']['App']['ListSkillProposals']();
 }
 
 export function ListSkills() {
@@ -612,6 +620,10 @@ export function PendingIssueCount() {
 
 export function PendingLearnedCount() {
   return window['go']['main']['App']['PendingLearnedCount']();
+}
+
+export function PendingSkillTuneCount() {
+  return window['go']['main']['App']['PendingSkillTuneCount']();
 }
 
 export function PendingUndo() {
@@ -782,6 +794,10 @@ export function RunChatScript(arg1, arg2) {
   return window['go']['main']['App']['RunChatScript'](arg1, arg2);
 }
 
+export function RunSkillTuneup() {
+  return window['go']['main']['App']['RunSkillTuneup']();
+}
+
 export function RunnableLanguages() {
   return window['go']['main']['App']['RunnableLanguages']();
 }
@@ -922,6 +938,10 @@ export function SetShell(arg1) {
   return window['go']['main']['App']['SetShell'](arg1);
 }
 
+export function SetSkillTuneAuto(arg1) {
+  return window['go']['main']['App']['SetSkillTuneAuto'](arg1);
+}
+
 export function SetSpeechModel(arg1) {
   return window['go']['main']['App']['SetSpeechModel'](arg1);
 }
@@ -960,6 +980,10 @@ export function SignOut(arg1) {
 
 export function SkillScanIssues() {
   return window['go']['main']['App']['SkillScanIssues']();
+}
+
+export function SkillTuneAuto() {
+  return window['go']['main']['App']['SkillTuneAuto']();
 }
 
 export function SkillsDir() {

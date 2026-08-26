@@ -224,6 +224,8 @@ export function ListDecidedChanges(arg1:number):Promise<Array<main.PendingChange
 
 export function ListDecidedIssues(arg1:number):Promise<Array<main.PendingChange>>;
 
+export function ListDecidedSkillProposals(arg1:number):Promise<Array<main.PendingChange>>;
+
 export function ListDecks():Promise<Array<main.Deck>>;
 
 export function ListDecksIn(arg1:string):Promise<main.DeckPage>;
@@ -249,6 +251,8 @@ export function ListSessions():Promise<Array<main.SessionMeta>>;
 export function ListSessionsAt(arg1:string):Promise<Array<main.SessionMeta>>;
 
 export function ListSessionsForDoor(arg1:main.DeskFilter):Promise<Array<main.SessionMeta>>;
+
+export function ListSkillProposals():Promise<Array<main.PendingChange>>;
 
 export function ListSkills():Promise<Array<main.SkillInfo>>;
 
@@ -319,6 +323,8 @@ export function PendingChangeByID(arg1:number):Promise<main.PendingChange>;
 export function PendingIssueCount():Promise<number>;
 
 export function PendingLearnedCount():Promise<number>;
+
+export function PendingSkillTuneCount():Promise<number>;
 
 export function PendingUndo():Promise<Array<string>>;
 
@@ -404,6 +410,8 @@ export function RunChatCommand(arg1:string):Promise<main.RunBlockResult>;
 
 export function RunChatScript(arg1:string,arg2:string):Promise<main.RunBlockResult>;
 
+export function RunSkillTuneup():Promise<number>;
+
 export function RunnableLanguages():Promise<Record<string, string>>;
 
 export function SaveAgentProfile(arg1:string,arg2:string):Promise<void>;
@@ -474,6 +482,8 @@ export function SetProviderWireFormat(arg1:string):Promise<main.ModelInfo>;
 
 export function SetShell(arg1:string):Promise<void>;
 
+export function SetSkillTuneAuto(arg1:boolean):Promise<void>;
+
 export function SetSpeechModel(arg1:string):Promise<void>;
 
 export function SetStance(arg1:string):Promise<string>;
@@ -493,6 +503,8 @@ export function SignInStatus(arg1:string):Promise<oauth.Status>;
 export function SignOut(arg1:string):Promise<main.ModelInfo>;
 
 export function SkillScanIssues():Promise<Array<string>>;
+
+export function SkillTuneAuto():Promise<boolean>;
 
 export function SkillsDir():Promise<string>;
 

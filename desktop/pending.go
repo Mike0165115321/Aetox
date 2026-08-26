@@ -10,6 +10,7 @@ import (
 	"github.com/Mikedev115/Aetox/internal/config"
 	"github.com/Mikedev115/Aetox/internal/debuglog"
 	"github.com/Mikedev115/Aetox/internal/learned"
+	"github.com/Mikedev115/Aetox/internal/skill"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -73,6 +74,13 @@ const (
 const (
 	kindMemory = "memory"
 	kindIssue  = "issue"
+	// kindSkill asks "แก้สกิลนี้ไหม", and yes rewrites a SKILL.md — the
+	// self-optimize loop's proposal to refine a skill that kept misfiring
+	// (docs/architecture/self-optimize-loop-2026-08-26.md). For this kind, scope
+	// is the skill's name (the unit the edit applies to), the way it is the
+	// memory scope for kindMemory. It goes through this same door for the same
+	// reason everything else does: nothing rewrites a skill without a human yes.
+	kindSkill = "skill"
 )
 
 // appProposer adapts the App to learned.Proposer. The indirection exists so
@@ -140,6 +148,30 @@ func (a *App) proposeLearned(p learned.Proposal) (learned.Result, error) {
 func (a *App) ListPendingChanges() []PendingChange {
 	return a.queryChanges(`WHERE state = ? AND kind = ? ORDER BY id`, statePending, kindMemory)
 }
+
+// ListSkillProposals is the skill-tuning room's own queue: edits the
+// self-optimize loop drafted, waiting for approval. Its own axis (not folded
+// into the learning queue) so it can grow its own controls — a memory line and a
+// skill rewrite are both "learnings", but one edits a fact and the other edits
+// behaviour, and the user reviews them differently.
+func (a *App) ListSkillProposals() []PendingChange {
+	return a.queryChanges(`WHERE state = ? AND kind = ? ORDER BY id`, statePending, kindSkill)
+}
+
+// ListDecidedSkillProposals is the record of skill edits let through or turned
+// down, newest first.
+func (a *App) ListDecidedSkillProposals(limit int) []PendingChange {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	return a.queryChanges(
+		`WHERE state <> ? AND kind = ? ORDER BY id DESC LIMIT `+fmt.Sprint(limit),
+		statePending, kindSkill)
+}
+
+// PendingSkillTuneCount lights the skill-tuning nav row, the same way the two
+// counts above light theirs.
+func (a *App) PendingSkillTuneCount() int { return a.countPending(kindSkill) }
 
 // ListDecidedChanges is the record of what was let through and what was turned
 // down, newest first. This is where "why does it think that?" gets answered.
@@ -253,6 +285,13 @@ func (a *App) ApprovePendingChange(id int64) error {
 	switch c.Kind {
 	case kindMemory:
 		if err := learned.Apply(c.Scope, c.Op, c.Before, c.Body); err != nil {
+			return err
+		}
+	case kindSkill:
+		// scope is the skill name for this kind. The write copies a bundled skill
+		// out whole on its first edit, so the disk override carries references/
+		// too — skill.Apply owns that; the door only gates it on approval.
+		if err := skill.Apply(c.Scope, c.Op, c.Before, c.Body); err != nil {
 			return err
 		}
 	default:
@@ -545,3 +584,26 @@ func (a *App) SetLearningEnabled(on bool) error {
 
 // LearningEnabled reports the switch for the settings page.
 func (a *App) LearningEnabled() bool { return learningEnabled() }
+
+// skillTuneAuto reads whether the self-optimize loop may draft in the background.
+// Read per use, like learningEnabled — the switch takes effect on the next turn.
+func skillTuneAuto() bool {
+	pref, ok, _ := config.LoadModelPreference()
+	if !ok {
+		return false
+	}
+	return pref.SkillTuneAuto
+}
+
+// SkillTuneAuto reports the switch for the settings page; SetSkillTuneAuto
+// persists it. Off ships by default — drafting spends a model call.
+func (a *App) SkillTuneAuto() bool { return skillTuneAuto() }
+
+func (a *App) SetSkillTuneAuto(on bool) error {
+	pref, _, err := config.LoadModelPreference()
+	if err != nil {
+		return err
+	}
+	pref.SkillTuneAuto = on
+	return config.SaveModelPreference(pref)
+}

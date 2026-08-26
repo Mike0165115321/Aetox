@@ -151,6 +151,12 @@ func (a *App) recordJobs(conv *conversation, messageID int64, request, answer st
 	// (db.go: a GROUP BY, not a model call), and because a lesson that waits
 	// for a restart arrives after the mistake has been repeated all day.
 	a.summarizeFailures()
+
+	// And the other reader of the same floor: the summarizer raises a problem
+	// from a repeated crash, this drafts a skill fix from a repeated bad rating.
+	// Cheap detect here, model call only in the background if something is
+	// flagged — and only ever a proposal, never a write.
+	a.maybeTuneSkills()
 }
 
 // delegateName is which sub-agent ran. The tool runs carry it (the relay in

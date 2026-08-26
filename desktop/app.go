@@ -78,6 +78,13 @@ type App struct {
 	convs     *conversations
 	convsOnce sync.Once
 
+	// skillTuneRunning guards the self-optimize drafter so at most one runs at a
+	// time: it spends a model call, and a turn that flags a skill fires from the
+	// turn's goroutine, so two overlapping turns must not both draft the same
+	// skill. The generator's own per-skill "already proposed?" gate stops the
+	// repeat; this stops the concurrency.
+	skillTuneRunning atomic.Bool
+
 	terminalsMu sync.Mutex
 	terminals   map[string]*TerminalSession
 	browsers    *browserHost
