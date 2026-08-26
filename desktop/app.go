@@ -3476,7 +3476,7 @@ func (a *App) workbenchSkills(conv *conversation, sandboxRoot string) []skill.Sk
 		// surface, and a terminal is a thing that lives on it with a back and
 		// forth of its own — the same reason the browser is its own pack.
 		&deskSkill{app: a, conv: conv},
-		&deskTerminalSkill{app: a},
+		&deskTerminalSkill{app: a, conv: conv},
 		&askUserSkill{app: a, conv: conv},
 		&todoWriteSkill{app: a, conv: conv},
 		&sessionSearchSkill{app: a},

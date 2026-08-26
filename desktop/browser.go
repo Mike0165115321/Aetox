@@ -1298,7 +1298,7 @@ func (a *App) closeTab(id string, why closeReason) {
 	// latched open (BrowserPane's `opened`) so nothing would ever re-open it.
 	// The file side has said both halves all along (workbench:close-file).
 	if wasOpen || v != nil {
-		a.emitEvent("workbench:close-browser", map[string]string{"id": id})
+		a.deskEvent("", "close-browser", map[string]string{"id": id})
 	}
 }
 

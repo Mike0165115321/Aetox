@@ -160,7 +160,7 @@ func (a *App) notifyFilesChanged(conv *conversation, run turn.ToolRun) {
 	for _, ed := range edits {
 		paths = append(paths, ed.Path)
 	}
-	a.emitEvent("workbench:files-changed", sessionEvent[[]string]{SessionID: conv.id, Data: paths})
+	a.deskFilesChanged(conv, paths)
 }
 
 // editsFromRun turns one recorded call into the rows it changed, or none when

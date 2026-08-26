@@ -16,8 +16,8 @@
   import { cockpit } from '../stores/cockpit.svelte'
   import {
     workbench, activateTab, closeTab, removeTab,
-    openFilesTab, openBrowserTab, openTerminalTab, openDecksTab, openGitTab, openFileTab, closeAgentFileTab,
-    browserTabClosedByEngine, reportDeskTabs,
+    openFilesTab, openBrowserTab, openTerminalTab, openDecksTab, openGitTab, openFileTab, routeDeskEvent,
+    reportDeskTabs,
     openUrlInWorkbench, saveWorkbenchSnapshot, resolveAddressBarInput, labelForUrl,
     setTabDragPayload, TAB_DRAG_MIME,
     type WorkbenchTab,
@@ -119,44 +119,14 @@
     // fallback is meant to cover the milliseconds of a round trip, not a user
     // who turned a layer off yesterday.
     void loadBusySignal()
-    // The ways the agent reaches this desk. Each mirrors a door the user
-    // already has — a page, a file, a shell, and the × on a tab — so nothing
-    // here can do something to the desk that a click could not have.
-    const offs = [
-      // browser_open
-      EventsOn('workbench:open-browser', ({ id, url }: { id: string; url: string }) => {
-        if (!workbench.tabs.some((t) => t.id === id)) {
-          workbench.tabs.push({ id, kind: 'browser', name: t('workbench.newTab'), url, mine: true })
-        }
-        workbench.activeId = id
-      }),
-      // desk_open — straight into the same opener the tree and the drop use, so
-      // the routing table stays the only thing that decides which pane draws it.
-      EventsOn('workbench:open-file', ({ path, name }: { path: string; name: string }) => {
-        void openFileTab(path, name, true)
-      }),
-      // desk close — only ever a tab the agent opened itself; the store checks
-      // that again against the live array rather than trusting the mirror.
-      EventsOn('workbench:close-file', ({ path }: { path: string }) => {
-        closeAgentFileTab(path)
-      }),
-      // The browser's half of the same pair, which it never had. Any close on
-      // the Go side lands here — the agent closing its own tab, and the orphan
-      // sweep after a reload — because a chip whose native view is gone is a
-      // black rectangle nothing can repair.
-      EventsOn('workbench:close-browser', ({ id }: { id: string }) => {
-        browserTabClosedByEngine(id)
-      }),
-      // desk_terminal — the session already exists on the Go side (unlike the
-      // browser, where the frontend creates the window), so this only mounts a
-      // pane onto an id that is already live.
-      EventsOn('workbench:open-terminal', ({ id, name }: { id: string; name: string }) => {
-        if (!workbench.tabs.some((tab) => tab.id === id)) {
-          workbench.tabs.push({ id, kind: 'terminal', name, mine: true })
-        }
-        workbench.activeId = id
-      }),
-    ]
+    // The ways the agent reaches this desk, all through one door (§187.3):
+    // every event carries its session, and routeDeskEvent is the single place
+    // that decides live desk vs a background chat's saved one. A new desk
+    // surface subscribes here and answers "whose desk" in the router's switch,
+    // or it draws nothing — never a policy improvised per handler again.
+    const offs = ['open-browser', 'close-browser', 'open-file', 'close-file', 'open-terminal'].map((kind) =>
+      EventsOn(`workbench:${kind}`, (payload: Record<string, unknown>) => routeDeskEvent(kind, payload)),
+    )
     return () => offs.forEach((off) => off())
   })
 

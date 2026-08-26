@@ -167,7 +167,7 @@ func (s *engineServerSkill) run(_ context.Context, command string) (skill.Output
 	// to open one is not failing to start the server — headless runs and a
 	// window that is not up yet lose the view, not the engine.
 	seated := ""
-	if _, err := s.app.openDeskTerminal(tailCommand(logPath)); err == nil {
+	if _, err := s.app.openDeskTerminal("", tailCommand(logPath)); err == nil {
 		seated = " ผู้ใช้เห็น log มันวิ่งอยู่ในเทอร์มินัลบนโต๊ะ"
 	}
 	if !waitReachable(row.BaseURL, serverStartPatience) {

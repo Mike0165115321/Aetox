@@ -92,7 +92,7 @@ func (s *browserCaptureSkill) capture(ctx context.Context, full bool) (skill.Out
 	if t := a.browsers.tab(string(id)); t != nil {
 		title, url = t.meta()
 	}
-	a.emitEvent("workbench:open-browser", map[string]string{"id": string(id), "url": url})
+	a.deskEvent("", "open-browser", map[string]string{"id": string(id), "url": url})
 	select {
 	case <-ctx.Done():
 		out.DurationMs = time.Since(start).Milliseconds()

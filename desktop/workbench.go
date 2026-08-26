@@ -161,7 +161,7 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string, newTab bool)
 	// Emitted either way: for a new tab the frontend creates it, and for one
 	// that exists the same handler just raises it — which is what the user
 	// needs to actually see the page the agent moved to.
-	a.emitEvent("workbench:open-browser", map[string]string{"id": string(id), "url": url})
+	a.deskEvent("", "open-browser", map[string]string{"id": string(id), "url": url})
 
 	// The frontend creates the tab, which creates the native webview — poll
 	// until it exists, then wait out its first navigation.

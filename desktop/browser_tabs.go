@@ -156,7 +156,7 @@ func (a *App) selectAgentTab(id string) error {
 	if t := h.tab(id); t != nil {
 		_, url = t.meta()
 	}
-	a.emitEvent("workbench:open-browser", map[string]string{"id": id, "url": url})
+	a.deskEvent("", "open-browser", map[string]string{"id": id, "url": url})
 	return nil
 }
 

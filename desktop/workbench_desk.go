@@ -157,7 +157,12 @@ func (s *deskOpenSkill) open(path string) (skill.Output, error) {
 	path = placed
 
 	name := filepath.Base(filepath.FromSlash(path))
-	s.app.emitEvent("workbench:open-file", map[string]string{"path": path, "name": name})
+	// The session rides in the event because the window routes on it: a
+	// desk_open from a chat working in the background must land on THAT
+	// chat's saved desk, not on whichever desk is on screen (§187). Without
+	// it the tab appeared in front of whoever happened to be looking, and
+	// the on-screen session's next snapshot persisted the stray as its own.
+	s.app.deskEvent(s.conv.id, "open-file", map[string]string{"path": path, "name": name})
 
 	out.Success = true
 	out.DurationMs = time.Since(start).Milliseconds()
@@ -177,7 +182,12 @@ func deskOpenedLine(path string) string {
 // desk_terminal
 // ---------------------------------------------------------------------------
 
-type deskTerminalSkill struct{ app *App }
+// conv is the chat this tool was built for, same as deskOpenSkill and for
+// the same reason: its terminal belongs on ITS desk (§187).
+type deskTerminalSkill struct {
+	app  *App
+	conv *conversation
+}
 
 func (*deskTerminalSkill) Name() string { return "desk_terminal" }
 
@@ -212,7 +222,10 @@ func (s *deskTerminalSkill) Execute(_ context.Context, input skill.Input) (skill
 // when the engine starter (engine_server.go) became its second caller — an
 // engine starting in a window the user watches is this exact act, and a copy
 // of these lines over there would be two ways to open the same terminal.
-func (a *App) openDeskTerminal(command string) (shellName string, err error) {
+// sessionID is whose desk the pane belongs on — the calling chat's, or ""
+// for a caller with no conversation (the engine starter's log terminal, which
+// is deliberately for whoever is looking).
+func (a *App) openDeskTerminal(sessionID, command string) (shellName string, err error) {
 	if a.ctx == nil {
 		return "", fmt.Errorf("UI not ready")
 	}
@@ -234,7 +247,7 @@ func (a *App) openDeskTerminal(command string) (shellName string, err error) {
 	// browser's flow (there the frontend creates the window and Go polls for
 	// it). It is simpler this way round: the id is already real, so the frontend
 	// only has to mount a pane onto it, and there is nothing to wait for.
-	a.emitEvent("workbench:open-terminal", map[string]string{"id": id, "name": sh.Name})
+	a.deskEvent(sessionID, "open-terminal", map[string]string{"id": id, "name": sh.Name})
 
 	if command != "" {
 		// A newline is what makes it run. Given to the PTY exactly as a keypress
@@ -257,7 +270,7 @@ func (s *deskTerminalSkill) run(command string) (skill.Output, error) {
 		return out, err
 	}
 
-	name, err := s.app.openDeskTerminal(command)
+	name, err := s.app.openDeskTerminal(s.conv.id, command)
 	if err != nil {
 		return fail(err)
 	}
@@ -395,7 +408,7 @@ func (s *deskCloseSkill) close(path string) (skill.Output, error) {
 		return fail(fmt.Errorf("%s was opened by the user, so it is not yours to close", path))
 	}
 
-	s.app.emitEvent("workbench:close-file", map[string]string{"path": path})
+	s.app.deskEvent(s.conv.id, "close-file", map[string]string{"path": path})
 
 	out.Success = true
 	out.DurationMs = time.Since(start).Milliseconds()

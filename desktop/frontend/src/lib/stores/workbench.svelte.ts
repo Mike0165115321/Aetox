@@ -289,6 +289,122 @@ export function closeAgentFileTab(path: string): void {
   if (tab) void closeTab(tab)
 }
 
+/** `desk_open` routed by whose desk it is (§187).
+ *
+ * The event names its session now, because a chat working in the background
+ * kept putting files on whichever desk was on screen — and the on-screen
+ * session's next snapshot then persisted the stray as its own, so the leak
+ * survived restarts. A background session's file goes into that session's
+ * SAVED desk instead: the user finds it there when they open the chat, which
+ * is what "วางไฟล์บนโต๊ะแล้ว" honestly means for a desk nobody is looking at.
+ * An event with no session (an older engine mid-upgrade) keeps today's
+ * behaviour rather than dropping the file. */
+export async function openAgentFileTabFor(sessionId: string, path: string, name: string): Promise<void> {
+  if (!sessionId || sessionId === boundSessionId) {
+    await openFileTab(path, name, true)
+    return
+  }
+  patchSavedTabs(sessionId, (tabs) => {
+    if (tabs.some((t) => t.kind === 'file' && t.path === path)) return tabs
+    return [...tabs, { kind: 'file', name, path, mine: true }]
+  })
+}
+
+/** `desk close`, routed the same way — the agent may only take back its own
+ * tab, and only from its own session's desk, live or saved. */
+export function closeAgentFileTabFor(sessionId: string, path: string): void {
+  if (!sessionId || sessionId === boundSessionId) {
+    closeAgentFileTab(path)
+    return
+  }
+  patchSavedTabs(sessionId, (tabs) => tabs.filter((t) => !(t.kind === 'file' && t.path === path && t.mine)))
+}
+
+/** The desk's one door on the window side (§187.3).
+ *
+ * Every agent-originated desk event arrives here, and every KIND declares in
+ * this one switch what a background arrival means — park it on that session's
+ * saved desk, or state why it draws live. §187's leak existed because that
+ * question was asked nowhere; a kind with no answer here falls to the default,
+ * which touches nothing and says so, instead of guessing at a desk.
+ *
+ * sessionId '' is the Go door's explicit "no per-session owner" (the shared
+ * browser host, the engine-log terminal — §187.2) and draws live, which is
+ * the pre-§187 behaviour made a stated policy instead of an accident. */
+export function routeDeskEvent(kind: string, payload: Record<string, unknown>): void {
+  const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : ''
+  const str = (k: string) => (typeof payload[k] === 'string' ? (payload[k] as string) : '')
+  switch (kind) {
+    // A file tab is pure UI, so both destinations exist: live for the chat on
+    // screen, the saved desk for one that is not.
+    case 'open-file':
+      void openAgentFileTabFor(sessionId, str('path'), str('name'))
+      return
+    case 'close-file':
+      closeAgentFileTabFor(sessionId, str('path'))
+      return
+    // The browser is one shared host (§187.2): its tabs have native windows a
+    // saved layout cannot represent, so it draws live until it gains a
+    // per-session owner — at which point only the Go door's "" changes.
+    case 'open-browser': {
+      const id = str('id')
+      if (!workbench.tabs.some((t) => t.id === id)) {
+        workbench.tabs.push({ id, kind: 'browser', name: t('workbench.newTab'), url: str('url'), mine: true })
+      }
+      workbench.activeId = id
+      return
+    }
+    case 'close-browser':
+      browserTabClosedByEngine(str('id'))
+      return
+    // The PTY already lives on the Go side; this only mounts a pane on it.
+    // Live for the same reason as the browser: a terminal is a native
+    // resource the saved layout deliberately does not restore.
+    case 'open-terminal': {
+      const id = str('id')
+      if (!workbench.tabs.some((tab) => tab.id === id)) {
+        workbench.tabs.push({ id, kind: 'terminal', name: str('name'), mine: true })
+      }
+      workbench.activeId = id
+      return
+    }
+    default:
+      // A desk event nobody wrote a policy for must not touch a desk.
+      console.warn(`desk event "${kind}" has no routing policy — nothing was drawn`)
+  }
+}
+
+/** Rewrite one background session's saved desk, and keep the Go mirror true.
+ *
+ * The mirror push matters as much as the storage write: desk_list and desk
+ * close judge against what WorkbenchTabsChanged last reported for that
+ * conversation, and a file parked only in localStorage would be a tab the
+ * agent was told it put down and is then told does not exist. */
+function patchSavedTabs(sessionId: string, change: (tabs: SavedTab[]) => SavedTab[]): void {
+  let saved: { tabs: SavedTab[]; activeIdx: number }
+  try {
+    saved = JSON.parse(localStorage.getItem(wbKey(sessionId)) ?? '') as typeof saved
+  } catch {
+    saved = { tabs: [], activeIdx: -1 }
+  }
+  const before = saved.tabs ?? []
+  const tabs = change(before)
+  // A newly arrived file is what that chat will want on top; a removal keeps
+  // the focus clamped to a tab that still exists.
+  const activeIdx = tabs.length > before.length ? tabs.length - 1 : Math.min(saved.activeIdx, tabs.length - 1)
+  localStorage.setItem(wbKey(sessionId), JSON.stringify({ tabs, activeIdx }))
+  void WorkbenchTabsChanged(
+    sessionId,
+    tabs.map((t) => ({
+      kind: t.kind,
+      name: t.name,
+      path: t.path ?? '',
+      url: t.url ?? '',
+      mine: t.mine ?? false,
+    })) as main.DeskTab[],
+  )
+}
+
 /** (Re)read a file tab's contents off disk.
  *
  * Every open re-reads, including a re-open of a tab that is already there. The
@@ -495,7 +611,11 @@ export function recentVisits(): VisitedPage[] {
 // in snapshots. Stored in localStorage keyed by session id; the Go session
 // store never learns about UI layout.
 
-type SavedTab = { kind: WorkbenchTabKind; name: string; url?: string; path?: string }
+// `mine` survives the round trip on purpose: it is the fact "the agent put
+// this here", and desk close's whole safety rule keys on it. Dropped in the
+// save (as it was until §187), an agent-opened tab came back as the user's
+// after one switch away, and the agent could no longer take back its own tab.
+type SavedTab = { kind: WorkbenchTabKind; name: string; url?: string; path?: string; mine?: boolean }
 
 let boundSessionId: string | null = null
 
@@ -539,7 +659,7 @@ export function saveWorkbenchSnapshot(): void {
   const restorable = workbench.tabs.filter((t) => t.kind !== 'terminal' && (t.kind !== 'file' || !!t.path))
   const activeIdx = restorable.findIndex((t) => t.id === workbench.activeId)
   if (!boundSessionId) return
-  const tabs: SavedTab[] = restorable.map(({ kind, name, url, path }) => ({ kind, name, url, path }))
+  const tabs: SavedTab[] = restorable.map(({ kind, name, url, path, mine }) => ({ kind, name, url, path, mine }))
   localStorage.setItem(wbKey(boundSessionId), JSON.stringify({ tabs, activeIdx }))
 }
 
@@ -561,7 +681,7 @@ async function restoreWorkbench(sessionId: string): Promise<void> {
     // special-cased into an error: the rest of that session's tabs must still
     // come back.
     if (s.kind === 'files') openFilesTab()
-    else if (s.kind === 'file' && s.path) await openFileTab(s.path, s.name)
+    else if (s.kind === 'file' && s.path) await openFileTab(s.path, s.name, s.mine ?? false)
     else if (s.kind === 'browser') {
       const id = openBrowserTab()
       const tab = workbench.tabs.find((t) => t.id === id)
