@@ -54,8 +54,8 @@ function callback(): ((raw: string) => void) | undefined {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  cockpit.pendingContext = null
-  cockpit.pendingImage = null
+  cockpit.pendingContexts = []
+  cockpit.pendingImages = []
   cockpit.chat.length = 0
   deckPick.path = null
   deckPick.mode = 'pick'
@@ -108,9 +108,9 @@ describe('arming it on a deck', () => {
 
     callback()!(JSON.stringify({ __aetox: 'pick', token, cancelled: false, picks: [PICK] }))
 
-    expect(cockpit.pendingContext?.kind).toBe('pick')
-    expect(cockpit.pendingContext?.label).toBe(PICK.selector)
-    expect(cockpit.pendingContext?.content).toContain('slide 4')
+    expect(cockpit.pendingContexts[0]?.kind).toBe('pick')
+    expect(cockpit.pendingContexts[0]?.label).toBe(PICK.selector)
+    expect(cockpit.pendingContexts[0]?.content).toContain('slide 4')
     // Answered once and disarmed, so a second envelope has nothing to land on.
     expect(deckPick.path).toBeNull()
     expect(callback()).toBeUndefined()
@@ -124,7 +124,7 @@ describe('arming it on a deck', () => {
     // the token it could push whatever it liked into the composer.
     callback()!(JSON.stringify({ __aetox: 'pick', token: 'not-the-one', picks: [PICK] }))
 
-    expect(cockpit.pendingContext).toBeNull()
+    expect(cockpit.pendingContexts).toEqual([])
     expect(deckPick.path).toBe(DECK)
   })
 
@@ -135,7 +135,7 @@ describe('arming it on a deck', () => {
 
     callback()!(JSON.stringify({ __aetox: 'pick', token, cancelled: true, picks: [] }))
 
-    expect(cockpit.pendingContext).toBeNull()
+    expect(cockpit.pendingContexts).toEqual([])
     expect(deckPick.path).toBeNull()
   })
 
@@ -151,7 +151,7 @@ describe('arming it on a deck', () => {
     // being told to take the overlay down, a sink stands where the callback was,
     // and what has to be true is that nothing more reaches the composer.
     callback()?.(JSON.stringify({ __aetox: 'pick', token, picks: [PICK] }))
-    expect(cockpit.pendingContext).toBeNull()
+    expect(cockpit.pendingContexts).toEqual([])
   })
 
   it('drops the callback the moment the panel goes, without waiting for the frame', () => {
@@ -177,12 +177,12 @@ describe('drawing on a slide', () => {
     const token = vi.mocked(DeckPickScript).mock.calls[0][0] as string
     layInk(doc)
     callback()!(JSON.stringify({ __aetox: 'pick', token, drawn: true, picks: [PICK] }))
-    await vi.waitFor(() => expect(cockpit.pendingImage).not.toBeNull())
+    await vi.waitFor(() => expect(cockpit.pendingImages).toHaveLength(1))
 
     expect(DeckCaptureDrawing).toHaveBeenCalledWith(DECK, 5, INK)
-    expect(cockpit.pendingImage?.relPath).toBe('images/deck-marks.png')
+    expect(cockpit.pendingImages[0]?.relPath).toBe('images/deck-marks.png')
     // The elements under the marks are worth having too, and they say which file.
-    expect(cockpit.pendingContext?.content).toContain(DECK)
+    expect(cockpit.pendingContexts[0]?.content).toContain(DECK)
     expect(deckPick.capturing).toBe(false)
   })
 
@@ -193,10 +193,10 @@ describe('drawing on a slide', () => {
     layInk(doc)
 
     callback()!(JSON.stringify({ __aetox: 'pick', token, drawn: true, picks: [] }))
-    await vi.waitFor(() => expect(cockpit.pendingImage).not.toBeNull())
+    await vi.waitFor(() => expect(cockpit.pendingImages).toHaveLength(1))
 
     // No chip, because there is nothing to say — but the marks are the point.
-    expect(cockpit.pendingContext).toBeNull()
+    expect(cockpit.pendingContexts).toEqual([])
   })
 
   it('hands over the ink at the slide size, not at the backing store size', async () => {
@@ -234,11 +234,11 @@ describe('drawing on a slide', () => {
     callback()!(JSON.stringify({ __aetox: 'pick', token, drawn: true, picks: [PICK] }))
     await vi.waitFor(() => expect(cockpit.chat.length).toBe(1))
 
-    expect(cockpit.pendingImage).toBeNull()
+    expect(cockpit.pendingImages).toEqual([])
     expect(deckPick.capturing).toBe(false)
     // Failing to photograph the marks is not failing altogether: what was under
     // them was read before the controls came off and is already in the composer.
-    expect(cockpit.pendingContext?.content).toContain(PICK.selector)
+    expect(cockpit.pendingContexts[0]?.content).toContain(PICK.selector)
   })
 
   it('pressing the other mode switches instead of stacking a second overlay', async () => {

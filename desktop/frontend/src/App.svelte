@@ -18,7 +18,7 @@
     cockpit, sendUserMessage, loadRealState, openFile,
     switchProvider, switchThinkLevel,
     switchModel, submitAPIKey, setActiveView, restoreActiveView, closeFile, applyAgentStatus, applyToolEvent,
-    applyAgentChunk, applyReasoningChunk, attachImageFromPath,
+    applyAgentChunk, applyReasoningChunk, attachImageFromPath, attachFileFromPath, fileKind,
     applyAskUser, applyAskDone, applyTodos, applyMissedInterjections, applyTaskChips, applyUsageRound,
     applyPendingLearned, refreshPendingLearned, refreshPendingIssues, applyAgentDone, isOverlayView, closeOverlay,
     refreshProjectFolders, refreshOpenFiles,
@@ -243,10 +243,9 @@
     // same as clicking it in the sidebar tree — lets the user hand the AI a
     // file without hunting for it in the project tree first. Where it lands
     // decides what "open" means, and OnFileDrop gives window coordinates, so
-    // we route on those: an image over the chat composer attaches to the
+    // we route on those: anything over the chat composer attaches to the
     // message, anything over the workbench opens on the agent's desk, and the
     // rest opens in the main editor.
-    const imageExtRe = /\.(png|jpe?g|gif|webp|bmp)$/i
     OnFileDrop(async (x, y, paths) => {
       const composerEl = document.querySelector('.composer')
       const overComposer = !!composerEl && withinRect(composerEl.getBoundingClientRect(), x, y)
@@ -259,8 +258,13 @@
         return
       }
       for (const path of paths) {
-        if (overComposer && imageExtRe.test(path)) {
-          await attachImageFromPath(path)
+        // Dropped on the composer, every one of them is an attachment — a clip
+        // or a PDF included. They used to open as editor tabs instead, which is
+        // the answer to a different question than the one the drop asked, and
+        // only the picture among them ever reached the message.
+        if (overComposer) {
+          if (fileKind(path) === 'image') await attachImageFromPath(path)
+          else await attachFileFromPath(path)
           continue
         }
         try {

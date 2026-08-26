@@ -1098,18 +1098,36 @@ func (a *App) saveChatAttachment(sourcePath string, maxBytes int64) (string, err
 	return relativeToRoot(root, destPath)
 }
 
-// PickAttachment prompts for any file to attach — image, clip, document. The
-// image-only picker stays for the paths that specifically want one.
-func (a *App) PickAttachment() (string, error) {
-	return wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{
-		Title: "แนบไฟล์",
-		Filters: []wailsruntime.FileFilter{
-			{DisplayName: "ไฟล์ที่แนบได้ทั้งหมด", Pattern: "*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp;*.mp4;*.mov;*.mkv;*.webm;*.avi;*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.pdf;*.txt;*.md;*.csv;*.json"},
-			{DisplayName: "รูปภาพ", Pattern: "*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp"},
-			{DisplayName: "วิดีโอ / เสียง", Pattern: "*.mp4;*.mov;*.mkv;*.webm;*.avi;*.mp3;*.wav;*.m4a;*.flac;*.ogg"},
-			{DisplayName: "ทุกไฟล์", Pattern: "*.*"},
-		},
+// attachFilters is the one list the attach dialog offers. It sits apart from
+// the picker so the multi-select dialog and any future single-file caller
+// cannot drift into offering different file types.
+func attachFilters() []wailsruntime.FileFilter {
+	return []wailsruntime.FileFilter{
+		{DisplayName: "ไฟล์ที่แนบได้ทั้งหมด", Pattern: "*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp;*.mp4;*.mov;*.mkv;*.webm;*.avi;*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.pdf;*.txt;*.md;*.csv;*.json"},
+		{DisplayName: "รูปภาพ", Pattern: "*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp"},
+		{DisplayName: "วิดีโอ / เสียง", Pattern: "*.mp4;*.mov;*.mkv;*.webm;*.avi;*.mp3;*.wav;*.m4a;*.flac;*.ogg"},
+		{DisplayName: "ทุกไฟล์", Pattern: "*.*"},
+	}
+}
+
+// PickAttachments prompts for files to attach — images, clips, documents —
+// and allows picking several at once. The composer stages a list, so a
+// single-file dialog was the only reason one question could carry one file.
+// The image-only picker stays for the paths that specifically want one.
+func (a *App) PickAttachments() ([]string, error) {
+	paths, err := wailsruntime.OpenMultipleFilesDialog(a.ctx, wailsruntime.OpenDialogOptions{
+		Title:   "แนบไฟล์",
+		Filters: attachFilters(),
 	})
+	if err != nil {
+		return []string{}, err
+	}
+	// Cancelling gives nil, which marshals to null and is what the frontend
+	// would then call .length on (ARCHITECTURE.md §34).
+	if paths == nil {
+		return []string{}, nil
+	}
+	return paths, nil
 }
 
 // ReadImageDataURL reads a sandboxed image back as a data: URL, for inline

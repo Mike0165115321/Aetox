@@ -29,8 +29,8 @@ function emit(event: string, payload: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  cockpit.pendingContext = null
-  cockpit.pendingImage = null
+  cockpit.pendingContexts = []
+  cockpit.pendingImages = []
   cockpit.chat.length = 0
   pagePick.tabId = null
   pagePick.mode = 'pick'
@@ -85,8 +85,8 @@ describe('the mode', () => {
     await startPagePick('web-1')
     emit('browser:pick:web-1', { url: 'http://localhost:5173/chat', cancelled: false, picks: [PICK] })
 
-    expect(cockpit.pendingContext?.kind).toBe('pick')
-    expect(cockpit.pendingContext?.label).toBe('button.btn-primary')
+    expect(cockpit.pendingContexts[0]?.kind).toBe('pick')
+    expect(cockpit.pendingContexts[0]?.label).toBe('button.btn-primary')
     expect(pagePick.tabId).toBeNull()
   })
 
@@ -94,7 +94,7 @@ describe('the mode', () => {
     await startPagePick('web-1')
     emit('browser:pick:web-1', { url: 'http://x/', cancelled: true, picks: [] })
 
-    expect(cockpit.pendingContext).toBeNull()
+    expect(cockpit.pendingContexts).toEqual([])
     expect(pagePick.tabId).toBeNull()
   })
 
@@ -168,11 +168,11 @@ describe('drawing on the page', () => {
 
     await startPagePick('web-1', 'draw')
     emit('browser:pick:web-1', { url: 'http://x/', cancelled: false, drawn: true, picks: [PICK] })
-    await vi.waitFor(() => expect(cockpit.pendingImage).not.toBeNull())
+    await vi.waitFor(() => expect(cockpit.pendingImages).toHaveLength(1))
 
-    expect(cockpit.pendingImage?.relPath).toBe('.aetox-attachments/s1/shot.png')
+    expect(cockpit.pendingImages[0]?.relPath).toBe('.aetox-attachments/s1/shot.png')
     // What was under the marks rides along as text; the picture is the point.
-    expect(cockpit.pendingContext?.content).toContain('marks')
+    expect(cockpit.pendingContexts[0]?.content).toContain('marks')
     // The ink must come down only after the picture exists, never before.
     expect(BrowserStopPick).toHaveBeenCalledWith('web-1')
     expect(vi.mocked(BrowserCapturePNG).mock.invocationCallOrder[0])
@@ -186,7 +186,7 @@ describe('drawing on the page', () => {
     emit('browser:pick:web-1', { url: 'http://x/', cancelled: false, drawn: true, picks: [] })
     await vi.waitFor(() => expect(BrowserStopPick).toHaveBeenCalledWith('web-1'))
 
-    expect(cockpit.pendingImage).toBeNull()
+    expect(cockpit.pendingImages).toEqual([])
     expect(cockpit.chat.at(-1)?.text).toContain('picture')
   })
 })

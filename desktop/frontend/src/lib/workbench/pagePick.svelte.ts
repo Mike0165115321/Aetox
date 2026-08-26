@@ -14,7 +14,7 @@ import {
   DeckPickScript, DeckStopPickScript, DeckCaptureDrawing,
 } from '../../../wailsjs/go/main/App'
 import { EventsOn } from '../../../wailsjs/runtime/runtime'
-import { cockpit, nowLabel } from '../stores/cockpit.svelte'
+import { cockpit, nowLabel, stagePendingImage } from '../stores/cockpit.svelte'
 import { t } from '../i18n.svelte'
 
 /** One thing the user pointed at — the shape browser_pick.go sends back. */
@@ -121,7 +121,7 @@ async function attachDrawing(tabId: string): Promise<void> {
   try {
     const dataUrl = await BrowserCapturePNG(tabId)
     const relPath = await SaveChatImageData(dataUrl)
-    cockpit.pendingImage = { relPath, dataUrl: await ReadImageDataURL(relPath) }
+    stagePendingImage({ relPath, dataUrl: await ReadImageDataURL(relPath) })
   } catch (err) {
     cockpit.chat.push({ role: 'agent', text: t('cockpit.attachError', { err: String(err) }), time: nowLabel() })
   } finally {
@@ -154,11 +154,11 @@ export async function startPagePick(tabId: string, mode: PickMode = 'pick'): Pro
       return
     }
     if (picks.length > 0) {
-      cockpit.pendingContext = {
+      cockpit.pendingContexts.push({
         kind: 'pick',
         label: e.drawn ? t('workbench.drawLabel') : pickChipLabel(picks),
         content: pickChipContent(e.url, picks, e.drawn),
-      }
+      })
     }
     if (e.drawn) attachDrawing(tabId)
   })
@@ -271,7 +271,7 @@ async function attachDeckDrawing(doc: Document, path: string, slide: number): Pr
     if (!ink) return
     const shot = await DeckCaptureDrawing(path, slide, ink)
     const relPath = await SaveChatImageData(shot)
-    cockpit.pendingImage = { relPath, dataUrl: await ReadImageDataURL(relPath) }
+    stagePendingImage({ relPath, dataUrl: await ReadImageDataURL(relPath) })
   } catch (err) {
     cockpit.chat.push({ role: 'agent', text: t('cockpit.attachError', { err: String(err) }), time: nowLabel() })
   } finally {
@@ -330,11 +330,11 @@ export async function startDeckPick(
       return
     }
     if (picks.length > 0) {
-      cockpit.pendingContext = {
+      cockpit.pendingContexts.push({
         kind: 'pick',
         label: e.drawn ? t('workbench.drawLabel') : pickChipLabel(picks),
         content: deckPickChipContent(path, slide, picks),
-      }
+      })
     }
     if (e.drawn) void attachDeckDrawing(doc, path, slide)
   }

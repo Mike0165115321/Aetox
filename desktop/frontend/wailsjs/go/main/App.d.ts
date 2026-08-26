@@ -328,9 +328,9 @@ export function PendingSkillTuneCount():Promise<number>;
 
 export function PendingUndo():Promise<Array<string>>;
 
-export function PickAttachment():Promise<string>;
-
 export function PickAttachmentImage():Promise<string>;
+
+export function PickAttachments():Promise<Array<string>>;
 
 export function PickPresetImage(arg1:string):Promise<string>;
 

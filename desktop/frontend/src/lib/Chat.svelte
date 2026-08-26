@@ -13,7 +13,7 @@
   import { shell } from './shell.svelte'
   import {
     EnabledProviders, SupportedThinkLevels,
-    ListModelsForProvider, PriceModels, RequiresAPIKey, AcceptsAPIKey, HasAPIKey, PickAttachment,
+    ListModelsForProvider, PriceModels, RequiresAPIKey, AcceptsAPIKey, HasAPIKey, PickAttachments,
     GetContextBreakdown, GuideTopics, RunChatCommand, RunChatScript, ListChairs, ChairStarters, CurrentSessionID,
     DelegateSwitches, SetDelegateOff, SetAgentOff,
     Shells, CurrentShell, SetShell, EnginesFor, UseEngine, VerifyConnection,
@@ -1293,7 +1293,7 @@
       }
       return
     }
-    if (!draft.trim() && !cockpit.pendingImage && !cockpit.pendingContext) return
+    if (!draft.trim() && !cockpit.pendingImages.length && !cockpit.pendingContexts.length && !cockpit.pendingFiles.length) return
     onSend(draft)
     draft = ''
   }
@@ -1388,10 +1388,14 @@
   // tools can open. Splitting this across two buttons was the duplication the
   // owner spotted (ARCHITECTURE.md §38).
   async function attachViaDialog() {
-    const path = await PickAttachment()
-    if (!path) return
-    if (fileKind(path) === 'image') await attachImageFromPath(path)
-    else await attachFileFromPath(path)
+    // Several at once: the dialog is multi-select and the composer stages a
+    // list, so picking twenty files gives twenty cards rather than the last one
+    // winning. Sequential on purpose — each copy into the sandbox names itself
+    // off a shared counter, and the cards should come out in the order picked.
+    for (const path of await PickAttachments()) {
+      if (fileKind(path) === 'image') await attachImageFromPath(path)
+      else await attachFileFromPath(path)
+    }
   }
 
   // A file/browser tab dragged from the workbench (Workbench.svelte's
@@ -2050,28 +2054,28 @@
             {#if m.role === 'agent' && m.tag}
               <div class="name"><span class="tag think">{m.tag}</span></div>
             {/if}
-            {#if m.imageDataUrl}
-              <img src={m.imageDataUrl} alt="" class="msg-image" />
-            {/if}
-            {#if m.attachLabel}
+            {#each m.images ?? [] as img}
+              {#if img.dataUrl}<img src={img.dataUrl} alt="" class="msg-image" />{/if}
+            {/each}
+            {#each m.files ?? [] as file}
               <!-- No body: a clip or a PDF was handed over as a path, so there
                    is nothing to show without opening it. -->
               <div class="attach-card">
                 <div class="attach-head">
-                  <span class="ic"><Icon name={fileIcon(m.attachKind)} size={13} /></span>
-                  <span class="attach-name">{m.attachLabel}</span>
+                  <span class="ic"><Icon name={fileIcon(file.kind)} size={13} /></span>
+                  <span class="attach-name">{file.label}</span>
                 </div>
               </div>
-            {/if}
-            {#if m.contextLabel}
+            {/each}
+            {#each m.contexts ?? [] as ctx}
               <div class="attach-card">
                 <div class="attach-head">
                   <span class="ic"><Icon name="paperclip" size={13} /></span>
-                  <span class="attach-name">{m.contextLabel}</span>
+                  <span class="attach-name">{ctx.label}</span>
                 </div>
-                {#if m.contextPreview}<pre class="attach-body">{m.contextPreview}</pre>{/if}
+                {#if ctx.preview}<pre class="attach-body">{ctx.preview}</pre>{/if}
               </div>
-            {/if}
+            {/each}
             <!-- Asked in the same terms as the buttons inside it. `m.steps`
                  alone drew the row for a turn whose only steps were narration,
                  and then had nothing to put in it. -->
@@ -2996,41 +3000,47 @@
       <!-- Inside the box, above the text, the way every chat app does it: what
            is attached is part of the message being written, not a banner
            floating above the thing you are typing in. -->
-      {#if cockpit.pendingImage}
-        <!-- The card's own shape, with the picture where a text preview sits on
-             an attached file: a head that names it, a body showing what is
-             actually in hand. It was a 32px thumbnail beside the name, which is
-             too small to answer the only question the card exists to answer —
-             which picture did I just attach (owner, 25 ส.ค.). -->
-        <div class="attach-card pic" transition:unroll>
-          <div class="attach-head">
-            <span class="attach-name">{cockpit.pendingImage.relPath.split('/').pop()}</span>
-            <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingImage}><Icon name="x" size={12} /></button>
-          </div>
-          <img src={cockpit.pendingImage.dataUrl} alt="" class="attach-preview" />
-        </div>
-      {/if}
-      {#if cockpit.pendingFile}
-        <div class="attach-card">
-          <div class="attach-head">
-            <span class="ic"><Icon name={fileIcon(cockpit.pendingFile.kind)} size={13} /></span>
-            <span class="attach-name">{cockpit.pendingFile.label}</span>
-            <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingFile}><Icon name="x" size={12} /></button>
-          </div>
-        </div>
-      {/if}
-      {#if cockpit.pendingContext}
-        {@const preview = attachmentPreview(cockpit.pendingContext.content)}
-        <div class="attach-card">
-          <div class="attach-head">
-            <span class="ic"><Icon name={cockpit.pendingContext.kind === 'file' ? 'fileText' : cockpit.pendingContext.kind === 'pick' ? 'pointer' : 'globe'} size={13} /></span>
-            <span class="attach-name">{cockpit.pendingContext.label}</span>
-            <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingContext}><Icon name="x" size={12} /></button>
-          </div>
-          <!-- The point of the card: what is actually going to the model,
-               before it goes. An empty preview (a blank file) leaves the head
-               alone rather than drawing an empty box under it. -->
-          {#if preview}<pre class="attach-body">{preview}</pre>{/if}
+      <!-- A list, not three slots. Every card carries its own x, so dropping
+           the third picture of ten leaves the other nine standing. -->
+      {#if cockpit.pendingImages.length || cockpit.pendingFiles.length || cockpit.pendingContexts.length}
+        <div class="attach-stack">
+          {#each cockpit.pendingImages as img, i (img.relPath)}
+            <!-- The card's own shape, with the picture where a text preview sits on
+                 an attached file: a head that names it, a body showing what is
+                 actually in hand. It was a 32px thumbnail beside the name, which is
+                 too small to answer the only question the card exists to answer —
+                 which picture did I just attach (owner, 25 ส.ค.). -->
+            <div class="attach-card pic" transition:unroll>
+              <div class="attach-head">
+                <span class="attach-name">{img.relPath.split('/').pop()}</span>
+                <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={() => clearPendingImage(i)}><Icon name="x" size={12} /></button>
+              </div>
+              <img src={img.dataUrl} alt="" class="attach-preview" />
+            </div>
+          {/each}
+          {#each cockpit.pendingFiles as file, i (file.relPath)}
+            <div class="attach-card" transition:unroll>
+              <div class="attach-head">
+                <span class="ic"><Icon name={fileIcon(file.kind)} size={13} /></span>
+                <span class="attach-name">{file.label}</span>
+                <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={() => clearPendingFile(i)}><Icon name="x" size={12} /></button>
+              </div>
+            </div>
+          {/each}
+          {#each cockpit.pendingContexts as ctx, i}
+            {@const preview = attachmentPreview(ctx.content)}
+            <div class="attach-card" transition:unroll>
+              <div class="attach-head">
+                <span class="ic"><Icon name={ctx.kind === 'file' ? 'fileText' : ctx.kind === 'pick' ? 'pointer' : 'globe'} size={13} /></span>
+                <span class="attach-name">{ctx.label}</span>
+                <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={() => clearPendingContext(i)}><Icon name="x" size={12} /></button>
+              </div>
+              <!-- The point of the card: what is actually going to the model,
+                   before it goes. An empty preview (a blank file) leaves the head
+                   alone rather than drawing an empty box under it. -->
+              {#if preview}<pre class="attach-body">{preview}</pre>{/if}
+            </div>
+          {/each}
         </div>
       {/if}
       <!-- The roster, while an "@" is being completed. Above the box because the

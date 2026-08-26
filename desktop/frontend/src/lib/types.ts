@@ -117,19 +117,17 @@ export interface ChatMessage {
   rating?: 'good' | 'bad' | 'unknown'
   /** optional badge, e.g. "Thinking (low)" */
   tag?: string
-  /** data: URL of an attached image, for inline preview only (not sent to the model). */
-  imageDataUrl?: string
-  /** Label of a dragged-in file/browser tab, for a small chip on the bubble (content itself is inlined into text). */
-  contextLabel?: string
-  /** First lines of that attached file, for the card in the bubble. */
-  contextPreview?: string
-  /** A user-attached video/audio/document, for the same chip. Only the path
-   * goes to the model, so without this the bubble showed nothing at all. */
-  attachLabel?: string
-  attachKind?: PendingFile['kind']
-  /** Sandbox path of an attached image on a restored message — the thumbnail is
-   * read back from it, since a data URL has no business in the history DB. */
-  imageRelPath?: string
+  /** Images attached to this question, in the order they were attached — for
+   * inline preview only (the model is handed their paths, in the suffix below).
+   * A list because one question can carry a whole folder of screenshots; it was
+   * a single field, and attaching a second picture quietly replaced the first. */
+  images?: MessageImage[]
+  /** Dragged-in files/browser tabs, as small cards on the bubble. Their content
+   * is inlined into the text, so the card only names them. */
+  contexts?: MessageContext[]
+  /** User-attached videos/audio/documents, as the same chip. Only the path goes
+   * to the model, so without these the bubble showed nothing at all. */
+  files?: MessageFile[]
   /** The attachment marker lines that were appended to this message when it was
    * sent — the part the model reads and the bubble never shows. Kept so editing
    * the prose can re-send them: without it, fixing a typo would silently detach
@@ -546,6 +544,28 @@ export interface PendingContext {
   content: string
 }
 
+/** One attached image as a sent message carries it. `dataUrl` is what the
+ * bubble draws and never survives a reload; `relPath` is the sandbox path a
+ * restored message reads the thumbnail back from, since a data URL has no
+ * business in the history DB. */
+export interface MessageImage {
+  dataUrl?: string
+  relPath?: string
+}
+
+/** One dragged-in file/browser tab as a sent message carries it. */
+export interface MessageContext {
+  label: string
+  /** First lines of the inlined content, for the card in the bubble. */
+  preview?: string
+}
+
+/** One attached clip/document as a sent message carries it. */
+export interface MessageFile {
+  label: string
+  kind: PendingFile['kind']
+}
+
 export type StepStatus = 'done' | 'active' | 'wait'
 
 export interface ChangeSummary {
@@ -716,8 +736,10 @@ export interface CockpitState {
   streamingText: string
   /** Model's reasoning/thinking tokens streamed so far this turn, from agent:reasoning events. '' when idle or the provider doesn't stream reasoning. */
   reasoningText: string
-  /** Image staged in the composer, not yet sent. */
-  pendingImage: PendingImage | null
+  /** Images staged in the composer, not yet sent — in the order they were
+   *  attached. A list, not a slot: attaching a second picture used to replace
+   *  the first, so one question could only ever carry one. */
+  pendingImages: PendingImage[]
   /** Why the last attempt to open a session from the history list failed, in
    *  the engine's own words. '' when the last one worked. */
   sessionError: string
@@ -739,10 +761,10 @@ export interface CockpitState {
    *  (desktop/conversation.go). Everything that means "the chat on screen"
    *  reads this. */
   openSession: string
-  /** File/browser tab dragged into the composer, staged before send. */
-  pendingContext: PendingContext | null
-  /** Non-image file attached in the composer, staged before send. */
-  pendingFile: PendingFile | null
+  /** File/browser tabs dragged into the composer, staged before send. */
+  pendingContexts: PendingContext[]
+  /** Non-image files attached in the composer, staged before send. */
+  pendingFiles: PendingFile[]
   /** Question the model is blocked on (ask_user tool), null when none. */
   ask: { question: string; options: string[] } | null
   /** The model's task checklist (todo_write tool), replaced wholesale each call. */
@@ -816,11 +838,11 @@ export function emptyCockpitState(): CockpitState {
     pendingLearned: 0,
     pendingIssues: 0,
     settingsIntent: null,
-    pendingImage: null,
+    pendingImages: [],
     sessionError: '',
     parked: {},
     openSession: '',
-    pendingContext: null,
-    pendingFile: null,
+    pendingContexts: [],
+    pendingFiles: [],
   }
 }

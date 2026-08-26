@@ -14,14 +14,14 @@ beforeEach(() => {
   vi.clearAllMocks()
   cockpit.chat.length = 0
   cockpit.awaitingReply = false
-  cockpit.pendingImage = null
-  cockpit.pendingFile = null
-  cockpit.pendingContext = null
+  cockpit.pendingImages = []
+  cockpit.pendingFiles = []
+  cockpit.pendingContexts = []
 })
 
 describe('a turn that failed', () => {
   it('keeps what was actually sent, attachment lines and all', async () => {
-    cockpit.pendingFile = { relPath: '.aetox-attachments/clip.mp4', label: 'clip.mp4', kind: 'video' }
+    cockpit.pendingFiles = [{ relPath: '.aetox-attachments/clip.mp4', label: 'clip.mp4', kind: 'video' }]
     SendMessage.mockRejectedValueOnce(new Error('dial tcp: lookup api.deepseek.com: no such host'))
 
     await sendUserMessage('ทำไมแบตขึ้นช้า')
@@ -192,7 +192,7 @@ describe('editing the question', () => {
   })
 
   it('re-sends the attachment with the edited wording', async () => {
-    cockpit.pendingImage = { relPath: '.aetox-attachments/shot.png', dataUrl: 'data:image/png;base64,x' }
+    cockpit.pendingImages = [{ relPath: '.aetox-attachments/shot.png', dataUrl: 'data:image/png;base64,x' }]
     SendMessage.mockResolvedValueOnce({ text: 'ตอบ' })
     await sendUserMessage('อ่านรูปนี้')
     ResendEdited.mockResolvedValueOnce({ text: 'ตอบใหม่' })
@@ -205,7 +205,7 @@ describe('editing the question', () => {
     const [sent] = ResendEdited.mock.calls.at(-1)!
     expect(sent).toContain('อ่านรูปนี้ให้ละเอียด')
     expect(sent).toContain('.aetox-attachments/shot.png')
-    expect(cockpit.chat[0].imageDataUrl).toBe('data:image/png;base64,x')
+    expect(cockpit.chat[0].images?.[0].dataUrl).toBe('data:image/png;base64,x')
     expect(cockpit.chat[0].text).toBe('อ่านรูปนี้ให้ละเอียด')
   })
 

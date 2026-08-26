@@ -2091,6 +2091,15 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    composer, .box is a flex column with gap:10px and adding to that would double
    the space between the attachment and what you are typing. */
 .bubble .attach-card { margin-bottom:8px; }
+/* The staged attachments in the composer, as one block. A question can carry a
+   folder of screenshots now, and twenty cards in a single column would push the
+   textarea off the bottom of the window — so they wrap into rows, and the block
+   itself scrolls once it is a few rows deep. The gap here replaces .box's own,
+   which only ever separated three fixed slots. */
+.attach-stack {
+  display:flex; flex-wrap:wrap; gap:8px;
+  max-height:216px; overflow-y:auto;
+}
 .attach-head { display:flex; align-items:center; gap:8px; padding:6px 10px; }
 .attach-body {
   margin:0; padding:8px 10px; border-top:1px solid var(--border-subtle);

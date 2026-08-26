@@ -630,12 +630,12 @@ export function PendingUndo() {
   return window['go']['main']['App']['PendingUndo']();
 }
 
-export function PickAttachment() {
-  return window['go']['main']['App']['PickAttachment']();
-}
-
 export function PickAttachmentImage() {
   return window['go']['main']['App']['PickAttachmentImage']();
+}
+
+export function PickAttachments() {
+  return window['go']['main']['App']['PickAttachments']();
 }
 
 export function PickPresetImage(arg1) {

@@ -3,7 +3,7 @@
 // incremental updates here — append a chat message, advance a timeline step) and
 // the UI reacts. Do not reassign `cockpit` itself; mutate its properties.
 
-import { emptyCockpitState, emptyTurnSpend, type CockpitState, type ParkedTurn, type TreeNode, type Session, type ToolStep, type ToolEvent, type ChatMessage, type MessageVariant, type TurnPart, type PendingFile } from '../types'
+import { emptyCockpitState, emptyTurnSpend, type CockpitState, type ParkedTurn, type TreeNode, type Session, type ToolStep, type ToolEvent, type ChatMessage, type MessageVariant, type TurnPart, type PendingFile, type PendingImage } from '../types'
 import type { CockpitSource } from '../services/cockpit'
 import {
   SendMessage, GetProjectStatus, GetModelInfo, OpenProjectFolder, OpenProjectPath,
@@ -286,16 +286,17 @@ function restoreAttachments(m: main.SessionMessage): ChatMessage {
   let suffix = ''
   out.text = out.text
     .replace(ATTACH_CTX_RE, (all, label: string, content: string) => {
-      out.contextLabel = label
       // Rebuilt from the stored block rather than persisted separately, so a
-      // reopened question shows the same card it showed when it was asked.
-      out.contextPreview = attachmentPreview(content)
+      // reopened question shows the same cards it showed when it was asked.
+      // Both regexes are global, so a question that carried ten files comes
+      // back with ten — the lists are appended to, never overwritten.
+      ;(out.contexts ??= []).push({ label, preview: attachmentPreview(content) })
       suffix += all
       return ''
     })
     .replace(ATTACH_FILE_RE, (all, kind: string, relPath: string) => {
-      if (kind === 'image') out.imageRelPath = relPath
-      else { out.attachKind = kind as PendingFile['kind']; out.attachLabel = relPath.split('/').pop() }
+      if (kind === 'image') (out.images ??= []).push({ relPath })
+      else (out.files ??= []).push({ label: relPath.split('/').pop() ?? relPath, kind: kind as PendingFile['kind'] })
       suffix += all
       return ''
     })
@@ -404,10 +405,12 @@ function stepsFromParts(parts?: TurnPart[]): ToolStep[] | undefined {
 /** Thumbnails are read back off disk, so they land a moment after the text. */
 function hydrateImages(): void {
   cockpit.chat.forEach((m, i) => {
-    if (!m.imageRelPath || m.imageDataUrl) return
-    ReadImageDataURL(m.imageRelPath)
-      .then((url) => { cockpit.chat[i].imageDataUrl = url })
-      .catch(() => {}) // file moved or sandbox cleared — the chip still names it
+    m.images?.forEach((img, j) => {
+      if (!img.relPath || img.dataUrl) return
+      ReadImageDataURL(img.relPath)
+        .then((url) => { cockpit.chat[i].images![j].dataUrl = url })
+        .catch(() => {}) // file moved or sandbox cleared — the chip still names it
+    })
   })
 }
 
@@ -1249,10 +1252,10 @@ async function storedEndingFor(sentText: string, turn: LiveTurnRef): Promise<Cha
 
 export async function sendUserMessage(text: string, alreadyShown = false): Promise<void> {
   const trimmed = text.trim()
-  const image = cockpit.pendingImage
-  const context = cockpit.pendingContext
-  const file = cockpit.pendingFile
-  if (!trimmed && !image && !context && !file) return
+  const images = cockpit.pendingImages
+  const contexts = cockpit.pendingContexts
+  const files = cockpit.pendingFiles
+  if (!trimmed && !images.length && !contexts.length && !files.length) return
   // Reading another conversation is not being in it. The engine's session is
   // still the one the turn belongs to, so a message typed here would be
   // answered into a chat the user is not looking at.
@@ -1266,9 +1269,12 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
   // a file on disk vs a live web page. Only the model sees these lines.
   // Built apart from the prose so the two can be recombined later: editing the
   // question re-sends these lines verbatim, and the bubble never shows them.
+  // One marker line per attachment, all of them, in the order they were
+  // staged: a question can carry a folder of screenshots or a stack of PDFs,
+  // and the model is told about every one of them.
   let attachSuffix = ''
-  if (image) attachSuffix += `\n\n[attachment: user-attached image — read it with image_ocr] ${image.relPath}`
-  if (file) {
+  for (const image of images) attachSuffix += `\n\n[attachment: user-attached image — read it with image_ocr] ${image.relPath}`
+  for (const file of files) {
     // Point at the tool that actually opens this kind of file. Naming the wrong
     // one costs a wasted turn; naming none costs the model guessing.
     // A PDF branches on the extension rather than on kind: it is still a
@@ -1283,7 +1289,7 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
           : 'read it with read'
     attachSuffix += `\n\n[attachment: user-attached ${file.kind} — ${how}] ${file.relPath}`
   }
-  if (context) {
+  for (const context of contexts) {
     const kindLabel =
       context.kind === 'file' ? 'file from a workbench tab'
       : context.kind === 'pick' ? 'what the user pointed at in the workbench browser — the elements themselves, not the page'
@@ -1300,16 +1306,15 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
       // tells the transcript to draw it below the live block until that block
       // is gone (Chat.svelte).
       duringTurn: cockpit.awaitingReply || undefined,
-      imageDataUrl: image?.dataUrl,
-      contextLabel: context?.label,
-      contextPreview: context ? attachmentPreview(context.content) : undefined,
-      attachLabel: file?.label, attachKind: file?.kind,
+      images: images.length ? images.map((i) => ({ dataUrl: i.dataUrl, relPath: i.relPath })) : undefined,
+      contexts: contexts.length ? contexts.map((c) => ({ label: c.label, preview: attachmentPreview(c.content) })) : undefined,
+      files: files.length ? files.map((f) => ({ label: f.label, kind: f.kind })) : undefined,
       attachSuffix: attachSuffix || undefined,
     })
   }
-  cockpit.pendingImage = null
-  cockpit.pendingContext = null
-  cockpit.pendingFile = null
+  cockpit.pendingImages = []
+  cockpit.pendingContexts = []
+  cockpit.pendingFiles = []
   // A turn is already running IN THIS CHAT: hand it the message rather than
   // starting a second one. Its answer arrives inside that turn's reply, so
   // nothing below runs — the live state (toolSteps, streaming text) belongs to
@@ -2329,12 +2334,29 @@ export function applyToolEvent(stamped: SessionEvent<ToolEvent> | ToolEvent): vo
   }
 }
 
+/** Stage one image on the composer, unless that exact sandbox path is already
+ * on it. The dedupe is not tidiness: the cards are keyed by path, and a second
+ * card with the same key is a render Svelte refuses outright. Two picks of the
+ * same file from disk are two copies with two names and stage twice, as they
+ * should — this only catches re-attaching something already inside the sandbox,
+ * which is a workbench tab dragged in a second time. */
+export function stagePendingImage(img: PendingImage): void {
+  if (cockpit.pendingImages.some((i) => i.relPath === img.relPath)) return
+  cockpit.pendingImages.push(img)
+}
+
+/** Same rule for a clip/document. */
+export function stagePendingFile(file: PendingFile): void {
+  if (cockpit.pendingFiles.some((f) => f.relPath === file.relPath)) return
+  cockpit.pendingFiles.push(file)
+}
+
 /** Copy an image (from a native file-picker or a drop) into the sandbox, and stage it as the composer's pending attachment. */
 export async function attachImageFromPath(absPath: string): Promise<void> {
   try {
     const relPath = await SaveChatImage(absPath)
     const dataUrl = await ReadImageDataURL(relPath)
-    cockpit.pendingImage = { relPath, dataUrl }
+    stagePendingImage({ relPath, dataUrl })
   } catch (err) {
     cockpit.chat.push({ role: 'agent', text: t('cockpit.attachError', { err: String(err) }), time: nowLabel() })
   }
@@ -2357,14 +2379,17 @@ export async function attachImageFromClipboard(file: File): Promise<void> {
       reader.readAsDataURL(file)
     })
     const relPath = await SaveChatImageData(dataUrl)
-    cockpit.pendingImage = { relPath, dataUrl: await ReadImageDataURL(relPath) }
+    stagePendingImage({ relPath, dataUrl: await ReadImageDataURL(relPath) })
   } catch (err) {
     cockpit.chat.push({ role: 'agent', text: t('cockpit.attachError', { err: String(err) }), time: nowLabel() })
   }
 }
 
-export function clearPendingImage(): void {
-  cockpit.pendingImage = null
+/** Drop one staged image — the x on its card. Removing by index rather than
+ * clearing the slot is the whole point of the list: with ten pictures staged,
+ * changing your mind about the third must not take the other nine with it. */
+export function clearPendingImage(index: number): void {
+  cockpit.pendingImages.splice(index, 1)
 }
 
 const AUDIO_EXT = ['mp3', 'wav', 'm4a', 'flac', 'ogg', 'aac', 'wma']
@@ -2386,18 +2411,18 @@ export async function attachFileFromPath(absPath: string): Promise<void> {
   try {
     const relPath = await SaveChatFile(absPath)
     const kind = fileKind(absPath)
-    cockpit.pendingFile = {
+    stagePendingFile({
       relPath,
       label: absPath.split(/[\\/]/).pop() ?? relPath,
       kind: kind === 'image' ? 'file' : kind,
-    }
+    })
   } catch (err) {
     cockpit.chat.push({ role: 'agent', text: t('cockpit.attachError', { err: String(err) }), time: nowLabel() })
   }
 }
 
-export function clearPendingFile(): void {
-  cockpit.pendingFile = null
+export function clearPendingFile(index: number): void {
+  cockpit.pendingFiles.splice(index, 1)
 }
 
 
@@ -2419,7 +2444,7 @@ export async function attachTabContext(kind: 'file' | 'browser', ref: string, la
       return
     }
     try {
-      cockpit.pendingContext = { kind, label, content: await BrowserGetText(ref) }
+      cockpit.pendingContexts.push({ kind, label, content: await BrowserGetText(ref) })
     } catch (err) {
       cockpit.chat.push({ role: 'agent', text: t('cockpit.attachError', { err: String(err) }), time: nowLabel() })
     }
@@ -2431,7 +2456,7 @@ export async function attachTabContext(kind: 'file' | 'browser', ref: string, la
   // attachImageFromPath there is nothing to copy.
   if (fileKind(ref) === 'image') {
     try {
-      cockpit.pendingImage = { relPath: ref, dataUrl: await ReadImageDataURL(ref) }
+      stagePendingImage({ relPath: ref, dataUrl: await ReadImageDataURL(ref) })
       return
     } catch {
       // Not really an image, or too big to inline — fall through and hand over
@@ -2440,7 +2465,7 @@ export async function attachTabContext(kind: 'file' | 'browser', ref: string, la
   }
 
   try {
-    cockpit.pendingContext = { kind, label, content: await ReadFile(ref) }
+    cockpit.pendingContexts.push({ kind, label, content: await ReadFile(ref) })
   } catch (err) {
     // Exactly two of ReadFile's refusals mean "the file is fine, inlining it is
     // not": binary (a PDF, a workbook, a clip) and too large. Those go in as a
@@ -2460,12 +2485,12 @@ export async function attachTabContext(kind: 'file' | 'browser', ref: string, la
       return
     }
     const fk = fileKind(ref)
-    cockpit.pendingFile = { relPath: ref, label, kind: fk === 'image' ? 'file' : fk }
+    stagePendingFile({ relPath: ref, label, kind: fk === 'image' ? 'file' : fk })
   }
 }
 
-export function clearPendingContext(): void {
-  cockpit.pendingContext = null
+export function clearPendingContext(index: number): void {
+  cockpit.pendingContexts.splice(index, 1)
 }
 
 /** View state: expand/collapse a folder. */

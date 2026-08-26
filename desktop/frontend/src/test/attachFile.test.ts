@@ -1,16 +1,16 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
   cockpit, fileKind, attachFileFromPath, attachTabContext, attachmentPreview,
-  clearPendingFile, sendUserMessage, selectSession, attachImageFromClipboard,
+  clearPendingFile, sendUserMessage, selectSession, attachImageFromClipboard, attachImageFromPath,
 } from '../lib/stores/cockpit.svelte'
 import {
-  SaveChatFile, SaveChatImageData, SendMessage, LoadSession, ReadImageDataURL, ReadFile,
+  SaveChatFile, SaveChatImage, SaveChatImageData, SendMessage, LoadSession, ReadImageDataURL, ReadFile,
 } from './mocks/wailsApp'
 
 beforeEach(() => {
-  cockpit.pendingFile = null
-  cockpit.pendingImage = null
-  cockpit.pendingContext = null
+  cockpit.pendingFiles = []
+  cockpit.pendingImages = []
+  cockpit.pendingContexts = []
   cockpit.chat = []
   vi.mocked(SendMessage).mockClear()
   vi.mocked(SendMessage).mockResolvedValue('ok' as any)
@@ -29,11 +29,11 @@ describe('attaching a file from the composer', () => {
     vi.mocked(SaveChatFile).mockResolvedValue('.aetox-attachments/1-1.mp4' as any)
     await attachFileFromPath('D:/videos/meeting.mp4')
 
-    expect(cockpit.pendingFile).toEqual({
+    expect(cockpit.pendingFiles).toEqual([{
       relPath: '.aetox-attachments/1-1.mp4',
       label: 'meeting.mp4',
       kind: 'video',
-    })
+    }])
   })
 
   it('names the tool that opens this kind of file', async () => {
@@ -47,7 +47,7 @@ describe('attaching a file from the composer', () => {
     expect(sent).toContain('audio_transcribe')
     // A 300MB clip must never end up inside the prompt.
     expect(sent).not.toContain('```')
-    expect(cockpit.pendingFile).toBeNull()
+    expect(cockpit.pendingFiles).toEqual([])
   })
 
   // A PDF is kind 'file' like a .txt, but `read` refuses it — pointing the
@@ -82,8 +82,7 @@ describe('attaching a file from the composer', () => {
 
     expect(cockpit.chat[0]).toMatchObject({
       role: 'user',
-      attachLabel: 'clip.mp4',
-      attachKind: 'video',
+      files: [{ label: 'clip.mp4', kind: 'video' }],
     })
   })
 
@@ -106,15 +105,14 @@ describe('attaching a file from the composer', () => {
 
     expect(cockpit.chat[0]).toMatchObject({
       text: 'คลิปนี้สรุปให้หน่อย', // the marker line is gone from the bubble
-      attachLabel: '17-3.mp4',
-      attachKind: 'video',
+      files: [{ label: '17-3.mp4', kind: 'video' }],
     })
     expect(cockpit.chat[1]).toMatchObject({
       text: 'รูปนี้อ่านให้หน่อย',
-      imageRelPath: '.aetox-attachments/17-1.png',
+      images: [{ relPath: '.aetox-attachments/17-1.png' }],
     })
     // the thumbnail is read back off disk, so it lands a tick later
-    await vi.waitFor(() => expect(cockpit.chat[1].imageDataUrl).toBe('data:image/png;base64,AAA'))
+    await vi.waitFor(() => expect(cockpit.chat[1].images?.[0].dataUrl).toBe('data:image/png;base64,AAA'))
   })
 
   it('a video points at both tools, since it has speech and a screen', async () => {
@@ -130,9 +128,56 @@ describe('attaching a file from the composer', () => {
   it('can be removed before sending', async () => {
     vi.mocked(SaveChatFile).mockResolvedValue('.aetox-attachments/4-1.pdf' as any)
     await attachFileFromPath('D:/doc/spec.pdf')
-    expect(cockpit.pendingFile).not.toBeNull()
-    clearPendingFile()
-    expect(cockpit.pendingFile).toBeNull()
+    expect(cockpit.pendingFiles).toHaveLength(1)
+    clearPendingFile(0)
+    expect(cockpit.pendingFiles).toEqual([])
+  })
+
+  // The composer used to hold exactly one file: attaching a second replaced the
+  // first, silently, and the question went out carrying only the last thing
+  // picked. Twenty screenshots of a bug is an ordinary thing to hand over.
+  it('stages every file picked, not just the last one', async () => {
+    vi.mocked(SaveChatFile)
+      .mockResolvedValueOnce('.aetox-attachments/5-1.pdf' as any)
+      .mockResolvedValueOnce('.aetox-attachments/5-2.csv' as any)
+    vi.mocked(SaveChatImage).mockResolvedValue('.aetox-attachments/5-3.png' as any)
+    vi.mocked(ReadImageDataURL).mockResolvedValue('data:image/png;base64,DDD' as any)
+
+    await attachFileFromPath('D:/docs/spec.pdf')
+    await attachFileFromPath('D:/data/ยอดขาย.csv')
+    await attachImageFromPath('D:/shots/bug.png')
+
+    expect(cockpit.pendingFiles.map((f) => f.label)).toEqual(['spec.pdf', 'ยอดขาย.csv'])
+    expect(cockpit.pendingImages).toHaveLength(1)
+
+    await sendUserMessage('ดูให้หน่อย')
+
+    // Every one of them is named to the model, and every one of them is on the
+    // bubble — a marker line that is missing is a file the answer cannot use.
+    const sent = vi.mocked(SendMessage).mock.calls[0][0] as string
+    expect(sent).toContain('.aetox-attachments/5-1.pdf')
+    expect(sent).toContain('.aetox-attachments/5-2.csv')
+    expect(sent).toContain('.aetox-attachments/5-3.png')
+    expect(cockpit.chat[0].files).toHaveLength(2)
+    expect(cockpit.chat[0].images).toHaveLength(1)
+    expect(cockpit.pendingFiles).toEqual([])
+    expect(cockpit.pendingImages).toEqual([])
+  })
+
+  // Removing the third of ten must leave the other nine standing — the x on a
+  // card addresses that card, not the whole stack.
+  it('removes one staged file without taking the rest with it', async () => {
+    vi.mocked(SaveChatFile)
+      .mockResolvedValueOnce('.aetox-attachments/6-1.pdf' as any)
+      .mockResolvedValueOnce('.aetox-attachments/6-2.pdf' as any)
+      .mockResolvedValueOnce('.aetox-attachments/6-3.pdf' as any)
+    await attachFileFromPath('D:/a.pdf')
+    await attachFileFromPath('D:/b.pdf')
+    await attachFileFromPath('D:/c.pdf')
+
+    clearPendingFile(1)
+
+    expect(cockpit.pendingFiles.map((f) => f.label)).toEqual(['a.pdf', 'c.pdf'])
   })
 })
 
@@ -164,15 +209,15 @@ describe('the preview on an attachment card', () => {
     await sendUserMessage('อ่านให้หน่อย')
 
     // Live, from the pending context...
-    expect(cockpit.chat[0].contextPreview).toBe('# Installation\n## Requirements')
+    expect(cockpit.chat[0].contexts?.[0].preview).toBe('# Installation\n## Requirements')
 
     // ...and after a reload, rebuilt from the attachment block in the stored
     // text, so a reopened question shows the card it was asked with.
     const stored = vi.mocked(SendMessage).mock.calls[0][0] as string
     vi.mocked(LoadSession).mockResolvedValue([{ role: 'user', text: stored, time: '01:00' }] as any)
     await selectSession({ id: 's1' } as any)
-    expect(cockpit.chat[0].contextLabel).toBe('INSTALL.md')
-    expect(cockpit.chat[0].contextPreview).toBe('# Installation\n## Requirements')
+    expect(cockpit.chat[0].contexts?.[0].label).toBe('INSTALL.md')
+    expect(cockpit.chat[0].contexts?.[0].preview).toBe('# Installation\n## Requirements')
   })
 })
 
@@ -189,8 +234,8 @@ describe('attaching a file dragged in from the workbench', () => {
     vi.mocked(ReadFile).mockResolvedValue('# บันทึก' as any)
     await attachTabContext('file', 'docs/notes.md', 'notes.md')
 
-    expect(cockpit.pendingContext).toEqual({ kind: 'file', label: 'notes.md', content: '# บันทึก' })
-    expect(cockpit.pendingFile).toBeNull()
+    expect(cockpit.pendingContexts).toEqual([{ kind: 'file', label: 'notes.md', content: '# บันทึก' }])
+    expect(cockpit.pendingFiles).toEqual([])
   })
 
   it('hands over the path when it is not text, instead of failing', async () => {
@@ -200,9 +245,9 @@ describe('attaching a file dragged in from the workbench', () => {
     vi.mocked(ReadFile).mockRejectedValue(new Error('binary file cannot be previewed'))
     await attachTabContext('file', 'output/รายงาน.pdf', 'รายงาน.pdf')
 
-    expect(cockpit.pendingFile).toEqual({
+    expect(cockpit.pendingFiles).toEqual([{
       relPath: 'output/รายงาน.pdf', label: 'รายงาน.pdf', kind: 'file',
-    })
+    }])
     expect(cockpit.chat).toHaveLength(0) // no error line
 
     // ...and the model is pointed at the tool that opens it.
@@ -214,7 +259,7 @@ describe('attaching a file dragged in from the workbench', () => {
     vi.mocked(ReadFile).mockRejectedValue(new Error('file too large to preview (4194304 bytes)'))
     await attachTabContext('file', 'data/ยอดขาย.csv', 'ยอดขาย.csv')
 
-    expect(cockpit.pendingFile?.relPath).toBe('data/ยอดขาย.csv')
+    expect(cockpit.pendingFiles[0]?.relPath).toBe('data/ยอดขาย.csv')
     expect(cockpit.chat).toHaveLength(0)
   })
 
@@ -226,8 +271,8 @@ describe('attaching a file dragged in from the workbench', () => {
     vi.mocked(ReadFile).mockRejectedValue(new Error('open out/gone.md: no such file or directory'))
     await attachTabContext('file', 'out/gone.md', 'gone.md')
 
-    expect(cockpit.pendingFile).toBeNull()
-    expect(cockpit.pendingContext).toBeNull()
+    expect(cockpit.pendingFiles).toEqual([])
+    expect(cockpit.pendingContexts).toEqual([])
     expect(cockpit.chat).toHaveLength(1)
     expect(cockpit.chat[0].text).toContain('no such file')
   })
@@ -236,7 +281,7 @@ describe('attaching a file dragged in from the workbench', () => {
     vi.mocked(ReadImageDataURL).mockResolvedValue('data:image/png;base64,BBB' as any)
     await attachTabContext('file', 'shots/หน้าจอ.png', 'หน้าจอ.png')
 
-    expect(cockpit.pendingImage).toEqual({ relPath: 'shots/หน้าจอ.png', dataUrl: 'data:image/png;base64,BBB' })
+    expect(cockpit.pendingImages).toEqual([{ relPath: 'shots/หน้าจอ.png', dataUrl: 'data:image/png;base64,BBB' }])
     // Already inside the sandbox — copying it again would leave two of them.
     expect(SaveChatFile).not.toHaveBeenCalled()
     expect(ReadFile).not.toHaveBeenCalled()
@@ -260,10 +305,10 @@ describe('pasting an image into the composer', () => {
 
     // The bytes go over as a data URL — there is no path to send.
     expect(vi.mocked(SaveChatImageData).mock.calls[0][0]).toMatch(/^data:image\/png;base64,/)
-    expect(cockpit.pendingImage).toEqual({
+    expect(cockpit.pendingImages).toEqual([{
       relPath: '.aetox-attachments/20260808-1.png',
       dataUrl: 'data:image/png;base64,CCC',
-    })
+    }])
   })
 
   // A refused paste has to say so. Staging nothing and printing nothing is the
@@ -273,7 +318,7 @@ describe('pasting an image into the composer', () => {
 
     await attachImageFromClipboard(pngFile())
 
-    expect(cockpit.pendingImage).toBeNull()
+    expect(cockpit.pendingImages).toEqual([])
     expect(cockpit.chat.at(-1)?.text).toContain('ยังแนบรูปชนิด tiff ไม่ได้')
   })
 })

@@ -98,9 +98,9 @@ describe('an interjected message carries its attachment', () => {
     expect(handed).toContain('.aetox-attachments/1-1.m4a')
     expect(handed).toContain('audio_transcribe')
     // Not left behind to ride along with whatever is typed next.
-    expect(cockpit.pendingFile).toBeNull()
+    expect(cockpit.pendingFiles).toEqual([])
     // The bubble keeps the label, since the model only ever got the path.
-    expect(cockpit.chat.at(-1)).toMatchObject({ role: 'user', attachLabel: 'standup.m4a' })
+    expect(cockpit.chat.at(-1)).toMatchObject({ role: 'user', files: [{ label: 'standup.m4a', kind: 'audio' }] })
 
     finishTurn({ text: 'done' })
     await inFlight
