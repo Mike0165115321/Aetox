@@ -117,7 +117,17 @@ func (*writeSkill) ToolDefinition() model.ToolDefinition {
 			// prompt is built once at bootstrap — a tool description travels
 			// with every request and cannot go stale. Without it the model
 			// assumed the file was at the sandbox root and told the user so.
-			Description: "Write content to a file. A relative path may be placed in a per-session output folder rather than at the sandbox root — the result reports where the file actually landed, so use that path when telling the user where it is, and when reading, editing or opening it later.",
+			//
+			// The 300-line cap is here too since 25 ส.ค., bought by tightening
+			// the placement prose (the ratchet holds at 141 tokens; this is
+			// 141). It was Guidance-only — sent once, after the first write —
+			// which meant every session's FIRST long write streamed the whole
+			// oversized call and only then learned the number: measured 5
+			// refusals in 166 writes, two of them the same evening, each a
+			// ~100s streamed round thrown away. A cap the model must know
+			// BEFORE it starts writing has to ride where the model always is.
+			// Guidance still carries the why (output limits vary by provider).
+			Description: "Write a file, at most 300 lines per call — over that nothing is written; send 300 and append the rest with edit mode=append. A relative path may land in a per-session output folder; the result names the real path — use it for later reads, edits and opens.",
 			Parameters:  payload,
 		},
 	}
