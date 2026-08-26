@@ -425,6 +425,7 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 		}
 		b.WriteString(narration())
 		b.WriteString(clarify())
+		b.WriteString(evidence(desk))
 	}
 
 	var loaded Loaded
@@ -1085,6 +1086,53 @@ func clarify() string {
 		"file, an account. When two honest looks come back empty, that is the answer, not a reason to " +
 		"look harder: widening the search spends the user's time to avoid one question they can settle " +
 		"in a word. Say what you looked for, say you did not find it, and ask where it is.\n"
+}
+
+// evidence says where a stated fact is allowed to come from.
+//
+// Nothing used to, and the gap has a shape: every tool in this app returns
+// something that reads like an answer. `web_search` returns a page of
+// summaries somebody else wrote, `web_fetch` returns whatever the server sent
+// before any JavaScript ran, and both arrive as confident prose with no mark
+// on them saying how far from the thing itself they are. A model reading
+// those has no reason to treat them as anything but the fact, and the failure
+// that follows is the worst kind to catch: a specific number, stated plainly,
+// wrong. The user acts on it.
+//
+// Stated as "how far is this from the thing itself" rather than as "prefer the
+// browser": a rule naming one tool answers today's two web tools and nothing
+// else, and the same mistake is available through a stale file, a cached
+// result, or a recollection of how these products usually go. What generalizes
+// is the question the model has to be able to answer before it commits — where
+// did I read this — and the habit of saying so when the answer is nowhere.
+//
+// The JavaScript paragraph is gated because it is the one half that names a
+// tool. It is also the half that is a mechanism rather than an exhortation:
+// a text fetch of a page that builds itself in the browser comes back missing
+// exactly the specs and prices the question was about, and "thin" reads as
+// "the page does not say" unless the model has been told what thin means here.
+func evidence(desk Desk) string {
+	s := "A tool result is evidence about a source, not the source. A search result is somebody else's " +
+		"summary of a page, and a page fetched as text is what the server sent rather than what the page " +
+		"shows. Both are good for finding your way to the thing; neither is where a number comes from.\n" +
+		"Before you state anything the user will act on — a price, a spec, a version, a date, a quantity — " +
+		"be able to answer where you read it. If the answer is a snippet, a summary, or your own sense of " +
+		"how these things usually go, you have not read it yet: go to the source that owns the fact and " +
+		"read it there. Confidence is not evidence, and neither is a number that sounds right.\n" +
+		"Thin, generic or contradictory is a signal, never a confirmation. A source that came back without " +
+		"the thing it was supposed to hold does not mean the thing is not true — it means you are not " +
+		"looking at it yet. Two sources disagreeing means at most one is right, and choosing the one that " +
+		"fits what you were already going to say is how a wrong fact gets stated plainly.\n" +
+		"What you could not confirm, say you could not confirm, and name what is missing. A gap the user " +
+		"can see costs them one question; a gap you filled in costs them whatever they do with it.\n"
+	if desk.carries("browser") {
+		s += "Fetching a page as text does not run its JavaScript, so whatever the page assembles in the " +
+			"browser — a spec table, a price, a stock figure — is simply absent from what comes back. When " +
+			"a page returns thin or generic where the facts should be, that is the moment to open it with " +
+			"`browser` and read what actually renders, not the moment to report what the text you got " +
+			"happens to say.\n"
+	}
+	return s
 }
 
 // environment used to state the sandbox root as an absolute path and then

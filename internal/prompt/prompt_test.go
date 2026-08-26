@@ -861,6 +861,56 @@ func TestCLIPromptDoesNotTeachDrawing(t *testing.T) {
 // to call it after changing a source file. The desk aimed at people who have
 // never opened a terminal was being sent, on every code edit, after a tool it
 // was never given.
+// Every tool in this app hands back something that reads like an answer, and a
+// search summary reads exactly like the page it summarizes. The failure that
+// follows is a specific number, stated plainly, wrong — and the user acts on
+// it. The lesson is not "prefer one tool": it is that a stated fact has to have
+// somewhere the model actually read it.
+func TestPromptTeachesThatAStatedFactNeedsASourceItActuallyRead(t *testing.T) {
+	got := BuildForDesk(SurfaceDesktop, Scope{Root: t.TempDir()}, Desk{
+		Name:      "assistant",
+		Direction: "This session is assistant work.",
+		Carries:   func(string) bool { return true },
+	})
+	for _, want := range []string{
+		"evidence about a source, not the source",
+		"be able to answer where you read it",
+		"never a confirmation",
+		"say you could not confirm",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("prompt lost the lesson about where a fact comes from (%q):\n%s", want, got)
+		}
+	}
+	// A rule naming one tool answers today's web tools and nothing else. The
+	// lesson has to hold for a stale file and a recollection too, so it must not
+	// be written as "use the browser".
+	if strings.Contains(got, "prefer the browser") {
+		t.Errorf("the lesson was written as a tool preference rather than a principle:\n%s", got)
+	}
+}
+
+// The JavaScript half is the one that names a tool, so it goes only to a desk
+// holding that tool — same rule as every other gated half in this file.
+func TestTheRenderedPageLessonGoesOnlyToADeskWithABrowser(t *testing.T) {
+	with := BuildForDesk(SurfaceDesktop, Scope{Root: t.TempDir()}, Desk{
+		Name:      "assistant",
+		Direction: "This session is assistant work.",
+		Carries:   func(string) bool { return true },
+	})
+	if !strings.Contains(with, "does not run its JavaScript") {
+		t.Errorf("a desk with a browser is not told why a text fetch comes back thin:\n%s", with)
+	}
+	without := BuildForDesk(SurfaceDesktop, Scope{Root: t.TempDir()}, Desk{
+		Name:      "assistant",
+		Direction: "This session is assistant work.",
+		Carries:   func(name string) bool { return name != "browser" },
+	})
+	if strings.Contains(without, "open it with `browser`") {
+		t.Errorf("a desk without a browser is still told to open one:\n%s", without)
+	}
+}
+
 func TestADeskIsNotToldToCallAToolItDoesNotCarry(t *testing.T) {
 	without := BuildForDesk(SurfaceDesktop, Scope{Root: t.TempDir()}, Desk{
 		Name:      "assistant",
