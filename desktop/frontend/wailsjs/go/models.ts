@@ -938,6 +938,20 @@ export namespace main {
 	        this.err = source["err"];
 	    }
 	}
+	export class MemoryScopeInfo {
+	    scope: string;
+	    orphan: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new MemoryScopeInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.scope = source["scope"];
+	        this.orphan = source["orphan"];
+	    }
+	}
 	export class ModelInfo {
 	    provider: string;
 	    modelName: string;

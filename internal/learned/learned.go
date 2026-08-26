@@ -433,6 +433,25 @@ func EditEntry(scope string, index int, body string) error {
 	return os.WriteFile(path, []byte(rendered), 0o644)
 }
 
+// Forget deletes one scope's memory file outright. The settings page's own
+// door, pressed by a person — the agent's tool has no route here, and must
+// not: nothing an agent proposes may erase a file wholesale.
+//
+// It exists for the file the per-line editor cannot reasonably clear: a
+// project scope orphaned by its folder moving or being deleted (the key is the
+// path, so a moved folder is a new key and the old file is never read again).
+// A file that never existed is already forgotten, not an error.
+func Forget(scope string) error {
+	path, err := FileFor(scope)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 // Full reports whether a scope has room for one more entry of the given size,
 // so the tool can refuse a proposal at the moment the agent writes it rather
 // than at approval time — a queue full of proposals that cannot be applied is

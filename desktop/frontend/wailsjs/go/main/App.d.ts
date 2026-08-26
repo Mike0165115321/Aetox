@@ -30,6 +30,8 @@ export function AddSpaceContext(arg1:string):Promise<Array<string>>;
 
 export function AddWorkspaceFolder():Promise<Array<main.WorkspaceFolder>>;
 
+export function AdoptMemoryScope(arg1:string,arg2:string):Promise<void>;
+
 export function AgentNeeds(arg1:string):Promise<Array<subagent.Requirement>>;
 
 export function AgentSkills(arg1:string):Promise<Array<main.AgentSkillInfo>>;
@@ -162,6 +164,8 @@ export function ExportSession(arg1:string,arg2:string):Promise<string>;
 
 export function FileStillThere(arg1:string):Promise<string>;
 
+export function ForgetMemoryScope(arg1:string):Promise<void>;
+
 export function GetContextBreakdown():Promise<main.ContextBreakdown>;
 
 export function GetModelInfo():Promise<main.ModelInfo>;
@@ -201,6 +205,8 @@ export function Interject(arg1:string):Promise<void>;
 export function LearnedEntries(arg1:string):Promise<Array<string>>;
 
 export function LearnedMemory(arg1:string):Promise<string>;
+
+export function LearnedScopeInfos():Promise<Array<main.MemoryScopeInfo>>;
 
 export function LearnedScopes():Promise<Array<string>>;
 

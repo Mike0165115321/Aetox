@@ -34,6 +34,10 @@ export function AddWorkspaceFolder() {
   return window['go']['main']['App']['AddWorkspaceFolder']();
 }
 
+export function AdoptMemoryScope(arg1, arg2) {
+  return window['go']['main']['App']['AdoptMemoryScope'](arg1, arg2);
+}
+
 export function AgentNeeds(arg1) {
   return window['go']['main']['App']['AgentNeeds'](arg1);
 }
@@ -298,6 +302,10 @@ export function FileStillThere(arg1) {
   return window['go']['main']['App']['FileStillThere'](arg1);
 }
 
+export function ForgetMemoryScope(arg1) {
+  return window['go']['main']['App']['ForgetMemoryScope'](arg1);
+}
+
 export function GetContextBreakdown() {
   return window['go']['main']['App']['GetContextBreakdown']();
 }
@@ -376,6 +384,10 @@ export function LearnedEntries(arg1) {
 
 export function LearnedMemory(arg1) {
   return window['go']['main']['App']['LearnedMemory'](arg1);
+}
+
+export function LearnedScopeInfos() {
+  return window['go']['main']['App']['LearnedScopeInfos']();
 }
 
 export function LearnedScopes() {

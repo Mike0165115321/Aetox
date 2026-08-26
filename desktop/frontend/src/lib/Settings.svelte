@@ -42,7 +42,8 @@
     SetConnectionStartCommand, StartConnectionServer, CheckConnectionServer,
     AppVersion, AppCredit, CheckForUpdate, RecentDebugLog,
     LearningEnabled, SetLearningEnabled, ListPendingChanges, ListDecidedChanges,
-    ApprovePendingChange, RejectPendingChange, LearnedEntries, LearnedScopes, SaveLearnedEntry, OpenMemoryFolder,
+    ApprovePendingChange, RejectPendingChange, LearnedEntries, LearnedScopeInfos, SaveLearnedEntry, OpenMemoryFolder,
+    ForgetMemoryScope, AdoptMemoryScope, RecentProjects,
     ListSystemIssues, MarkIssueReported, ListDecidedIssues,
     AccountStatus, StartAccountSignIn, CompleteAccountSignIn, CancelAccountSignIn,
     AccountSignOut, AccountRefresh,
@@ -2699,7 +2700,15 @@
   // each project's. It was the main agent's alone until a desk and a project
   // could be the destination — and a line approved into a file this page could
   // not show is a line only the folder knows about.
-  let memoryGroups = $state<{ scope: string; lines: string[] }[]>([])
+  let memoryGroups = $state<{ scope: string; lines: string[]; orphan: boolean }[]>([])
+  // The projects the store still knows, for the orphan group's ย้ายไปที่…
+  // picker. Loaded with the memory list because the two are one question:
+  // which of these files can a session still arrive at, and where else could
+  // an orphaned one go.
+  let knownProjects = $state<{ name: string; rootPath: string }[]>([])
+  // Which orphan group has its move picker open (by scope), '' for none.
+  let adoptOpen = $state('')
+  let memoryScopeError = $state('')
   // Which row is open for editing, and in which scope. -1 for none. One at a
   // time: these lines are short, and a page of open textareas is a form nobody
   // knows the state of. The scope rides along because the same index exists in
@@ -2816,12 +2825,38 @@
       learningOn = await LearningEnabled()
       pendingChanges = await ListPendingChanges()
       decidedChanges = await ListDecidedChanges(20)
-      const scopes = await LearnedScopes()
+      const scopes = await LearnedScopeInfos()
       memoryGroups = await Promise.all(
-        scopes.map(async (scope) => ({ scope, lines: await LearnedEntries(scope) })),
+        scopes.map(async ({ scope, orphan }) => ({ scope, orphan, lines: await LearnedEntries(scope) })),
       )
+      // Offered as move targets only when an orphan needs one — but loaded
+      // here so the picker opens filled rather than after a spinner.
+      if (memoryGroups.some((g) => g.orphan)) {
+        knownProjects = (await RecentProjects()).map((p: { name: string; rootPath: string }) => ({ name: p.name, rootPath: p.rootPath }))
+      }
     } catch (err) {
       learningError = String(err)
+    }
+  }
+
+  async function adoptScope(scope: string, rootPath: string) {
+    memoryScopeError = ''
+    try {
+      await AdoptMemoryScope(scope, rootPath)
+      adoptOpen = ''
+      await loadLearning()
+    } catch (err) {
+      memoryScopeError = String(err)
+    }
+  }
+
+  async function forgetScope(scope: string) {
+    memoryScopeError = ''
+    try {
+      await ForgetMemoryScope(scope)
+      await loadLearning()
+    } catch (err) {
+      memoryScopeError = String(err)
     }
   }
 
@@ -4980,7 +5015,36 @@
                "ผู้ช่วยหลัก" is stated rather than assumed: once a line can land
                in a desk's or a project's file instead, an unlabelled list is a
                list you cannot act on. -->
-          <div class="mem-scope">{scopeLabel(group.scope)}</div>
+          <div class="mem-scope">
+            {scopeLabel(group.scope)}
+            {#if group.orphan}
+              <!-- The folder this file is keyed to moved or was deleted, so no
+                   session can ever read it again — a fact only this label
+                   states, because on disk the file looks exactly like a live
+                   one (§186). A label needs its exits: move the lines to the
+                   project the folder became, or let them go. -->
+              <span class="mem-orphan">{t('settings.memoryOrphan')}</span>
+              <span class="mem-orphan-actions">
+                {#if knownProjects.length > 0}
+                  <button
+                    type="button" class="ctrl tiny"
+                    onclick={() => { adoptOpen = adoptOpen === group.scope ? '' : group.scope }}
+                  >{t('settings.memoryOrphanMove')}</button>
+                {/if}
+                <button
+                  type="button" class="ctrl tiny mem-forget"
+                  onclick={() => forgetScope(group.scope)}
+                >{t('settings.memoryOrphanDelete')}</button>
+              </span>
+            {/if}
+          </div>
+          {#if group.orphan && adoptOpen === group.scope}
+            <div class="mem-adopt">
+              {#each knownProjects as p (p.rootPath)}
+                <button type="button" class="ctrl tiny" onclick={() => adoptScope(group.scope, p.rootPath)}>{p.name}</button>
+              {/each}
+            </div>
+          {/if}
           <!-- Keyed by index rather than by text: two remembered lines can be
                byte-identical, and the index is also what the save addresses. -->
           {#each group.lines as line, i (i)}
@@ -5022,6 +5086,9 @@
             </div>
           {/each}
         {/each}
+        {#if memoryScopeError}
+          <div class="set-error">{memoryScopeError}</div>
+        {/if}
         {#if memoryGroups.length === 0}
           <div class="empty">{t('settings.learningMemoryEmpty')}</div>
         {/if}

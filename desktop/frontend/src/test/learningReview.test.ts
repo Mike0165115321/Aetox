@@ -8,7 +8,7 @@ import Sidebar from '../lib/Sidebar.svelte'
 import {
   ListPendingChanges, ListDecidedChanges, LearnedMemory, LearnedEntries, SaveLearnedEntry,
   LearningEnabled, ApprovePendingChange, RejectPendingChange, SetLearningEnabled,
-  PendingLearnedCount, LearnedScopes,
+  PendingLearnedCount, LearnedScopeInfos, ForgetMemoryScope, AdoptMemoryScope, RecentProjects,
 } from './mocks/wailsApp'
 import { cockpit, applyPendingLearned, refreshPendingLearned } from '../lib/stores/cockpit.svelte'
 
@@ -33,7 +33,7 @@ beforeEach(() => {
   vi.mocked(LearningEnabled).mockResolvedValue(true)
   vi.mocked(LearnedMemory).mockResolvedValue('')
   vi.mocked(LearnedEntries).mockResolvedValue([] as any)
-  vi.mocked(LearnedScopes).mockResolvedValue([] as any)
+  vi.mocked(LearnedScopeInfos).mockResolvedValue([] as any)
   vi.mocked(ListDecidedChanges).mockResolvedValue([] as any)
   vi.mocked(ListPendingChanges).mockResolvedValue([proposal()] as any)
 })
@@ -48,7 +48,7 @@ describe('editing what is already remembered', () => {
     `เครื่องมือ shell เคยล้มซ้ำ ๆ ด้วยเหตุเดียวกัน: "exit status ${status}"`
 
   const openMemory = async () => {
-    vi.mocked(LearnedScopes).mockResolvedValue([''] as any)
+    vi.mocked(LearnedScopeInfos).mockResolvedValue([{ scope: '', orphan: false }] as any)
     vi.mocked(LearnedEntries).mockResolvedValue(
       ['เครื่องผู้ใช้เป็น Windows', shell('1'), shell('2'), shell('124')] as any,
     )
@@ -113,7 +113,9 @@ describe('editing what is already remembered', () => {
   // cannot show is a file only the folder knows about, which is the whole thing
   // the page exists to avoid.
   it('shows every memory that holds something, each under whose it is', async () => {
-    vi.mocked(LearnedScopes).mockResolvedValue(['', 'mode:coding', 'project:Aetox-1a2b3c4d'] as any)
+    vi.mocked(LearnedScopeInfos).mockResolvedValue([
+      { scope: '', orphan: false }, { scope: 'mode:coding', orphan: false }, { scope: 'project:Aetox-1a2b3c4d', orphan: false },
+    ] as any)
     vi.mocked(LearnedEntries).mockImplementation(async (scope: string) => {
       if (scope === '') return ['เครื่องผู้ใช้เป็น Windows'] as any
       if (scope === 'mode:coding') return ['เจ้าของอ่านดิฟก่อนเสมอ'] as any
@@ -131,11 +133,50 @@ describe('editing what is already remembered', () => {
     expect(container.textContent).not.toContain('1a2b3c4d')
   })
 
+  // A project's memory file is keyed by the folder's path, so a moved or
+  // deleted folder strands its file — readable in the folder, reachable by no
+  // session, and indistinguishable on disk from a live one. The page is the
+  // only place that can say so, and a label without its exits is a nagging
+  // sign: move the lines to the project the folder became, or let them go.
+  it('names an orphaned project memory and offers its two exits', async () => {
+    vi.mocked(LearnedScopeInfos).mockResolvedValue([
+      { scope: '', orphan: false }, { scope: 'project:old-app-99aa88bb', orphan: true },
+    ] as any)
+    vi.mocked(LearnedEntries).mockImplementation(async (scope: string) =>
+      (scope === '' ? ['เครื่องผู้ใช้เป็น Windows'] : ['ตกลงกันว่าใช้ PowerShell']) as any)
+    vi.mocked(RecentProjects).mockResolvedValue([
+      { key: 'old-app-11223344', name: 'old-app', rootPath: 'D:/work/old-app', openedAt: '', snippet: '' },
+    ] as any)
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การเรียนรู้')
+    await waitFor(() => expect(container.querySelectorAll('.mem-row').length).toBe(2))
+
+    // The live file carries no mark; the orphan carries exactly one.
+    expect(container.querySelectorAll('.mem-orphan').length).toBe(1)
+    const heads = Array.from(container.querySelectorAll('.mem-scope'))
+    expect(heads[0].querySelector('.mem-orphan')).toBeNull()
+    expect(heads[1].textContent).toContain('โฟลเดอร์นี้ไม่อยู่แล้ว')
+
+    // Exit one: move into a project the store still knows.
+    await fireEvent.click(heads[1].querySelector('.mem-orphan-actions .ctrl')!)
+    const target = Array.from(container.querySelectorAll('.mem-adopt .ctrl'))
+      .find((el) => el.textContent?.includes('old-app'))
+    await fireEvent.click(target!)
+    await waitFor(() =>
+      expect(AdoptMemoryScope).toHaveBeenCalledWith('project:old-app-99aa88bb', 'D:/work/old-app'))
+
+    // Exit two: delete — and it reaches the whole-file door, never a row's.
+    await fireEvent.click(heads[1].querySelector('.mem-orphan-actions .mem-forget')!)
+    await waitFor(() =>
+      expect(ForgetMemoryScope).toHaveBeenCalledWith('project:old-app-99aa88bb'))
+  })
+
   // Editing has to reach the file the row came from. Every group counts its own
   // rows from zero, so a save that forgot the scope would rewrite line 0 of the
   // main memory while the user was looking at line 0 of a project's.
   it('edits the line in the file it belongs to', async () => {
-    vi.mocked(LearnedScopes).mockResolvedValue(['', 'project:Aetox-1a2b3c4d'] as any)
+    vi.mocked(LearnedScopeInfos).mockResolvedValue([{ scope: '', orphan: false }, { scope: 'project:Aetox-1a2b3c4d', orphan: false }] as any)
     vi.mocked(LearnedEntries).mockImplementation(async (scope: string) =>
       (scope === '' ? ['เครื่องผู้ใช้เป็น Windows'] : ['ตกลงกันว่าใช้ PowerShell']) as any)
 

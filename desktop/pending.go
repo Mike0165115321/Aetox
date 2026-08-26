@@ -392,6 +392,96 @@ func (a *App) LearnedScopes() []string {
 	return out
 }
 
+// MemoryScopeInfo is one memory scope as the settings page needs it: which
+// file, and whether anything can still reach it.
+type MemoryScopeInfo struct {
+	Scope string `json:"scope"`
+	// Orphan marks a project scope no session can arrive at any more. The key
+	// is the folder's path (config.ProjectKey), so a project moved or renamed
+	// is a new key — and the old file would sit here forever, correct-looking
+	// and never read again, with nothing anywhere saying so (§186). True when
+	// no folder this store has ever opened resolves to this scope, or when the
+	// one that does no longer exists on disk.
+	Orphan bool `json:"orphan"`
+}
+
+// LearnedScopeInfos is LearnedScopes with the orphan question answered.
+// Detection reuses the one spelling of "which project is this folder"
+// (learned.ProjectScope over the store's own root_path rows) rather than
+// parsing keys — a second parser is how the two halves would drift.
+func (a *App) LearnedScopeInfos() []MemoryScopeInfo {
+	live := map[string]bool{}
+	if db, err := a.database(); err == nil {
+		roots, _ := queryAll(db, "projects", `SELECT root_path FROM projects`, nil,
+			func(rows *sql.Rows) (string, error) {
+				var root string
+				err := rows.Scan(&root)
+				return root, err
+			})
+		for _, root := range roots {
+			if info, err := os.Stat(root); err == nil && info.IsDir() {
+				live[learned.ProjectScope(root)] = true
+			}
+		}
+	}
+	out := []MemoryScopeInfo{}
+	for _, scope := range learned.Scopes() {
+		_, isProject := learned.SplitProjectScope(scope)
+		out = append(out, MemoryScopeInfo{Scope: scope, Orphan: isProject && !live[scope]})
+	}
+	return out
+}
+
+// ForgetMemoryScope deletes one project scope's whole memory file — the exit
+// the orphan label needs, because a label without a door is a nagging sign.
+// Project scopes only: every other file has a per-line editor on the same
+// page, and wholesale deletion of the main agent's memory is a decision this
+// button must not be able to make by accident.
+func (a *App) ForgetMemoryScope(scope string) error {
+	scope = strings.TrimSpace(scope)
+	if _, ok := learned.SplitProjectScope(scope); !ok {
+		return fmt.Errorf("only a project's memory file can be deleted whole — edit other files line by line")
+	}
+	if err := learned.Forget(scope); err != nil {
+		return err
+	}
+	if a.ctx != nil {
+		wailsruntime.EventsEmit(a.ctx, "learning:changed", nil)
+	}
+	return nil
+}
+
+// AdoptMemoryScope moves an orphaned project scope's lines into the project at
+// targetRoot — the folder moved, and its decisions should move with it. Lines
+// the target already holds are not doubled; the source file is deleted only
+// after every line has arrived, so a failure part-way leaves both files
+// readable rather than the memory half-lost.
+func (a *App) AdoptMemoryScope(scope, targetRoot string) error {
+	scope = strings.TrimSpace(scope)
+	if _, ok := learned.SplitProjectScope(scope); !ok {
+		return fmt.Errorf("only a project's memory can be moved to another project")
+	}
+	target := learned.ProjectScope(targetRoot)
+	if target == learned.MainScope || target == scope {
+		return fmt.Errorf("that is not somewhere else to move this memory to")
+	}
+	for _, line := range learned.Entries(scope) {
+		if learned.Has(target, line) {
+			continue
+		}
+		if err := learned.Apply(target, learned.OpAdd, "", line); err != nil {
+			return err
+		}
+	}
+	if err := learned.Forget(scope); err != nil {
+		return err
+	}
+	if a.ctx != nil {
+		wailsruntime.EventsEmit(a.ctx, "learning:changed", nil)
+	}
+	return nil
+}
+
 // SaveLearnedEntry rewrites one remembered line in place; an empty text removes
 // it. Addressed by the row's position, which is what the user is looking at —
 // see learned.EditEntry for why not by substring.

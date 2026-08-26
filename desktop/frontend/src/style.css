@@ -3795,6 +3795,19 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); opacity:.7;
 }
 .mem-row + .mem-scope { border-top:1px solid var(--border-subtle); margin-top:2px; }
+/* The orphan mark and its two exits sit on the scope's own line: the fact is
+   about the whole file, so it belongs on the file's name, not on any row.
+   --status-warn is the system's own amber (theme.css) — an orphan is
+   housekeeping, not an emergency, so the mark borrows the file-status weight
+   rather than the danger red. */
+.mem-scope { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.mem-orphan {
+  text-transform:none; letter-spacing:normal; font-weight:500; opacity:1;
+  color:var(--status-warn); border:1px solid currentColor;
+  padding:0 8px; border-radius:99px;
+}
+.mem-orphan-actions { display:inline-flex; gap:6px; margin-left:auto; }
+.mem-adopt { display:flex; flex-wrap:wrap; gap:6px; padding:4px 16px 8px; }
 .mem-row { display:flex; align-items:flex-start; gap:12px; padding:11px 16px; border-bottom:1px solid var(--border-subtle); }
 .mem-row:last-of-type { border-bottom:none; }
 .mem-row.editing { flex-direction:column; align-items:stretch; gap:8px; background:var(--surface-sunken); }

@@ -278,3 +278,66 @@ func TestTheMemoryToolIsBoundToTheProjectBeingOpened(t *testing.T) {
 		}
 	}
 }
+
+// A project's memory file is keyed by the folder's path, so a folder moved or
+// deleted strands its file: correct-looking, never read again, and nothing
+// anywhere saying so. The settings page has to be able to say so (§186) — and
+// the label needs its two exits, move and delete.
+func TestAnOrphanedProjectMemoryIsNamedAndHasItsExits(t *testing.T) {
+	a := newJobApp(t)
+
+	liveRoot := t.TempDir()
+	a.touchProject(liveRoot)
+	goneRoot := filepath.Join(t.TempDir(), "moved-away")
+	// The store never heard of goneRoot, and its folder does not exist —
+	// exactly what a project looks like after its folder was moved.
+	liveScope := learned.ProjectScope(liveRoot)
+	goneScope := learned.ProjectScope(goneRoot)
+	for scope, line := range map[string]string{
+		learned.MainScope: "ผู้ใช้ชอบคำตอบสั้น",
+		liveScope:         "โปรเจกต์นี้ใช้ PowerShell",
+		goneScope:         "ที่นี่ตกลงกันว่า Dev คือ branch รวมงาน",
+	} {
+		if err := learned.Apply(scope, learned.OpAdd, "", line); err != nil {
+			t.Fatalf("seed %s: %v", scope, err)
+		}
+	}
+
+	orphan := map[string]bool{}
+	for _, info := range a.LearnedScopeInfos() {
+		orphan[info.Scope] = info.Orphan
+	}
+	if orphan[learned.MainScope] {
+		t.Error("the main file can never be an orphan — every session reads it")
+	}
+	if orphan[liveScope] {
+		t.Error("a project the store knows, whose folder exists, was called an orphan")
+	}
+	if !orphan[goneScope] {
+		t.Error("a project no session can arrive at was not called an orphan")
+	}
+
+	// Move: the lines arrive at the target, nothing is doubled, and the
+	// source file is gone rather than left to be found again next month.
+	if err := a.AdoptMemoryScope(goneScope, liveRoot); err != nil {
+		t.Fatalf("adopt: %v", err)
+	}
+	if got := learned.Read(liveScope); !strings.Contains(got, "Dev คือ branch รวมงาน") || !strings.Contains(got, "PowerShell") {
+		t.Fatalf("the moved line did not arrive beside the target's own:\n%s", got)
+	}
+	if learned.Read(goneScope) != "" {
+		t.Error("the orphan file survived its own move")
+	}
+
+	// Delete: project scopes only. The main file has a per-line editor, and
+	// this button must not be able to erase it by accident.
+	if err := a.ForgetMemoryScope(learned.MainScope); err == nil {
+		t.Fatal("ForgetMemoryScope deleted the main agent's memory")
+	}
+	if err := a.ForgetMemoryScope(liveScope); err != nil {
+		t.Fatalf("forget: %v", err)
+	}
+	if learned.Read(liveScope) != "" {
+		t.Error("the forgotten scope still reads back")
+	}
+}
