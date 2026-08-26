@@ -96,3 +96,18 @@ A one-line typo with an obvious cause does not need four labeled phases
 performed out loud — the discipline is for when the cause is not obvious
 yet, which is the case this document exists for. Skipping it because a bug
 looks simple is itself the first rationalization on the list above.
+
+## Deeper tooling, when the trail is cold
+
+Four references adapted from obra/superpowers (MIT, `LICENSE-superpowers`) for the
+harder bugs the phases above open onto:
+
+- `references/root-cause-tracing.md` — following a symptom back through the call
+  chain to the origin, instead of patching where it surfaced.
+- `references/defense-in-depth.md` — once the cause is found, where else the same
+  class of bug could hide, so the fix closes the category and not one instance.
+- `references/condition-based-waiting.md` — for flaky, timing-dependent failures:
+  wait on a condition, never a fixed sleep (`references/condition-based-waiting-example.ts`
+  shows the shape).
+- `references/find-polluter.sh` — a runnable bisector for the "passes alone, fails
+  in the suite" bug: it finds the test that pollutes shared state.

@@ -121,6 +121,31 @@ Two sources on the shelf, and the second wins:
     finds real ones or draws them in SVG, and that changes the answer.
   - `aetox-design-system` — three-layer design tokens, component specs, and the
     tables that decide a deck's structure, layout, typography and charts.
+  - `aetox-frontend-design` — building or reshaping a UI or web page so it reads
+    as designed rather than templated: aesthetic direction, type pairing, and a
+    plan → critique → build pass. Where `aetox-design-system` gives the tokens
+    and `aetox-design` finds the pictures, this decides the look. Adapted from
+    Anthropic's frontend-design (Apache-2.0).
+  - `aetox-ui-design` — the how-to-build layer once the look is decided: design
+    tokens and theming, responsive layout, interaction and motion, web
+    components, WCAG-in-code, and native (iOS, Android, React Native). Nine
+    implementation guides behind one door. Adapted from wshobson/agents (MIT).
+  - `aetox-shadcn` — the concrete shadcn/ui layer: add, search, fix, style and
+    compose components through the registry and CLI, with the always-on rules
+    (className for layout not colour, `gap` not `space-x/y`, `size-*`, semantic
+    tokens, `cn()`). For any project with a components.json. Adapted from the
+    official shadcn skill (MIT), cleaned to run in Aetox.
+  - `aetox-radix-to-base` — migrating a project off Radix UI onto Base UI:
+    class-mapping tables and per-component patterns. Only for that migration.
+    The official shadcn migration skill (MIT).
+  - `aetox-ux-review` — auditing a UI that already exists against the standard
+    lenses: Nielsen's heuristics, Don Norman's principles, WCAG POUR, an IxDF UX
+    audit, a visual review, and a per-task cognitive walkthrough. For judging
+    finished work, not making it. Adapted from mastepanoski's claude-skills (MIT).
+  - `aetox-anti-slop` — read before writing markup, picking a colour or a font,
+    or laying out a slide: it stops work from defaulting to the recognisable
+    "AI-generated" house style and forces intentional, brand-bearing choices.
+    Adapted from Vinayak Shukla's anti-ai-slop (MIT).
   - `aetox-brand` — voice, messaging, logo and typography rules, and the
     checklists a piece of work passes before it goes out.
   - `aetox-th-locale` — where Thai-looking data has one correct answer that
@@ -134,7 +159,24 @@ Two sources on the shelf, and the second wins:
   - `aetox-debug` — root cause before remedy, on any bug, test failure or
     unexpected behaviour: read the whole error, form one hypothesis at a
     time, and stop to question the design itself after three fix attempts
-    rather than trying a fourth.
+    rather than trying a fourth. Carries deeper tooling for the cold trail —
+    root-cause tracing, defence in depth, a test-pollution finder — adapted
+    from obra/superpowers (MIT).
+  - `aetox-code-review` — reviewing a change before it merges: security
+    (injection, auth, path traversal), performance (N+1, complexity), edge
+    cases, concurrency and error handling. Takes a PR, a diff or a file.
+    Adapted from Anthropic's engineering plugin (Apache-2.0).
+  - `aetox-testing` — deciding what and how much to test (the pyramid, per-layer
+    strategy, critical paths) and the discipline of writing the tests
+    (red-green-refactor, the anti-patterns to avoid). Adapted from Anthropic
+    (Apache-2.0) and obra/superpowers (MIT).
+  - `aetox-deploy` — the expensive moments around shipping: the pre-deploy
+    checklist, incident response and postmortem, and the git workflow that keeps
+    parallel work and branch-closing safe. Adapted from Anthropic (Apache-2.0)
+    and obra/superpowers (MIT).
+  - `aetox-documentation` — writing and maintaining technical docs — README, API
+    docs, runbooks, onboarding — from the reader's side, not the system's.
+    Adapted from Anthropic's engineering plugin (Apache-2.0).
   - `aetox-discernment` — a second-look question appended after an answer
     with real stakes (an estimate, high-stakes advice, a claim someone will
     act on), offered at most once per conversation so it stays a nudge and

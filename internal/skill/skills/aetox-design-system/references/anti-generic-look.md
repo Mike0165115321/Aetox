@@ -2,15 +2,11 @@
 
 This system exists partly to prevent one specific failure: work that is technically correct — tokens resolve, contrast passes, the grid lines up — and still looks like the default output of any model asked the same kind of question. The standard for this system is that it should not read as second to anything else being generated right now.
 
-## The clustered defaults, named so they can be checked against
+## The clustered defaults
 
-Unprompted AI-generated design currently converges on a small number of looks. None of these are wrong to use deliberately — a brief that actually calls for one of them should get it — the failure is reaching for one of these *by default*, without a reason:
+Unprompted AI-generated design converges on a handful of recognisable looks — cream-and-terracotta, near-black-and-acid, broadsheet hairlines, the big-number hero, decorative 01/02/03 numbering — and the failure is reaching for one *by default*, without a reason. None is wrong when a brief actually calls for it.
 
-- Warm cream background with a serif display face and a terracotta accent
-- Near-black background with a single acid-green or vermilion accent
-- Broadsheet/newspaper layout — hairline rules, zero border-radius, dense multi-column text
-- A hero built from a big number, a small label, supporting stats, and a gradient
-- Numbered markers (01 / 02 / 03) used as decoration where the content isn't actually a sequence
+The named list — kept current, with a hard rule and a swap-in for each — lives in one place: the `aetox-anti-slop` skill. This system's job is to send you there before generating, not to keep a second copy of the list that quietly drifts from it.
 
 ## The genericness check
 
