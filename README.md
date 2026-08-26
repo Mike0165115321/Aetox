@@ -504,9 +504,9 @@ date-stamped, because the rule above does not have an exception for numbers we w
 
 </details>
 
-## Status — v1.5.8
+## Status — v1.5.9
 
-The core is in place. [Release notes](docs/release-notes/v1.5.8.md) ·
+The core is in place. [Release notes](docs/release-notes/v1.5.9.md) ·
 [roadmap](ROADMAP.md) · [architecture](ARCHITECTURE.md).
 
 Three things it does today that are worth knowing about:
