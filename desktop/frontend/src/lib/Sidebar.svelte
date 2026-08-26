@@ -156,9 +156,58 @@
   // nested beneath (matched by projectName from the global history list).
   const PROJECT_GROUP_PREVIEW = 3
   let expandedProjects = $state<Record<string, boolean>>({})
+
+  /** How this column was left, read back the next time it is drawn.
+   *
+   * Which projects are folded and which are pinned are facts about the window,
+   * not about the work: they belong to this machine's view of the sidebar, so
+   * they live where the rail width and the collapsed panels already live
+   * (App.svelte). Guarded, because a browser with site data switched off throws
+   * on the accessor itself rather than returning null — and a sidebar that
+   * cannot be drawn is a worse answer than one that opens every folder. */
+  function readFlags(key: string): Record<string, boolean> {
+    try {
+      const raw = localStorage.getItem(key)
+      return raw ? (JSON.parse(raw) as Record<string, boolean>) : {}
+    } catch {
+      return {}
+    }
+  }
+  function writeFlags(key: string, flags: Record<string, boolean>): void {
+    try {
+      // Only the true ones. A project unfolded and refolded a dozen times
+      // would otherwise leave a dozen `false` entries behind forever, and the
+      // list of projects a user has ever opened only grows.
+      const on: Record<string, boolean> = {}
+      for (const [k, v] of Object.entries(flags)) if (v) on[k] = true
+      localStorage.setItem(key, JSON.stringify(on))
+    } catch {
+      // Nothing to do and nothing worth saying: the fold still works for this
+      // run, it just will not be remembered.
+    }
+  }
+
   // Tracks what the user folded AWAY, so every project shows its recent chats
   // by default — a project row with nothing under it says nothing.
-  let collapsedProjects = $state<Record<string, boolean>>({})
+  //
+  // Kept across restarts since 26 ส.ค. It was in-memory only, so a project
+  // folded shut opened itself again on the next launch and the fold read as a
+  // control that did not work.
+  let collapsedProjects = $state<Record<string, boolean>>(readFlags('projectsCollapsed'))
+  $effect(() => writeFlags('projectsCollapsed', collapsedProjects))
+
+  // The projects the user wants at the top, in the order the list already has.
+  // Pinning does not reorder within the pinned half: the point is "these ones
+  // first", and a second ordering rule the user cannot see would make the list
+  // move for reasons nobody asked for.
+  let pinnedProjects = $state<Record<string, boolean>>(readFlags('projectsPinned'))
+  $effect(() => writeFlags('projectsPinned', pinnedProjects))
+
+  // The same thing one level down: the chats worth keeping at the top of the
+  // assistant's history, which has no projects to group by and is the one list
+  // that grows without limit.
+  let pinnedChats = $state<Record<string, boolean>>(readFlags('chatsPinned'))
+  $effect(() => writeFlags('chatsPinned', pinnedChats))
 
   // Two-step delete: first click arms ("ยืนยัน?"), second click deletes.
   let confirmDeleteId = $state('')
@@ -185,7 +234,12 @@
     (cockpit.projects || []).map((p) => ({
       project: p,
       sessions: (cockpit.history || []).filter((s) => s.projectName === p.name),
+      pinned: !!pinnedProjects[p.key],
     }))
+      // Pinned first, and stable within each half: the engine's order is
+      // most-recently-opened, which is the order to keep for everything the
+      // user has not spoken about.
+      .sort((a, b) => Number(b.pinned) - Number(a.pinned))
   )
 
 
@@ -302,9 +356,16 @@
   // that renders it. Searching is exempt: a search is a question about every
   // chat there is, and its results already say which project each one is in.
   const inSpace = $derived(!!cockpit.space && !searching)
+  // Pinned chats, in the order the history already has them. They come out of
+  // the day groups entirely rather than being highlighted inside them: the
+  // point of pinning is not having to look for the row, and a row still filed
+  // under เมื่อวาน is still a row you have to scroll to.
+  const pinnedHistory = $derived(visibleHistory.filter((s) => pinnedChats[s.id]))
+
   const historyGroups = $derived.by(() => {
     const out: { key: TKey; items: Session[] }[] = []
     for (const s of visibleHistory) {
+      if (pinnedChats[s.id]) continue
       const key = dayBucket(s.updatedAt)
       const last = out.at(-1)
       if (last && last.key === key) last.items.push(s)
@@ -332,6 +393,8 @@
     type="button" class="sess-row"
     class:active={s.active}
     class:working={sessionWorking(s)}
+    class:draft={s.draft}
+    class:pinned={pinnedChats[s.id]}
     onclick={() => selectGlobalSession(s)}
   >
     <!-- The title gets the line to itself. It used to share one line with the
@@ -364,6 +427,17 @@
       {/if}
       <span class="ago">{s.ago}</span>
       <span class="sess-acts">
+        <!-- First of the three, because it is the only one that changes where
+             the row is rather than what happens to it — and unlike its
+             neighbours it stays visible once it is on, since the mark is the
+             reason this row is at the top. -->
+        <span class="sess-pin" class:on={pinnedChats[s.id]} role="button" tabindex="0"
+          aria-label={pinnedChats[s.id] ? t('sidebar.unpinChat') : t('sidebar.pinChat')}
+          aria-pressed={!!pinnedChats[s.id]}
+          onclick={(e) => { e.stopPropagation(); pinnedChats[s.id] = !pinnedChats[s.id] }}
+          onkeydown={(e) => e.key === 'Enter' && (e.stopPropagation(), (pinnedChats[s.id] = !pinnedChats[s.id]))}>
+          <Icon name="pin" size={12} />
+        </span>
         <span class="sess-exp" class:armed={exportChoiceId === s.id} role="button" tabindex="0"
           aria-label={t('sidebar.exportSession')}
           onclick={(e) => { e.stopPropagation(); onExportSession(s) }}
@@ -485,6 +559,20 @@
                    and .side-sections), so half the label was cut off. Pinned
                    right, it opens leftward into the column. Same class every
                    other right-edge tooltip in this panel uses. -->
+              <!-- Pin, beside the + and quieter than it: this one changes
+                   where the row sits, which is worth doing once and then
+                   forgetting about, while + is the thing you press every day.
+                   A pinned project keeps the mark lit whether or not the mouse
+                   is here, because that mark is the reason the row is at the
+                   top and a row that moved for no visible reason is worse than
+                   no pinning at all. -->
+              <button type="button" class="proj-group-pin tip-r" class:on={g.pinned}
+                data-tip={g.pinned ? t('sidebar.unpinProject') : t('sidebar.pinProject')}
+                aria-label={g.pinned ? t('sidebar.unpinProject') : t('sidebar.pinProject')}
+                aria-pressed={g.pinned}
+                onclick={() => (pinnedProjects[g.project.key] = !pinnedProjects[g.project.key])}>
+                <Icon name="pin" size={13} />
+              </button>
               <button type="button" class="proj-group-new tip-r" data-tip={t('sidebar.newChatIn')}
                 aria-label={t('sidebar.newChatIn')} onclick={() => startChatIn(g.project.path)}>
                 <Icon name="plus" size={13} />
@@ -497,7 +585,7 @@
                      workshop side, where every chat lives nested under its
                      project, a running turn had no mark anywhere in the column
                      (owner, 22 ส.ค.). Same fact, same light, same class name. -->
-                <div class="proj-group-sess" class:active={s.active} class:working={sessionWorking(s)}>
+                <div class="proj-group-sess" class:active={s.active} class:working={sessionWorking(s)} class:draft={s.draft}>
                   <button type="button" class="proj-group-sess-open" onclick={() => selectGlobalSession(s)}>{s.title}</button>
                   <!-- Floated over the row's right end rather than sitting in
                        it: this row has only one line, and two invisible buttons
@@ -552,6 +640,14 @@
             {t('projects.allProjects')}
           </button>
         {:else}
+          <!-- Pinned first, under their own heading and above every day
+               group: they are not a day, they are the chats you said you keep
+               coming back to. Absent entirely when nothing is pinned, so the
+               list is exactly what it was for anyone who never presses it. -->
+          {#if pinnedHistory.length}
+            <div class="sess-day-head">{t('sidebar.pinnedChats')}</div>
+            {#each pinnedHistory as s (s.id)}{@render sessionRow(s)}{/each}
+          {/if}
           {#each historyGroups as g (g.key)}
             <div class="sess-day-head">{t(g.key)}</div>
             {#each g.items as s (s.id)}{@render sessionRow(s)}{/each}

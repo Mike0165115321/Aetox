@@ -190,6 +190,17 @@ type ModelPreference struct {
 	// user-configurable) actually needs. An absent entry means "catalog
 	// default"; ModelBaseURL is still read as a fallback for old files.
 	ModelBaseURLs map[string]string `json:"provider_base_urls,omitempty"`
+	// ModelNames holds the model last chosen for each provider, so switching
+	// away and back comes back to it.
+	//
+	// The single ModelName slot above only ever held the ACTIVE provider's
+	// choice, so switching provider resolved the catalog default and the
+	// choice was gone — browsing what three providers offer meant scrolling
+	// back down to your own model three times (owner, 26 ส.ค.). Same shape and
+	// same reason as ModelBaseURLs one field up. An absent entry means "use the
+	// provider's default", which is what a provider you have never picked a
+	// model on should do.
+	ModelNames map[string]string `json:"provider_models,omitempty"`
 	// LearningDisabled turns off the whole learning layer: no job rows are
 	// recorded and nothing can be queued for approval. Stored as the negative
 	// so an absent field means enabled — the switch was added after people had
@@ -442,6 +453,43 @@ func (p *ModelPreference) SetBaseURLForProvider(provider, baseURL string) {
 	}
 	p.dropAliasEntries(p.ModelBaseURLs, key)
 	p.ModelBaseURLs[key] = trimmed
+}
+
+// ModelForProvider is the model this provider was last used with, or "" for a
+// provider that has never had one chosen.
+func (p ModelPreference) ModelForProvider(provider string) string {
+	key := p.normalizeProviderKey(provider)
+	if key == "" {
+		return ""
+	}
+	// Both sides normalized, same reason as the two lookups above: a choice
+	// saved under an older spelling of the provider still belongs to it.
+	for providerKey, value := range p.ModelNames {
+		if p.normalizeProviderKey(providerKey) == key {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+// SetModelForProvider records the model chosen for a provider. An empty value
+// forgets it, so the provider goes back to its catalog default.
+func (p *ModelPreference) SetModelForProvider(provider, modelName string) {
+	key := p.normalizeProviderKey(provider)
+	if key == "" {
+		return
+	}
+	trimmed := strings.TrimSpace(modelName)
+	if trimmed == "" {
+		p.dropAliasEntries(p.ModelNames, key)
+		delete(p.ModelNames, key)
+		return
+	}
+	if p.ModelNames == nil {
+		p.ModelNames = make(map[string]string)
+	}
+	p.dropAliasEntries(p.ModelNames, key)
+	p.ModelNames[key] = trimmed
 }
 
 func Load(opt ConfigOptions) Config {

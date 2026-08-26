@@ -14,6 +14,13 @@ export const en: Record<keyof typeof th, string> = {
 
   'sidebar.projects': 'Project',
   'sidebar.addProject': 'Add project',
+  'sidebar.draftChat': 'New chat',
+  'sidebar.draftChatAgo': 'not started',
+  'sidebar.pinProject': 'Pin to the top',
+  'sidebar.pinChat': 'Pin this chat',
+  'sidebar.unpinChat': 'Unpin',
+  'sidebar.pinnedChats': 'Pinned',
+  'sidebar.unpinProject': 'Unpin',
   'sidebar.newChatIn': 'New chat in this project',
   'sidebar.noMatches': 'No conversations match that search',
   'sidebar.projectChats': 'Chats',

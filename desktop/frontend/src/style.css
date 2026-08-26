@@ -425,6 +425,25 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    tail is real estate — which is where the hover actions are parked. */
 .sess-meta { display:flex; align-items:center; gap:6px; min-width:0; min-height:17px; }
 .sess-row .ago { color:var(--text-dim); font-size:var(--fs-xs); flex:none; }
+/* Stays lit once it is on, unlike its neighbours in .sess-acts: the mark is
+   the reason the row is at the top, and a list that reorders itself with
+   nothing on screen to say why is worse than one that does not reorder. */
+.sess-pin.on { color:var(--accent); opacity:1; }
+/* A chat that exists but has never been answered. Pressing "new chat" has to
+   put something in this column immediately — the row you just made cannot be
+   invisible until the first reply lands — and that row has no name yet, so it
+   says so instead of borrowing the weight of a real one. The dashed edge is
+   what marks it as a place held open rather than a conversation: it goes away
+   on its own the moment the store has a title to put here. */
+.sess-row.draft .t, .proj-group-sess.draft .proj-group-sess-open {
+  /* Muted, upright. It was italic and the owner cut that on sight (26 ส.ค.):
+     a slant in a column where nothing else slants reads as a different kind of
+     thing, and this is an ordinary row that has not been named yet. The colour
+     alone says that, and the outline beside it says the rest. */
+  color:var(--text-muted);
+}
+.sess-row.draft { box-shadow:inset 0 0 0 1px var(--border-subtle); }
+.proj-group-sess.draft { box-shadow:inset 0 0 0 1px var(--border-subtle); }
 .sess-row .snip { color:var(--text-muted); font-size:var(--fs-xs); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sess-acts { margin-left:auto; flex:none; display:flex; align-items:center; gap:2px; }
 /* Over the row rather than in it, for the one-line project rows that have no
@@ -453,6 +472,16 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   border-radius:var(--r-sm); color:var(--text-dim); cursor:pointer;
 }
 .proj-group-row:hover .proj-group-new { color:var(--text-secondary); }
+/* Same shape as + beside it, one step quieter, and it stays lit once it is
+   on: the mark is the reason this row is at the top, so hiding it would
+   leave a list that reorders itself for no visible reason. */
+.proj-group-pin {
+  flex:none; width:24px; height:24px; display:grid; place-items:center;
+  border-radius:var(--r-sm); color:transparent; cursor:pointer;
+}
+.proj-group-row:hover .proj-group-pin { color:var(--text-dim); }
+.proj-group-pin:hover { color:var(--text-primary); background:var(--surface-hover); }
+.proj-group-pin.on, .proj-group-row:hover .proj-group-pin.on { color:var(--accent); }
 .proj-group-new:hover { color:var(--text-primary); background:var(--surface-hover); }
 .proj-group-sess { position:relative; display:flex; align-items:center; min-width:0; border-radius:var(--r-sm); color:var(--text-secondary); }
 .proj-group-sess:hover { background:var(--surface-row-hover); color:var(--text-primary); }
@@ -469,6 +498,11 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .sess-del.confirm { color:var(--status-danger); font-weight:600; }
 /* Export shares the delete control's hover-reveal life; armed it swaps the
    icon for the two format chips, which is the whole picker. */
+/* Same hidden-until-hover shape as .sess-exp beside it; the .on rule further
+   up is what keeps a pinned row's mark visible with the mouse elsewhere. */
+.sess-pin { flex:none; opacity:0; color:var(--text-dim); border-radius:var(--r-xs); padding:1px 5px; cursor:pointer; display:inline-flex; align-items:center; border:none; background:none; transition:opacity .12s ease; }
+.sess-row:hover .sess-pin, .sess-acts:focus-within .sess-pin { opacity:1; }
+.sess-pin:hover { color:var(--text-primary); }
 .sess-exp { flex:none; opacity:0; color:var(--text-dim); border-radius:var(--r-xs); padding:1px 5px; font-size:var(--fs-xs); cursor:pointer; display:inline-flex; gap:2px; align-items:center; border:none; background:none; transition:opacity .12s ease; }
 .proj-group-sess:hover .sess-exp, .sess-row:hover .sess-exp, .sess-exp.armed,
 .sess-acts:focus-within .sess-exp { opacity:1; }

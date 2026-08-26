@@ -42,6 +42,12 @@ export interface Session {
   /** Who the conversation was held with (§85): '' for the main assistant,
    *  an agent's name for a direct chat in the office. */
   agent?: string
+  /** This chat exists but has never been answered, so the store has no row for
+   *  it and no title to show. The lists draw it anyway — pressing "new chat"
+   *  has to put something on screen, or the chat you just made is invisible
+   *  until the first reply lands (owner, 26 ส.ค.). Replaced by the real row the
+   *  moment the first turn is stored. */
+  draft?: boolean
 }
 
 export interface RecentProject {
