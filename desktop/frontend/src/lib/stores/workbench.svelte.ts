@@ -4,7 +4,7 @@
 // under lib/workbench/ render from this; nothing else mutates it directly.
 
 import {
-  TerminalStart, TerminalClose, BrowserClose, ReadFile, ReadWorkbook,
+  TerminalStart, TerminalClose, BrowserClose, BrowserCloseForTeardown, ReadFile, ReadWorkbook,
   RelativizePath, SaveChatFile, WorkbenchTabsChanged, ResolveAddress,
 } from '../../../wailsjs/go/main/App'
 import type { main, ooxml } from '../../../wailsjs/go/models'
@@ -664,10 +664,25 @@ export function saveWorkbenchSnapshot(): void {
 }
 
 async function restoreWorkbench(sessionId: string): Promise<void> {
+  // Everything holding something outside the DOM is closed HERE, by name.
+  //
+  // The browser half used to be left to the pane's teardown, and the line below
+  // said so. It stopped being true on 2026-08-25, when BrowserPane's onDestroy
+  // correctly gave up closing anything (an unmount happens for several reasons
+  // and only one of them is a person). Nothing failed loudly: a native browser
+  // window is a real OS window composited above the app, so switching sessions
+  // with a page open left it on screen, at its last bounds, over the chat, with
+  // no pane alive to hide or move it. Terminals were closed on this line all
+  // along, which is the shape the browser should always have had.
+  //
+  // ForTeardown, not BrowserClose: this is the window discarding its own strip,
+  // not a person clicking ×, and the agent is told its page is gone rather than
+  // that somebody shut it.
   for (const tab of workbench.tabs) {
     if (tab.kind === 'terminal') TerminalClose(tab.id)
+    else if (tab.kind === 'browser') BrowserCloseForTeardown(tab.id)
   }
-  workbench.tabs = [] // unmounts panes; BrowserPane's onDestroy closes its native window
+  workbench.tabs = []
   workbench.activeId = ''
   let saved: { tabs: SavedTab[]; activeIdx: number }
   try {

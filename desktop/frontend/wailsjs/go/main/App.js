@@ -94,6 +94,10 @@ export function BrowserClose(arg1) {
   return window['go']['main']['App']['BrowserClose'](arg1);
 }
 
+export function BrowserCloseForTeardown(arg1) {
+  return window['go']['main']['App']['BrowserCloseForTeardown'](arg1);
+}
+
 export function BrowserForward(arg1) {
   return window['go']['main']['App']['BrowserForward'](arg1);
 }

@@ -60,6 +60,8 @@ export function BrowserClickRef(arg1:string,arg2:number):Promise<void>;
 
 export function BrowserClose(arg1:string):Promise<void>;
 
+export function BrowserCloseForTeardown(arg1:string):Promise<void>;
+
 export function BrowserForward(arg1:string):Promise<void>;
 
 export function BrowserGetText(arg1:string):Promise<string>;

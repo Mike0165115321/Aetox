@@ -39,6 +39,31 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
   } as unknown as typeof ResizeObserver
 }
 
+// IntersectionObserver, same reason and one deliberate difference: this one
+// FIRES, once, reporting the element as on screen.
+//
+// BrowserPane asks it a question the other observer cannot answer — does this
+// pane have a box, counting every ancestor — and hides the native browser
+// window when the answer is no. A stub that never calls back would leave that
+// answer at its initial value in every test, which happens to be the value the
+// tests want and would therefore prove nothing. Firing true once makes the
+// default path real; a test that cares about the false case drives its own
+// observer, which browserOrphan.test.ts does.
+if (typeof globalThis.IntersectionObserver === 'undefined') {
+  globalThis.IntersectionObserver = class {
+    constructor(private cb: IntersectionObserverCallback) {}
+    observe(el: Element) {
+      this.cb(
+        [{ target: el, isIntersecting: true, intersectionRatio: 1 } as IntersectionObserverEntry],
+        this as unknown as IntersectionObserver,
+      )
+    }
+    unobserve() {}
+    disconnect() {}
+    takeRecords() { return [] }
+  } as unknown as typeof IntersectionObserver
+}
+
 if (typeof Element !== 'undefined' && !Element.prototype.animate) {
   Element.prototype.animate = function (): Animation {
     let finishHandler: ((this: Animation, ev: AnimationPlaybackEvent) => unknown) | null = null

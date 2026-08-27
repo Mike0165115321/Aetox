@@ -1239,6 +1239,26 @@ func (a *App) BrowserClose(id string) {
 	a.closeTab(id, closedByUser)
 }
 
+// BrowserCloseForTeardown is the window closing a tab for a reason that is not
+// a person, and it exists because until 2026-08-27 the window had no way to say
+// so.
+//
+// closedByApp was defined for exactly this ("a sweep, a teardown, a view that
+// died") and had only ever been reachable from inside Go. The frontend's single
+// door hardcoded closedByUser, so a session switch — which discards the whole
+// strip and rebuilds it from the next session's saved layout — had no honest
+// call to make. It made none, and the native window was orphaned: still
+// composited over the chat, at the bounds it last had, with no pane left alive
+// to hide or move it (owner's screenshot, 27 ส.ค.).
+//
+// The reason matters as much as the close. closedByUser tells the agent
+// somebody shut its page, which is the sentence browser-tab-lifetime-2026-08-25
+// was written to stop us saying by accident; closedByApp tells it the page is
+// gone, which is true, and which is what a session switch actually did.
+func (a *App) BrowserCloseForTeardown(id string) {
+	a.closeTab(id, closedByApp)
+}
+
 // closeTab is the close itself, with nothing said about who asked for it.
 //
 // Two things are true at once and they are why this is not four lines: the

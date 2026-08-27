@@ -129,3 +129,47 @@ func TestOpeningAnAgentTabClearsTheRecord(t *testing.T) {
 		t.Errorf("the record survived the reopen: %q", goneID)
 	}
 }
+
+// The door the window has never had, and the session switch that needed it.
+//
+// Switching conversations throws the whole strip away and rebuilds it from the
+// next session's saved layout. That is a teardown, not a person, and until
+// 2026-08-27 the frontend had no call that could say so: `BrowserClose` is
+// hardcoded to closedByUser, so the window either lied or said nothing. It said
+// nothing, and the native window was left composited over the chat with no pane
+// alive to hide it (owner's screenshot, 27 ส.ค.).
+//
+// Both halves are pinned. The tab really is gone, and the agent is told the
+// right thing about why: its page is gone, not that somebody shut it.
+func TestATeardownCloseIsNotBlamedOnTheUser(t *testing.T) {
+	app := hostWithTabs(t, "web-agent-1", []string{"web-agent-1"}, "web-agent-1")
+
+	app.BrowserCloseForTeardown("web-agent-1")
+
+	_, err := app.agentTab()
+	if err == nil {
+		t.Fatal("the agent still has a page after the teardown")
+	}
+	if strings.Contains(err.Error(), "the user closed") {
+		t.Errorf("a session switch was reported to the agent as a person closing its page: %v", err)
+	}
+	if !strings.Contains(err.Error(), "carry on") {
+		t.Errorf("the message does not say the work continues: %v", err)
+	}
+}
+
+// The × still means what it always meant. A second door for teardowns is only
+// safe while the first one keeps saying "a person did this".
+func TestTheStripsCloseStillMeansAPerson(t *testing.T) {
+	app := hostWithTabs(t, "web-agent-1", []string{"web-agent-1"}, "web-agent-1")
+
+	app.BrowserClose("web-agent-1")
+
+	_, err := app.agentTab()
+	if err == nil {
+		t.Fatal("the agent still has a page after the user closed it")
+	}
+	if !strings.Contains(err.Error(), "the user closed") {
+		t.Errorf("the × no longer tells the agent a person closed its page: %v", err)
+	}
+}

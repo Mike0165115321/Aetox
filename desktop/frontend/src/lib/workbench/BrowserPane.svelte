@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import { recordVisit, type WorkbenchTab } from '../stores/workbench.svelte'
   import { cockpit, isOverlayView } from '../stores/cockpit.svelte'
   import {
@@ -22,6 +22,8 @@
 
   let host = $state<HTMLDivElement>()
   let opened = $state(false)
+  // See the IntersectionObserver below. True until measured otherwise.
+  let onScreen = $state(true)
   let lastSent = '' // last URL we told the native side to load — breaks the meta-event feedback loop
 
   /** Pane pixels reserved around the native window, in CSS px. See layout(). */
@@ -45,7 +47,28 @@
   // also *swallows* the drag, since the pointer is over another window, so the
   // workbench's drop target could never see a file dropped on a tab with a page
   // open. It stands down for the length of the drag (Workbench.svelte).
-  const visible = $derived(active && opened && !menuOpen && !dragging && !isOverlayView(cockpit.activeView))
+  //
+  // And then `onScreen`, which is the reason this list stopped growing.
+  //
+  // Every term above is a REASON the pane might not be on screen, written down
+  // by hand, and the list has been wrong four times: settings only, then the
+  // three rooms that arrived after it, then the drag, and then — the owner's
+  // screenshot on 27 ส.ค. — the inspector collapsing, which is
+  // `.app.inspector-collapsed .inspector { display:none }` in style.css and was
+  // never a term here at all. Walking from the code door to แชทผู้ช่วย empties
+  // the strip, the empty strip collapses the inspector, and the page went on
+  // compositing over the chat because nothing in this expression had heard of
+  // any of that.
+  //
+  // Enumerating reasons cannot be finished. Whoever adds the fifth one will not
+  // know this file exists, exactly as the three rooms and the collapse did not,
+  // and the failure is invisible from where they are standing: their feature
+  // works and it is somebody else's window that is wrong.
+  //
+  // So the question changed from "is there a reason to hide" to "does this pane
+  // have a box on screen", which is one fact, measured, and true of every reason
+  // at once including the ones nobody has written yet.
+  const visible = $derived(active && opened && onScreen && !menuOpen && !dragging && !isOverlayView(cockpit.activeView))
 
   // Device-size emulation without any emulation trickery: the tab IS a real
   // window, so shrink it to the device's aspect ratio (letterboxed in the pane,
@@ -129,6 +152,46 @@
     }
   })
 
+  // Does this pane have a box on screen? The one measurement `visible` leans on.
+  //
+  // IntersectionObserver rather than the ResizeObserver above, and the
+  // difference is the whole point: a ResizeObserver watches THIS element's box,
+  // while what removes a pane from view is almost always an ANCESTOR. The
+  // inspector collapsing sets `display:none` five levels up; the observed
+  // element's own styles never change. IntersectionObserver answers for the
+  // whole chain, because an element with no box cannot intersect anything, and
+  // it answers the same way for every other reason too — scrolled out of the
+  // strip, a zero-height container mid-transition, a parent nobody has written
+  // yet.
+  //
+  // Starts true and is only ever written by the callback, which fires once on
+  // observe. A pane that somehow never hears from the observer is left showing
+  // its page rather than hiding it forever: of the two ways to be wrong, the one
+  // that loses the user's page is much worse than the one that shows it.
+  $effect(() => {
+    const el = host
+    if (spectator || !el || typeof IntersectionObserver === 'undefined') return
+    // untrack, and it is load-bearing rather than defensive. The stub in
+    // setup.ts calls back synchronously from observe(), which happens inside
+    // this effect's body — so anything reactive the callback touches becomes a
+    // dependency OF THIS EFFECT. Reading `onScreen` here (the first draft said
+    // `if (onScreen) reflow()`) made the observer depend on the value it
+    // writes: going off screen re-ran the effect, which disconnected, observed
+    // again, and was told on screen. The window never hid, and the test caught
+    // it. Real browsers fire the first callback asynchronously and would have
+    // hidden the bug rather than the window.
+    const io = new IntersectionObserver(([e]) => untrack(() => {
+      const on = e.isIntersecting && e.intersectionRatio > 0
+      onScreen = on
+      // Bounds go stale while hidden, and the pane usually moves before it
+      // comes back — the inspector reopening at a different width, a window
+      // resized in between. Re-glue on the way in, never on the way out.
+      if (on) reflow()
+    }))
+    io.observe(el)
+    return () => io.disconnect()
+  })
+
   // The page reports its real title/URL after every navigation (including
   // in-page link clicks) — keep the tab and address bar in sync.
   // svelte-ignore state_referenced_locally — tab.id never changes for a mounted pane
@@ -161,8 +224,16 @@
   // window orphaned by a reload — the one case this hook was really covering,
   // and the one case where it does not run at all — is swept by
   // CloseAllBrowserTabs on the next mount.
+  //
+  // What it must still do is HIDE. Closing is a lifetime event and says who
+  // asked; hiding says nothing to anybody, and an unmounted pane that leaves a
+  // real OS window composited over the chat is a bug however it got unmounted.
+  // Every caller that discards this pane on purpose closes the tab itself
+  // (closeTab, restoreWorkbench); this is the net under all the other reasons,
+  // and under the ones nobody has thought of yet.
   onDestroy(() => {
     off()
+    if (!spectator && opened) BrowserSetVisible(tab.id, false)
   })
 </script>
 
