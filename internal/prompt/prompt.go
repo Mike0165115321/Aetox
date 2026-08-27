@@ -379,6 +379,13 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 		// them. The gate is on the tool each layer opens with, not on a stance
 		// name, so a later stance that withholds the same thing is covered by
 		// the line that is already here.
+		// Above fileEditing and gated apart from it. Looking comes before
+		// changing in the work and now in the prompt, and a stance that can
+		// look but not change gets the half that applies to it. See
+		// findingThings for the measurement that split them.
+		if desk.carries("grep") {
+			b.WriteString(findingThings(desk))
+		}
 		if desk.carries("edit") || desk.carries("write") {
 			b.WriteString(fileEditing(desk))
 		}
@@ -705,11 +712,51 @@ func fileEditing(desk Desk) string {
 		s += "After changing source files, call diagnostics on them to confirm the change compiles before " +
 			"moving on.\n"
 	}
+	// The search half of this paragraph moved to findingThings, which is where
+	// it always belonged. What is left is the part that is genuinely about
+	// editing: the text an edit matches on has to come from somewhere exact.
 	return s +
-		"To find the exact text to match, grep for it with a context of a few lines (and a glob when you " +
-		"know the file type), that usually gives you enough to write the edit without reading the file " +
-		"at all. Otherwise read with offset and limit around the part you care about. Do not read a large " +
-		"file end to end just to change one line in it.\n"
+		"Get the text to match from a grep with context, or a read of that range. Matching against " +
+		"what you remember of the file is how an edit fails on a character nobody can see.\n"
+}
+
+// findingThings is the half of the old fileEditing layer that was never about
+// editing, standing on its own because the gate above it was wrong.
+//
+// The sentence "do not read a large file end to end" lived inside
+// fileEditing(), which is gated on `edit` or `write`. The comment on that gate
+// names the case it gets wrong in its own words: the วางแผน stance keeps every
+// reading tool and takes the writing ones away. So the one instruction in this
+// whole prompt about how to look at a codebase was withheld from the stance
+// that does nothing but look at codebases, and delivered only to a desk on its
+// way to change a line.
+//
+// Measured on this machine 2026-08-27, which is what turned a suspicion into a
+// layer: 237 of the ~406 reads that had anything before them followed ANOTHER
+// READ. Only 37 followed a grep and 17 a glob. 277 of 461 reads passed no limit
+// at all, averaging 10,834 bytes each. That is not a model choosing to open a
+// file, it is a model with no other habit available: search-then-read was
+// filed under "how to prepare an edit" and reading-to-understand was covered by
+// nothing.
+//
+// Gated on grep alone. Every desk has it today, and a stance that took search
+// away would be handed a paragraph of moves it cannot make.
+func findingThings(desk Desk) string {
+	s := "Find the place before you open it. grep with a glob answers where something lives for a fraction " +
+		"of what the file costs, and asking it for a few lines of context often answers the question " +
+		"outright, with no read at all.\n" +
+		"When you do read, read the part you came for: pass offset and limit around what the search found. " +
+		"Opening a large file end to end is the most expensive call you have, and those bytes do not leave " +
+		"the conversation, they are re-sent on every round that follows.\n"
+	if desk.carries("shell") {
+		// The move that has no tool of its own, and the one this session's own
+		// history shows going unused: `shell` was used as a ranged reader 135
+		// times at 3,018 bytes a call, against `read`'s 8,491. It is already
+		// the cheaper reader and it is second choice.
+		s += "For an exact range, the shell reads more precisely than read does: a line span, or the span " +
+			"between two patterns, which is how you get one function without knowing its line numbers.\n"
+	}
+	return s
 }
 
 // parallelCalls tells the model that one reply may carry several tool calls.

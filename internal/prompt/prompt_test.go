@@ -1049,3 +1049,56 @@ func TestADeskWithNeitherWritersNorAgentsIsToldWhatToDoInstead(t *testing.T) {
 		t.Errorf("a desk that never had a dispatch route blames the user's switch:\n%s", noRoute)
 	}
 }
+
+// The stance that reads the most was the one never told how to read.
+//
+// findingThings exists because this was false: the "do not open a large file
+// end to end" instruction sat inside fileEditing(), gated on `edit` or
+// `write`, so วางแผน — which keeps every reading tool and drops the writing
+// ones — was handed nothing about searching before opening. Both halves are
+// checked here, because the fix is worthless if it merely moved the gate.
+func TestADeskThatOnlyReadsIsStillToldHowToRead(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		desk    Desk
+		wantFix bool // does this desk also get the editing half?
+	}{
+		{"coding", Desk{Name: "coding", Direction: "This session is coding work.",
+			Carries: func(string) bool { return true }}, true},
+		{"plan", Desk{Name: "plan", Direction: "This session is planning.",
+			Carries: func(name string) bool { return name != "shell" && name != "write" && name != "edit" }}, false},
+	} {
+		got := BuildForDesk(SurfaceDesktop, Scope{Root: t.TempDir()}, tc.desk)
+		if !strings.Contains(got, "Find the place before you open it") {
+			t.Errorf("desk %q is never told to search before opening:\n%s", tc.name, got)
+		}
+		if !strings.Contains(got, "Opening a large file end to end") {
+			t.Errorf("desk %q is never told what a whole-file read costs", tc.name)
+		}
+		if !strings.Contains(got, "offset and limit") {
+			t.Errorf("desk %q is never told to read a range", tc.name)
+		}
+		// The editing half stays behind its own gate. A stance with no write
+		// tool being told not to re-send whole files would be instruction for
+		// a move it cannot make.
+		if hasEdit := strings.Contains(got, "Do NOT re-send the whole file through write"); hasEdit != tc.wantFix {
+			t.Errorf("desk %q: editing guidance present = %v, want %v", tc.name, hasEdit, tc.wantFix)
+		}
+	}
+}
+
+// The shell line is the one move with no tool of its own, so it is gated on
+// the tool that performs it rather than being sent to everyone.
+func TestTheRangedReadLineFollowsTheShell(t *testing.T) {
+	const want = "the shell reads more precisely"
+	withShell := BuildForDesk(SurfaceDesktop, Scope{Root: t.TempDir()},
+		Desk{Name: "coding", Direction: "Coding.", Carries: func(string) bool { return true }})
+	if !strings.Contains(withShell, want) {
+		t.Errorf("a desk with a shell is not told it is the precise reader:\n%s", withShell)
+	}
+	without := BuildForDesk(SurfaceDesktop, Scope{Root: t.TempDir()},
+		Desk{Name: "plan", Direction: "Planning.", Carries: func(name string) bool { return name != "shell" }})
+	if strings.Contains(without, want) {
+		t.Error("a desk with no shell was told to read with one")
+	}
+}

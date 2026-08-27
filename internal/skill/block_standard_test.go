@@ -63,11 +63,13 @@ const (
 // its tool comes under the ceiling — that is the migration, one tool at a time,
 // with the diff as the progress bar.
 var overweight = map[string]int{
-	"shell":       498,
-	"n8n":         624,
-	"doc_write":   525,
-	"windmill":    484,
-	"grep":        392,
+	"shell":     498,
+	"n8n":       624,
+	"doc_write": 525,
+	"windmill":  484,
+	// 392 until 2026-08-27, when the mode prose moved into Guidance(). The
+	// ratchet tightens with it, or the saving is only on loan.
+	"grep":        326,
 	"github":      390,
 	"sheet_write": 368,
 	// Not registered since 2026-08-19 (defaults.go), so nothing reaches it
@@ -75,7 +77,7 @@ var overweight = map[string]int{
 	// comes back at, and coming back over the standard should have to be
 	// noticed rather than inherited.
 	"notebook_edit":    317,
-	"edits":      243,
+	"edits":            243,
 	"edit":             234,
 	"web_fetch":        215,
 	"glob":             206,

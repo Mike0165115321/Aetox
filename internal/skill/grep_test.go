@@ -2,6 +2,7 @@ package skill
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +16,7 @@ func TestGrepSkillFindsMatchesWithLineNumbers(t *testing.T) {
 	}
 	s := &grepSkill{root: root}
 
-	out, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "TargetFunc"})
+	out, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "TargetFunc", "show": grepModeContent})
 	if err != nil {
 		t.Fatalf("ExecuteTool: unexpected error: %v", err)
 	}
@@ -56,7 +57,7 @@ func TestGrepSkillScopedToSubdir(t *testing.T) {
 	}
 	s := &grepSkill{root: root}
 
-	out, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "needle", "path": "sub"})
+	out, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "needle", "path": "sub", "show": grepModeContent})
 	if err != nil {
 		t.Fatalf("ExecuteTool: unexpected error: %v", err)
 	}
@@ -97,7 +98,7 @@ func TestGrepSkillExecuteCLIPath(t *testing.T) {
 	}
 	s := &grepSkill{root: root}
 
-	out, err := s.Execute(context.Background(), Input{"args": []string{"needle", "."}})
+	out, err := s.Execute(context.Background(), Input{"args": []string{"needle", "."}, "show": grepModeContent})
 	if err != nil {
 		t.Fatalf("Execute: unexpected error: %v", err)
 	}
@@ -114,7 +115,7 @@ func TestGrepSkillCapsResults(t *testing.T) {
 	}
 	s := &grepSkill{root: root}
 
-	out, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "needle"})
+	out, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "needle", "show": grepModeContent})
 	if err != nil {
 		t.Fatalf("ExecuteTool: unexpected error: %v", err)
 	}
@@ -169,8 +170,8 @@ func TestGrepSkillOutputModes(t *testing.T) {
 
 	// limit and offset are one mechanism seen from both ends: page one and
 	// page two must not overlap, and together must cover everything.
-	first := run(t, map[string]any{"limit": 2})
-	second := run(t, map[string]any{"limit": 2, "offset": 2})
+	first := run(t, map[string]any{"limit": 2, "show": grepModeContent})
+	second := run(t, map[string]any{"limit": 2, "offset": 2, "show": grepModeContent})
 	if strings.Count(first, "needle") != 2 {
 		t.Errorf("limit=2 returned %q, want two matches", first)
 	}
@@ -194,7 +195,7 @@ func TestGrepSkillTruncatesLongLines(t *testing.T) {
 	}
 	s := &grepSkill{root: root}
 
-	out, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "needle"})
+	out, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "needle", "show": grepModeContent})
 	if err != nil {
 		t.Fatalf("ExecuteTool: unexpected error: %v", err)
 	}
@@ -215,7 +216,7 @@ func TestGrepSkillCaseInsensitiveFlag(t *testing.T) {
 	}
 	s := &grepSkill{root: root}
 
-	out, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "(?i)needle"})
+	out, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "(?i)needle", "show": grepModeContent})
 	if err != nil {
 		t.Fatalf("ExecuteTool: unexpected error: %v", err)
 	}
@@ -234,7 +235,7 @@ func TestGrepSkillSingleFileTarget(t *testing.T) {
 	}
 	s := &grepSkill{root: root}
 
-	out, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "needle", "path": "only.txt"})
+	out, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "needle", "path": "only.txt", "show": grepModeContent})
 	if err != nil {
 		t.Fatalf("ExecuteTool: unexpected error: %v", err)
 	}
@@ -388,5 +389,147 @@ func TestMatchesGlob(t *testing.T) {
 		if got := matchesGlob(c.glob, c.name); got != c.want {
 			t.Errorf("matchesGlob(%q, %q) = %v, want %v", c.glob, c.name, got, c.want)
 		}
+	}
+}
+
+// The default is the file list, and content is one word away.
+//
+// Both halves matter, and the second is the one to be careful about: flipping a
+// default is only honest while the thing it replaced stays fully available.
+// This fails if either half stops being true.
+func TestGrepSkillDefaultsToFilesWithMatches(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte("package main\n\nfunc TargetFunc() {}\n"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	s := &grepSkill{root: root}
+
+	byDefault, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "TargetFunc"})
+	if err != nil {
+		t.Fatalf("ExecuteTool: %v", err)
+	}
+	if !strings.Contains(byDefault.Content, "a.go") {
+		t.Errorf("default = %q, want the matching path", byDefault.Content)
+	}
+	if strings.Contains(byDefault.Content, "func TargetFunc") {
+		t.Errorf("default = %q, want paths only: the default must not carry the matching lines", byDefault.Content)
+	}
+
+	asked, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "TargetFunc", "show": grepModeContent})
+	if err != nil {
+		t.Fatalf("ExecuteTool(show=content): %v", err)
+	}
+	if !strings.Contains(asked.Content, "a.go:3:func TargetFunc() {}") {
+		t.Errorf("show=content = %q, want path:line:text", asked.Content)
+	}
+	if len(asked.Content) <= len(byDefault.Content) {
+		t.Errorf("show=content is %d bytes against the default's %d; the default is meant to be the cheap one",
+			len(asked.Content), len(byDefault.Content))
+	}
+}
+
+// Asking for context is asking for the lines. Answering that with a file list
+// would be a green tick over an empty answer.
+func TestGrepSkillContextSelectsContent(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte("package main\n\nfunc target() {\n\tprintln(1)\n}\n"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	s := &grepSkill{root: root}
+
+	out, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "func target", "context": 1})
+	if err != nil {
+		t.Fatalf("ExecuteTool: %v", err)
+	}
+	if !strings.Contains(out.Content, "a.go:3:func target() {") {
+		t.Errorf("Content = %q, want the match line", out.Content)
+	}
+	if !strings.Contains(out.Content, "a.go-4-\tprintln(1)") {
+		t.Errorf("Content = %q, want the context line that was asked for", out.Content)
+	}
+
+	// An explicit show still wins: context is a nudge, not an override.
+	paths, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "func target", "context": 1, "show": grepModeFiles})
+	if err != nil {
+		t.Fatalf("ExecuteTool(show=files_with_matches): %v", err)
+	}
+	if strings.Contains(paths.Content, "println") {
+		t.Errorf("show=files_with_matches = %q, want the explicit mode honoured", paths.Content)
+	}
+}
+
+// The two search tools now teach, and this is what stops that being undone by
+// accident. The delivery mechanism is pinned generically in
+// block_standard_test.go against a probe; what a probe cannot pin is whether
+// the tools a session actually reaches for implement Guided at all.
+func TestSearchToolsTeachOnFirstUse(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	registry := NewDefaultRegistry(RegistryOptions{SandboxRoot: root})
+	d := NewDispatcher(registry)
+
+	for _, tc := range []struct {
+		tool string
+		args map[string]any
+		want string
+	}{
+		{"grep", map[string]any{"pattern": "package"}, "mapping first and reading second"},
+		{"read", map[string]any{"path": "a.go"}, "Find the place before reading it"},
+	} {
+		first, ok, err := d.ExecuteTool(t.Context(), tc.tool, tc.args)
+		if !ok || err != nil {
+			t.Fatalf("%s: ok=%v err=%v", tc.tool, ok, err)
+		}
+		if !strings.Contains(first.RawOutput, tc.want) {
+			t.Errorf("%s never taught the model: %q", tc.tool, first.RawOutput)
+		}
+		second, _, _ := d.ExecuteTool(t.Context(), tc.tool, tc.args)
+		if strings.Contains(second.RawOutput, tc.want) {
+			t.Errorf("%s taught twice in one session", tc.tool)
+		}
+	}
+}
+
+// A wide window is the point of raising the cap, so both ends are pinned: 50
+// lines is honoured, and 51 is clamped rather than accepted or refused.
+func TestGrepContextReachesFiftyLines(t *testing.T) {
+	root := t.TempDir()
+	var b strings.Builder
+	for i := 1; i <= 200; i++ {
+		if i == 100 {
+			b.WriteString("needle\n")
+			continue
+		}
+		b.WriteString(fmt.Sprintf("line-%d\n", i))
+	}
+	if err := os.WriteFile(filepath.Join(root, "wide.txt"), []byte(b.String()), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	s := &grepSkill{root: root}
+
+	out, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "needle", "context": 50})
+	if err != nil {
+		t.Fatalf("ExecuteTool: %v", err)
+	}
+	// 50 either side of line 100 reaches line 50 and line 150.
+	for _, want := range []string{"wide.txt-50-line-50", "wide.txt:100:needle", "wide.txt-150-line-150"} {
+		if !strings.Contains(out.Content, want) {
+			t.Errorf("context=50 did not reach %q", want)
+		}
+	}
+	if strings.Contains(out.Content, "wide.txt-49-") {
+		t.Error("context=50 reached further than 50 lines")
+	}
+
+	// Past the cap it clamps. Refusing would cost a round trip to learn a
+	// number the schema already states.
+	over, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "needle", "context": 500})
+	if err != nil {
+		t.Fatalf("ExecuteTool(context=500): %v", err)
+	}
+	if strings.Contains(over.Content, "wide.txt-49-") {
+		t.Error("context=500 was not clamped to the cap")
 	}
 }

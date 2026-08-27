@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -179,8 +180,11 @@ func TestReadSkillPagesByLine(t *testing.T) {
 		t.Errorf("Content = %q, truncated = %v, want the file's tail with no truncation", out.Content, out.Truncated)
 	}
 
-	// A file far past the old 16KB cap must come back whole by default.
-	fat := strings.Repeat(strings.Repeat("x", 79)+"\n", 800) // 800 lines, ~64KB
+	// A file far past the old 16KB cap must still come back whole by default.
+	// That was the point of replacing the flat ceiling with paging and it has
+	// not changed: what a coding agent cannot survive is a tail that is hidden,
+	// not a tail that takes a second call.
+	fat := strings.Repeat(strings.Repeat("x", 63)+"\n", 800) // 800 lines, 51KB
 	if err := os.WriteFile(filepath.Join(root, "fat.txt"), []byte(fat), 0o644); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
@@ -189,7 +193,87 @@ func TestReadSkillPagesByLine(t *testing.T) {
 		t.Fatalf("Execute: unexpected error: %v", err)
 	}
 	if out.Truncated || len(out.Content) < len(fat)-1 {
-		t.Errorf("50KB file: len(Content) = %d, truncated = %v, want the whole file", len(out.Content), out.Truncated)
+		t.Errorf("51KB file: len(Content) = %d, truncated = %v, want the whole file", len(out.Content), out.Truncated)
+	}
+}
+
+// Past readMaxBytes a read is PAGED, never trimmed in silence: page one stops,
+// says so, names the line to resume from, and that line really is the next one.
+//
+// This is the property the old 16KB ceiling failed and the 256KB one bought at
+// a price nobody had measured — 27 calls in this machine's history carried half
+// of everything `read` has ever returned. A bounded page keeps the promise the
+// ceiling broke, as long as this test holds.
+func TestReadSkillPagesPastByteCap(t *testing.T) {
+	root := t.TempDir()
+	const lines = 4000
+	body := strings.Repeat(strings.Repeat("y", 63)+"\n", lines) // 256KB, under the line cap
+	if err := os.WriteFile(filepath.Join(root, "huge.txt"), []byte(body), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	s := &readSkill{root: root}
+
+	out, err := s.Execute(context.Background(), Input{"args": []string{"huge.txt"}, "limit": lines})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !out.Truncated {
+		t.Fatalf("len(Content) = %d, truncated = false: a 256KB file must not arrive in one answer", len(out.Content))
+	}
+	if len(out.Content) > readMaxBytes+readMaxLineLen {
+		t.Errorf("len(Content) = %d, want at most one line past the %d byte cap", len(out.Content), readMaxBytes)
+	}
+
+	// The marker's offset is the contract. Follow it and the next line is the
+	// one page one stopped before — no gap, no repeat.
+	marker := "continue with offset="
+	i := strings.Index(out.Content, marker)
+	if i < 0 {
+		t.Fatalf("no resume marker in a truncated read: %q", out.Content[len(out.Content)-80:])
+	}
+	next := strings.TrimSpace(strings.Trim(out.Content[i+len(marker):], ")\n"))
+	resume, err := strconv.Atoi(next)
+	if err != nil {
+		t.Fatalf("resume offset %q is not a number: %v", next, err)
+	}
+	if !strings.Contains(out.Content, fmt.Sprintf("%6d\t", resume-1)) {
+		t.Errorf("page one does not end at line %d, so the offset skips or repeats a line", resume-1)
+	}
+
+	page2, err := s.Execute(context.Background(), Input{"args": []string{"huge.txt"}, "offset": resume, "limit": 1})
+	if err != nil {
+		t.Fatalf("Execute(page 2): %v", err)
+	}
+	if !strings.Contains(page2.Content, fmt.Sprintf("%6d\t", resume)) {
+		t.Errorf("page two = %q, want it to start at line %d", page2.Content, resume)
+	}
+}
+
+// A generated file defeats a line cap: 110 lines of a bundle cost 57,437 bytes
+// in this machine's history, which is the case readMaxLineLen exists for.
+func TestReadSkillClipsGeneratedLines(t *testing.T) {
+	root := t.TempDir()
+	long := strings.Repeat("z", readMaxLineLen*3)
+	if err := os.WriteFile(filepath.Join(root, "bundle.js"), []byte(long+"\nshort\n"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	s := &readSkill{root: root}
+
+	out, err := s.Execute(context.Background(), Input{"args": []string{"bundle.js"}})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(out.Content) > readMaxLineLen*2 {
+		t.Errorf("len(Content) = %d, want the generated line clipped", len(out.Content))
+	}
+	// Said out loud, because an edit built from a clipped line will not match
+	// and the model has to be able to see why.
+	if !strings.Contains(out.Content, "not the file's exact text") {
+		t.Errorf("Content = %q, want the clip to say it is not the file's text", out.Content)
+	}
+	// Clipping one line must not cost the next one.
+	if !strings.Contains(out.Content, "short") {
+		t.Errorf("Content = %q, want the line after the clipped one", out.Content)
 	}
 }
 

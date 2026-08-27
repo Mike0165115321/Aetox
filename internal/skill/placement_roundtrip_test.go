@@ -71,7 +71,7 @@ func TestEveryFileToolFindsWhatWritePlaced(t *testing.T) {
 	})
 
 	t.Run("grep", func(t *testing.T) {
-		out := toolCall(t, registry, "grep", map[string]any{"pattern": "beta", "path": "index.html"})
+		out := toolCall(t, registry, "grep", map[string]any{"pattern": "beta", "path": "index.html", "show": grepModeContent})
 		if !strings.Contains(out.Content, "beta") {
 			t.Errorf("grep found nothing: %q", out.Content)
 		}

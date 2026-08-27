@@ -45,7 +45,7 @@ func TestFileToolsFindTheWorkspaceThroughItsGuestSpelling(t *testing.T) {
 	// The exact call from the transcript that started this: a search of a real
 	// folder, named the way the session's own shell names it.
 	grep := &grepSkill{root: root}
-	out, err := grep.ExecuteTool(context.Background(), map[string]any{"pattern": "ADMIN_PASSWORD", "path": guest})
+	out, err := grep.ExecuteTool(context.Background(), map[string]any{"pattern": "ADMIN_PASSWORD", "path": guest, "show": grepModeContent})
 	if err != nil {
 		t.Fatalf("grep refused the workspace in its guest spelling (%s): %v", guest, err)
 	}
@@ -180,7 +180,7 @@ func TestAFileToolAndTheDistroAgreeOnWhereTheWorkspaceIs(t *testing.T) {
 	}
 
 	grep := &grepSkill{root: root}
-	found, err := grep.ExecuteTool(context.Background(), map[string]any{"pattern": "ADMIN_PASSWORD", "path": guest})
+	found, err := grep.ExecuteTool(context.Background(), map[string]any{"pattern": "ADMIN_PASSWORD", "path": guest, "show": grepModeContent})
 	if err != nil {
 		t.Fatalf("grep refused %s, the folder the distro says the command is standing in: %v", guest, err)
 	}

@@ -24,7 +24,24 @@ import (
 // line to resume from.
 const (
 	readDefaultLines = 2000
-	readMaxBytes     = 256 * 1024
+	// readMaxBytes was 256KB, which is not a ceiling so much as a promise that
+	// nothing catastrophic happens. Measured on this machine 2026-08-27: 27 of
+	// 461 read calls (5.9%) carried 1.95MB, half of everything read has ever
+	// returned, and the largest single call was 130,823 bytes — around 33,000
+	// tokens of tool result, riding every later round of that conversation.
+	//
+	// 64KB is still a generous single answer and it is one the line cap can
+	// actually reach: the truncation marker already names the offset to resume
+	// from, so nothing is hidden, only paged.
+	readMaxBytes = 64 * 1024
+	// readMaxLineLen bounds one line, because the line cap above cannot.
+	//
+	// `{"path": ".../scripts.js", "limit": 110}` returned 57,437 bytes in this
+	// machine's history: the model asked for 110 lines, as carefully as anyone
+	// could ask, and paid for 57KB because the lines were generated. A cap of
+	// 2000 characters is longer than any line a person writes and shorter than
+	// any line a bundler emits, which is the whole distinction being drawn.
+	readMaxLineLen   = 2000
 	binarySniffBytes = 8192
 )
 
@@ -72,11 +89,11 @@ func (*readSkill) ToolDefinition() model.ToolDefinition {
 			},
 			"offset": map[string]any{
 				"type":        "integer",
-				"description": "1-based line number to start from. Defaults to 1.",
+				"description": "1-based line to start from. Defaults to 1.",
 			},
 			"limit": map[string]any{
 				"type":        "integer",
-				"description": "How many lines to read. Defaults to 2000.",
+				"description": "How many lines. Defaults to 2000.",
 			},
 		},
 		"required":             []string{"path"},
@@ -87,11 +104,36 @@ func (*readSkill) ToolDefinition() model.ToolDefinition {
 		Type: "function",
 		Function: model.ToolFunction{
 			Name: "read",
-			Description: "Read a text file in sandbox root. Every line comes back prefixed with its line number and a tab, that prefix is added by this tool and is not in the file, so strip it before passing text to edit or edits. " +
-				"Returns up to 2000 lines; if the output says it was truncated, call read again with the offset it gives you to get the rest.",
+			Description: "Read a text file in sandbox root. Every line is prefixed with its line number and a tab, which this tool adds and the file does not contain, so strip it before passing text to edit or edits. " +
+				"Reads up to 2000 lines. When you already know which part you need, read only that part with offset and limit. " +
+				"A truncated result names the offset to resume from.",
 			Parameters: payload,
 		},
 	}
+}
+
+// Guidance is where the habit lives, because the block entry cannot afford it
+// and the habit is worth more than any of the mechanics it would displace.
+//
+// read has taken offset and limit since paging replaced the flat 16KB ceiling,
+// and the model reaches for them: 205 of 461 calls in this machine's history
+// passed one. What the block never said is when to WANT less. It explained how
+// to ask for the rest of a file and never how to ask for part of one, which is
+// a description that teaches only the expensive direction.
+//
+// The cost is all in the tail. 27 of those 461 calls, 5.9%, carried 1.95MB
+// between them, half of everything read has ever returned, and the largest was
+// one 130,823-byte answer that then rode every later round of the conversation
+// it landed in. Nothing about the average is worth changing.
+func (*readSkill) Guidance(map[string]any) string {
+	return "Find the place before reading it. grep and glob answer where something lives for a fraction of what a file costs, " +
+		"and a read of the range around a known line is the cheap end of this tool.\n" +
+		"A whole-file read is right when the file is small or you genuinely need all of it. On anything large it is the most " +
+		"expensive call available, and the bytes stay in the conversation for every round that follows, not just this one.\n" +
+		"A page stops at 2000 lines or 64KB, whichever comes first, and says which line to resume from. Nothing is hidden by that, " +
+		"only deferred: ask for the next page when you need it rather than in case you do.\n" +
+		"Lines past 2000 characters are clipped and marked. That is generated code, and a clipped line is no longer the file's " +
+		"exact text, so an edit built from one will not match."
 }
 
 func (s *readSkill) Execute(_ context.Context, input Input) (Output, error) {
@@ -277,9 +319,9 @@ func readTextLines(f *os.File, offset, limit int, numbered bool) (string, int, e
 				// edit's both say so, because a find text that includes one
 				// silently never matches.
 				if numbered {
-					b.WriteString(fmt.Sprintf("%6d\t%s", line, text))
+					b.WriteString(fmt.Sprintf("%6d\t%s", line, clipLine(text)))
 				} else {
-					b.WriteString(text)
+					b.WriteString(clipLine(text))
 				}
 				taken++
 			}
@@ -348,4 +390,28 @@ func intArg(value any) int {
 		}
 	}
 	return 0
+}
+
+// clipLine bounds one line at readMaxLineLen, and says so where it cut.
+//
+// The marker is not decoration. A clipped line is no longer the file's text,
+// so an edit built from it will not match — and `edit` failing loudly on a
+// find text that is not there is the correct outcome, provided the model can
+// see why. Silence here would turn a bounded read into a mystery.
+func clipLine(text string) string {
+	end := len(text)
+	nl := ""
+	if strings.HasSuffix(text, "\n") {
+		end--
+		nl = "\n"
+		if end > 0 && text[end-1] == '\r' {
+			end--
+			nl = "\r\n"
+		}
+	}
+	if end <= readMaxLineLen {
+		return text
+	}
+	return text[:readMaxLineLen] +
+		fmt.Sprintf(" ... (line clipped, %d more characters, not the file's exact text)", end-readMaxLineLen) + nl
 }

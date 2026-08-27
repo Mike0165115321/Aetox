@@ -77,12 +77,12 @@ func (*grepSkill) ToolDefinition() model.ToolDefinition {
 			},
 			"context": map[string]any{
 				"type":        "integer",
-				"description": "Lines of surrounding context to show around each match (default 0, max 20). Use it to see enough of the code to build an exact edit without a second read call.",
+				"description": "Lines of surrounding context around each match (default 0, max 50). Selects show=content.",
 			},
 			"show": map[string]any{
 				"type":        "string",
 				"enum":        []string{"content", "files_with_matches", "count"},
-				"description": "content (default) returns the matching lines; files_with_matches returns only the file paths; count returns a per-file tally. Use one of the latter two when you are mapping where something lives, they cost a fraction of the tokens.",
+				"description": "files_with_matches (default) paths only; content the matching lines; count a per-file tally.",
 			},
 			"limit": map[string]any{
 				"type":        "integer",
@@ -90,7 +90,7 @@ func (*grepSkill) ToolDefinition() model.ToolDefinition {
 			},
 			"offset": map[string]any{
 				"type":        "integer",
-				"description": "Skip this many entries first. Together with limit this pages through a search that hit the result cap, instead of having to invent a narrower pattern.",
+				"description": "Skip this many entries first. With limit, pages past the result cap.",
 			},
 		},
 		"required":             []string{"pattern"},
@@ -100,11 +100,36 @@ func (*grepSkill) ToolDefinition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Type: "function",
 		Function: model.ToolFunction{
-			Name:        "grep",
-			Description: "Search file contents by regex (Go/RE2 syntax: no backreferences or lookaround). Returns path:line:text for matches and path-line-text for context lines. Dependency and build directories are never searched.",
-			Parameters:  payload,
+			Name: "grep",
+			Description: "Search file contents by regex (Go/RE2 syntax: no backreferences or lookaround). " +
+				"Returns the paths of matching files; show=content returns path:line:text instead, and path-line-text for context lines. " +
+				"Dependency and build directories are never searched.",
+			Parameters: payload,
 		},
 	}
+}
+
+// Guidance carries the judgment that used to be spread through the block, and
+// the one thing the signature cannot say: which mode to want.
+//
+// The block entry states that files_with_matches is the default. It cannot
+// afford to state WHY, or what the other one costs, and those are exactly what
+// decides whether a search is cheap. Measured on this machine 2026-08-27,
+// before the default moved: 189 of 210 grep calls took content at 3,801 bytes
+// each against 646 for a path list, on a schema that already said the cheap
+// modes cost a fraction as much. A description is read once and a default is
+// obeyed every time, which is why the default moved and this is only the
+// explanation.
+func (*grepSkill) Guidance(map[string]any) string {
+	return "grep answers \"where does this live\" with paths, which is the question most searches are really asking. " +
+		"Pass show=content once you know which file you mean, or ask for context lines and content is selected for you. " +
+		"Context goes up to 50 lines either side, which is a whole function seen in place: a wide window on one match " +
+		"is very often cheaper and better than opening the file it lives in. Narrow the pattern, then widen the window.\n" +
+		"A path list costs roughly a sixth of the same search in content, so mapping first and reading second is the cheap order.\n" +
+		"The result cap is 200 entries and limit only tightens it. A capped result names the offset to resume from, " +
+		"so a search that hit the ceiling is paged rather than re-invented as a narrower pattern.\n" +
+		"Matching lines are clipped at 200 characters, so a hit in generated code shows where it is and not what it says. " +
+		"Build an edit from what read returns, not from a grep line."
 }
 
 func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
@@ -137,7 +162,31 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 	}
 	mode := strings.ToLower(strings.TrimSpace(stringArg(input["show"])))
 	if mode == "" {
-		mode = grepModeContent
+		// files_with_matches, not content, and this is the one line of the file
+		// worth arguing about.
+		//
+		// Measured on this machine 2026-08-27: 189 of 210 grep calls took the
+		// old default and cost 3,801 bytes each; the 11 that asked for
+		// files_with_matches cost 646. The cheap mode was documented in the
+		// schema as costing "a fraction of the tokens" and was still chosen 5%
+		// of the time, because a description never outranks a default. So the
+		// default becomes the cheap one and the expensive one is asked for by
+		// name, which is the shape Claude Code's Grep ships.
+		//
+		// `show: "content"` is untouched and always will be. A changed default
+		// that quietly removes the setting it replaced is a different change
+		// than this one.
+		mode = grepModeFiles
+		// Except when context lines were asked for. "Show me three lines
+		// around each match" is a request for the lines, and a file list
+		// answers it with a green tick and none of what was wanted — the
+		// silent-success failure this package has already been bitten by
+		// (see readImage's refusal in read.go). Claude Code documents the
+		// same pair as "ignored otherwise"; a weaker model reads a document
+		// once and a result every time, so this honours it instead.
+		if ctxLines > 0 {
+			mode = grepModeContent
+		}
 	}
 	if mode != grepModeContent && mode != grepModeFiles && mode != grepModeCount {
 		err := errors.New("show must be content, files_with_matches or count")
@@ -157,7 +206,9 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 	if ctxLines > 0 {
 		command += " -C " + strconv.Itoa(ctxLines)
 	}
-	if mode != grepModeContent {
+	// Name whatever was not the default, so the logged command and the shown
+	// one stay readable now that the default is the file list.
+	if mode != grepModeFiles {
 		command += " --" + mode
 	}
 	if skip > 0 {
@@ -362,11 +413,23 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 	return newToolOutput("grep", command, output, start, truncated, nil), nil
 }
 
-// maxGrepContext caps how much surrounding code one match may drag in. At 20
-// lines either side, 200 matches would already be 8,000 lines of context —
-// the output line limit would eat most of it, and the model would pay for the
-// rest. Enough to build an exact edit from, not enough to bury the answer.
-const maxGrepContext = 20
+// maxGrepContext caps how much surrounding code one match may drag in.
+//
+// Raised from 20 to 50 on 2026-08-27, and the measurement is the argument.
+// 115 of 210 grep calls in this machine's history asked for context, so the
+// model already reaches for grep as a reader more often than not. At 20 lines
+// either side it cannot hold a function, and a search that nearly answers the
+// question is answered the rest of the way by opening the whole file: 237 of
+// ~406 reads followed another read rather than a search.
+//
+// The arithmetic the old number was defending is unchanged and still holds,
+// because it was never this constant doing the defending. 200 matches at 50
+// lines either side is 20,000 lines in theory and cannot happen:
+// defaultToolOutputLineLimit trims the output to 220 lines whatever produced
+// it, and `limit` tightens the match cap for a caller who wants a wide window
+// on few hits. Which is the shape this is for -- one match, seen properly,
+// instead of a read of the file it lives in.
+const maxGrepContext = 50
 
 // matchesGlob reports whether a file name satisfies a caller's glob. Supports
 // the two forms that actually get typed: "*.go" and "*.{ts,svelte}". A leading
