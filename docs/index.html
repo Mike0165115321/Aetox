@@ -1,12 +1,34 @@
 <!DOCTYPE html>
-<html lang="th">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Aetox ทำงานให้จบในเครื่องของคุณ · Aetox</title>
-<meta name="description" content="Aetox เป็นแอปบน Windows ที่คุณสั่งเป็นภาษาไทย แล้วมันลงมือทำบนเครื่องคุณ อ่านใบเสร็จ อ่านวิดีโอ เปิดเว็บและกดปุ่มจริง คืนงานเป็นไฟล์ Excel และ Word จริง ไม่มีเซิร์ฟเวอร์ตรงกลาง ไม่มีค่ารายเดือน">
+<title>Aetox — An AI agent that finishes the work on your machine</title>
+<meta name="description" content="Aetox is a Windows app you command in plain language. It reads receipts, reads videos, opens real websites and clicks real buttons, and returns real Excel and Word files. No middle server, no subscription.">
 <link rel="canonical" href="https://mikedev115.github.io/Aetox/">
 <meta name="theme-color" content="#060607">
+<script>
+// Runs before first paint on purpose: deciding the theme after the stylesheet
+// has painted is what causes the white/dark flash on load.
+(function(){
+  try{
+    var saved = localStorage.getItem("aetox-theme");
+    var t = saved || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+    document.documentElement.dataset.theme = t;
+    document.documentElement.lang = localStorage.getItem("aetox-lang") || "en";
+  }catch(e){ document.documentElement.dataset.theme = "dark"; document.documentElement.lang = "en"; }
+})();</script>
+<script>
+// Decide the language before first paint, same reason as the theme block: a
+// default of English is the first language a visitor sees, and choosing it
+// after any content has painted would flash Thai then swap.
+(function(){
+  var LANG_KEY="aetox-lang";
+  var lang="en";
+  try{ lang = localStorage.getItem(LANG_KEY) || "en"; }catch(e){}
+  document.documentElement.lang = lang;
+})();
+</script>
 <script>
 // Runs before first paint on purpose: deciding the theme after the stylesheet
 // has painted is what causes the white/dark flash on load.
@@ -23,23 +45,24 @@
      relative paths, and most of them never execute JS either. -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Aetox">
-<meta property="og:locale" content="th_TH">
+<meta property="og:locale" content="en_US">
 <meta property="og:url" content="https://mikedev115.github.io/Aetox/">
-<meta property="og:title" content="Aetox ทำงานให้จบในเครื่องของคุณ">
-<meta property="og:description" content="สั่งเป็นภาษาไทย แล้วรับกลับมาเป็นไฟล์ที่ทำเสร็จแล้ว ทำงานจบในเครื่องคุณ ไม่มีเซิร์ฟเวอร์ตรงกลาง">
+<meta property="og:title" content="Aetox — An AI agent that finishes the work on your machine">
+<meta property="og:description" content="Command it in plain language, get back finished files. Work stays on your machine. No middle server.">
 <meta property="og:image" content="https://mikedev115.github.io/Aetox/assets/og.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Aetox — ทำงานให้จบในเครื่องของคุณ">
+<meta property="og:image:alt" content="Aetox — finish the work on your machine">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Aetox ทำงานให้จบในเครื่องของคุณ">
-<meta name="twitter:description" content="สั่งเป็นภาษาคน แล้วรับกลับมาเป็นไฟล์ที่ทำเสร็จแล้ว ทำงานจบในเครื่อง ไม่มีค่ารายเดือน">
+<meta name="twitter:title" content="Aetox — An AI agent that finishes the work on your machine">
+<meta name="twitter:description" content="Command in plain language, get back finished files. Work stays on your machine. No subscription.">
 <meta name="twitter:image" content="https://mikedev115.github.io/Aetox/assets/og.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-8 -8 820 778'%3E%3Crect x='-8' y='-8' width='820' height='778' rx='130' fill='%23060607'/%3E%3Cpath fill='%23f3f4f6' fill-rule='evenodd' d='M 116.0,742.5 L 92.0,742.5 L 73.0,737.5 L 53.0,726.5 L 36.5,711.0 L 21.5,680.0 L 20.5,640.0 L 37.5,594.0 L 245.5,120.0 L 265.5,90.0 L 293.0,60.5 L 321.0,40.5 L 347.0,28.5 L 380.0,20.5 L 416.0,19.5 L 452.0,26.5 L 484.0,40.5 L 509.0,57.5 L 533.5,82.0 L 565.5,134.0 L 656.5,345.0 L 658.5,375.0 L 651.5,396.0 L 641.5,410.0 L 622.0,425.5 L 581.0,440.5 L 367.0,442.5 L 339.0,446.5 L 311.0,457.5 L 285.5,479.0 L 275.5,494.0 L 183.5,700.0 L 153.0,729.5 L 137.0,737.5 L 116.0,742.5 Z M 115.5,703.0 L 136.0,694.5 L 154.5,673.0 L 242.5,473.0 L 257.5,452.0 L 276.0,434.5 L 312.0,414.5 L 349.0,405.5 L 494.5,404.0 L 402.0,190.5 L 322.5,371.0 L 313.0,379.5 L 300.0,380.5 L 293.0,377.5 L 285.5,367.0 L 285.5,357.0 L 363.5,179.0 L 373.5,161.0 L 386.0,150.5 L 411.0,147.5 L 425.0,154.5 L 433.5,164.0 L 539.0,404.5 L 567.0,403.5 L 589.0,398.5 L 605.0,390.5 L 616.5,379.0 L 619.5,371.0 L 617.5,350.0 L 530.5,152.0 L 500.5,104.0 L 465.0,74.5 L 443.0,64.5 L 416.0,58.5 L 389.0,58.5 L 357.0,66.5 L 335.0,77.5 L 317.0,91.5 L 294.5,116.0 L 279.5,139.0 L 61.5,637.0 L 58.5,664.0 L 67.5,687.0 L 87.0,701.5 L 115.5,703.0 Z M 711.0,742.5 L 689.0,742.5 L 664.0,735.5 L 642.0,722.5 L 623.5,704.0 L 610.5,683.0 L 553.0,547.5 L 329.0,547.5 L 322.0,544.5 L 314.5,534.0 L 316.5,518.0 L 331.0,508.5 L 573.0,509.5 L 581.5,516.0 L 587.5,527.0 L 652.5,678.0 L 664.0,690.5 L 680.0,700.5 L 710.0,703.5 L 724.0,698.5 L 737.5,686.0 L 743.5,674.0 L 745.5,652.0 L 738.5,627.0 L 661.5,450.0 L 661.5,441.0 L 670.0,429.5 L 678.0,426.5 L 690.0,428.5 L 699.5,440.0 L 775.5,615.0 L 784.5,653.0 L 781.5,681.0 L 764.5,714.0 L 740.0,733.5 L 711.0,742.5 Z'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
   color-scheme:dark;
@@ -109,10 +132,11 @@ header.hidden{transform:translateY(-100%)}
 .bar nav{margin-left:auto;display:flex;gap:.4rem;font-size:.86rem;color:var(--muted)}
 .bar nav a{padding:.4rem .85rem;border-radius:999px;transition:background-color .15s,color .15s}
 .bar nav a:hover{text-decoration:none;color:var(--text);background:var(--hover)}
-.theme-btn{margin-left:.4rem;flex-shrink:0;width:34px;height:34px;display:inline-grid;place-items:center;
+.theme-btn,.lang-btn{margin-left:.4rem;flex-shrink:0;width:34px;height:34px;display:inline-grid;place-items:center;
   background:none;border:1px solid var(--line-strong);border-radius:999px;color:var(--muted);
   cursor:pointer;transition:color .15s,border-color .15s,background .15s}
-.theme-btn:hover{color:var(--text);border-color:var(--text);background:var(--hover)}
+.theme-btn:hover,.lang-btn:hover{color:var(--text);border-color:var(--text);background:var(--hover)}
+.lang-btn{font-family:var(--mono);font-size:.68rem;font-weight:600;letter-spacing:.02em}
 .theme-btn svg{width:16px;height:16px;display:block}
 .theme-btn .moon{display:none}
 :root[data-theme="light"] .theme-btn .moon{display:block}
@@ -753,11 +777,11 @@ footer.gridded::before{
     </a>
     <span class="ver"><span class="led" aria-hidden="true"></span>v1.5.14 · Windows</span>
     <nav>
-      <a href="#proof">งานจริง</a>
-      <a href="#fix">ทำอะไรได้</a>
-      <a href="#privacy">ความปลอดภัย</a>
-      <a href="#install">ติดตั้ง</a>
+      <a href="#privacy" data-i18n="nav_privacy">Privacy</a>
+      <a href="#install" data-i18n="nav_install">Install</a>
+      <a href="privacy.html" data-i18n="nav_privacy_policy">Privacy policy</a>
       <a class="gh" href="https://github.com/Mikedev115/Aetox">GitHub</a>
+      <button class="lang-btn" data-lang-toggle type="button" title="Switch language" aria-label="Switch language">TH</button>
     </nav>
     <button class="theme-btn" data-theme-toggle type="button" aria-label="สลับธีมสว่าง/มืด" title="สลับธีมสว่าง/มืด">
       <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
@@ -786,15 +810,15 @@ footer.gridded::before{
     <div class="wrap hero-center">
       <div class="hero-copy">
         <h1><span class="gt">Aetox</span></h1>
-        <p class="lede">ผู้ช่วย AI ในคอมพิวเตอร์ของคุณ</p>
+        <p class="lede" data-i18n="hero_lede">The AI assistant inside your computer</p>
         <div class="cta">
           <a class="btn" href="https://github.com/Mikedev115/Aetox/releases/latest/download/aetox-amd64-installer.exe">
             <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1v9.3L4.7 7 3.3 8.4 8 13l4.7-4.6L11.3 7 8 10.3V1H8zM2 14h12v1.5H2z"/></svg>
-            ดาวน์โหลดสำหรับ Windows</a>
-          <a class="ghost" href="https://github.com/Mikedev115/Aetox/releases/latest">ดูไฟล์ดาวน์โหลดทั้งหมด</a>
+            <span data-i18n="hero_download">Download for Windows</span></a>
+          <a class="ghost" href="https://github.com/Mikedev115/Aetox/releases/latest"><span data-i18n="hero_all_downloads">See all downloads</span></a>
         </div>
-        <div class="cmdrow"><span>&gt;</span><b id="scoopCmd">scoop install https://raw.githubusercontent.com/Mikedev115/Aetox/main/scoop/aetox.json</b><button class="copy" data-copy="scoopCmd" aria-label="คัดลอกคำสั่ง scoop">copy</button></div>
-        <p class="fine">ติดตั้ง 2 นาที · ใช้ได้ทันทีโดยไม่ต้องมีคีย์ · ถอนออกคลิกเดียว</p>
+        <div class="cmdrow"><span>&gt;</span><b id="scoopCmd">scoop install https://raw.githubusercontent.com/Mikedev115/Aetox/main/scoop/aetox.json</b><button class="copy" data-copy="scoopCmd" aria-label="Copy the scoop command">copy</button></div>
+        <p class="fine" data-i18n="hero_fine">2-minute install · works instantly with no key · uninstall in one click</p>
       </div>
     </div>
   </div>
@@ -806,81 +830,81 @@ footer.gridded::before{
     <button class="shot" data-shot type="button">
       <img src="assets/hero-app.png" alt="หน้าต่าง Aetox ขณะทำงานจริง — ด้านซ้ายเป็นกราฟเทียบความคุ้มค่าสามรุ่นที่วาดขึ้นในแชท ด้านขวาเป็นหน้าเว็บสรุปที่มันเขียนเป็นไฟล์แล้วเปิดดูในเบราว์เซอร์ของโปรแกรมเอง" width="1919" height="1027" decoding="async">
     </button>
-    <p class="showcase-cap">สั่งครั้งเดียว มันไปหาข้อมูลสามรุ่น วาดกราฟเทียบความคุ้มค่าให้ในแชท
-    แล้วเขียนหน้าเว็บสรุปออกมาเป็นไฟล์จริง เปิดดูในเบราว์เซอร์ของมันเองได้เลย</p>
+    <p class="showcase-cap" data-i18n="showcase_cap">Ask once, it fetches three models, draws a value comparison in the chat,
+    then writes a summary page as a real file you can open in its own browser.</p>
   </section>
 
   <!-- ══ 01 หลักฐาน — งานจริงหนึ่งงาน ที่ตรวจซ้ำได้ ══ -->
   <section id="proof" class="gridded">
-    <div class="sec-head"><span class="idx">01</span><h2 data-reveal>งานจริงหนึ่งงาน กับเลขที่ตรวจได้ทุกตัว</h2></div>
-    <p class="sub">ไม่ใช่ตัวอย่างที่จัดฉาก นี่คือ log ของงานที่สั่งไปจริงเมื่อ 15 ส.ค. 2026
-    ประโยคที่พิมพ์ไปคือ <em>“หา CRM 20 เจ้าที่ SME ไทยเลือกใช้ได้จริง แล้วทำสเปรดชีตเทียบมาให้”</em>
-    แล้วปล่อยให้มันทำ</p>
+    <div class="sec-head"><span class="idx">01</span><h2 data-reveal data-i18n="proof_title">One real job, with numbers you can check</h2></div>
+    <p class="sub" data-i18n="proof_sub">Not a staged demo. This is the log of a real job run on 15 Aug 2026. The sentence typed was
+    <em>“Find 20 CRMs that Thai SMEs can actually use, and build a comparison spreadsheet for me.”</em>
+    then it was left to work.</p>
 
     <div class="stats">
       <div class="stat" data-card>
-        <div class="n">6:51<small>นาที</small></div>
-        <div class="k">ตั้งแต่สั่งจนได้ไฟล์</div>
-        <div class="s">ตัวแทน 2 คน ทำงานต่อกัน</div>
+        <div class="n">6:51<small data-i18n="proof_s1_unit">min</small></div>
+        <div class="k" data-i18n="proof_s1_k">From command to file</div>
+        <div class="s" data-i18n="proof_s1_s">2 agents working consecutively</div>
       </div>
       <div class="stat" data-card>
-        <div class="n">42<small>ครั้ง</small></div>
-        <div class="k">หยิบเครื่องมือมาใช้</div>
-        <div class="s">ผู้ช่วย 8 · ฝ่ายค้นข้อมูล 27 · ฝ่ายทำตาราง 7</div>
+        <div class="n">42<small data-i18n="proof_s2_unit">times</small></div>
+        <div class="k" data-i18n="proof_s2_k">Tools picked up</div>
+        <div class="s" data-i18n="proof_s2_s">Assistant 8 · research 27 · spreadsheet 7</div>
       </div>
       <div class="stat" data-card>
-        <div class="n">20<small>แถว</small></div>
-        <div class="k">ในสเปรดชีตที่ได้</div>
-        <div class="s">14 แถวมีราคาเป็นตัวเลข เรียงจากถูกไปแพง</div>
+        <div class="n">20<small data-i18n="proof_s3_unit">rows</small></div>
+        <div class="k" data-i18n="proof_s3_k">In the resulting spreadsheet</div>
+        <div class="s" data-i18n="proof_s3_s">14 rows have numeric prices, sorted cheap to expensive</div>
       </div>
       <div class="stat" data-card>
-        <div class="n">6<small>แถว</small></div>
-        <div class="k">เว้นว่างไว้ตั้งใจ</div>
-        <div class="s">พร้อมเหตุผลเขียนกำกับไว้ข้าง ๆ</div>
+        <div class="n">6<small data-i18n="proof_s4_unit">rows</small></div>
+        <div class="k" data-i18n="proof_s4_k">Left blank on purpose</div>
+        <div class="s" data-i18n="proof_s4_s">With the reason written beside each</div>
       </div>
     </div>
 
     <div class="tl beam" data-timeline>
-      <div class="tl-head"><span class="spin" aria-hidden="true"></span>กำลังทำงาน — หา CRM 20 เจ้าที่ SME ไทยเลือกได้จริง แล้วทำสเปรดชีตเทียบ</div>
-      <div class="tl-row"><span class="box" aria-hidden="true"></span><span class="lbl">ผู้ช่วยแตกงานเป็นขั้น แล้วส่งงานค้นข้อมูลต่อให้ตัวแทนฝ่ายวิจัย</span></div>
-      <div class="tl-row"><span class="box" aria-hidden="true"></span><span class="lbl">ฝ่ายวิจัยไล่เปิดหน้าราคาทีละเจ้า 27 ครั้ง เจอเครื่องมือพังไป 1 ครั้ง แล้วหาทางเลี่ยงเอง</span></div>
-      <div class="tl-row"><span class="box" aria-hidden="true"></span><span class="lbl">เจ้าที่ไม่ยอมบอกราคาหน้าเว็บ ถูกทำเครื่องหมายไว้ว่าทำไมถึงไม่มีตัวเลข</span></div>
-      <div class="tl-row"><span class="box" aria-hidden="true"></span><span class="lbl">ฝ่ายวิจัยวางรายงานไว้เป็นไฟล์ แล้วส่งต่อ “ที่อยู่ไฟล์” ให้ฝ่ายทำตาราง ไม่ใช่ส่งเนื้อหาทั้งกอง</span></div>
-      <div class="tl-row"><span class="box" aria-hidden="true"></span><span class="lbl">ฝ่ายทำตารางเขียนออกมาเป็น .xlsx จริง 20 แถว เรียงราคาจากถูกไปแพง</span></div>
-      <div class="tl-row"><span class="box" aria-hidden="true"></span><span class="lbl">ทุกแถวติดวันที่ที่ไปอ่าน ลิงก์ที่เอาเลขมา และบอกว่าเปิดเว็บดูจริงหรือแค่ค้นเจอ</span></div>
-      <div class="tl-foot" data-tl-foot>ทุกขั้นถูกบันทึกไว้ · กดหยุดได้ทุกเมื่อ · ย้อนดูได้ว่ามันคิดอะไรในแต่ละขั้น</div>
+      <div class="tl-head"><span class="spin" aria-hidden="true"></span><span data-i18n="tl_head">Working — find 20 CRMs Thai SMEs can actually use, build a comparison spreadsheet</span></div>
+      <div class="tl-row"><span class="box" aria-hidden="true"></span><span class="lbl" data-i18n="tl_1">The assistant split the job into steps, then passed the research to the research agent.</span></div>
+      <div class="tl-row"><span class="box" aria-hidden="true"></span><span class="lbl" data-i18n="tl_2">Research opened each pricing page 27 times, hit a broken tool once, and found its own way around it.</span></div>
+      <div class="tl-row"><span class="box" aria-hidden="true"></span><span class="lbl" data-i18n="tl_3">Vendors that would not show a price on their page were marked with a note explaining why there is no number.</span></div>
+      <div class="tl-row"><span class="box" aria-hidden="true"></span><span class="lbl" data-i18n="tl_4">Research left the report as a file and passed the “file path” to the spreadsheet agent rather than the whole bundle.</span></div>
+      <div class="tl-row"><span class="box" aria-hidden="true"></span><span class="lbl" data-i18n="tl_5">The spreadsheet agent wrote out a real 20-row .xlsx, sorted by price.</span></div>
+      <div class="tl-row"><span class="box" aria-hidden="true"></span><span class="lbl" data-i18n="tl_6">Every row carries the date it visited, the link it took the number from, and whether it actually opened the page or just found it in search.</span></div>
+      <div class="tl-foot" data-tl-foot data-i18n="tl_foot">Every step is logged · pause whenever · look back at what it was thinking at each step</div>
     </div>
 
     <button class="shot" data-shot type="button" style="margin-top:var(--s3)">
-      <img src="assets/cap-parallel.png" alt="ตัวแทนสี่คน research automation doc sheet ทำงานพร้อมกัน แต่ละการ์ดติดป้ายกำลังทำงานและมีแสงวิ่งรอบขอบ" width="1115" height="856" loading="lazy" decoding="async">
+      <img src="assets/cap-parallel.png" alt="Four agents — research automation doc sheet — working in parallel, each card tagged running with a light travelling its edge" width="1115" height="856" loading="lazy" decoding="async" data-i18n-attr="alt:par_img_alt">
     </button>
-    <p class="showcase-cap">คนละงานกัน แต่กลไกเดียวกัน — ตัวแทนสี่คนลงมือพร้อมกันในคราวเดียว
-    การ์ดที่ยังทำงานอยู่จะมีแสงวิ่งรอบขอบ อันไหนเสร็จแล้วแสงจะดับ คุณจึงรู้ได้ทันทีว่าเหลือใครยังทำอยู่</p>
+    <p class="showcase-cap" data-i18n="par_img_cap">Different jobs, same mechanism — four agents act at the same time.
+    A card still working wears a light travelling its edge; when one finishes the light goes out, so you always know who is still going.</p>
 
-    <div class="bnote">
-      <b>ช่องว่าง 6 ช่องคือส่วนที่ควรเชื่อถือที่สุดของตารางนี้</b> มันไม่เดาราคาให้ครบ ๆ เพื่อให้ตารางดูสวย
-      เจ้าไหนบอกราคาเฉพาะตอนขอใบเสนอ หรือหน้าเว็บไม่ยอมพูดถึงตัวเลข มันเว้นไว้แล้วเขียนเหตุผลกำกับ
-      ตารางที่ไม่มีช่องว่างเลย คือตารางที่เดา
+    <div class="bnote" data-i18n="par_bnote_full">
+      <b>The 6 blank cells are the most trustworthy part of this table.</b> It did not invent prices to make the table look full.
+      Where a vendor only quotes after a quote request, or where the page will not mention a number, it left the cell blank and wrote the reason beside it.
+      A table with no blanks at all is a table that guessed.
     </div>
   </section>
 
   <!-- ══ 02 ทำอะไรได้ ══ -->
   <section id="fix" class="gridded">
-    <div class="sec-head"><span class="idx">02</span><h2 data-reveal>สี่อย่างที่มันทำแทนคุณได้</h2></div>
-    <p class="sub">สองอย่างแรกติ๊กเลือกได้ตอนเปิดโปรแกรมครั้งแรก อย่างที่สามใช้ได้เลย
-    ส่วนอย่างที่สี่ต้องมีเซิร์ฟเวอร์ของคุณเองก่อน</p>
+    <div class="sec-head"><span class="idx">02</span><h2 data-reveal data-i18n="fix_title">Four things it does for you</h2></div>
+    <p class="sub" data-i18n="fix_sub">The first two you can tick on first launch, the third works out of the box,
+    the fourth needs a server of your own first.</p>
 
     <div class="fix">
       <div class="fix-copy">
-        <span class="problem">เคยต้องนั่งพิมพ์ตามทีละใบ</span>
-        <h3>กองสลิปในโฟลเดอร์ กลายเป็นตารางที่เปิดใช้ได้</h3>
-        <p>ชี้โฟลเดอร์ที่เก็บรูปไว้ แล้วบอกว่าอยากได้อะไร มันอ่านตัวหนังสือในรูปเองทั้งไทยและอังกฤษ
-        แล้วเรียงออกมาเป็นตารางให้ ใช้ได้กับสลิป สกรีนช็อต เอกสารถ่ายรูป ป้ายราคา</p>
-        <p>ปลายทางเป็น <strong>ไฟล์ Excel จริง</strong> ไม่ใช่ตารางบนจอ — ลาก <code>SUM</code> ได้เลย
-        วันที่เรียงได้ เลขที่ที่ขึ้นต้นด้วยศูนย์ไม่หาย และภาษาไทยไม่เพี้ยน</p>
-        <p>ทำงานได้แม้กับโมเดลเล็กที่มองรูปไม่เห็น เพราะตัวโปรแกรมเป็นคนอ่านรูปให้
-        ส่วนโมเดลที่เห็นรูปอยู่แล้ว มันจะส่งรูปให้ตรง ๆ โดยไม่ต้องอ่านซ้ำ</p>
-        <p class="meta">อ่านในเครื่อง ไม่ต้องต่อเน็ต · รูปไม่ออกจากเครื่อง</p>
+        <span class="problem" data-i18n="fix1_problem">Used to retype each one by hand</span>
+        <h3 data-i18n="fix1_title">A folder of receipts becomes a workable table</h3>
+        <p data-i18n="fix1_p1">Point it at the folder of images and say what you want. It reads the text in the images itself, both Thai and English,
+        and lays it out as a table for you. Works on receipts, screenshots, photographed documents, price tags.</p>
+        <p data-i18n="fix1_p2">The result is a <strong>real Excel file</strong>, not a table on screen — you can drag <code>SUM</code> over it.
+        Dates sort correctly, numbers that start with zero survive, and Thai is not mangled.</p>
+        <p data-i18n="fix1_p3">It works even with a small model that cannot see images, because the program itself reads the image for it.
+        With a model that already sees images, it passes the image straight through without re-reading.</p>
+        <p class="meta" data-i18n="fix1_meta">Reads on your machine, no internet needed · images never leave</p>
       </div>
       <button class="shot" data-shot type="button">
         <img src="assets/cap-image-ocr.png" alt="Aetox อ่านข้อความจากรูปภาพ แล้วตอบกลับเป็นข้อความ" width="1536" height="960" loading="lazy" decoding="async">
@@ -889,13 +913,13 @@ footer.gridded::before{
 
     <div class="fix flip">
       <div class="fix-copy">
-        <span class="problem">เคยต้องนั่งดูเองทั้งคลิป</span>
-        <h3>ประชุมสองชั่วโมง เหลือสรุปที่บอกด้วยว่าเรื่องไหนอยู่นาทีไหน</h3>
-        <p>โยนไฟล์คลิปหรือไฟล์เสียงให้ มันถอดเสียงพูดเป็นข้อความ พร้อมอ่านตัวหนังสือที่ขึ้นบนจอไปด้วย
-        แล้วเย็บสองอย่างเข้าด้วยกันเป็นเรื่องเดียว</p>
-        <p>คลิปภาษาที่คุณฟังไม่ออกก็ได้คำแปลมาด้วย และทุกบรรทัดติดเวลากำกับไว้
-        อยากดูตรงไหนกดกระโดดไปได้เลย</p>
-        <p class="meta">ถอดเสียงในเครื่อง ไม่ขึ้นคลาวด์ · ติดเวลาแบบ <code>[m:ss]</code> ทุกบรรทัด</p>
+        <span class="problem" data-i18n="fix2_problem">Used to watch the whole clip yourself</span>
+        <h3 data-i18n="fix2_title">A two-hour meeting becomes a summary that says which minute each thing happens at</h3>
+        <p data-i18n="fix2_p1">Drop a clip or audio file on it. It transcribes the speech into text, reads the text on screen too,
+        then stitches the two into one thread.</p>
+        <p data-i18n="fix2_p2">A clip in a language you do not understand comes back with a translation, and every line carries a timestamp.
+        Jump straight to the part you want.</p>
+        <p class="meta" data-i18n="fix2_meta">Transcribes on your machine, never to the cloud · timestamped <code>[m:ss]</code> on every line</p>
       </div>
       <button class="shot" data-shot type="button">
         <img src="assets/cap-clip.png" alt="Aetox ถอดเสียงคลิปเป็นข้อความพร้อมคำแปลไทยและเวลากำกับ" width="1536" height="960" loading="lazy" decoding="async">
@@ -904,14 +928,14 @@ footer.gridded::before{
 
     <div class="fix">
       <div class="fix-copy">
-        <span class="problem">เคยต้องเปิดทีละแท็บแล้วก๊อปเอง</span>
-        <h3>ให้มันเปิดเว็บ อ่าน แล้วกรอกฟอร์มแทน โดยคุณนั่งดูอยู่</h3>
-        <p>มันเปิดหน้าเว็บจริงในหน้าต่างของโปรแกรม อ่านเนื้อหาออกมาเอง แล้วคลิก พิมพ์
-        เลือกตัวเลือกในดรอปดาวน์ และกดส่งฟอร์มได้ครบ</p>
-        <p>เปิดหลายแท็บพร้อมกันแล้วสลับไปมาเองก็ได้ ค้น Google แท็บหนึ่ง เปิดคลิปอีกแท็บหนึ่ง
-        แล้วย้อนกลับมาอ่านของเดิมต่อ</p>
-        <p>ทุกจังหวะเกิดขึ้นตรงหน้าคุณ เห็นว่ามันกดอะไร ไปหน้าไหน และหยุดมันได้ทุกเมื่อ</p>
-        <p class="meta">เป็นเบราว์เซอร์จริง ไม่ใช่กรอบฝัง จึงเปิดได้แทบทุกเว็บ</p>
+        <span class="problem" data-i18n="fix3_problem">Used to open tabs one by one and copy out yourself</span>
+        <h3 data-i18n="fix3_title">It opens the web, reads it, and fills the form for you while you watch</h3>
+        <p data-i18n="fix3_p1">It opens a real page in the app's window, reads the content out itself, then clicks, types,
+        picks from dropdowns and submits forms — all of it.</p>
+        <p data-i18n="fix3_p2">It can keep several tabs open and switch between them on its own: searching Google in one, opening a clip in another,
+        then coming back to where it left off.</p>
+        <p data-i18n="fix3_p3">Every step happens in front of you. You see what it clicked, where it went, and can stop it at any moment.</p>
+        <p class="meta" data-i18n="fix3_meta">A real browser, not an embedded frame, so it opens nearly any site</p>
       </div>
       <button class="shot" data-shot type="button">
         <img src="assets/cap-browser.png" alt="Aetox เปิดเบราว์เซอร์จริงในโปรแกรม มีห้าแท็บเปิดค้างอยู่ ค้น Google เปิด YouTube แล้วสลับแท็บไปมาเอง" width="1919" height="1029" loading="lazy" decoding="async">
@@ -920,71 +944,72 @@ footer.gridded::before{
 
     <div class="fix flip">
       <div class="fix-copy">
-        <span class="problem">เคยต้องรอคนอื่นว่างมาทำระบบหลังบ้านให้</span>
-        <h3>บอกเป็นภาษาคน แล้วได้เวิร์กโฟลว์ที่ต่อครบทุกโหนดใน n8n</h3>
-        <p>ต่อกับ n8n หรือ Windmill ที่คุณตั้งไว้เอง แล้วมันอ่านของเดิม สร้างของใหม่ แก้ของที่มีอยู่
-        และเปิดใช้งานให้ได้ ในรูปคือเวิร์กโฟลว์ 11 โหนดที่มันต่อขึ้นมาเองทั้งเส้น</p>
-        <p>ระหว่างทางมันชนเข้ากับข้อผิดพลาดจริง อ่านสิ่งที่ระบบบอกกลับมา แก้ แล้วลองใหม่จนผ่าน
-        และมันเขียนบอกไว้ท้ายงานด้วยว่าอะไรที่มัน<strong>ยังตรวจไม่ได้</strong> แทนที่จะรายงานว่าเรียบร้อยทั้งหมด</p>
-        <p class="meta">เครื่องมือ n8n ของมันสั่งรันเวิร์กโฟลว์ไม่ได้ · แต่ถ้าเวิร์กโฟลว์นั้นมี webhook
-        มันยิงเข้าไปเองแล้วอ่านผลกลับมาได้ ซึ่งคือวิธีที่มันใช้ทดสอบในรูปนี้</p>
+        <span class="problem" data-i18n="fix4_problem">Used to wait for someone free to build the backend for you</span>
+        <h3 data-i18n="fix4_title">Say it in plain language, get an n8n workflow wired through every node</h3>
+        <p data-i18n="fix4_p1">Hook it to the n8n or Windmill you set up yourself, and it reads the existing, creates the new, edits what is there,
+        and activates it for you. The image shows an 11-node workflow it wired up end to end on its own.</p>
+        <p data-i18n="fix4_p2">Along the way it hit real errors, read what the system said back, fixed it and retried until it passed.
+        And it writes at the end of the job what it <strong>could not verify</strong>, rather than reporting all clear.</p>
+        <p class="meta" data-i18n="fix4_meta">Its n8n tool cannot trigger a workflow to run · but if that workflow has a webhook,
+        it fires it itself and reads the result, which is how it tested the one in the image</p>
       </div>
       <button class="shot" data-shot type="button">
         <img src="assets/cap-automation.png" alt="Aetox สร้างเวิร์กโฟลว์ n8n สิบเอ็ดโหนดขึ้นมาเอง เปิดดูได้ในหน้าต่างของโปรแกรม พร้อมรายงานว่าอะไรทดสอบผ่านและอะไรยังตรวจไม่ได้" width="1916" height="1027" loading="lazy" decoding="async">
       </button>
     </div>
 
-    <div class="bnote">
-      <b>และจะไม่มีตัวตั้งเวลาให้ ตั้งใจไม่ทำ</b> Aetox ไม่มีคลาวด์ ตัวตั้งเวลาที่อยู่ในโปรแกรมจึงแปลว่า
-      งานของคุณจะเดินก็ต่อเมื่อคุณไม่ปิดเครื่อง ซึ่งเป็นสัญญาที่รักษาไม่ได้
-      n8n กับ Windmill เป็นนาฬิกา ส่วน Aetox เป็นมือ
+    <div class="bnote" data-i18n="fix_bnote_full">
+      <b>And there will be no scheduler. Deliberately.</b> Aetox has no cloud, so a timer inside the program would mean
+      your work only runs when you leave the machine on — a promise that cannot be kept.
+      n8n and Windmill are clocks. Aetox is a pair of hands.
     </div>
   </section>
 
   <!-- ══ 03 สองประตู ══ -->
   <section id="doors" class="gridded">
-    <div class="sec-head"><span class="idx">03</span><h2 data-reveal>สองประตู แอปเดียว</h2></div>
-    <p class="sub">สลับที่ชื่อโปรแกรมมุมซ้ายบน เป็นไฟล์เดียวกัน ตั้งค่าชุดเดียวกัน ความจำก้อนเดียวกัน
-    สลับประตูไม่ใช่การเปลี่ยนแอป และมันจำได้ว่าคุณอยู่ประตูไหนล่าสุด</p>
+    <div class="sec-head"><span class="idx">03</span><h2 data-reveal data-i18n="doors_title">Two doors, one app</h2></div>
+    <p class="sub" data-i18n="doors_sub">Switch it at the program name in the top-left. Same file, same settings set, same block of memory.
+    Switching doors is not switching apps, and it remembers which door you were last in.</p>
 
     <div class="sec-grid">
       <div class="card" data-card>
-        <h4>ผู้ช่วย — ใช้เครื่อง จดจำ ทำเอกสาร</h4>
-        <p>งานเอกสาร งานค้นข้อมูล งานไฟล์ และงานประจำวัน
-        ถ้ายังไม่ได้เปิดโปรเจกต์ไหนไว้ มันทำงานได้ทั้งเครื่อง และไฟล์ที่มันเขียนจะลงในโฟลเดอร์ผลงานของรอบนั้น</p>
-        <span class="tag">ผู้ช่วย · โปรเจกต์ · เอเจนเฉพาะทาง · ระบบออโตเมชั่น · ผลงาน</span>
+        <h4 data-i18n="doors_assist_title">Assistant — use the machine, remember, make documents</h4>
+        <p data-i18n="doors_assist_p">Document work, research, file work and day-to-day tasks.
+        If you have not opened a project, it works across the whole machine, and the files it writes land in that session's output folder.</p>
+        <span class="tag" data-i18n="doors_assist_tag">Assistant · project · specialist agents · automations · output</span>
       </div>
       <div class="card" data-card>
-        <h4>โค้ด — อ่านโค้ด สร้างระบบ ดีบัก</h4>
-        <p>มีต้นไม้ไฟล์ ตัวแก้โค้ด และเทอร์มินัลจริงกี่แท็บก็ได้
-        ทำงานอยู่ในโฟลเดอร์โปรเจกต์ที่คุณเปิด บวกโฟลเดอร์ที่คุณเพิ่มเข้ามาเอง</p>
-        <span class="tag">โค้ด</span>
+        <h4 data-i18n="doors_code_title">Code — read code, build systems, debug</h4>
+        <p data-i18n="doors_code_p">Has a file tree, a code editor, and a real terminal, as many tabs as you like.
+        It works inside the project folder you opened, plus any folders you added yourself.</p>
+        <span class="tag" data-i18n="doors_code_tag">Code</span>
       </div>
     </div>
 
     <button class="shot tight" data-shot type="button" style="--shot-w:340px;margin-top:var(--s3)">
       <img src="assets/cap-doors.png" alt="เมนูสลับประตูที่ชื่อโปรแกรม มีสองตัวเลือก ผู้ช่วย สำหรับใช้เครื่อง จดจำ ทำเอกสาร และ โค้ด สำหรับอ่านโค้ด สร้างระบบ ดีบัก" width="340" height="204" loading="lazy" decoding="async">
     </button>
-    <p class="showcase-cap">สลับที่ชื่อโปรแกรมมุมซ้ายบน แค่นี้จริง ๆ</p>
+    <p class="showcase-cap" data-i18n="doors_show_cap">Switch it at the program name in the top-left. That is really all.</p>
 
-    <div class="bnote">
-      <b>ประตูแยกกันแค่เรื่องเครื่องมือ ไม่ได้แยกว่ามันยอมทำอะไรให้</b>
-      ประตูผู้ช่วยก็มีไฟล์ มีเทอร์มินัล และทำงานสายโค้ดให้ได้ตามปกติ
-      มันไม่ปัดงานคืนเพียงเพราะงานนั้นมีโค้ดอยู่ในนั้น
+    <div class="bnote" data-i18n="doors_bnote_full">
+      <b>The doors only split the tools, not what it will do for you.</b>
+      The assistant door has files, has a terminal, and does code work as normal.
+      It does not hand a job back just because there is code in it.
     </div>
   </section>
 
   <!-- ══ 04 เบา ══ -->
   <section id="light" class="gridded">
-    <div class="sec-head"><span class="idx">04</span><h2 data-reveal>เบาจนเปิดทิ้งไว้ทั้งวันได้</h2></div>
-    <p class="sub">ผู้ช่วยที่ต้องคอยปิดเพราะเครื่องอืด สุดท้ายก็ไม่ได้ใช้ Aetox เลยถูกทำให้เล็กตั้งแต่ต้น</p>
+    <div class="sec-head"><span class="idx">04</span><h2 data-reveal data-i18n="light_title">Light enough to leave open all day</h2></div>
+    <p class="sub" data-i18n="light_sub">An assistant you have to close because it slows your machine is, in the end, one you do not use.
+    Aetox was made small from the start.</p>
 
     <div class="bench" data-bench>
-      <div class="bench-head">พื้นที่ในเครื่องหลังติดตั้ง — ยิ่งสั้นยิ่งดี</div>
+      <div class="bench-head" data-i18n="bench_head">Disk used after install — shorter is better</div>
       <div class="bench-body">
         <div class="brow us">
           <div class="bk"><span class="mk mk-logo"><svg aria-hidden="true"><use href="#logoA"/></svg></span>
-            <span class="nm"><b>Aetox</b><span class="ty">ผู้ช่วย AI</span></span></div>
+            <span class="nm"><b>Aetox</b><span class="ty" data-i18n="bench_aetox_ty">AI assistant</span></span></div>
           <div class="btrack"><div class="bfill us" style="--w:4.1%"></div></div>
           <div class="bv">48.5 MB</div>
         </div>
@@ -1008,7 +1033,7 @@ footer.gridded::before{
         </div>
         <div class="brow">
           <div class="bk"><span class="mk"><svg aria-hidden="true"><use href="#lg-perplexity"/></svg></span>
-            <span class="nm"><b>Comet</b><span class="ty">ผู้ช่วย AI</span></span></div>
+            <span class="nm"><b>Comet</b><span class="ty" data-i18n="bench_comet_ty">AI assistant</span></span></div>
           <div class="btrack"><div class="bfill" style="--w:42.8%"></div></div>
           <div class="bv">501 MB</div>
         </div>
@@ -1025,283 +1050,283 @@ footer.gridded::before{
           <div class="bv">1,171 MB</div>
         </div>
       </div>
-      <div class="bench-foot">เล็กกว่า Claude Code <b>5 เท่า</b> · เล็กกว่า Cursor <b>18 เท่า</b> · เล็กกว่า VS Code <b>24 เท่า</b></div>
+      <div class="bench-foot" data-i18n="bench_foot">Smaller than Claude Code <b>5×</b> · smaller than Cursor <b>18×</b> · smaller than VS Code <b>24×</b></div>
     </div>
 
-    <p class="bnote">คนละประเภทกันอยู่แล้ว CLI ไม่มีหน้าต่าง ส่วน IDE เป็นเครื่องมือคนละงานกับ Aetox
-    ที่เทียบได้ตรง ๆ คือพื้นที่ที่มันกินบนเครื่องเดียวกันของคุณ
-    ขนาดคู่แข่งวัดเมื่อ 27 ก.ค. 2026 ทุกตัวในรอบเดียว ส่วนของ Aetox วัดเมื่อ 25 ส.ค. 2026 บน v1.5.7 —
-    วิธีวัดกับสิ่งที่ห้ามนับอยู่ใน <a href="https://github.com/Mikedev115/Aetox/blob/main/BENCHMARK.md">BENCHMARK.md</a></p>
+    <p class="bnote" data-i18n="light_note">Different category, of course — a CLI has no window, and an IDE is a tool for a different job than Aetox.
+    The fair comparison is the disk it takes on the same machine as yours.
+    Competitors measured 27 Jul 2026, all in one pass. Aetox measured 25 Aug 2026 on v1.5.7 —
+    the method and what is excluded are in <a href="https://github.com/Mikedev115/Aetox/blob/main/BENCHMARK.md">BENCHMARK.md</a></p>
 
     <div class="stats" style="margin-top:var(--s4)">
       <div class="stat" data-card>
         <div class="n">48.5<small>MB</small></div>
-        <div class="k">พื้นที่ในเครื่อง</div>
-        <div class="s">ไฟล์เดียวจบ · ตัวติดตั้งโหลด 21.3 MB</div>
+        <div class="k" data-i18n="light_stat1_k">Disk on your machine</div>
+        <div class="s" data-i18n="light_stat1_s">Single file · installer downloads 21.3 MB</div>
       </div>
       <div class="stat" data-card>
-        <div class="n">3,248<small>เทสต์</small></div>
-        <div class="k">ผ่านครบก่อนปล่อย</div>
-        <div class="s">Go 2,295 ใน 42 แพ็กเกจ · หน้าจอ 953 ใน 91 ไฟล์</div>
+        <div class="n">3,248<small data-i18n="light_stat2_unit">tests</small></div>
+        <div class="k" data-i18n="light_stat2_k">Pass before release</div>
+        <div class="s" data-i18n="light_stat2_s">Go 2,295 in 42 packages · UI 953 in 91 files</div>
       </div>
       <div class="stat" data-card>
         <div class="n">0.32<small>ms</small></div>
-        <div class="k">ประกอบหนึ่งเทิร์น</div>
-        <div class="s">ใช้หน่วยความจำ 174.9 KB · วัด 13 ส.ค. 2026</div>
+        <div class="k" data-i18n="light_stat3_k">One turn assembled</div>
+        <div class="s" data-i18n="light_stat3_s">Uses 174.9 KB memory · measured 13 Aug 2026</div>
       </div>
       <div class="stat" data-card>
-        <div class="n">35<small>เครื่องมือ</small></div>
-        <div class="k">ถึงมือโมเดลตั้งแต่ลงเสร็จ</div>
-        <div class="s">กินพื้นที่ 7,763 token จากเพดาน 10,400 ที่เทสต์บังคับไว้</div>
+        <div class="n">35<small data-i18n="light_stat4_unit">tools</small></div>
+        <div class="k" data-i18n="light_stat4_k">In the model's hands from install</div>
+        <div class="s" data-i18n="light_stat4_s">Uses 7,763 tokens of the 10,400 ceiling tests enforce</div>
       </div>
     </div>
 
-    <p class="bnote">ตรงไปตรงมาเรื่องแรม: หน้าจอของเราวาดด้วย WebView2 ที่ Windows มีอยู่แล้ว
-    เราจึงไม่ต้องแบกสำเนาเบราว์เซอร์มาเอง แต่ WebView2 ก็คือ Chromium เหมือนกัน
-    แรมที่มันกินจึงไม่ได้ชนะ Electron — <b>ที่ชนะคือคุณไม่ต้องเก็บเบราว์เซอร์ไว้อีกชุด</b></p>
+    <p class="bnote" data-i18n="light_ram_note">Straight talk on RAM: our UI is drawn with the WebView2 Windows already ships,
+    so we are not packing a copy of a browser. But WebView2 is Chromium too.
+    The RAM it uses does not beat Electron — <b>what wins is you do not have to keep a second browser around.</b></p>
   </section>
 
   <!-- ══ 05 ความปลอดภัย ══ -->
   <section id="privacy" class="gridded">
-    <div class="sec-head"><span class="idx">05</span><h2 data-reveal>ทำไมข้อมูลถึงไม่ต้องออกจากเครื่องคุณ</h2></div>
-    <p class="sub">เพราะไม่มีเซิร์ฟเวอร์ของเราคั่นกลางให้ข้อมูลต้องวิ่งผ่าน ไม่มีการเก็บสถิติการใช้งาน
-    และไม่มีบัญชีให้สมัคร — ถ้าเลือกใช้โมเดลในเครื่อง สิ่งที่คุณพิมพ์และไฟล์ที่มันเปิด
-    ไม่ออกไปไหนเลยแม้แต่ไบต์เดียว</p>
+    <div class="sec-head"><span class="idx">05</span><h2 data-reveal data-i18n="privacy_title">Why your data never has to leave your machine</h2></div>
+    <p class="sub" data-i18n="privacy_sub">Because there is no server of ours in the middle for data to travel through. No usage statistics,
+    no account to sign up for. If you use a local model, what you type and the files it opens
+    go nowhere at all — not one byte.</p>
 
     <div class="sec-grid">
       <div class="card" data-card>
-        <h4>บทสนทนาและไฟล์งานของคุณ</h4>
-        <p>เก็บอยู่ในเครื่องคุณที่เดียว ค้นย้อนหลังได้ทั้งไทยและอังกฤษ และไม่มีสำเนาอยู่ที่อื่น
-        อยากย้ายออกเมื่อไหร่ ส่งออกเป็นไฟล์ได้ทั้งบทสนทนา</p>
-        <span class="tag">อยู่ในเครื่องเท่านั้น</span>
+        <h4 data-i18n="privacy_c1_title">Your conversations and work files</h4>
+        <p data-i18n="privacy_c1_p">Stored on your machine alone. Search back through them in Thai and English, and no copy lives anywhere else.
+        When you want out, you can export the whole conversation as a file.</p>
+        <span class="tag" data-i18n="privacy_c1_tag">On your machine only</span>
       </div>
       <div class="card" data-card>
-        <h4>ตัดขาดจากอินเทอร์เน็ตได้ทั้งหมด</h4>
-        <p>ถ้าเลือกรันโมเดลในเครื่องด้วย Ollama หรือ LM Studio สิ่งที่คุณพิมพ์จะไม่ออกจากเครื่องเลย</p>
-        <span class="tag">ใช้ออฟไลน์ได้</span>
+        <h4 data-i18n="privacy_c2_title">Can be cut off from the internet entirely</h4>
+        <p data-i18n="privacy_c2_p">If you run a local model with Ollama or LM Studio, nothing you type leaves your machine.</p>
+        <span class="tag" data-i18n="privacy_c2_tag">Works offline</span>
       </div>
       <div class="card" data-card>
-        <h4>ที่เก็บรหัสผ่าน มันเปิดไม่ได้เลย ทุกโหมด</h4>
-        <p>โฟลเดอร์กุญแจอย่าง <code>.ssh</code> <code>.aws</code> <code>.gnupg</code>
-        ที่เก็บรหัสของ Windows และโปรไฟล์เบราว์เซอร์ทั้ง Chrome Edge Firefox Brave
-        ถูกปฏิเสธที่หน้าประตู ไม่ใช่ปฏิเสธตอนอ่านไปแล้ว</p>
-        <span class="tag">ล็อกตายตัว</span>
+        <h4 data-i18n="privacy_c3_title">It cannot open key stores — in any mode</h4>
+        <p data-i18n="privacy_c3_p">Key folders like <code>.ssh</code> <code>.aws</code> <code>.gnupg</code>,
+        the Windows credential store, and browser profiles for Chrome, Edge, Firefox and Brave
+        are refused at the door, not after being read.</p>
+        <span class="tag" data-i18n="privacy_c3_tag">Hard-locked</span>
       </div>
       <div class="card" data-card>
-        <h4>คีย์ของคุณเข้ารหัสไว้ และไม่ปนกับอย่างอื่น</h4>
-        <p>API key กับการล็อกอินอยู่ไฟล์ของตัวเอง เข้ารหัสผูกกับบัญชี Windows ของคุณ
-        สำเนาที่หลุดไปเครื่องอื่นเปิดไม่ออก และมันถูกลบออกจาก log อัตโนมัติ
-        ไฟล์ตั้งค่าจึงยกไปถามใครก็ได้โดยไม่ติดความลับไปด้วย</p>
-        <span class="tag">เข้ารหัสกับบัญชี Windows</span>
+        <h4 data-i18n="privacy_c4_title">Your keys are encrypted, and set apart from everything else</h4>
+        <p data-i18n="privacy_c4_p">API keys and logins live in their own file, encrypted and tied to your Windows account.
+        A copy that leaks to another machine cannot be opened, and keys are stripped from the log automatically.
+        So you can hand a settings file to anyone without carrying the secrets with it.</p>
+        <span class="tag" data-i18n="privacy_c4_tag">Encrypted to your Windows account</span>
       </div>
     </div>
 
-    <div class="bnote">
-      <b>เรื่องขอบเขต พูดให้ตรงกว่านั้น</b> ถ้าคุณเปิดโปรเจกต์ไว้ มันทำงานอยู่ในโฟลเดอร์นั้น
-      บวกโฟลเดอร์ที่คุณเพิ่มเองเท่านั้น แต่ถ้าคุณ<em>ไม่ได้</em>เปิดโปรเจกต์ไหนไว้เลย
-      มันมองเห็นทั้งเครื่อง และไฟล์ที่มันเขียนจะลงในโฟลเดอร์ผลงานของรอบนั้น
-      ทุกคำสั่งที่รันถูกบันทึกไว้ให้ย้อนดูได้ และงานที่ไม่ใช่การอ่านเฉย ๆ จะถามคุณก่อน
+    <div class="bnote" data-i18n="privacy_bnote_full">
+      <b>On scope, let us be precise.</b> If you have a project open, it works inside that folder
+      plus the ones you added, and nothing else. But if you have <em>not</em> opened any project,
+      it sees the whole machine, and the files it writes land in that session's output folder.
+      Every command run is logged so you can look back, and anything that is not a plain read asks you first.
     </div>
   </section>
 
   <!-- ══ 06 ความจำ ══ -->
   <section id="memory" class="gridded">
-    <div class="sec-head"><span class="idx">06</span><h2 data-reveal>มันจำได้ข้ามวัน และคุณเป็นคนอนุมัติทุกบรรทัด</h2></div>
-    <p class="sub">ผู้ช่วยที่ลืมทุกเช้าคือผู้ช่วยที่ต้องสอนใหม่ทุกเช้า
-    แต่ผู้ช่วยที่จำเองตามใจชอบก็คือผู้ช่วยที่คุณตรวจไม่ได้ — ที่นี่เลยเลือกทางที่สาม</p>
+    <div class="sec-head"><span class="idx">06</span><h2 data-reveal data-i18n="memory_title">It remembers across days, and you approve every line</h2></div>
+    <p class="sub" data-i18n="memory_sub">An assistant that forgets every morning is one you have to teach every morning.
+    But one that remembers on its own is one you cannot check — so this is the third path.</p>
 
     <div class="sec-grid">
       <div class="card" data-card>
-        <h4>มันขอ ไม่ได้เขียนเอง</h4>
-        <p>เครื่องมือความจำเขียนลงไม่ได้เลย มันทำได้แค่ยื่นเรื่องเข้าคิว
-        แล้วคุณกดรับหรือกดทิ้งในหน้าตั้งค่า</p>
-        <span class="tag">ไม่มีอะไรถูกจำโดยที่คุณไม่รู้</span>
+        <h4 data-i18n="memory_c1_title">It asks, it never writes on its own</h4>
+        <p data-i18n="memory_c1_p">The memory tool cannot write anything at all. It can only put a request in the queue,
+        and you accept or discard it in the settings screen.</p>
+        <span class="tag" data-i18n="memory_c1_tag">Nothing is remembered without you knowing</span>
       </div>
       <div class="card" data-card>
-        <h4>บทเรียนมาจากความผิดที่ซ้ำ ไม่ใช่จากการเดา</h4>
-        <p>ตัวสรุปอ่าน log ว่าเครื่องมือไหนพลาดแบบเดิมซ้ำ ๆ โดยไม่เรียกโมเดลเลยสักครั้ง
-        พอผิดแบบเดิมครบสามหน มันถึงเสนอเป็นบทเรียนให้คุณพิจารณา</p>
-        <span class="tag">ไม่มีค่าโมเดลเพิ่ม</span>
+        <h4 data-i18n="memory_c2_title">Lessons come from repeated mistakes, not guesses</h4>
+        <p data-i18n="memory_c2_p">The summariser reads the log for which tool fails the same way repeatedly, without calling a model at all.
+        Once a mistake repeats three times, it offers it as a lesson for you to consider.</p>
+        <span class="tag" data-i18n="memory_c2_tag">No extra model cost</span>
       </div>
       <div class="card" data-card>
-        <h4>เปิดอ่านได้ แก้ได้ทีละบรรทัด</h4>
-        <p>สิ่งที่คุณอนุมัติไปเก็บเป็นไฟล์ข้อความธรรมดา เปิดดูเองได้ แก้เองได้
-        และทุกการตัดสินใจถูกบันทึกไว้ถาวร คำถามว่า “ทำไมมันถึงคิดแบบนั้น” จึงมีคำตอบเสมอ</p>
-        <span class="tag">ปิดทั้งระบบได้ด้วยสวิตช์เดียว</span>
+        <h4 data-i18n="memory_c3_title">Open it, edit it line by line</h4>
+        <p data-i18n="memory_c3_p">What you approved is kept as a plain text file you can open and edit yourself.
+        And every decision is logged permanently, so the question “why did it think that?” always has an answer.</p>
+        <span class="tag" data-i18n="memory_c3_tag">Turn the whole thing off with one switch</span>
       </div>
       <div class="card" data-card>
-        <h4>งานที่ทำซ้ำทุกอาทิตย์ เก็บเป็นคำสั่งของคุณเอง</h4>
-        <p>พิมพ์วิธีสั่งที่ได้ผลเก็บไว้ครั้งเดียว ครั้งต่อไปกด <code class="mono">/</code> แล้วเรียกใช้ได้เลย
-        ในโปรแกรมมีตัวอย่างมาให้ 8 ตัว เปิดอ่านข้างในได้ทุกตัว แก้เป็นของคุณได้
-        และถ้าลบของคุณทิ้ง ของเดิมก็กลับมาเอง</p>
-        <span class="tag">ลงเพิ่มกี่ตัวก็ไม่ทำให้แชทช้าลง</span>
+        <h4 data-i18n="memory_c4_title">Work you repeat weekly becomes your own command</h4>
+        <p data-i18n="memory_c4_p">Type the working instruction once and keep it. Next time press <code class="mono">/</code> and use it.
+        The app ships 8 examples you can open and read inside, and edit into your own.
+        Delete yours and the original comes back on its own.</p>
+        <span class="tag" data-i18n="memory_c4_tag">Add as many as you like without slowing the chat</span>
       </div>
     </div>
 
     <button class="shot" data-shot type="button" style="margin-top:var(--s3)">
       <img src="assets/cap-memory.png" alt="การ์ดขออนุมัติความจำ บอกสิ่งที่จะจำ เหตุผลที่ขอจำ และมีปุ่มไม่เอากับอนุมัติให้กด" width="1062" height="520" loading="lazy" decoding="async">
     </button>
-    <p class="showcase-cap">หน้าตาจริงตอนมันขอจำ — บอกว่าจะจำอะไร เพราะอะไรถึงขอจำ
-    และจะมีผลตั้งแต่แชทถัดไป ไม่ใช่แชทนี้ กดไม่เอาได้ตลอด</p>
+    <p class="showcase-cap" data-i18n="memory_show_cap">What it looks like when it asks to remember — what it will remember, why it is asking,
+    and that it takes effect from the next chat, not this one. You can decline at any time.</p>
   </section>
 
   <!-- ══ 07 เลือกโมเดล + ติดตั้ง ══ -->
   <section id="install" class="gridded">
-    <div class="sec-head"><span class="idx">07</span><h2 data-reveal>เลือกได้ว่าจะให้ใครเป็นคนคิดให้</h2></div>
-    <p class="sub" style="margin-bottom:var(--s3)">สองทาง สลับกลางคันได้ตลอด และไม่ผูกมัดทางไหน</p>
+    <div class="sec-head"><span class="idx">07</span><h2 data-reveal data-i18n="install_title">Choose who does the thinking for you</h2></div>
+    <p class="sub" style="margin-bottom:var(--s3)" data-i18n="install_sub">Two paths, switch mid-stream any time, and neither locks you in.</p>
 
     <div class="fork">
       <div class="card path" data-card>
-        <h3>รันในเครื่องคุณเอง</h3>
-        <p class="price">ฟรี<small>ไม่ต้องมีคีย์</small></p>
-        <p class="why">ต่อกับ Ollama หรือ LM Studio ที่คุณลงไว้ รองรับเต็มรูปแบบทั้งการเรียกใช้เครื่องมือและการแสดงความคิด</p>
+        <h3 data-i18n="install_path1_title">Run it on your own machine</h3>
+        <p class="price"><span data-i18n="install_path1_price">Free</span><small data-i18n="install_path1_price_sub">no key needed</small></p>
+        <p class="why" data-i18n="install_path1_why">Connect to the Ollama or LM Studio you have installed. Full support for both tool use and showing its reasoning.</p>
         <ul>
-          <li>ใช้หนักแค่ไหนก็ไม่เสียเงินเพิ่ม</li>
-          <li>สิ่งที่คุณพิมพ์ไม่ออกจากเครื่อง</li>
-          <li>เน็ตหลุดก็ทำงานต่อได้</li>
+          <li data-i18n="install_path1_li1">No extra cost however hard you push it</li>
+          <li data-i18n="install_path1_li2">What you type never leaves the machine</li>
+          <li data-i18n="install_path1_li3">Keeps working if the internet drops</li>
         </ul>
-        <p class="who">เหมาะกับ: งานประจำวัน · ข้อมูลที่ห้ามออกนอกองค์กร</p>
-        <button class="pvmore" type="button" data-pv>ดู provider ทั้งหมด</button>
+        <p class="who" data-i18n="install_path1_who">Best for: everyday work · data that must not leave the organisation</p>
+        <button class="pvmore" type="button" data-pv><span data-i18n="install_view_all">See all providers</span></button>
       </div>
 
       <div class="card path" data-card>
-        <h3>ใช้ provider ที่คุณไว้ใจ</h3>
-        <p class="price">จ่ายตามใช้<small>11 เจ้าให้เลือก</small></p>
-        <p class="why">ใส่คีย์ของเจ้าที่คุณมีอยู่แล้ว จะได้โมเดลตัวใหญ่ที่สุดเท่าที่ตลาดมี การคุยวิ่งตรงจากเครื่องคุณไปหาเขา ไม่ผ่านเรา</p>
+        <h3 data-i18n="install_path2_title">Use a provider you trust</h3>
+        <p class="price"><span data-i18n="install_path2_price">Pay as you go</span><small data-i18n="install_path2_price_sub">11 providers to choose from</small></p>
+        <p class="why" data-i18n="install_path2_why">Use a key for a provider you already have, and you get the largest models on the market. The conversation goes from your machine to them directly, not through us.</p>
         <ul>
-          <li>จ่ายให้เขาเท่าที่ใช้ เราไม่บวกเพิ่ม</li>
-          <li>สลับเจ้าหรือสลับรุ่นกลางบทสนทนาได้ บริบทตามไปครบ</li>
-          <li>ไม่มีเซิร์ฟเวอร์ของเราอยู่ตรงกลาง</li>
+          <li data-i18n="install_path2_li1">You pay them for what you use. We do not add a markup</li>
+          <li data-i18n="install_path2_li2">Switch provider or model mid-conversation. The context follows in full</li>
+          <li data-i18n="install_path2_li3">No server of ours in the middle</li>
         </ul>
-        <p class="who">เหมาะกับ: งานยาก · งานที่ต้องการคุณภาพสูงสุด</p>
-        <button class="pvmore" type="button" data-pv>ดู provider ทั้งหมด</button>
+        <p class="who" data-i18n="install_path2_who">Best for: hard jobs · work that needs the highest quality</p>
+        <button class="pvmore" type="button" data-pv><span data-i18n="install_view_all2">See all providers</span></button>
       </div>
     </div>
 
-    <div class="note" style="margin-top:var(--s3)">
-      <b>ยังไม่อยากตัดสินใจก็ได้</b> ในโปรแกรมมีโมเดลสาธิตให้กดเล่นทันทีหลังติดตั้ง
-      เห็นหน้าตาจริง เห็นมันหยิบเครื่องมือมาใช้ และเห็นความคิดของมันครบ โดยยังไม่ต้องต่ออะไรเลยสักอย่าง
+    <div class="note" style="margin-top:var(--s3)" data-i18n="install_note_full">
+      <b>No need to decide yet.</b> The app has a demo model you can play with right after install.
+      See the real screen, watch it pick up tools, and read its full reasoning — without connecting anything at all.
     </div>
 
-    <h3 style="font-size:1.05rem;margin-top:var(--s5)">ติดตั้งยังไง</h3>
+    <h3 style="font-size:1.05rem;margin-top:var(--s5)" data-i18n="install_how">How to install</h3>
     <div class="install" style="margin-top:var(--s2)">
       <div class="method">
-        <h3><span class="n">01</span>ตัวติดตั้ง (แนะนำ)</h3>
+        <h3><span class="n">01</span><span data-i18n="install_method1">Installer (recommended)</span></h3>
         <ol class="steps">
-          <li><b>ดาวน์โหลด</b> aetox-amd64-installer.exe (~21.3 MB · Windows 10/11)</li>
-          <li><b>ดับเบิลคลิก</b> — Windows จะขึ้นเตือนเพราะโปรแกรมยังไม่ได้เซ็นโค้ด กด More info → Run anyway</li>
-          <li>ตัวติดตั้งจัดการส่วนที่ต้องใช้ให้เอง รวมถึงตัวอ่านตัวหนังสือภาษาไทย</li>
-          <li>เปิดจาก Start Menu แล้วเลือกทางที่คุณชอบข้างบน จากนั้นสั่งงานได้เลย</li>
+          <li data-i18n="install_s1"><b>Download</b> aetox-amd64-installer.exe (~21.3 MB · Windows 10/11)</li>
+          <li data-i18n="install_s2"><b>Double-click</b> — Windows warns because the app is not code-signed. Click More info → Run anyway</li>
+          <li data-i18n="install_s3">The installer handles what it needs itself, including the Thai text reader</li>
+          <li data-i18n="install_s4">Open it from the Start Menu, pick the path you prefer above, then start commanding</li>
         </ol>
       </div>
       <div class="method">
-        <h3><span class="n">02</span>Scoop (สาย dev)</h3>
-        <p>ได้ portable build พร้อม shortcut อัปเดตผ่าน <span class="mono">scoop update</span> ตามปกติ</p>
+        <h3><span class="n">02</span><span data-i18n="install_method2">Scoop (dev path)</span></h3>
+        <p data-i18n="install_scoop">Gets a portable build with a shortcut, updated the usual way through <span class="mono">scoop update</span>.</p>
       </div>
     </div>
   </section>
 
   <!-- ══ 08 เครื่องมือ ══ -->
   <section id="tools">
-    <div class="sec-head"><span class="idx">08</span><h2 data-reveal>มันมีมืออะไรให้ใช้บ้าง</h2></div>
-    <p class="sub">35 เครื่องมือถึงมือโมเดลตั้งแต่ลงเสร็จ จัดเป็นเจ็ดกลุ่มตามงานที่คุณน่าจะสั่ง</p>
+    <div class="sec-head"><span class="idx">08</span><h2 data-reveal data-i18n="tools_title">What hands does it have</h2></div>
+    <p class="sub" data-i18n="tools_sub">35 tools are in the model's hands from install, grouped into seven sets by the job you are likely to ask for.</p>
     <div class="tools">
-      <div class="trow"><span class="tn">อ่านสื่อที่โมเดลมองไม่เห็น</span><span class="td">ดึงตัวหนังสือออกจากรูปถ่าย สลิป สกรีนช็อต · อ่านตัวหนังสือในวิดีโอพร้อมเวลากำกับ · ถอดเสียงพูดในเครื่อง · ดึงเนื้อหาจาก PDF ทั้งไทยและอังกฤษ</span></div>
-      <div class="trow"><span class="tn">คืนงานเป็นไฟล์จริง</span><span class="td">Excel ที่ SUM ได้ วันที่เรียงได้ · Word ที่มีหัวข้อและตาราง — เป็นไฟล์ Office จริง ไม่ใช่ข้อความเลียนแบบ · สไลด์เปิดในห้องสไลด์แล้วกดส่งออกเป็น .pptx หรือ PDF ได้</span></div>
-      <div class="trow"><span class="tn">เว็บและงานอัตโนมัติ</span><span class="td">เปิดหน้าเว็บจริงแล้วอ่านเนื้อหา · คลิก พิมพ์ เลือกดรอปดาวน์ กดส่งฟอร์ม · ค้นอินเทอร์เน็ตโดยไม่ต้องมีคีย์เพิ่ม · อ่านเนื้อหาจากลิงก์ที่ให้</span></div>
-      <div class="trow"><span class="tn">ไฟล์ในเครื่อง</span><span class="td">อ่าน เขียน แก้ตรงจุด ค้นชื่อไฟล์และค้นข้อความข้างใน · แก้หลายไฟล์รวดเดียวแบบพลาดตรงไหนคือไม่เปลี่ยนอะไรเลย · ลบไฟล์โดยถามก่อนทุกครั้ง</span></div>
-      <div class="trow"><span class="tn">สั่งงานเครื่อง</span><span class="td">รันคำสั่งผ่านเทอร์มินัลจริงโดยขออนุมัติก่อนเสมอ · ตามผลของงานที่ยังทำอยู่เบื้องหลังและสั่งหยุดได้ · ใช้ git ได้</span></div>
-      <div class="trow"><span class="tn">งานโค้ด</span><span class="td">บอกว่าโค้ดพังตรงไหนและกระโดดไปหาตัวแปรหรือฟังก์ชันได้ · ค้นและอ่านโค้ดจากโปรเจกต์บน GitHub · แก้ Jupyter notebook</span></div>
-      <div class="trow"><span class="tn">วิธีที่มันทำงาน</span><span class="td">แตกงานเป็นรายการให้เห็น · ส่งงานต่อให้ตัวแทนเฉพาะทางแล้วมารับผลทีหลัง · หยุดถามเมื่อตัดสินใจแทนคุณไม่ได้ · แขวนงานที่เจอระหว่างทางไว้ทำวันหลัง · ค้นบทสนทนาเก่าแบบไม่มีค่าโมเดล</span></div>
+      <div class="trow"><span class="tn" data-i18n="tool1_tn">Read media the model cannot see</span><span class="td" data-i18n="tool1_td">Pull text out of photos, receipts, screenshots · read text on video with timestamps · transcribe speech on your machine · extract PDF content in Thai and English</span></div>
+      <div class="trow"><span class="tn" data-i18n="tool2_tn">Return work as real files</span><span class="td" data-i18n="tool2_td">Excel you can SUM and sort dates on · Word with headings and tables — real Office files, not text pretending · slides that open in the slide room and export to .pptx or PDF</span></div>
+      <div class="trow"><span class="tn" data-i18n="tool3_tn">Web and automation</span><span class="td" data-i18n="tool3_td">Open a real page and read its content · click, type, pick a dropdown, submit a form · search the web with no extra key · read content from a link you give</span></div>
+      <div class="trow"><span class="tn" data-i18n="tool4_tn">Files on your machine</span><span class="td" data-i18n="tool4_td">Read, write, edit in place, find files and text inside them · edit many files at once so a missed match changes nothing · delete a file only after asking</span></div>
+      <div class="trow"><span class="tn" data-i18n="tool5_tn">Command the machine</span><span class="td" data-i18n="tool5_td">Run commands through a real terminal, always asking approval first · follow the progress of background work and stop it · use git</span></div>
+      <div class="trow"><span class="tn" data-i18n="tool6_tn">Code work</span><span class="td" data-i18n="tool6_td">Say where code is broken and jump to a variable or function · find and read code from a GitHub project · edit Jupyter notebooks</span></div>
+      <div class="trow"><span class="tn" data-i18n="tool7_tn">How it works</span><span class="td" data-i18n="tool7_td">Break a job into a visible list · hand it to a specialist agent and collect the result later · stop and ask when it cannot decide for you · hang a side-finding to do another day · search old conversations with no model cost</span></div>
     </div>
-    <p class="providers">เครื่องมือชุดนี้ใช้ได้เหมือนกันหมดไม่ว่าคุณจะเลือกทางไหนในหัวข้อที่แล้ว
-      <b>โมเดลเล็กที่ทำสิ่งเหล่านี้ไม่ได้มาแต่แรก พอมาอยู่ในนี้ก็ทำได้ เพราะตัวโปรแกรมเป็นคนทำให้ ไม่ใช่ตัวโมเดล</b>
-      และการลงสกิลเพิ่มกี่ร้อยตัวก็ไม่ทำให้แชทช้าลง เพราะสกิลเป็นเอกสาร ไม่ใช่เครื่องมือ</p>
+    <p class="providers" data-i18n="tools_providers_full">This tool set works the same whichever path you chose in the section above.
+      <b>A small model that could not do any of this out of the box can, once it is in here — because the program does it, not the model.</b>
+      And installing hundreds of extra skills does not slow the chat, because a skill is a document, not a tool.</p>
   </section>
 
   <!-- ══ 09 คำถามที่คนถามก่อนโหลด ══ -->
   <section id="faq" class="gridded">
-    <div class="sec-head"><span class="idx">09</span><h2 data-reveal>คำถามที่คนถามก่อนกดโหลด</h2></div>
-    <p class="sub">ตอบตรง ๆ รวมถึงข้อที่ยังทำได้ไม่ดี</p>
+    <div class="sec-head"><span class="idx">09</span><h2 data-reveal data-i18n="faq_title">Questions people ask before downloading</h2></div>
+    <p class="sub" data-i18n="faq_sub">Straight answers, including the things it still does not do well.</p>
 
     <div class="faq">
       <details>
-        <summary>ต่างจากการถาม AI ในเว็บยังไง</summary>
-        <p>ผู้ช่วยในเว็บตอบคำถามคุณ แล้วคุณเอาคำตอบไปทำต่อเอง Aetox ทำงานนั้นให้จบ
-        เพราะมันอยู่ในเครื่องคุณ มันจึงเปิดไฟล์จริง เขียนไฟล์จริง เปิดเว็บจริงและกดปุ่มจริงได้</p>
-        <p>สิ่งที่ได้กลับมาคือไฟล์ในโฟลเดอร์ของคุณ ไม่ใช่ข้อความในกล่องแชทที่ต้องก๊อปไปวางต่อ</p>
+        <summary data-i18n="faq1_q">How is this different from asking an AI on the web</summary>
+        <p data-i18n="faq1_a1">A web assistant answers your question and you go do the rest yourself. Aetox finishes the job.
+        Because it is on your machine, it can open real files, write real files, open real websites and click real buttons.</p>
+        <p data-i18n="faq1_a2">What you get back is a file in your folder, not text in a chat box you have to copy and paste onwards.</p>
       </details>
       <details>
-        <summary>ต้องเขียนโปรแกรมเป็นไหม</summary>
-        <p>ไม่ต้อง คุณพิมพ์บอกเป็นภาษาคนว่าอยากได้อะไร ที่เหลือมันจัดการเอง
-        และมีประตูผู้ช่วยที่แยกไว้สำหรับงานที่ไม่ใช่งานโค้ดโดยเฉพาะ</p>
-        <p>ที่ต้องยอมรับตรง ๆ คือคำสั่งสำเร็จรูปที่แถมมา 8 ตัวยังเอียงไปทางงานเว็บกับงานโค้ด
-        ส่วนงานอื่นคุณสั่งเป็นภาษาคนได้ตามปกติ และเก็บวิธีสั่งที่ได้ผลไว้ใช้ซ้ำเองได้</p>
+        <summary data-i18n="faq2_q">Do I need to know how to code</summary>
+        <p data-i18n="faq2_a1">No. You type in plain language what you want, and it handles the rest.
+        And there is an assistant door set aside for work that is not coding in particular.</p>
+        <p data-i18n="faq2_a2">To be honest, the 8 built-in presets lean toward web and code work.
+        For anything else you command it in plain language as usual, and keep the instructions that work to reuse yourself.</p>
       </details>
       <details>
-        <summary>ข้อมูลผมปลอดภัยแค่ไหน</summary>
-        <p>บทสนทนาและไฟล์งานอยู่ในเครื่องคุณที่เดียว เราไม่มีเซิร์ฟเวอร์ตรงกลาง ไม่เก็บสถิติการใช้งาน
-        และไม่มีบัญชีให้สมัคร ถ้าเลือกใช้โมเดลในเครื่อง ข้อมูลจะไม่ออกจากเครื่องเลย</p>
-        <p>ถ้าเลือกใส่คีย์ของผู้ให้บริการเจ้าอื่น สิ่งที่คุณพิมพ์จะวิ่งตรงจากเครื่องคุณไปหาเขา ไม่ผ่านเรา
-        ส่วนคีย์ที่คุณใส่ไว้ถูกเข้ารหัสผูกกับบัญชี Windows ของคุณ เก็บแยกไฟล์ของมันเอง
-        และถูกลบออกจาก log อัตโนมัติ</p>
+        <summary data-i18n="faq3_q">How safe is my data</summary>
+        <p data-i18n="faq3_a1">Conversations and work files live on your machine alone. We have no middle server, keep no usage statistics,
+        and there is no account to sign up for. If you use a local model, the data never leaves your machine.</p>
+        <p data-i18n="faq3_a2">If you enter another provider's key, what you type goes from your machine to them directly, not through us.
+        The key you stored is encrypted and tied to your Windows account, kept in its own file,
+        and stripped from the log automatically.</p>
         <p>ข้อจำกัดที่ต้องบอก: การเข้ารหัสนี้เป็นของ Windows บนระบบอื่นยังไม่มี ซึ่งเป็นเหตุผลหนึ่ง
         ที่ตอนนี้ปล่อยเฉพาะ Windows</p>
       </details>
       <details>
-        <summary>มันเข้าถึงอะไรในเครื่องผมได้บ้าง</summary>
-        <p>ถ้าเปิดโปรเจกต์ไว้ มันอยู่ในโฟลเดอร์นั้นบวกโฟลเดอร์ที่คุณเพิ่มเอง
-        ถ้าไม่ได้เปิดโปรเจกต์ไหนเลย มันมองเห็นทั้งเครื่อง และไฟล์ที่มันเขียนจะลงในโฟลเดอร์ผลงานของรอบนั้น</p>
-        <p>สิ่งที่มันเปิดไม่ได้เลยทุกโหมดคือที่เก็บกุญแจและรหัสผ่าน — <code>.ssh</code> <code>.aws</code>
-        <code>.gnupg</code> ที่เก็บรหัสของ Windows และโปรไฟล์เบราว์เซอร์ทุกยี่ห้อ
-        งานที่ไม่ใช่การอ่านเฉย ๆ จะถามคุณก่อน และทุกคำสั่งที่รันถูกบันทึกไว้ให้ย้อนดู</p>
+        <summary data-i18n="faq4_q">What can it access on my machine</summary>
+        <p data-i18n="faq4_a1">If you have a project open, it stays in that folder plus the ones you added.
+        If no project is open, it sees the whole machine, and the files it writes land in that session's output folder.</p>
+        <p data-i18n="faq4_a2">What it can never open in any mode is the key and password stores — <code>.ssh</code> <code>.aws</code>
+        <code>.gnupg</code>, the Windows credential store and every brand's browser profile.
+        Anything that is not a plain read asks you first, and every command run is logged for you to look back on.</p>
       </details>
       <details>
-        <summary>ต้องจ่ายเท่าไหร่</summary>
-        <p>ตัวโปรแกรมฟรี ไม่มีค่ารายเดือนของเรา ไม่มีรุ่นเสียเงิน และไม่มีบัญชีให้สมัคร</p>
-        <p>ถ้าใช้โมเดลในเครื่องก็ไม่มีค่าใช้จ่ายอะไรเลย ถ้าเลือกใส่คีย์ของเจ้าอื่น คุณจ่ายให้เขาตามที่ใช้จริง
-        เราไม่ได้อยู่ตรงกลางและไม่ได้บวกอะไรเพิ่ม</p>
+        <summary data-i18n="faq5_q">How much does it cost</summary>
+        <p data-i18n="faq5_a1">The program is free. No subscription of ours, no paid tier, and no account to sign up for.</p>
+        <p data-i18n="faq5_a2">If you use a local model there is no cost at all. If you enter another provider's key, you pay them for what you use.
+        We are not in the middle and add nothing on top.</p>
       </details>
       <details>
-        <summary>เครื่องผมต้องแรงแค่ไหน</summary>
-        <p>ตัวโปรแกรมกินพื้นที่ 48.5 MB ไฟล์เดียว เครื่องทั่วไปเปิดได้สบาย</p>
-        <p>ที่กินแรงคือโมเดล ถ้าจะรันโมเดลในเครื่องเองควรมีแรมเหลือพอสมควร
-        แต่ถ้าใช้คีย์ของเจ้าอื่น เครื่องคุณแทบไม่ต้องออกแรงเลย</p>
+        <summary data-i18n="faq6_q">How powerful does my machine need to be</summary>
+        <p data-i18n="faq6_a1">The program takes 48.5 MB as a single file. Any ordinary machine opens it comfortably.</p>
+        <p data-i18n="faq6_a2">What takes the power is the model. To run a local model yourself you should have a decent amount of RAM to spare.
+        But with another provider's key, your machine barely has to work at all.</p>
       </details>
       <details>
-        <summary>ทำไมตอนติดตั้ง Windows ถึงขึ้นเตือน</summary>
-        <p>เพราะโปรแกรมยังไม่ได้เซ็นโค้ด ใบรับรองมีค่าใช้จ่ายรายปีที่ยังไม่ได้ทำ Windows เลยขึ้นเตือนไว้ก่อน
-        กด More info แล้ว Run anyway ได้</p>
-        <p>ส่วนตัวอัปเดตนั้นเซ็นไว้จริง — กุญแจสาธารณะถูกฝังไว้ในตัวโปรแกรม
-        และมันจะปฏิเสธการอัปเดตที่ลายเซ็นไม่ตรง แทนที่จะปล่อยผ่าน
-        ถ้ายังไม่สบายใจ โค้ดทั้งหมดเปิดอยู่บน GitHub อ่านและ build เองได้</p>
+        <summary data-i18n="faq7_q">Why does Windows warn when installing</summary>
+        <p data-i18n="faq7_a1">Because the app is not code-signed. The certificate costs a yearly fee that has not been paid yet, so Windows warns you first.
+        Click More info, then Run anyway.</p>
+        <p data-i18n="faq7_a2">The updater itself is signed — the public key is embedded in the program,
+        and it refuses any update whose signature does not match rather than letting it pass.
+        If you are still uneasy, all the code is open on GitHub and you can read and build it yourself.</p>
       </details>
       <details>
-        <summary>ถ้าไม่ชอบ ถอนออกยังไง</summary>
-        <p>ถอนจาก Add or remove programs ของ Windows ตามปกติ ไม่มีบัญชีให้ตามไปลบ
-        และไม่มีข้อมูลของคุณค้างอยู่ที่ไหนนอกจากเครื่องคุณเอง</p>
+        <summary data-i18n="faq8_q">If I do not like it, how do I uninstall</summary>
+        <p data-i18n="faq8_a1">Uninstall from Windows' Add or remove programs as usual. There is no account to go delete,
+        and no data of yours left anywhere except on your own machine.</p>
       </details>
       <details>
-        <summary>รองรับเครื่อง Mac หรือ Linux ไหม</summary>
-        <p>ยัง ตอนนี้ทำ Windows ให้ดีก่อนอย่างเดียว เพราะคนเขียนมีคนเดียวและใช้ Windows ทำงานจริงทุกวัน</p>
-        <p>ตัวเครื่องยนต์คอมไพล์ผ่านทั้ง Linux และ macOS แล้ว แต่ส่วนเบราว์เซอร์กับการเข้ารหัสคีย์
-        ยังไม่เสร็จบนสองระบบนั้น จึงยังไม่ปล่อย ระบบอื่นเป็นแผนหลังจากนี้</p>
+        <summary data-i18n="faq9_q">Does it support Mac or Linux</summary>
+        <p data-i18n="faq9_a1">Not yet. Right now it does Windows first and well, because there is one person writing it and they use Windows every day for real work.</p>
+        <p data-i18n="faq9_a2">The engine itself already compiles on Linux and macOS, but the browser part and the key encryption
+        are not done on those two yet, so it is not released. Other systems are a plan after this.</p>
       </details>
     </div>
   </section>
 
   <!-- ══ ปิดท้าย ══ -->
   <section class="contact gridded">
-    <h2 data-reveal>ลองสักงานหนึ่ง แล้วดูว่ามันคืนเวลาให้คุณได้จริงไหม</h2>
-    <p>โหลด ติดตั้ง แล้วสั่งงานแรกได้ภายในสองนาที ไม่ต้องผูกบัตร ไม่มีค่ารายเดือน
-    ถ้าไม่ถูกใจ ถอนออกได้ทันทีโดยไม่มีอะไรค้างไว้</p>
+    <h2 data-reveal data-i18n="contact_title">Try one job, and see whether it really gives you the time back</h2>
+    <p data-i18n="contact_p">Download, install, and run your first job within two minutes. No card to bind, no subscription.
+    If you do not like it, uninstall right away with nothing left behind.</p>
     <div class="cta">
       <a class="btn" href="https://github.com/Mikedev115/Aetox/releases/latest/download/aetox-amd64-installer.exe">
         <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1v9.3L4.7 7 3.3 8.4 8 13l4.7-4.6L11.3 7 8 10.3V1H8zM2 14h12v1.5H2z"/></svg>
-        ดาวน์โหลดสำหรับ Windows</a>
-      <a class="ghost" href="https://github.com/Mikedev115/Aetox">ดูโค้ดบน GitHub</a>
+        <span data-i18n="contact_download">Download for Windows</span></a>
+      <a class="ghost" href="https://github.com/Mikedev115/Aetox"><span data-i18n="contact_gh">View code on GitHub</span></a>
     </div>
-    <p class="fine">สร้างโดยคนคนเดียวที่ใช้มันทำงานจริงทุกวัน · เรื่องธุรกิจและความร่วมมือ เขียนหาได้ที่
+    <p class="fine" data-i18n="contact_fine">Built by one person who uses it for real work every day · for business and partnerships, write to
     <a href="mailto:phrmsawanachyphl@gmail.com">phrmsawanachyphl@gmail.com</a></p>
   </section>
 
@@ -1313,12 +1338,13 @@ footer.gridded::before{
     <div class="foot">
       <div class="foot-brand">
         <svg class="mark-w" aria-label="Aetox"><use href="#wordmark"/></svg>
-        <span class="own">© 2026 <b>Mikedev115</b> — สร้างโดยคนคนเดียวที่ใช้มันจริงทุกวัน · สงวนลิขสิทธิ์</span>
+        <span class="own">© 2026 <b>Mikedev115</b> — <span data-i18n="footer_own_build">built by one person who uses it every day</span> · <span data-i18n="footer_rights">All rights reserved</span></span>
       </div>
       <nav class="links">
         <a href="https://github.com/Mikedev115/Aetox">GitHub</a>
         <a href="https://github.com/Mikedev115/Aetox/blob/main/ARCHITECTURE.md">Architecture</a>
-        <a href="https://github.com/Mikedev115/Aetox/blob/main/LICENSE">สัญญาอนุญาต</a>
+        <a href="https://github.com/Mikedev115/Aetox/blob/main/LICENSE" data-i18n="footer_license">License</a>
+        <a href="privacy.html" data-i18n="footer_privacy">Privacy policy</a>
         <a href="https://github.com/Mikedev115/Aetox/issues">Issues</a>
       </nav>
     </div>
@@ -1329,21 +1355,21 @@ footer.gridded::before{
 </div><!-- /#smooth-content -->
 </div><!-- /#smooth-wrapper -->
 
-<dialog id="lightbox" aria-label="รูปขยาย">
-  <button class="lb-close" type="button" aria-label="ปิด">✕</button>
+<dialog id="lightbox" aria-label="Expanded image">
+  <button class="lb-close" type="button" aria-label="Close">✕</button>
   <img alt="">
 </dialog>
 
-<dialog id="pvbox" aria-label="provider ที่รองรับทั้งหมด">
-  <button class="lb-close" type="button" aria-label="ปิด">✕</button>
-  <h3>รันในเครื่องคุณเอง</h3>
-  <p>ฟรี ไม่ต้องมีคีย์ · prompt ไม่ออกจากเครื่อง</p>
+<dialog id="pvbox" aria-label="All supported providers">
+  <button class="lb-close" type="button" aria-label="Close">✕</button>
+  <h3 data-i18n="pv_local_title">Run on your own machine</h3>
+  <p data-i18n="pv_local_sub">Free, no key · prompt never leaves the machine</p>
   <div class="pvs">
     <a class="pv" href="https://ollama.com" target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#lg-ollama"/></svg>ollama</a>
     <a class="pv" href="https://lmstudio.ai" target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#lg-lmstudio"/></svg>lmstudio</a>
   </div>
-  <h3>ใช้ provider ที่คุณไว้ใจ</h3>
-  <p>ใส่คีย์ของเจ้าที่คุณมีอยู่แล้ว หรือล็อกอินด้วย ChatGPT · OpenRouter · คุยตรงจากเครื่องคุณไปหาเขา ไม่ผ่านเรา</p>
+  <h3 data-i18n="pv_prov_title">Use a provider you trust</h3>
+  <p data-i18n="pv_prov_sub">Enter a key for one you already have, or log in with ChatGPT · OpenRouter · talk straight from your machine to them, not through us.</p>
   <div class="pvs">
     <a class="pv" href="https://www.anthropic.com" target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#lg-anthropic"/></svg>anthropic</a>
     <a class="pv" href="https://openai.com" target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#lg-openai"/></svg>openai</a>
@@ -1362,7 +1388,7 @@ footer.gridded::before{
     <a class="pv" href="https://build.nvidia.com" target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#lg-nvidia"/></svg>nvidia</a>
     <a class="pv" href="https://ollama.com/cloud" target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#lg-ollama"/></svg>ollama cloud</a>
   </div>
-  <p class="pvfoot">กดที่ชื่อเพื่อไปดูรายละเอียดของแต่ละเจ้า · สลับได้ตลอด ไม่ผูกมัด</p>
+  <p class="pvfoot" data-i18n="pv_foot">Click a name to see each provider's details · switch at any time, no lock-in</p>
 </dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js" defer></script>
@@ -1805,3 +1831,285 @@ footer.gridded::before{
 
 </body>
 </html>
+
+<script>
+/* Two-language support: English base, Thai optional */
+window.AETOX_I18N = window.AETOX_I18N || {};
+window.AETOX_I18N.th = {
+  nav_privacy: "ความปลอดภัย",
+  nav_install: "ติดตั้ง",
+  nav_privacy_policy: "นโยบายความเป็นส่วนตัว",
+  hero_lede: "ผู้ช่วย AI ในคอมพิวเตอร์ของคุณ",
+  hero_download: "ดาวน์โหลดสำหรับ Windows",
+  hero_all_downloads: "ดูไฟล์ดาวน์โหลดทั้งหมด",
+  hero_fine: "ติดตั้ง 2 นาที · ใช้ได้ทันทีโดยไม่ต้องมีคีย์ · ถอนออกคลิกเดียว",
+  showcase_cap: "สั่งครั้งเดียว มันไปหาข้อมูลสามรุ่น วาดกราฟเทียบความคุ้มค่าให้ในแชท แล้วเขียนหน้าเว็บสรุปออกมาเป็นไฟล์จริง เปิดดูในเบราว์เซอร์ของมันเองได้เลย",
+  proof_title: "งานจริงหนึ่งงาน กับเลขที่ตรวจได้ทุกตัว",
+  proof_sub: "ไม่ใช่ตัวอย่างที่จัดฉาก นี่คือ log ของงานที่สั่งไปจริงเมื่อ 15 ส.ค. 2026 ประโยคที่พิมพ์ไปคือ <em>“หา CRM 20 เจ้าที่ SME ไทยเลือกใช้ได้จริง แล้วทำสเปรดชีตเทียบมาให้”</em> แล้วปล่อยให้มันทำ",
+  proof_s1_unit: "นาที",
+  proof_s1_k: "ตั้งแต่สั่งจนได้ไฟล์",
+  proof_s1_s: "ตัวแทน 2 คน ทำงานต่อกัน",
+  proof_s2_unit: "ครั้ง",
+  proof_s2_k: "หยิบเครื่องมือมาใช้",
+  proof_s2_s: "ผู้ช่วย 8 · ฝ่ายค้นข้อมูล 27 · ฝ่ายทำตาราง 7",
+  proof_s3_unit: "แถว",
+  proof_s3_k: "ในสเปรดชีตที่ได้",
+  proof_s3_s: "14 แถวมีราคาเป็นตัวเลข เรียงจากถูกไปแพง",
+  proof_s4_unit: "แถว",
+  proof_s4_k: "เว้นว่างไว้ตั้งใจ",
+  proof_s4_s: "พร้อมเหตุผลเขียนกำกับไว้ข้าง ๆ",
+  tl_head: "กำลังทำงาน — หา CRM 20 เจ้าที่ SME ไทยเลือกได้จริง แล้วทำสเปรดชีตเทียบ",
+  tl_1: "ผู้ช่วยแตกงานเป็นขั้น แล้วส่งงานค้นข้อมูลต่อให้ตัวแทนฝ่ายวิจัย",
+  tl_2: "ฝ่ายวิจัยไล่เปิดหน้าราคาทีละเจ้า 27 ครั้ง เจอเครื่องมือพังไป 1 ครั้ง แล้วหาทางเลี่ยงเอง",
+  tl_3: "เจ้าที่ไม่ยอมบอกราคาหน้าเว็บ ถูกทำเครื่องหมายไว้ว่าทำไมถึงไม่มีตัวเลข",
+  tl_4: "ฝ่ายวิจัยวางรายงานไว้เป็นไฟล์ แล้วส่งต่อ “ที่อยู่ไฟล์” ให้ฝ่ายทำตาราง ไม่ใช่ส่งเนื้อหาทั้งกอง",
+  tl_5: "ฝ่ายทำตารางเขียนออกมาเป็น .xlsx จริง 20 แถว เรียงราคาจากถูกไปแพง",
+  tl_6: "ทุกแถวติดวันที่ที่ไปอ่าน ลิงก์ที่เอาเลขมา และบอกว่าเปิดเว็บดูจริงหรือแค่ค้นเจอ",
+  tl_foot: "ทุกขั้นถูกบันทึกไว้ · กดหยุดได้ทุกเมื่อ · ย้อนดูได้ว่ามันคิดอะไรในแต่ละขั้น",
+  par_img_alt: "ตัวแทนสี่คน research automation doc sheet ทำงานพร้อมกัน แต่ละการ์ดติดป้ายกำลังทำงานและมีแสงวิ่งรอบขอบ",
+  par_img_cap: "คนละงานกัน แต่กลไกเดียวกัน — ตัวแทนสี่คนลงมือพร้อมกันในคราวเดียว การ์ดที่ยังทำงานอยู่จะมีแสงวิ่งรอบขอบ อันไหนเสร็จแล้วแสงจะดับ คุณจึงรู้ได้ทันทีว่าเหลือใครยังทำอยู่",
+  par_bnote_full: "<b>ช่องว่าง 6 ช่องคือส่วนที่ควรเชื่อถือที่สุดของตารางนี้</b> มันไม่เดาราคาให้ครบ ๆ เพื่อให้ตารางดูสวย เจ้าไหนบอกราคาเฉพาะตอนขอใบเสนอ หรือหน้าเว็บไม่ยอมพูดถึงตัวเลข มันเว้นไว้แล้วเขียนเหตุผลกำกับ ตารางที่ไม่มีช่องว่างเลย คือตารางที่เดา",
+  fix_title: "สี่อย่างที่มันทำแทนคุณได้",
+  fix_sub: "สองอย่างแรกติ๊กเลือกได้ตอนเปิดโปรแกรมครั้งแรก อย่างที่สามใช้ได้เลย ส่วนอย่างที่สี่ต้องมีเซิร์ฟเวอร์ของคุณเองก่อน",
+  fix1_problem: "เคยต้องนั่งพิมพ์ตามทีละใบ",
+  fix1_title: "กองสลิปในโฟลเดอร์ กลายเป็นตารางที่เปิดใช้ได้",
+  fix1_p1: "ชี้โฟลเดอร์ที่เก็บรูปไว้ แล้วบอกว่าอยากได้อะไร มันอ่านตัวหนังสือในรูปเองทั้งไทยและอังกฤษ แล้วเรียงออกมาเป็นตารางให้ ใช้ได้กับสลิป สกรีนช็อต เอกสารถ่ายรูป ป้ายราคา",
+  fix1_p2: "ปลายทางเป็น <strong>ไฟล์ Excel จริง</strong> ไม่ใช่ตารางบนจอ — ลาก <code>SUM</code> ได้เลย วันที่เรียงได้ เลขที่ที่ขึ้นต้นด้วยศูนย์ไม่หาย และภาษาไทยไม่เพี้ยน",
+  fix1_p3: "ทำงานได้แม้กับโมเดลเล็กที่มองรูปไม่เห็น เพราะตัวโปรแกรมเป็นคนอ่านรูปให้ ส่วนโมเดลที่เห็นรูปอยู่แล้ว มันจะส่งรูปให้ตรง ๆ โดยไม่ต้องอ่านซ้ำ",
+  fix1_meta: "อ่านในเครื่อง ไม่ต้องต่อเน็ต · รูปไม่ออกจากเครื่อง",
+  fix2_problem: "เคยต้องนั่งดูเองทั้งคลิป",
+  fix2_title: "ประชุมสองชั่วโมง เหลือสรุปที่บอกด้วยว่าเรื่องไหนอยู่นาทีไหน",
+  fix2_p1: "โยนไฟล์คลิปหรือไฟล์เสียงให้ มันถอดเสียงพูดเป็นข้อความ พร้อมอ่านตัวหนังสือที่ขึ้นบนจอไปด้วย แล้วเย็บสองอย่างเข้าด้วยกันเป็นเรื่องเดียว",
+  fix2_p2: "คลิปภาษาที่คุณฟังไม่ออกก็ได้คำแปลมาด้วย และทุกบรรทัดติดเวลากำกับไว้ อยากดูตรงไหนกดกระโดดไปได้เลย",
+  fix2_meta: "ถอดเสียงในเครื่อง ไม่ขึ้นคลาวด์ · ติดเวลาแบบ <code>[m:ss]</code> ทุกบรรทัด",
+  fix3_problem: "เคยต้องเปิดทีละแท็บแล้วก๊อปเอง",
+  fix3_title: "ให้มันเปิดเว็บ อ่าน แล้วกรอกฟอร์มแทน โดยคุณนั่งดูอยู่",
+  fix3_p1: "มันเปิดหน้าเว็บจริงในหน้าต่างของโปรแกรม อ่านเนื้อหาออกมาเอง แล้วคลิก พิมพ์ เลือกตัวเลือกในดรอปดาวน์ และกดส่งฟอร์มได้ครบ",
+  fix3_p2: "เปิดหลายแท็บพร้อมกันแล้วสลับไปมาเองก็ได้ ค้น Google แท็บหนึ่ง เปิดคลิปอีกแท็บหนึ่ง แล้วย้อนกลับมาอ่านของเดิมต่อ",
+  fix3_p3: "ทุกจังหวะเกิดขึ้นตรงหน้าคุณ เห็นว่ามันกดอะไร ไปหน้าไหน และหยุดมันได้ทุกเมื่อ",
+  fix3_meta: "เป็นเบราว์เซอร์จริง ไม่ใช่กรอบฝัง จึงเปิดได้แทบทุกเว็บ",
+  fix4_problem: "เคยต้องรอคนอื่นว่างมาทำระบบหลังบ้านให้",
+  fix4_title: "บอกเป็นภาษาคน แล้วได้เวิร์กโฟลว์ที่ต่อครบทุกโหนดใน n8n",
+  fix4_p1: "ต่อกับ n8n หรือ Windmill ที่คุณตั้งไว้เอง แล้วมันอ่านของเดิม สร้างของใหม่ แก้ของที่มีอยู่ และเปิดใช้งานให้ได้ ในรูปคือเวิร์กโฟลว์ 11 โหนดที่มันต่อขึ้นมาเองทั้งเส้น",
+  fix4_p2: "ระหว่างทางมันชนเข้ากับข้อผิดพลาดจริง อ่านสิ่งที่ระบบบอกกลับมา แก้ แล้วลองใหม่จนผ่าน และมันเขียนบอกไว้ท้ายงานด้วยว่าอะไรที่มัน<strong>ยังตรวจไม่ได้</strong> แทนที่จะรายงานว่าเรียบร้อยทั้งหมด",
+  fix4_meta: "เครื่องมือ n8n ของมันสั่งรันเวิร์กโฟลว์ไม่ได้ · แต่ถ้าเวิร์กโฟลว์นั้นมี webhook มันยิงเข้าไปเองแล้วอ่านผลกลับมาได้ ซึ่งคือวิธีที่มันใช้ทดสอบในรูปนี้",
+  fix_bnote_full: "<b>และจะไม่มีตัวตั้งเวลาให้ ตั้งใจไม่ทำ</b> Aetox ไม่มีคลาวด์ ตัวตั้งเวลาที่อยู่ในโปรแกรมจึงแปลว่า งานของคุณจะเดินก็ต่อเมื่อคุณไม่ปิดเครื่อง ซึ่งเป็นสัญญาที่รักษาไม่ได้ n8n กับ Windmill เป็นนาฬิกา ส่วน Aetox เป็นมือ",
+  doors_title: "สองประตู แอปเดียว",
+  doors_sub: "สลับที่ชื่อโปรแกรมมุมซ้ายบน เป็นไฟล์เดียวกัน ตั้งค่าชุดเดียวกัน ความจำก้อนเดียวกัน สลับประตูไม่ใช่การเปลี่ยนแอป และมันจำได้ว่าคุณอยู่ประตูไหนล่าสุด",
+  doors_assist_title: "ผู้ช่วย — ใช้เครื่อง จดจำ ทำเอกสาร",
+  doors_assist_p: "งานเอกสาร งานค้นข้อมูล งานไฟล์ และงานประจำวัน ถ้ายังไม่ได้เปิดโปรเจกต์ไหนไว้ มันทำงานได้ทั้งเครื่อง และไฟล์ที่มันเขียนจะลงในโฟลเดอร์ผลงานของรอบนั้น",
+  doors_assist_tag: "ผู้ช่วย · โปรเจกต์ · เอเจนเฉพาะทาง · ระบบออโตเมชั่น · ผลงาน",
+  doors_code_title: "โค้ด — อ่านโค้ด สร้างระบบ ดีบัก",
+  doors_code_p: "มีต้นไม้ไฟล์ ตัวแก้โค้ด และเทอร์มินัลจริงกี่แท็บก็ได้ ทำงานอยู่ในโฟลเดอร์โปรเจกต์ที่คุณเปิด บวกโฟลเดอร์ที่คุณเพิ่มเข้ามาเอง",
+  doors_code_tag: "โค้ด",
+  doors_show_cap: "สลับที่ชื่อโปรแกรมมุมซ้ายบน แค่นี้จริง ๆ",
+  doors_bnote_full: "<b>ประตูแยกกันแค่เรื่องเครื่องมือ ไม่ได้แยกว่ามันยอมทำอะไรให้</b> ประตูผู้ช่วยก็มีไฟล์ มีเทอร์มินัล และทำงานสายโค้ดให้ได้ตามปกติ มันไม่ปัดงานคืนเพียงเพราะงานนั้นมีโค้ดอยู่ในนั้น",
+  light_title: "เบาจนเปิดทิ้งไว้ทั้งวันได้",
+  light_sub: "ผู้ช่วยที่ต้องคอยปิดเพราะเครื่องอืด สุดท้ายก็ไม่ได้ใช้ Aetox เลยถูกทำให้เล็กตั้งแต่ต้น",
+  bench_head: "พื้นที่ในเครื่องหลังติดตั้ง — ยิ่งสั้นยิ่งดี",
+  bench_aetox_ty: "ผู้ช่วย AI",
+  bench_comet_ty: "ผู้ช่วย AI",
+  bench_foot: "เล็กกว่า Claude Code <b>5 เท่า</b> · เล็กกว่า Cursor <b>18 เท่า</b> · เล็กกว่า VS Code <b>24 เท่า</b>",
+  light_note: "คนละประเภทกันอยู่แล้ว CLI ไม่มีหน้าต่าง ส่วน IDE เป็นเครื่องมือคนละงานกับ Aetox ที่เทียบได้ตรง ๆ คือพื้นที่ที่มันกินบนเครื่องเดียวกันของคุณ ขนาดคู่แข่งวัดเมื่อ 27 ก.ค. 2026 ทุกตัวในรอบเดียว ส่วนของ Aetox วัดเมื่อ 25 ส.ค. 2026 บน v1.5.7 — วิธีวัดกับสิ่งที่ห้ามนับอยู่ใน <a href=\"https://github.com/Mikedev115/Aetox/blob/main/BENCHMARK.md\">BENCHMARK.md</a>",
+  light_stat1_k: "พื้นที่ในเครื่อง",
+  light_stat1_s: "ไฟล์เดียวจบ · ตัวติดตั้งโหลด 21.3 MB",
+  light_stat2_unit: "เทสต์",
+  light_stat2_k: "ผ่านครบก่อนปล่อย",
+  light_stat2_s: "Go 2,295 ใน 42 แพ็กเกจ · หน้าจอ 953 ใน 91 ไฟล์",
+  light_stat3_k: "ประกอบหนึ่งเทิร์น",
+  light_stat3_s: "ใช้หน่วยความจำ 174.9 KB · วัด 13 ส.ค. 2026",
+  light_stat4_unit: "เครื่องมือ",
+  light_stat4_k: "ถึงมือโมเดลตั้งแต่ลงเสร็จ",
+  light_stat4_s: "กินพื้นที่ 7,763 token จากเพดาน 10,400 ที่เทสต์บังคับไว้",
+  light_ram_note: "ตรงไปตรงมาเรื่องแรม: หน้าจอของเราวาดด้วย WebView2 ที่ Windows มีอยู่แล้ว เราจึงไม่ต้องแบกสำเนาเบราว์เซอร์มาเอง แต่ WebView2 ก็คือ Chromium เหมือนกัน แรมที่มันกินจึงไม่ได้ชนะ Electron — <b>ที่ชนะคือคุณไม่ต้องเก็บเบราว์เซอร์ไว้อีกชุด</b>",
+  privacy_title: "ทำไมข้อมูลถึงไม่ต้องออกจากเครื่องคุณ",
+  privacy_sub: "เพราะไม่มีเซิร์ฟเวอร์ของเราคั่นกลางให้ข้อมูลต้องวิ่งผ่าน ไม่มีการเก็บสถิติการใช้งาน และไม่มีบัญชีให้สมัคร — ถ้าเลือกใช้โมเดลในเครื่อง สิ่งที่คุณพิมพ์และไฟล์ที่มันเปิด ไม่ออกไปไหนเลยแม้แต่ไบต์เดียว",
+  privacy_c1_title: "บทสนทนาและไฟล์งานของคุณ",
+  privacy_c1_p: "เก็บอยู่ในเครื่องคุณที่เดียว ค้นย้อนหลังได้ทั้งไทยและอังกฤษ และไม่มีสำเนาอยู่ที่อื่น อยากย้ายออกเมื่อไหร่ ส่งออกเป็นไฟล์ได้ทั้งบทสนทนา",
+  privacy_c1_tag: "อยู่ในเครื่องเท่านั้น",
+  privacy_c2_title: "ตัดขาดจากอินเทอร์เน็ตได้ทั้งหมด",
+  privacy_c2_p: "ถ้าเลือกรันโมเดลในเครื่องด้วย Ollama หรือ LM Studio สิ่งที่คุณพิมพ์จะไม่ออกจากเครื่องเลย",
+  privacy_c2_tag: "ใช้ออฟไลน์ได้",
+  privacy_c3_title: "ที่เก็บรหัสผ่าน มันเปิดไม่ได้เลย ทุกโหมด",
+  privacy_c3_p: "โฟลเดอร์กุญแจอย่าง <code>.ssh</code> <code>.aws</code> <code>.gnupg</code> ที่เก็บรหัสของ Windows และโปรไฟล์เบราว์เซอร์ทั้ง Chrome Edge Firefox Brave ถูกปฏิเสธที่หน้าประตู ไม่ใช่ปฏิเสธตอนอ่านไปแล้ว",
+  privacy_c3_tag: "ล็อกตายตัว",
+  privacy_c4_title: "คีย์ของคุณเข้ารหัสไว้ และไม่ปนกับอย่างอื่น",
+  privacy_c4_p: "API key กับการล็อกอินอยู่ไฟล์ของตัวเอง เข้ารหัสผูกกับบัญชี Windows ของคุณ สำเนาที่หลุดไปเครื่องอื่นเปิดไม่ออก และมันถูกลบออกจาก log อัตโนมัติ ไฟล์ตั้งค่าจึงยกไปถามใครก็ได้โดยไม่ติดความลับไปด้วย",
+  privacy_c4_tag: "เข้ารหัสกับบัญชี Windows",
+  privacy_bnote_full: "<b>เรื่องขอบเขต พูดให้ตรงกว่านั้น</b> ถ้าคุณเปิดโปรเจกต์ไว้ มันทำงานอยู่ในโฟลเดอร์นั้น บวกโฟลเดอร์ที่คุณเพิ่มเองเท่านั้น แต่ถ้าคุณ<em>ไม่ได้</em>เปิดโปรเจกต์ไหนไว้เลย มันมองเห็นทั้งเครื่อง และไฟล์ที่มันเขียนจะลงในโฟลเดอร์ผลงานของรอบนั้น ทุกคำสั่งที่รันถูกบันทึกไว้ให้ย้อนดูได้ และงานที่ไม่ใช่การอ่านเฉย ๆ จะถามคุณก่อน",
+  memory_title: "มันจำได้ข้ามวัน และคุณเป็นคนอนุมัติทุกบรรทัด",
+  memory_sub: "ผู้ช่วยที่ลืมทุกเช้าคือผู้ช่วยที่ต้องสอนใหม่ทุกเช้า แต่ผู้ช่วยที่จำเองตามใจชอบก็คือผู้ช่วยที่คุณตรวจไม่ได้ — ที่นี่เลยเลือกทางที่สาม",
+  memory_c1_title: "มันขอ ไม่ได้เขียนเอง",
+  memory_c1_p: "เครื่องมือความจำเขียนลงไม่ได้เลย มันทำได้แค่ยื่นเรื่องเข้าคิว แล้วคุณกดรับหรือกดทิ้งในหน้าตั้งค่า",
+  memory_c1_tag: "ไม่มีอะไรถูกจำโดยที่คุณไม่รู้",
+  memory_c2_title: "บทเรียนมาจากความผิดที่ซ้ำ ไม่ใช่จากการเดา",
+  memory_c2_p: "ตัวสรุปอ่าน log ว่าเครื่องมือไหนพลาดแบบเดิมซ้ำ ๆ โดยไม่เรียกโมเดลเลยสักครั้ง พอผิดแบบเดิมครบสามหน มันถึงเสนอเป็นบทเรียนให้คุณพิจารณา",
+  memory_c2_tag: "ไม่มีค่าโมเดลเพิ่ม",
+  memory_c3_title: "เปิดอ่านได้ แก้ได้ทีละบรรทัด",
+  memory_c3_p: "สิ่งที่คุณอนุมัติไปเก็บเป็นไฟล์ข้อความธรรมดา เปิดดูเองได้ แก้เองได้ และทุกการตัดสินใจถูกบันทึกไว้ถาวร คำถามว่า “ทำไมมันถึงคิดแบบนั้น” จึงมีคำตอบเสมอ",
+  memory_c3_tag: "ปิดทั้งระบบได้ด้วยสวิตช์เดียว",
+  memory_c4_title: "งานที่ทำซ้ำทุกอาทิตย์ เก็บเป็นคำสั่งของคุณเอง",
+  memory_c4_p: "พิมพ์วิธีสั่งที่ได้ผลเก็บไว้ครั้งเดียว ครั้งต่อไปกด <code class=\"mono\">/</code> แล้วเรียกใช้ได้เลย ในโปรแกรมมีตัวอย่างมาให้ 8 ตัว เปิดอ่านข้างในได้ทุกตัว แก้เป็นของคุณได้ และถ้าลบของคุณทิ้ง ของเดิมก็กลับมาเอง",
+  memory_c4_tag: "ลงเพิ่มกี่ตัวก็ไม่ทำให้แชทช้าลง",
+  memory_show_cap: "หน้าตาจริงตอนมันขอจำ — บอกว่าจะจำอะไร เพราะอะไรถึงขอจำ และจะมีผลตั้งแต่แชทถัดไป ไม่ใช่แชทนี้ กดไม่เอาได้ตลอด",
+  install_title: "เลือกได้ว่าจะให้ใครเป็นคนคิดให้",
+  install_sub: "สองทาง สลับกลางคันได้ตลอด และไม่ผูกมัดทางไหน",
+  install_path1_title: "รันในเครื่องคุณเอง",
+  install_path1_price: "ฟรี",
+  install_path1_price_sub: "ไม่ต้องมีคีย์",
+  install_path1_why: "ต่อกับ Ollama หรือ LM Studio ที่คุณลงไว้ รองรับเต็มรูปแบบทั้งการเรียกใช้เครื่องมือและการแสดงความคิด",
+  install_path1_li1: "ใช้หนักแค่ไหนก็ไม่เสียเงินเพิ่ม",
+  install_path1_li2: "สิ่งที่คุณพิมพ์ไม่ออกจากเครื่อง",
+  install_path1_li3: "เน็ตหลุดก็ทำงานต่อได้",
+  install_path1_who: "เหมาะกับ: งานประจำวัน · ข้อมูลที่ห้ามออกนอกองค์กร",
+  install_view_all: "ดู provider ทั้งหมด",
+  install_path2_title: "ใช้ provider ที่คุณไว้ใจ",
+  install_path2_price: "จ่ายตามใช้",
+  install_path2_price_sub: "11 เจ้าให้เลือก",
+  install_path2_why: "ใส่คีย์ของเจ้าที่คุณมีอยู่แล้ว จะได้โมเดลตัวใหญ่ที่สุดเท่าที่ตลาดมี การคุยวิ่งตรงจากเครื่องคุณไปหาเขา ไม่ผ่านเรา",
+  install_path2_li1: "จ่ายให้เขาเท่าที่ใช้ เราไม่บวกเพิ่ม",
+  install_path2_li2: "สลับเจ้าหรือสลับรุ่นกลางบทสนทนาได้ บริบทตามไปครบ",
+  install_path2_li3: "ไม่มีเซิร์ฟเวอร์ของเราอยู่ตรงกลาง",
+  install_path2_who: "เหมาะกับ: งานยาก · งานที่ต้องการคุณภาพสูงสุด",
+  install_view_all2: "ดู provider ทั้งหมด",
+  install_note_full: "<b>ยังไม่อยากตัดสินใจก็ได้</b> ในโปรแกรมมีโมเดลสาธิตให้กดเล่นทันทีหลังติดตั้ง เห็นหน้าตาจริง เห็นมันหยิบเครื่องมือมาใช้ และเห็นความคิดของมันครบ โดยยังไม่ต้องต่ออะไรเลยสักอย่าง",
+  install_how: "ติดตั้งยังไง",
+  install_method1: "ตัวติดตั้ง (แนะนำ)",
+  install_s1: "<b>ดาวน์โหลด</b> aetox-amd64-installer.exe (~21.3 MB · Windows 10/11)",
+  install_s2: "<b>ดับเบิลคลิก</b> — Windows จะขึ้นเตือนเพราะโปรแกรมยังไม่ได้เซ็นโค้ด กด More info → Run anyway",
+  install_s3: "ตัวติดตั้งจัดการส่วนที่ต้องใช้ให้เอง รวมถึงตัวอ่านตัวหนังสือภาษาไทย",
+  install_s4: "เปิดจาก Start Menu แล้วเลือกทางที่คุณชอบข้างบน จากนั้นสั่งงานได้เลย",
+  install_method2: "Scoop (สาย dev)",
+  install_scoop: "ได้ portable build พร้อม shortcut อัปเดตผ่าน <span class=\"mono\">scoop update</span> ตามปกติ",
+  tools_title: "มันมีมืออะไรให้ใช้บ้าง",
+  tools_sub: "35 เครื่องมือถึงมือโมเดลตั้งแต่ลงเสร็จ จัดเป็นเจ็ดกลุ่มตามงานที่คุณน่าจะสั่ง",
+  tool1_tn: "อ่านสื่อที่โมเดลมองไม่เห็น",
+  tool1_td: "ดึงตัวหนังสือออกจากรูปถ่าย สลิป สกรีนช็อต · อ่านตัวหนังสือในวิดีโอพร้อมเวลากำกับ · ถอดเสียงพูดในเครื่อง · ดึงเนื้อหาจาก PDF ทั้งไทยและอังกฤษ",
+  tool2_tn: "คืนงานเป็นไฟล์จริง",
+  tool2_td: "Excel ที่ SUM ได้ วันที่เรียงได้ · Word ที่มีหัวข้อและตาราง — เป็นไฟล์ Office จริง ไม่ใช่ข้อความเลียนแบบ · สไลด์เปิดในห้องสไลด์แล้วกดส่งออกเป็น .pptx หรือ PDF ได้",
+  tool3_tn: "เว็บและงานอัตโนมัติ",
+  tool3_td: "เปิดหน้าเว็บจริงแล้วอ่านเนื้อหา · คลิก พิมพ์ เลือกดรอปดาวน์ กดส่งฟอร์ม · ค้นอินเทอร์เน็ตโดยไม่ต้องมีคีย์เพิ่ม · อ่านเนื้อหาจากลิงก์ที่ให้",
+  tool4_tn: "ไฟล์ในเครื่อง",
+  tool4_td: "อ่าน เขียน แก้ตรงจุด ค้นชื่อไฟล์และค้นข้อความข้างใน · แก้หลายไฟล์รวดเดียวแบบพลาดตรงไหนคือไม่เปลี่ยนอะไรเลย · ลบไฟล์โดยถามก่อนทุกครั้ง",
+  tool5_tn: "สั่งงานเครื่อง",
+  tool5_td: "รันคำสั่งผ่านเทอร์มินัลจริงโดยขออนุมัติก่อนเสมอ · ตามผลของงานที่ยังทำอยู่เบื้องหลังและสั่งหยุดได้ · ใช้ git ได้",
+  tool6_tn: "งานโค้ด",
+  tool6_td: "บอกว่าโค้ดพังตรงไหนและกระโดดไปหาตัวแปรหรือฟังก์ชันได้ · ค้นและอ่านโค้ดจากโปรเจกต์บน GitHub · แก้ Jupyter notebook",
+  tool7_tn: "วิธีที่มันทำงาน",
+  tool7_td: "แตกงานเป็นรายการให้เห็น · ส่งงานต่อให้ตัวแทนเฉพาะทางแล้วมารับผลทีหลัง · หยุดถามเมื่อตัดสินใจแทนคุณไม่ได้ · แขวนงานที่เจอระหว่างทางไว้ทำวันหลัง · ค้นบทสนทนาเก่าแบบไม่มีค่าโมเดล",
+  tools_providers_full: "เครื่องมือชุดนี้ใช้ได้เหมือนกันหมดไม่ว่าคุณจะเลือกทางไหนในหัวข้อที่แล้ว <b>โมเดลเล็กที่ทำสิ่งเหล่านี้ไม่ได้มาแต่แรก พอมาอยู่ในนี้ก็ทำได้ เพราะตัวโปรแกรมเป็นคนทำให้ ไม่ใช่ตัวโมเดล</b> และการลงสกิลเพิ่มกี่ร้อยตัวก็ไม่ทำให้แชทช้าลง เพราะสกิลเป็นเอกสาร ไม่ใช่เครื่องมือ",
+  faq_title: "คำถามที่คนถามก่อนกดโหลด",
+  faq_sub: "ตอบตรง ๆ รวมถึงข้อที่ยังทำได้ไม่ดี",
+  faq1_q: "ต่างจากการถาม AI ในเว็บยังไง",
+  faq1_a1: "ผู้ช่วยในเว็บตอบคำถามคุณ แล้วคุณเอาคำตอบไปทำต่อเอง Aetox ทำงานนั้นให้จบ เพราะมันอยู่ในเครื่องคุณ มันจึงเปิดไฟล์จริง เขียนไฟล์จริง เปิดเว็บจริงและกดปุ่มจริงได้",
+  faq1_a2: "สิ่งที่ได้กลับมาคือไฟล์ในโฟลเดอร์ของคุณ ไม่ใช่ข้อความในกล่องแชทที่ต้องก๊อปไปวางต่อ",
+  faq2_q: "ต้องเขียนโปรแกรมเป็นไหม",
+  faq2_a1: "ไม่ต้อง คุณพิมพ์บอกเป็นภาษาคนว่าอยากได้อะไร ที่เหลือมันจัดการเอง และมีประตูผู้ช่วยที่แยกไว้สำหรับงานที่ไม่ใช่งานโค้ดโดยเฉพาะ",
+  faq2_a2: "ที่ต้องยอมรับตรง ๆ คือคำสั่งสำเร็จรูปที่แถมมา 8 ตัวยังเอียงไปทางงานเว็บกับงานโค้ด ส่วนงานอื่นคุณสั่งเป็นภาษาคนได้ตามปกติ และเก็บวิธีสั่งที่ได้ผลไว้ใช้ซ้ำเองได้",
+  faq3_q: "ข้อมูลผมปลอดภัยแค่ไหน",
+  faq3_a1: "บทสนทนาและไฟล์งานอยู่ในเครื่องคุณที่เดียว เราไม่มีเซิร์ฟเวอร์ตรงกลาง ไม่เก็บสถิติการใช้งาน และไม่มีบัญชีให้สมัคร ถ้าเลือกใช้โมเดลในเครื่อง ข้อมูลจะไม่ออกจากเครื่องเลย",
+  faq3_a2: "ถ้าเลือกใส่คีย์ของผู้ให้บริการเจ้าอื่น สิ่งที่คุณพิมพ์จะวิ่งตรงจากเครื่องคุณไปหาเขา ไม่ผ่านเรา ส่วนคีย์ที่คุณใส่ไว้ถูกเข้ารหัสผูกกับบัญชี Windows ของคุณ เก็บแยกไฟล์ของมันเอง และถูกลบออกจาก log อัตโนมัติ",
+  faq4_q: "มันเข้าถึงอะไรในเครื่องผมได้บ้าง",
+  faq4_a1: "ถ้าเปิดโปรเจกต์ไว้ มันอยู่ในโฟลเดอร์นั้นบวกโฟลเดอร์ที่คุณเพิ่มเอง ถ้าไม่ได้เปิดโปรเจกต์ไหนเลย มันมองเห็นทั้งเครื่อง และไฟล์ที่มันเขียนจะลงในโฟลเดอร์ผลงานของรอบนั้น",
+  faq4_a2: "สิ่งที่มันเปิดไม่ได้เลยทุกโหมดคือที่เก็บกุญแจและรหัสผ่าน — <code>.ssh</code> <code>.aws</code> <code>.gnupg</code> ที่เก็บรหัสของ Windows และโปรไฟล์เบราว์เซอร์ทุกยี่ห้อ งานที่ไม่ใช่การอ่านเฉย ๆ จะถามคุณก่อน และทุกคำสั่งที่รันถูกบันทึกไว้ให้ย้อนดู",
+  faq5_q: "ต้องจ่ายเท่าไหร่",
+  faq5_a1: "ตัวโปรแกรมฟรี ไม่มีค่ารายเดือนของเรา ไม่มีรุ่นเสียเงิน และไม่มีบัญชีให้สมัคร",
+  faq5_a2: "ถ้าใช้โมเดลในเครื่องก็ไม่มีค่าใช้จ่ายอะไรเลย ถ้าเลือกใส่คีย์ของเจ้าอื่น คุณจ่ายให้เขาตามที่ใช้จริง เราไม่ได้อยู่ตรงกลางและไม่ได้บวกอะไรเพิ่ม",
+  faq6_q: "เครื่องผมต้องแรงแค่ไหน",
+  faq6_a1: "ตัวโปรแกรมกินพื้นที่ 48.5 MB ไฟล์เดียว เครื่องทั่วไปเปิดได้สบาย",
+  faq6_a2: "ที่กินแรงคือโมเดล ถ้าจะรันโมเดลในเครื่องเองควรมีแรมเหลือพอสมควร แต่ถ้าใช้คีย์ของเจ้าอื่น เครื่องคุณแทบไม่ต้องออกแรงเลย",
+  faq7_q: "ทำไมตอนติดตั้ง Windows ถึงขึ้นเตือน",
+  faq7_a1: "เพราะโปรแกรมยังไม่ได้เซ็นโค้ด ใบรับรองมีค่าใช้จ่ายรายปีที่ยังไม่ได้ทำ Windows เลยขึ้นเตือนไว้ก่อน กด More info แล้ว Run anyway ได้",
+  faq7_a2: "ส่วนตัวอัปเดตนั้นเซ็นไว้จริง — กุญแจสาธารณะถูกฝังไว้ในตัวโปรแกรม และมันจะปฏิเสธการอัปเดตที่ลายเซ็นไม่ตรง แทนที่จะปล่อยผ่าน ถ้ายังไม่สบายใจ โค้ดทั้งหมดเปิดอยู่บน GitHub อ่านและ build เองได้",
+  faq8_q: "ถ้าไม่ชอบ ถอนออกยังไง",
+  faq8_a1: "ถอนจาก Add or remove programs ของ Windows ตามปกติ ไม่มีบัญชีให้ตามไปลบ และไม่มีข้อมูลของคุณค้างอยู่ที่ไหนนอกจากเครื่องคุณเอง",
+  faq9_q: "รองรับเครื่อง Mac หรือ Linux ไหม",
+  faq9_a1: "ยัง ตอนนี้ทำ Windows ให้ดีก่อนอย่างเดียว เพราะคนเขียนมีคนเดียวและใช้ Windows ทำงานจริงทุกวัน",
+  faq9_a2: "ตัวเครื่องยนต์คอมไพล์ผ่านทั้ง Linux และ macOS แล้ว แต่ส่วนเบราว์เซอร์กับการเข้ารหัสคีย์ ยังไม่เสร็จบนสองระบบนั้น จึงยังไม่ปล่อย ระบบอื่นเป็นแผนหลังจากนี้",
+  contact_title: "ลองสักงานหนึ่ง แล้วดูว่ามันคืนเวลาให้คุณได้จริงไหม",
+  contact_p: "โหลด ติดตั้ง แล้วสั่งงานแรกได้ภายในสองนาที ไม่ต้องผูกบัตร ไม่มีค่ารายเดือน ถ้าไม่ถูกใจ ถอนออกได้ทันทีโดยไม่มีอะไรค้างไว้",
+  contact_download: "ดาวน์โหลดสำหรับ Windows",
+  contact_gh: "ดูโค้ดบน GitHub",
+  contact_fine: "สร้างโดยคนคนเดียวที่ใช้มันทำงานจริงทุกวัน · เรื่องธุรกิจและความร่วมมือ เขียนหาได้ที่ <a href=\"mailto:phrmsawanachyphl@gmail.com\">phrmsawanachyphl@gmail.com</a>",
+  footer_own_build: "สร้างโดยคนคนเดียวที่ใช้มันจริงทุกวัน",
+  footer_rights: "สงวนลิขสิทธิ์",
+  footer_license: "สัญญาอนุญาต",
+  footer_privacy: "นโยบายความเป็นส่วนตัว",
+  pv_local_title: "รันในเครื่องคุณเอง",
+  pv_local_sub: "ฟรี ไม่ต้องมีคีย์ · prompt ไม่ออกจากเครื่อง",
+  pv_prov_title: "ใช้ provider ที่คุณไว้ใจ",
+  pv_prov_sub: "ใส่คีย์ของเจ้าที่คุณมีอยู่แล้ว หรือล็อกอินด้วย ChatGPT · OpenRouter · คุยตรงจากเครื่องคุณไปหาเขา ไม่ผ่านเรา",
+  pv_foot: "กดที่ชื่อเพื่อไปดูรายละเอียดของแต่ละเจ้า · สลับได้ตลอด ไม่ผูกมัด",
+};
+(function () {
+  "use strict";
+  var LANG_KEY = "aetox-lang";
+  var DICT = window.AETOX_I18N || {};
+  // English is the base: the HTML ships in English. We snapshot those values
+  // from the DOM once at startup, so switching back to English always restores
+  // the original English, and we never need a second dictionary file.
+  var EN = {};
+  function snapshotEn() {
+    document.querySelectorAll("[data-i18n]").forEach(function (el) {
+      EN[el.getAttribute("data-i18n")] = el.innerHTML;
+    });
+    document.querySelectorAll("[data-i18n-attr]").forEach(function (el) {
+      var spec = el.getAttribute("data-i18n-attr");
+      spec.split(",").forEach(function (pair) {
+        var part = pair.split(":");
+        if (part.length < 2) return;
+        var attr = part[0].trim(), key = part[1].trim();
+        EN["@attr:" + attr + ":" + key] = el.getAttribute(attr);
+      });
+    });
+  }
+  function t(key, lang) {
+    if (lang === "en") return (EN[key] != null) ? EN[key] : null;
+    var d = DICT.th;
+    return (d && d[key] != null) ? d[key] : (EN[key] != null ? EN[key] : null);
+  }
+  function applyLang(lang) {
+    document.querySelectorAll("[data-i18n]").forEach(function (el) {
+      var key = el.getAttribute("data-i18n");
+      var v = t(key, lang);
+      if (v == null) return;
+      // if the value carries HTML (bold, code, links) restore as HTML; else text.
+      if (/<[a-z][^>]*>/i.test(v)) el.innerHTML = v;
+      else el.textContent = v;
+    });
+    document.querySelectorAll("[data-i18n-attr]").forEach(function (el) {
+      var spec = el.getAttribute("data-i18n-attr");
+      spec.split(",").forEach(function (pair) {
+        var part = pair.split(":");
+        if (part.length < 2) return;
+        var attr = part[0].trim(), key = part[1].trim();
+        var akey = "@attr:" + attr + ":" + key;
+        var v;
+        if (lang === "en") v = (EN[akey] != null) ? EN[akey] : null;
+        else { var d = DICT.th; v = (d && d[key] != null) ? d[key] : null; }
+        if (v == null) return;
+        el.setAttribute(attr, v);
+      });
+    });
+    document.documentElement.lang = lang;
+    try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
+    document.querySelectorAll("[data-lang-toggle]").forEach(function (btn) {
+      btn.textContent = lang === "th" ? "EN" : "TH";
+    });
+  }
+  function init() {
+    snapshotEn();
+    var lang = "en";
+    try { lang = localStorage.getItem(LANG_KEY) || "en"; } catch (e) {}
+    applyLang(lang);
+    document.querySelectorAll("[data-lang-toggle]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var next = document.documentElement.lang === "th" ? "en" : "th";
+        applyLang(next);
+      });
+    });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();
+</script>
