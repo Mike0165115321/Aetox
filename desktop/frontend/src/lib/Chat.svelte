@@ -284,11 +284,28 @@
   // 6 tools" on a turn where four of them were a sub-agent's says nothing about
   // who did the work. A delegate's steps are counted inside its block, never
   // here.
+  //
+  // The time is the SUM of the rows' own seconds, not the wall clock across
+  // them, and that is the decision worth stating. Tools run in parallel here
+  // (parallelCalls in internal/prompt), so the two numbers genuinely differ:
+  // three 2s reads sent together are 6s of work and 2s of waiting. What this
+  // label has to be is CHECKABLE — open the panel, read the "· 2s" on each row,
+  // and get back the number on the control that opened it. A wall-clock figure
+  // would not match the rows underneath it, and a summary that disagrees with
+  // its own detail reads as a bug rather than as a different measurement.
+  //
+  // Failures stay next to the count, ahead of the time: the reason to open the
+  // panel is that something failed, not that it took a while.
   function toolsLabel(steps: ToolStep[]): string {
     const own = ownTools(steps)
     const failed = own.filter((s) => s.state === 'err').length
-    const base = t('chat.usedTools', { n: own.length })
-    return failed ? `${base} · ${t('chat.failedCount', { n: failed })}` : base
+    const secs = own.reduce((sum, s) => sum + (s.secs ?? 0), 0)
+    const parts = [t('chat.usedTools', { n: own.length })]
+    if (failed) parts.push(t('chat.failedCount', { n: failed }))
+    // Skipped rather than shown as zero: a turn whose tools all came back
+    // inside a second has nothing to report, and "0 วินาที" reads as broken.
+    if (secs) parts.push(t('chat.runSeconds', { n: secs }))
+    return parts.join(' · ')
   }
 
   // One label builder for both piles — same shape, different word and count.
