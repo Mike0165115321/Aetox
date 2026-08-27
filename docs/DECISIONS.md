@@ -7087,3 +7087,52 @@ Each fix added a term. Each time, the person who broke it had no idea this file 
 **Verified red both ways.** With `onScreen` taken back out of `visible`, `browserOrphan.test.ts` fails on exactly the owner's case and the other four pass.
 
 **What did NOT change.** Every existing term stays. They are cheap, they are intent rather than measurement, and they fire a frame earlier than an observer can — `menuOpen` in particular wants the window down before the dropdown paints, not after. The measurement is the floor under them, not a replacement for them.
+
+## 196. Decision — The Longest Wait in the Product Had Nothing Moving on It (2026-08-27)
+
+*"มีคนบอกว่ามันดูค้าง UX เสียมาก"*. They were right, and the cause was a correct decision with an unnoticed second half.
+
+`liveStatus` blanks the moment reasoning starts:
+
+```js
+const liveStatus = $derived(
+  streamingText || reasoningText || liveRunning.length ? '' : agentStatus,
+)
+```
+
+That is right. The phrase would be duplicating the toggle directly below it and stops being true the instant a tool starts. But `.typing-status` is the only thing on that bubble that moves, and its own CSS comment says so: *"The phrase is the live thing, so the phrase is what moves"* (it replaced three bouncing dots, deliberately). Blanking the phrase blanks the motion, and it blanks it exactly when the wait gets longest.
+
+**Everything needed already existed and was never joined up.** A running tool row has shown a ticking `· 12s` for a long time. The finished bubble says `คิดเป็นเวลา 34 วินาที`. `now` already ticks once a second while `awaitingReply`. `thinkClocks` already holds each turn's reasoning start. The live thinking row was the one place none of it was wired.
+
+**A number, not a pulse.** The owner offered "สมองกำลังขยับ" as an option and picked the clock instead. A pulse says the process is alive; a clock says whether the wait is still worth it. It also adds no new vocabulary and no new ornament, which matters here more than usual: this repo removed three bouncing dots on purpose, and re-adding motion for its own sake would undo that.
+
+**The live number is the finished number.** `liveThinkSecs` shares `turnArtifacts`' arithmetic by construction, so the row counts up and lands on the sentence that replaces it rather than being a second fact about the same thing. Two formulas would make the value jump at the exact moment someone is reading it. `live and finished agree` pins that separately from the display.
+
+Not built: the shimmer on the running row, and a total on the collapsed tool row. Both were offered and both were left. They stay available if the clock alone still reads as still.
+
+## 197. Decision — An Element Cannot Both Size Itself to Its Content and Be the Window Onto It (2026-08-27)
+
+Minutes after the clock landed: *"แย่แล้วเจอปัญหาการแสดงผล"*, with a screenshot of a 7-column table in the file preview whose last column ran off the right edge, letters cut mid-word, nothing to scroll.
+
+`.markdown-body table` has carried this since the day a comparison table rendered "anthropic" as "anthro/pic" and "200000" as "2000/00":
+
+```css
+display:block; width:max-content; min-width:100%; max-width:100%; overflow-x:auto;
+```
+
+with a comment stating that `display:block` + `max-content` is what lets a wide table scroll instead of squeezing.
+
+**Measured in a real browser against the reading column's actual width, it does the opposite.** `max-width:100%` clamps the used width to the column, and the table then lays its columns out *inside* that clamp, so `scrollWidth` comes back equal to `clientWidth` and there is nothing to scroll. A/B, same content, same 860px column:
+
+| | clientWidth | scrollWidth | scrolls |
+|---|---|---|---|
+| the rule as shipped | 860 | 860 | no |
+| wrapper owns the overflow | 860 | **1,994** | yes |
+
+The table's real width was 1,994px the whole time. It was being squeezed into 860 and losing its tail, and no amount of tuning that one selector could have fixed it, because **the element that scrolls cannot be the element that sizes itself to its content.** Two elements are required and CSS cannot add the second one.
+
+Wrapped in `confine()` in [markdown.ts](desktop/frontend/src/lib/markdown.ts), where the sanitised DOM is already walked for drawings and stylesheets, so this is one more pass rather than a new stage. The table goes back to `display:table` at its natural width; `.table-scroll` is the window onto it. Re-wrapping is guarded because a file preview re-renders on every keystroke and nested windows would nest a scrollbar per pass.
+
+**What the test can and cannot pin.** jsdom lays nothing out, so it cannot re-measure the thing that was actually wrong. What it pins is the structural half the measurement pointed at: there have to be two elements, on every table, once. Verified red first, three of four cases failing with the wrapper removed.
+
+**The lesson is about the comment, not the CSS.** A comment asserting a behaviour is not a test of it. That one was written in good faith, was wrong from the day it shipped, and stayed wrong for two months because everything around it looked deliberate.
