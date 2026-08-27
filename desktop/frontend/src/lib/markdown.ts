@@ -429,7 +429,38 @@ function confine(html: string): string {
   for (const style of host.querySelectorAll('style')) {
     if (!style.closest('svg')) style.remove()
   }
+  for (const table of host.querySelectorAll('table')) {
+    if (!table.closest('.table-scroll')) scrollTable(table)
+  }
   return host.innerHTML
+}
+
+// A wide table has to scroll, and CSS alone could never make it.
+//
+// `.markdown-body table` has said `display:block; width:max-content;
+// max-width:100%; overflow-x:auto` since the day a 7-column comparison rendered
+// "anthropic" as "anthro/pic" and "200000" as "2000/00". The comment there
+// claims those declarations let a wide table scroll instead of squeezing.
+// Measured on 2026-08-27, in a browser, against the reading column's real
+// width: they do not. `max-width:100%` clamps the used width to the column and
+// the table then lays its columns out INSIDE that clamp, so scrollWidth comes
+// back equal to clientWidth and there is nothing to scroll. A 1,994px table
+// reported 860 / 860 and simply lost its last column off the right edge, which
+// is what the owner screenshotted.
+//
+// The element that scrolls cannot be the element that sizes itself to its
+// content, so it has to be a second element, and CSS cannot add one. Wrapped
+// here, where the sanitised DOM is already being walked for drawings and
+// stylesheets. The table goes back to being a real `display:table` at its
+// natural width; the wrapper is the window onto it.
+//
+// Guarded against re-wrapping so a re-render of the same content cannot nest
+// windows inside windows, and skipped for a table already inside one.
+function scrollTable(table: Element): void {
+  const win = document.createElement('div')
+  win.className = 'table-scroll'
+  table.replaceWith(win)
+  win.appendChild(table)
 }
 
 // frameDrawing puts the take-it-with-you controls on a drawing: copy and save,

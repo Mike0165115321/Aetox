@@ -1786,15 +1786,28 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    full grid of boxes fights the prose around it. --border-default because it
    is the whole table now; --border-subtle vanishes into --surface-app on
    rose-pine (1.07:1) and solarized-light (1.14:1). */
-/* display:block + max-content is what lets a wide table scroll instead of
-   squeezing. width:100% used to force every column into the bubble, and the
-   inherited word-break:break-word then broke the squeezed cells mid-token —
-   a 7-column comparison rendered "anthropic" as "anthro/pic" and, worse,
-   "200000" as "2000/00", which reads as two numbers. min-width:100% keeps a
-   narrow table stretched so its row rules still span the column. */
+/* The window, and the table inside it, are two elements on purpose.
+   Measured 2026-08-27: they cannot be one.
+
+   This rule used to be `display:block; width:max-content; max-width:100%;
+   overflow-x:auto` on the table itself, with a comment claiming that let a wide
+   table scroll instead of squeezing. It did not. max-width clamps the used
+   width to the reading column and the table then lays its columns out INSIDE
+   that clamp, so scrollWidth equals clientWidth and there is nothing to scroll:
+   a real 1,994px table reported 860 / 860 and lost its last column off the
+   right edge. An element cannot both size itself to its content and be the
+   viewport onto that content.
+
+   So the table is a table again, at its natural width, and .table-scroll is the
+   window. The wrapper is added in markdown.ts, where the sanitised DOM is
+   already being walked, because CSS cannot add an element.
+
+   min-width:100% keeps a narrow table stretched so its row rules still span the
+   column, which is the one thing the old rule got right. */
+.markdown-body .table-scroll { max-width:100%; overflow-x:auto; margin:.6em 0 1.1em; }
 .markdown-body table {
-  display:block; width:max-content; min-width:100%; max-width:100%; overflow-x:auto;
-  border-collapse:collapse; margin:.6em 0 1.1em;
+  display:table; width:max-content; min-width:100%;
+  border-collapse:collapse; margin:0;
 }
 .markdown-body th, .markdown-body td {
   border:none; border-bottom:1px solid var(--border-default);
