@@ -35,7 +35,7 @@
     stopBackgroundTask, stopBackgroundRun,
     retryFailedTurn, editFailedTurn, regenerateReply, switchVariant, resendEdited, rateReply,
     setActiveView, newChairSession, newSessionAt, openSettingsAt, setStance,
-    sendUserMessage,
+    sendUserMessage, liveThinkSecs,
   } from './stores/cockpit.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
   import MemoryCard from './MemoryCard.svelte'
@@ -947,6 +947,25 @@
   function liveSecs(s: ToolStep): number {
     return Math.max(0, Math.round((now - s.startedAt) / 1000))
   }
+
+  // The thinking row counts, and it was the one live row that never did.
+  //
+  // A running tool has said "· 12s" for a long time; the finished bubble says
+  // "thought for 34s". Between them sat the longest wait in the product with
+  // nothing moving on it at all: liveStatus deliberately blanks the moment
+  // reasoning starts (it would be duplicating the toggle right below it, and
+  // would stop being true), which was right and left the row static. People
+  // read that as the app having hung.
+  //
+  // A number rather than a pulse, because a pulse only says the process is
+  // alive while a clock says whether the wait is still worth it. And it is the
+  // SAME number the finished row will show, by construction (liveThinkSecs
+  // shares turnArtifacts' arithmetic), so the live row counts up and lands on
+  // the sentence that replaces it instead of being a second fact about it.
+  const thinkingLabel = $derived.by(() => {
+    const secs = liveThinkSecs(now)
+    return secs ? t('chat.thinkingFor', { secs }) : t('chat.thinking')
+  })
 
   // What the agent changed, under the row that changed it (โค้ด desk only).
   //
@@ -2374,7 +2393,7 @@
                   <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'think' ? '' : 'think')}>
                     <span class="chev"><Icon name={livePanel === 'think' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
                     <span class="ic"><Icon name="brain" size={12} /></span>
-                    {t('chat.thinking')}
+                    {thinkingLabel}
                   </button>
                 {/if}
                 {#if doneOwnTools.length}

@@ -263,6 +263,7 @@ export const zh: Partial<Record<keyof typeof th, string>> = {
   'chat.rateBad': '这个回答没说到点上',
   'chat.thoughtDone': '思考完毕 · 查看思路',
   'chat.thoughtFor': '思考了 {secs} 秒',
+  'chat.thinkingFor': '思考中 {secs} 秒',
   'workbench.gitTab': 'Git',
   'git.workingTree': '尚未提交',
   'git.codeDeskOnly': '仅在代码台显示。',

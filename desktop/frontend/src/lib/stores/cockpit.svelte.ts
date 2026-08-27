@@ -2010,6 +2010,23 @@ export function applyAgentChunk(
 // runLiveTurn's finally.
 const thinkClocks = new Map<string, { start: number; last: number }>()
 
+/** How long the on-screen turn has been thinking, in seconds, or undefined when
+ *  it is not thinking at all.
+ *
+ *  The same arithmetic turnArtifacts uses for the finished label, deliberately:
+ *  the live row counts up to exactly the number the finished row will show, so
+ *  the two are one sentence at two moments rather than two facts that happen to
+ *  be about the same thing. Change one and this has to change with it.
+ *
+ *  Takes `now` rather than reading the clock itself. Chat already ticks once a
+ *  second for the running-tool labels, and a second timer here would be a
+ *  second thing to keep in step for no gain.
+ */
+export function liveThinkSecs(nowMs: number): number | undefined {
+  const clock = thinkClocks.get(cockpit.turnSession)
+  return clock ? Math.max(1, Math.round((nowMs - clock.start) / 1000)) : undefined
+}
+
 /** Live reasoning/thinking text from the Go engine (see desktop/app.go
  * SendMessage's onReasoningChunk) — only fires for providers that stream
  * reasoning tokens (DeepSeek, Anthropic extended thinking, ...); '' means
