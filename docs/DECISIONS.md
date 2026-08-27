@@ -6932,3 +6932,158 @@ The fix is a discriminator, not a protocol: nothing served over the wire can tel
 - **setup.ts** stubs the bridge for every test — jsdom has neither `chrome` nor `webkit`, and without the stub the whole suite would silently render as the stood-down spectator while asserting on calls the app's real window makes. The spectator test deletes it to be the outsider, and asserts the inverse too, so the gate cannot quietly flip polarity.
 
 What is deliberately NOT changed: the broadcast itself. Every frontend legitimately shows the tab strip, the address bar, the titles; watching is the point of connecting a dev browser. The line is drawn where the harm was — the calls that move, size, show, hide, or resize something that exists once.
+
+## 192. Decision — The Cheap Mode Has to Be the Default, Because a Description Is Read Once and a Default Is Obeyed Every Time (2026-08-27)
+
+The owner's complaint was that Aetox has no help on a large project: *"ระบบ Aetox แม่งยัดทุกอย่างใส่ทีเดียว กดโหลดก็แม่งมาทั้งไฟล์ ทำให้โควต้าเต็มเร็วมาก"* — and that Claude Code lets you choose which lines the model reads. The second half turns out not to be true of Claude Code either. What is true is the thing underneath it, and it took reading this machine's own `tool_runs` to find.
+
+**`read` already had the parameters.** `offset` and `limit` landed with §50, page size 2,000 lines, and the model uses them: 205 of 461 calls in this machine's whole history passed one. The capability was never missing.
+
+**`grep` already had the cheap mode, and it was almost never chosen.** Measured 2026-08-27, before this change:
+
+| show | calls | bytes/call |
+|---|---|---|
+| `content` (the default) | 189 | 3,801 |
+| `files_with_matches` | 11 | 646 |
+| `count` | 10 | 336 |
+
+The schema had said, in as many words, that the other two *"cost a fraction of the tokens"*. It was read and not taken, 90% of the time, for eight days. **A description is read once and a default is obeyed every time**, and that asymmetry is the whole finding — it is worth more than any of the individual numbers around it.
+
+So the default moved, which is also the shape Claude Code ships: its `Grep` returns file paths unless you ask for `output_mode: "content"`. The owner's call on the direction was total — *"เราควรเดินตาม Claude code ครับ เพราะเราไปได้แค่ทางนั้น... เขาน่าจะลองผิดลองถูกมาเยอะแล้ว"* — and this is that, with one deliberate divergence recorded below.
+
+**`show: "content"` is untouched and fully reachable.** A changed default that quietly removes what it replaced is a different change than this one, and the tests were fixed by making them *ask* for content rather than by loosening what they assert. `TestGrepSkillDefaultsToFilesWithMatches` pins both halves at once, including that content is genuinely the larger answer.
+
+**The one divergence: asking for `context` selects `content`.** Claude Code documents its context parameters as "ignored otherwise" and lives with it. Aetox serves models that are much weaker than the one reading that sentence — `deepseek-v4-flash` alone is 2,377 calls on this machine — and answering "show me a line either side of each match" with a list of filenames and a green tick is the silent-success failure this package has already been bitten by once (the `(binary file)` result in `read.go` that taught a model it had merely misunderstood). An explicit `show` still wins; `context` only fills a blank.
+
+**The tail is where `read` costs anything, and only the tail.** The average read is 8,491 bytes and is fine. The distribution is not:
+
+| output size | calls | bytes |
+|---|---|---|
+| under 10KB | 375 | 1.06M |
+| 10–30KB | 59 | 0.90M |
+| 30–60KB | 15 | 0.69M |
+| **60KB+** | **12** | **1.25M** |
+
+27 calls, 5.9% of all reads, carry half of every byte `read` has ever returned. The largest single answer was 130,823 bytes of `ARCHITECTURE.md` — roughly 33,000 tokens that then rode every later round of that conversation. Fixing the average would have achieved nothing.
+
+So `readMaxBytes` came down from 256KB to **64KB**. That number is not a ceiling being reintroduced: §50 replaced a flat 16KB cap precisely because it *hid* the tail, and the objection was hiding, not paging. The truncation marker already names the line to resume from, so 64KB defers what it does not return. `TestReadSkillPagesPastByteCap` pins the difference by following the offset and checking the next line really is the next one — no gap, no repeat.
+
+**A line cap cannot bound a generated file, so there is now a line cap of its own.** The record that settled it: `{"path": ".../scripts.js", "limit": 110}` returned **57,437 bytes**. The model asked for 110 lines, about as carefully as anything can ask, and paid 57KB because the lines were machine-written. `readMaxLineLen` is 2,000 characters — longer than any line a person writes, shorter than any line a bundler emits — and a clipped line says so in the text, because an `edit` built from one will not match and the model has to be able to see why.
+
+**None of the prose above is in the tool block.** Both tools were at or over the §99 standard (`grep` 392 tokens, `read` 185), and the first draft of this change grew them to 457 and 256 — caught by `block_standard_test.go` on the same run, which is what that ratchet is for. The judgment moved into `Guidance()` and is delivered once per session; `grep`'s block entry came out at **326**, and its line in `overweight` was tightened to match, because a saving left un-ratcheted is a saving on loan.
+
+**What was measured and deliberately not acted on.** Repeat reads are 5.6% of `read` bytes, which is small. The real spend is elsewhere and no amount of tool tuning reaches it: `gpt-5.6-luna` carries 13.3M fresh input tokens across 1,127 calls at 47.2% cache, more than ten times everything `read` has ever returned, and changing that is one setting rather than one release.
+
+**And one finding that argues against the question the owner started with.** He asked whether to build a separate tool. `symbol` — LSP-backed, answering "what is this identifier and where is it declared", written against exactly this problem in §55 — has been called **zero times, ever**. A sixth tool would have been the same shape as the fifth. The gap was never the toolset; it was which door stands open by default.
+
+## 193. Decision — The Instruction Existed and Was Filed Behind the Wrong Gate (2026-08-27)
+
+§192 lowered the ceiling on a whole-file read and moved `grep`'s default. The owner asked the right follow-up question: *"แล้วปัญหาแบบโหลดทั้งไฟล์เข้าโมเดลถูกแก้ยังครับ"*. It was not. What §192 changed was how much one bad read costs, not how often one happens.
+
+The measurement that found the real thing was ordering. For every `read` in this machine's history, what ran immediately before it in the same session:
+
+| before the read | calls |
+|---|---|
+| **`read`** | **237** |
+| `list` | 52 |
+| `shell` | 46 |
+| `grep` | 37 |
+| `glob` | 17 |
+
+**58% of reads follow another read.** Only 9% follow a search. 277 of 461 reads passed no `limit` at all, averaging 10,834 bytes, and 17 of the reads over 30KB came directly after another read. That is not a model deciding to open a file. It is a model browsing, because searching-then-reading was not a habit it had been given.
+
+It had been given it, once, in one place: `fileEditing()` in [internal/prompt/prompt.go](internal/prompt/prompt.go) has said *"Do not read a large file end to end just to change one line in it"* since 2026-08-09. The layer is gated:
+
+```go
+if desk.carries("edit") || desk.carries("write") {
+```
+
+and the comment sitting directly above that gate names the case it gets wrong, in its own words: *"วางแผน keeps every reading tool and takes the writing and running ones away"*. **The one instruction in this prompt about how to look at a codebase was withheld from the stance that does nothing but look at codebases**, and delivered only to a desk on its way to change a line. Even where it arrived, it arrived framed as preparation for an edit; reading in order to understand was covered by nothing at all.
+
+The gate was not wrong when it was written. It was protecting a stance from three paragraphs about tools it does not hold, which is correct, and the paragraph it was protecting had quietly grown a second subject. Splitting it is the whole fix:
+
+- **`findingThings(desk)`** — search before opening, grep-with-context often answers outright, read the range you came for, and what a whole-file read costs for the rest of the conversation rather than just this round. Gated on `grep` alone.
+- **`fileEditing(desk)`** — keeps its own gate and loses the search half, which had become a duplicate of it.
+
+Net cost 500 bytes of a 16,000-byte budget, and the layer or two of headroom the owner set that ceiling for is what it was for.
+
+**Two supports, both of them corrections to a number rather than new machinery.**
+
+`maxGrepContext` went **20 to 50**. 115 of 210 grep calls already asked for context, so the model was already trying to use grep as a reader more often than not; 20 lines either side cannot hold a function, and a search that nearly answers the question gets finished by opening the whole file. The arithmetic the old cap defended was never this constant's job: `defaultToolOutputLineLimit` trims any output to 220 lines, and `limit` narrows the match count for a caller who wants a wide window on few hits, which is exactly the shape being enabled.
+
+`shellRunGuidance` ended with *"For looking at files, prefer read/grep/glob/list."* Right about browsing, wrong about aiming, and it was steering away from the cheapest reader in the box: `shell` used as a ranged reader ran 135 times at **3,018 bytes a call against `read`'s 8,491**. It is already cheaper and it was second choice because the guidance said to make it second choice. The line now splits the two cases. No idiom is named on purpose — the shell is PowerShell on Windows and whatever the distro runs under WSL, and a command spelled for the wrong one fails on every call of the turn.
+
+**What was NOT added: a tool.** The owner's original question was whether to build one. Aetox's kit is already Claude Code's kit, plus extras — `symbol` (LSP-backed, still zero calls ever) and `diagnostics`. Every gap found in two days of measurement was a default, a gate, or a constant. The instruction to search first was written eighteen days ago and has been reaching about half the desks that needed it.
+
+**The number to watch.** `read` preceded by `read` is 237 today. If the next week's audit does not move it, this was the wrong diagnosis and the next place to look is delegation: 389 of 461 reads happen in the chat's own context against 52 in `explore`, whose reads average 23,512 bytes to the chat's 6,704. `explore` is already doing the right thing with the heavy reading, on 11% of it.
+
+## 194. Decision — A Native Window Outlived the Pane That Was Steering It (2026-08-27)
+
+The owner sent a screenshot: a black rectangle sitting over the right half of the app, a loaded page inside it, the chat's cards and composer clipped underneath. *"มีบั๊คแบบค้างแบบนี้ด้วยครับ"*. Stuck is exactly the word. Nothing in the window could reach it.
+
+**The cause is a seam between two decisions that were both correct.**
+
+`BrowserPane.svelte`'s `onDestroy` stopped closing anything on 2026-08-25 (browser-tab-lifetime-2026-08-25.md). That was right, and the comment left behind says why in one line: *"an unmount happens for several reasons and only one of them is this one"* — the agent had been told three times in forty seconds that a person shut its page, and nobody had touched a tab.
+
+`restoreWorkbench()` in [workbench.svelte.ts](desktop/frontend/src/lib/stores/workbench.svelte.ts) throws the whole strip away on every session switch. It closes terminals by name, in a loop, and left browsers to the pane teardown:
+
+```js
+workbench.tabs = [] // unmounts panes; BrowserPane's onDestroy closes its native window
+```
+
+**The comment was the whole guarantee, and it had been false for two days.** Nothing failed loudly, because a native browser window is a real OS window: it composites above the app's own webview whatever the DOM does. So switching conversations with a page open left that window on screen, at the bounds it last had, with no pane alive to hide it, move it, or close it. The app underneath laid out normally and was simply covered.
+
+**The frontend had no honest call to make.** `closeReason` has had three values since 2026-08-25 — `closedByUser` (the ×), `closedByAgent`, `closedByApp` (*"a sweep, a teardown, a view that died"*) — and `closedByApp` was reachable only from inside Go. The one Wails binding, `BrowserClose`, hardcodes `closedByUser`. A session switch could either lie or say nothing, and saying nothing is what it did.
+
+**Three changes, and the split between them is the point.**
+
+- **`BrowserCloseForTeardown`** ([browser.go](desktop/browser.go)) is the missing door: `closeTab(id, closedByApp)`. The reason matters as much as the close — the agent is told its page is **gone** (`errAgentTabGone`) rather than that somebody **shut** it (`errAgentTabClosed`), which is the distinction the whole `closeReason` type exists to carry.
+- **`restoreWorkbench` closes browsers beside the terminals it already closed.** A caller that discards a tab on purpose is a caller that can name its reason. This is the actual fix.
+- **`onDestroy` now HIDES** (`BrowserSetVisible(tab.id, false)`). Not closes: hiding is not a lifetime event, says nothing to anybody, and cannot re-open the 2026-08-25 wound. It is the net under every other unmount reason, including the ones nobody has thought of yet. **An unmounted pane leaving a real OS window over the chat is a bug however it got unmounted.**
+
+**The tests were checked red first.** `browserOrphan.test.ts` has four cases; with either half of the fix reverted, two of them fail. A test that passes before and after pins nothing. On the Go side, `TestATeardownCloseIsNotBlamedOnTheUser` pins the new reason and `TestTheStripsCloseStillMeansAPerson` pins that the × still means a person, because a second door is only safe while the first one keeps its meaning.
+
+**Correction, same day.** The above is real and the fix stands, but it is not what the owner was looking at. He named the repro straight after: *"สไลด์หรือเบาเซอร์ ที่เปิดหน้าโค้ด พอสลับไปหน้าแชทผู้ช่วย มันก็เลยเป็นบั๊คค้าง"*, and then *"แก้ที่ต้นเหตุเลย"*. That path is §195, and the root it reaches is one level below this one.
+
+**What this is not.** Not §191 returning: that was a second frontend on `wails dev` regluing the one native window to its own geometry, and the `hostWebview.ts` spectator gate still holds. This one needs no second frontend at all. The two share a lesson rather than a cause — **a surface that exists once, outside the DOM, needs one hand on it and an explicit answer for every way that hand can let go.**
+
+## 195. Decision — Stop Listing the Reasons a Pane Is Not on Screen, and Measure It (2026-08-27)
+
+§194 fixed a real orphan and was still the wrong door. The owner named the actual repro immediately after: a browser or slides tab with a code page open, then walking to แชทผู้ช่วย, and the page sticks. Then: *"แก้ที่ต้นเหตุเลย"*.
+
+**The chain, and the reason no one link is the culprit.**
+
+Both doors have `home: 'chat'` ([shell.svelte.ts](desktop/frontend/src/lib/shell.svelte.ts)), so `activeView` never changes and `isOverlayView` correctly answers false. `switchShell` opens a session at the other desk, the strip empties, and then this, in [App.svelte](desktop/frontend/src/App.svelte):
+
+```js
+inspectorCollapsed = workbench.tabs.length === 0
+```
+
+and this, in [style.css](desktop/frontend/src/style.css):
+
+```css
+.app.inspector-collapsed .inspector { display:none; }
+```
+
+The pane is **still mounted**, still the active tab, still in a room that is not an overlay. It simply has no box, because an ancestor five levels up went `display:none`. Every term of `visible` was satisfied and the native window went on compositing over the chat.
+
+**The root is the shape of `visible`, not any of its terms.** It was a hand-written list of REASONS a pane might not be on screen, and it has been wrong four times:
+
+| when | what was missing |
+|---|---|
+| before 2026-08-14 | every room except `settings` |
+| §174-era | the drag that the window swallows |
+| 2026-08-26 | (the spectator gate, §191, a different axis) |
+| 2026-08-27 | the inspector collapsing |
+
+Each fix added a term. Each time, the person who broke it had no idea this file existed — the comment already in it says so about the rooms: *"the failure is invisible to whoever adds the room, because their room works and it is somebody else's window that is wrong."* The fifth reason will arrive the same way.
+
+**So the question changed.** Not "is there a reason to hide" but **"does this pane have a box on screen"** — one fact, measured, true of every reason at once including the ones not yet written.
+
+`IntersectionObserver`, deliberately not the `ResizeObserver` already in the file, and the difference is the whole point: a ResizeObserver watches THIS element's box, while what removes a pane from view is almost always an ANCESTOR. An element with no box cannot intersect anything, so the answer covers the entire chain — plus scrolled-away, zero-height, and whatever comes next. `onScreen` starts true and is only ever written by the callback: of the two ways to be wrong, showing a page that should be hidden beats hiding one that should be shown, forever.
+
+**The test caught a bug in the fix, which is the part worth writing down.** The first draft read `if (onScreen) reflow()` inside the observer callback. The stub fires synchronously from `observe()`, which runs inside the effect body, so reading `onScreen` there made the effect **depend on the value it writes**: going off screen re-ran the effect, which disconnected, re-observed, and was told on screen again. The window never hid. `untrack` is the fix and it is load-bearing rather than defensive — real browsers fire the first callback asynchronously, so a live app would have hidden the bug instead of the window, and this would have shipped looking correct.
+
+**Verified red both ways.** With `onScreen` taken back out of `visible`, `browserOrphan.test.ts` fails on exactly the owner's case and the other four pass.
+
+**What did NOT change.** Every existing term stays. They are cheap, they are intent rather than measurement, and they fire a frame earlier than an observer can — `menuOpen` in particular wants the window down before the dropdown paints, not after. The measurement is the floor under them, not a replacement for them.
