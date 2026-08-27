@@ -7136,3 +7136,21 @@ Wrapped in `confine()` in [markdown.ts](desktop/frontend/src/lib/markdown.ts), w
 **What the test can and cannot pin.** jsdom lays nothing out, so it cannot re-measure the thing that was actually wrong. What it pins is the structural half the measurement pointed at: there have to be two elements, on every table, once. Verified red first, three of four cases failing with the wrapper removed.
 
 **The lesson is about the comment, not the CSS.** A comment asserting a behaviour is not a test of it. That one was written in good faith, was wrong from the day it shipped, and stayed wrong for two months because everything around it looked deliberate.
+
+## 198. Decision — A Summary That Disagrees With Its Own Detail Is Not a Summary (2026-08-27)
+
+The third of the three motion ideas from §196, picked on its own after the clock shipped: *"เวลารวมบนแถวเครื่องมือตอนพับ ทำด้วยได้ไหม"*.
+
+The change is one line of label. `ใช้ 2 เครื่องมือ` becomes `ใช้ 2 เครื่องมือ · 8 วินาที`, reusing `chat.runSeconds`, which already exists in all three locales. What took the thinking was one decision underneath it.
+
+**Sum, or wall clock?** Tools run in parallel here (`parallelCalls` in [internal/prompt](internal/prompt/prompt.go)), so these are genuinely different numbers: three 2s reads sent together are six seconds of work and two seconds of waiting. Wall clock is arguably the number a person waiting cares about.
+
+It is still the wrong one, and the reason is what the label IS. It sits on a control whose entire promise is what is behind it. Open the panel and every row shows its own `· 2s`. If those do not add up to the number on the button that opened them, the reader has no way to tell which of the two is wrong, and **a summary that disagrees with its own detail reads as a bug rather than as a different measurement.** The sum is the only figure that survives being checked.
+
+That is §196's rule applied one row over: the live thinking clock counts up to exactly the number that replaces it, by sharing the arithmetic rather than by agreeing to about the same answer. `totals exactly what the rows underneath it show` pins this one the same way, by opening the panel in the test, reading each row, and adding them.
+
+**Order carries a claim too.** Failures stay next to the count and the time goes last, because the reason anyone opens that panel is that something failed, not that it took a while.
+
+**Nothing under a second is reported.** A turn whose tools all came back inside a second has no duration worth a reader's attention, and "0 วินาที" reads as broken rather than as fast. Same reasoning as the floor of 1 on the thinking clock, from the other end.
+
+Verified red first: three of four cases fail with the one line removed.
