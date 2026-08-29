@@ -272,8 +272,17 @@ func (c *Context) MicroCompact(keepRecent int, sweepable map[string]bool) (swept
 	if c == nil || len(sweepable) == 0 {
 		return 0, 0
 	}
-	boundary := c.compactionBoundary(keepRecent)
-	if boundary == 0 {
+	// NOT compactionBoundary, and the difference is the whole point of having
+	// two layers. The summarizer's boundary snaps to a user message because it
+	// REMOVES a span, and a turn cut in half lies about itself. The sweep only
+	// rewrites content in place — every message keeps its role, id and
+	// position — so its one obligation is recency: leave the last keepRecent
+	// messages alone. Snapping to a user turn here made the sweep a no-op for
+	// exactly the conversation that needs it most, the single giant turn that
+	// reads forty files before its first answer (found writing the trigger
+	// test, one day before 1.5.15).
+	boundary := len(c.messages) - keepRecent
+	if boundary <= 1 {
 		return 0, 0
 	}
 	for i := 1; i < boundary; i++ {
