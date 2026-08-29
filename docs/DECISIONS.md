@@ -1138,7 +1138,7 @@ The model stays in charge of what happens in between, which is exactly the disti
 - **Batch collection.** `task_result` takes several ids, so collecting three costs one round trip, not three.
 - ~~**Turn-bounded lifetime.** A delegate's context descends from the turn's, so Stop cancels every outstanding one and none can outlive the reply it was meant to serve. No reaper, no leak.~~ **Superseded by §105 (2026-08-13).** This was a deadline, not a lifetime rule: an uncollected delegate's whole run was destroyed at the moment of the reply. A delegate's life is the session's now, and Stop — not the turn ending — is what ends one early.
 
-**A cap, because a model in a loop is a real failure mode:** four delegates in flight per turn (`maxConcurrent`). Past that, `task` refuses with a message that says how to make room. This is the concurrency question §44.9 left open, answered with a desktop-sized number rather than a setting nobody would know how to tune.
+~~**A cap, because a model in a loop is a real failure mode:** four delegates in flight per turn (`maxConcurrent`). Past that, `task` refuses with a message that says how to make room.~~ **Superseded by §211 (2026-08-30).** The number is right and the refusal was not: four run at once and everything past that waits its turn. A cap that turns a queue into a failure makes the model's fan-out a lottery — the two jobs that lose are the two the scheduler reached last, not the two that mattered least. This is the concurrency question §44.9 left open, answered with a desktop-sized number rather than a setting nobody would know how to tune.
 
 **One real bug this introduced, found by reasoning rather than by the race detector** (`-race` needs cgo, which needs a C compiler. [verify.sh](../verify.sh) carries a `race` stage but **it skips unless `go env CC` is on PATH, and on the owner's machine it is not** — `go env CC` reports `gcc`, `command -v gcc` finds nothing, so the stage has been printing `skip` rather than running. An earlier version of this paragraph claimed the gap was closed on 2026-07-27; it was not, and the claim is corrected here rather than deleted because believing it is what let §74's audit read the standing CI failure as a race for six days. The only place `-race` has ever actually run on this repo is the `unix (ubuntu-latest)` CI job — see §75): tool events now arrive from a delegate's goroutine, and `App.toolHistory` was an unguarded slice written by what used to be the only turn goroutine. Two writers is now normal, so it takes a mutex — and the same fix applies to any App field a delegate's callbacks touch. `recordTokenUsage` was already safe (it only writes through `database/sql`, which is concurrency-safe).
 
@@ -3211,7 +3211,7 @@ Three things came free with it, all of them the same bug wearing different cloth
 
 ### What this does not decide
 
-**It does not make delegation unbounded in cost.** `maxConcurrent` still caps delegates at four, depth is still 1, and the brief is still refused if it will not fit the child's context (§44.12). What was removed is a guess about length, not a limit on breadth.
+**It does not make delegation unbounded in cost.** ~~`maxConcurrent` still caps delegates at four~~ — **amended by §211 (2026-08-30):** four is now how many run *at once*, not how many may be asked for; the rest queue. Depth is still 1, and the brief is still refused if it will not fit the child's context (§44.12). What was removed is a guess about length, not a limit on breadth.
 
 **And it does not give the card a clock for a reloaded session.** A persisted `task` part keeps the spawn's duration, and the register is per-session; once the app restarts, an old delegation's card shows what the row recorded. Fixing that means writing the delegation's real duration into the part when it is collected, and no one has needed it yet.
 
@@ -7417,3 +7417,34 @@ The delegation count carries no clock on that line, though the mockup drew one. 
 **The engine was not touched.** The first plan named `app.go:342` as a file to change — stop erasing the live preview. Reading it again, the erase is what keeps the prose from being on screen twice: the same round emits `OnContentReset` and then the `note` carrying that text. The window was being handed the sentence and filing it away. Nothing in `internal/` needed to move.
 
 **Two comments were lying and are now not.** `part.go`'s header and `db.go`'s v4 migration both said `text` is the concatenation of the text parts. It is the last sentence alone — `TextOf` computes the concatenation and nothing in production calls it. Left as it was, the next reader would have assumed a reopened turn already had its narration in the bubble.
+
+## 210. Decision — A Name Written About Somebody Is Not a Name Written To Them (2026-08-30)
+
+The owner pasted his own release-notes draft into the composer: 8,486 characters ending in a brief for four pictures. Four thousand characters in, inside a code span, the draft said `เรียกใช้ได้ด้วย @reviewer`. The whole brief went to `reviewer` — a worker holding four read-only tools that could not have drawn a picture if it tried. It ran five rounds of `search` and was killed at 78.7 seconds. From the chat, Aetox *"เงียบหาย"*.
+
+Nothing was wrong with the model, and nothing was wrong with `reviewer`. The addressing rule read the recipient out of the message text, and text cannot carry that fact. **A name written *to* somebody and a name written *about* somebody are the same characters.** No amount of care around backticks, quotes or position separates them; each new rule is a rule about the pastes we have already seen, and the next one finds the gap it did not think of.
+
+So the text stopped being the evidence. *"ต้องกดเรียกจริงๆ ไม่ใช่ว่าคีย์เวิร์ดดันไปตรง มันต้อง @ แล้วขึ้นว่าเลือก ไม่ใช่เผลอไปคลิกใส่"* — two keys, and one of them is an act:
+
+- **picked** — the name chosen off the composer's roster menu. Nothing typed or pasted can produce it, which is exactly what makes a paste harmless whatever it says.
+- **text** — the `@name` token still standing in the message. Picking somebody and then deleting the token is changing your mind, and the message goes to the assistant like any other.
+
+The choice travels as its own argument (`SendMessage(text, to)`), because only the window knows which of the two things happened, and a boundary that re-derives it from words later has undone the fix. `Mention` checks both again on arrival: the window is outside the wall, not part of it.
+
+**Only agents can be addressed.** *"ซับเอเจนเรียกไม่ได้ เรียกได้แต่เอเจน ซับเอเจนมีหน้าที่ช่วยเอเจนครับ"* — a sub-agent is the assistant's own hand. It has no desk and no room to walk into, and half of them are shaped for one narrow errand rather than for a job handed over a counter. The kind is read off the loaded profile, so this adds no second opinion about who is what, and it puts the menu and the door in agreement by construction: the menu is `ListChairs` and a name that is not on it is refused even if a caller sends it.
+
+**Two things on screen followed from it.** A chip above the composer says who this message is going to, and cancelling it takes the token out with it — a turn that leaves the room used to look exactly like one that did not, which is how 78 seconds of somebody reading files read as an app that had stopped. And the menu no longer opens mid-turn: what is typed then goes *into* the running turn (Interject), which has no door to a worker, so offering the menu there would be taking a choice and dropping it.
+
+## 211. Decision — A Refusal Picks Which of Your Jobs Dies (2026-08-30)
+
+Six delegates dispatched in one round. Four ran; two came back as red cards reading *"4 sub-agents are already running (the limit is 4)"*. All six were real jobs the model had already decided on, and the two that lost were not the two that mattered least — they were the two the scheduler happened to reach last.
+
+`maxConcurrent` was doing two jobs and only one of them was its own. Four at a time is a statement about this machine and it is right. **Refusing the fifth is a statement about which work matters, made by arrival order** — and it hands the model a scheduler it cannot see and asks it to manage it by hand. *"เราต้องสร้างระบบแบบ รอโมเดลด้วย"*.
+
+So the limit became a thing you wait on rather than a number you are refused by: `maxConcurrent` tokens, taken before a delegate's work begins and returned when it ends. Go queues blocked senders in arrival order, so the model's own ordering survives — which is the part the refusal destroyed. Twenty jobs asked for at once are twenty jobs done, four at a time.
+
+**A queued delegation is a state, not a spinner.** It has an id, it is in the register, it is collectable and Stop reaches it; it simply has not begun. Drawn as its own thing on both cards, because a spinner over a beam over a ticking clock, for a worker that has not started, is the same lie the tray was fixed of in §208. And the clock every duration is measured from starts at *admission*, not at the ask: a delegate that waited 40 seconds and then worked for 5 must not report 45, or every duration in the app inherits the queue.
+
+**There is no ceiling above the queue, and there was one for a round.** The argument for it is true — a model asking for a seventeenth job without collecting one is looping, not fanning out — and it is not this function's to act on. It is the bargain §110 and §163 already settled twice: **the bound is a number on screen with a hand on the switch, never a refusal.** What finally makes that honest for a queue is that both halves exist: the tray draws what is waiting, and one press clears the whole line. A line you can cancel only a row at a time is not one anybody can stop — with two hundred queued the user would be clicking while the queue drains into the bill. The four in flight are left alone, because work already begun has been paid for and throwing it away is a different decision with its own button (StopAll).
+
+**And the card in the transcript finally got a brake.** *"มีปุ่มหยุดเอเจนหลักทำไมไม่มีปุ่มหยุดซับเอเจนหรือเอเจนครับ"*. The tray's card has had one since §163; this one never did, which was worse than an oversight — a delegation drawn in the transcript is deliberately kept out of the tray (one delegation, one card), so for the whole of the turn that started it this was the only card there was. The composer's Stop is not a substitute: it ends the turn, and a delegate outlives its turn on purpose.
