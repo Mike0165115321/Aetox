@@ -18,6 +18,7 @@
 <p align="center">
   <a href="README.th.md">ภาษาไทย</a> ·
   <a href="https://mikedev115.github.io/Aetox/">Website</a> ·
+  <a href="https://apps.microsoft.com/detail/9N4KKBRRSCZZ">Microsoft Store</a> ·
   <a href="https://github.com/Mikedev115/Aetox/releases/latest/download/aetox-amd64-installer.exe">Download</a> ·
   <a href="https://www.facebook.com/share/g/1BnXC5EiWg/">Community</a> ·
   <a href="ARCHITECTURE.md">Architecture</a> ·
@@ -80,11 +81,21 @@ ships five test models that exercise the real machinery (real tool calls, a real
 sub-agent, a long reasoning stream), so you can see what the app does before signing up for
 anything.
 
+**Microsoft Store** — [apps.microsoft.com/detail/9N4KKBRRSCZZ](https://apps.microsoft.com/detail/9N4KKBRRSCZZ)
+
+Microsoft signs the package, so this is the one channel with nothing to click past: no SmartScreen
+prompt, no antivirus warning. Windows keeps it updated, and the app's own updater stands down
+because a packaged app cannot replace its own files. From a terminal, the same thing:
+
+```powershell
+winget install --id=9N4KKBRRSCZZ --source=msstore
+```
+
 **Installer** — [aetox-amd64-installer.exe](https://github.com/Mikedev115/Aetox/releases/latest/download/aetox-amd64-installer.exe) (21.3 MB)
 
-It also fetches and SHA256-verifies the outside programs Aetox uses: WebView2, Tesseract (with
-Thai), poppler, ffmpeg, and a starter whisper model for offline speech. Any one of them failing
-skips that step with an explanation rather than aborting the install.
+Installs into Program Files with a Start menu entry. It carries its own files and nothing else:
+Tesseract, poppler, ffmpeg and the speech model are fetched later by the app itself, and only for a
+capability you tick.
 
 **Scoop**
 
@@ -95,9 +106,14 @@ scoop install https://raw.githubusercontent.com/Mikedev115/Aetox/main/scoop/aeto
 **Portable** — [the zip](https://github.com/Mikedev115/Aetox/releases/latest/download/aetox-windows-amd64-portable.zip),
 unpack, run `aetox.exe`. This is the only channel that can update itself in place.
 
+> **Pick one channel and stay on it.** Windows gives a packaged app its own data folder, so a Store
+> install and an installer install are two separate Aetoxes on one machine, with separate settings,
+> history, memory and keys. Installing both is the quickest way to wonder where your chats went.
+
 ### If SmartScreen or your antivirus complains
 
-Two different warnings, two different causes.
+**None of this happens on the Store build** — Microsoft signs that one. What follows is about the
+installer and the zip: two different warnings, two different causes.
 
 **"Windows protected your PC", unknown publisher.** The installer is not code-signed yet, so
 Windows has no publisher name to show for it — **More info → Run anyway**.

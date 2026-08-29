@@ -18,6 +18,7 @@
 <p align="center">
   <a href="README.md">English</a> ·
   <a href="https://mikedev115.github.io/Aetox/">เว็บไซต์</a> ·
+  <a href="https://apps.microsoft.com/detail/9N4KKBRRSCZZ">Microsoft Store</a> ·
   <a href="https://github.com/Mikedev115/Aetox/releases/latest/download/aetox-amd64-installer.exe">ดาวน์โหลด</a> ·
   <a href="https://www.facebook.com/share/g/1BnXC5EiWg/">ชุมชน</a> ·
   <a href="ARCHITECTURE.md">สถาปัตยกรรม</a> ·
@@ -77,11 +78,21 @@ Windows 10 ขึ้นไป x64 **ไม่ต้องมี API key ก็�
 พร้อมโมเดลทดสอบห้าตัวที่เดินเครื่องจริงทุกส่วน (เรียกเครื่องมือจริง ส่งงานให้เอเจนจริง
 สตรีมความคิดยาว ๆ จริง) คุณจึงเห็นว่าแอปทำอะไรได้ก่อนจะไปสมัครอะไรกับใคร
 
+**Microsoft Store** — [apps.microsoft.com/detail/9N4KKBRRSCZZ](https://apps.microsoft.com/detail/9N4KKBRRSCZZ)
+
+ไมโครซอฟท์เป็นคนเซ็นแพ็กเกจให้ ช่องทางนี้จึงไม่มีอะไรให้กดผ่านเลย ไม่มีจอ SmartScreen
+ไม่มีคำเตือนจากแอนตี้ไวรัส และ Windows เป็นคนอัปเดตให้ ตัวอัปเดตในแอปจะถอยให้เอง
+เพราะแอปแบบแพ็กเกจแก้ไฟล์ตัวเองไม่ได้ ถ้าถนัดพิมพ์คำสั่ง ได้ผลเหมือนกัน:
+
+```powershell
+winget install --id=9N4KKBRRSCZZ --source=msstore
+```
+
 **ตัวติดตั้ง** — [aetox-amd64-installer.exe](https://github.com/Mikedev115/Aetox/releases/latest/download/aetox-amd64-installer.exe) (21.3 MB)
 
-มันจะดาวน์โหลดและตรวจ SHA256 ของโปรแกรมภายนอกที่ Aetox ใช้ให้ด้วย: WebView2, Tesseract
-(พร้อมภาษาไทย), poppler, ffmpeg และโมเดลถอดเสียงตัวเริ่มต้นสำหรับใช้แบบออฟไลน์
-ตัวไหนโหลดไม่สำเร็จจะข้ามพร้อมบอกเหตุผล ไม่ล้มทั้งการติดตั้ง
+ลงไว้ใน Program Files พร้อมทางลัดในเมนูเริ่ม มันพกมาแค่ไฟล์ของตัวเองเท่านั้น
+ส่วน Tesseract, poppler, ffmpeg และโมเดลถอดเสียง แอปเป็นคนโหลดให้ทีหลัง
+และโหลดเฉพาะความสามารถที่คุณติ๊กเลือก
 
 **Scoop**
 
@@ -92,9 +103,15 @@ scoop install https://raw.githubusercontent.com/Mikedev115/Aetox/main/scoop/aeto
 **แบบพกพา** — [ไฟล์ zip](https://github.com/Mikedev115/Aetox/releases/latest/download/aetox-windows-amd64-portable.zip)
 แตกออกมาแล้วรัน `aetox.exe` ช่องทางนี้เป็นช่องทางเดียวที่อัปเดตตัวเองในที่เดิมได้
 
+> **เลือกช่องทางเดียวแล้วอยู่กับมัน** Windows ให้แอปแบบแพ็กเกจมีโฟลเดอร์ข้อมูลของตัวเอง
+> ตัวที่ลงจาก Store กับตัวที่ลงจากตัวติดตั้ง จึงเป็น Aetox คนละตัวบนเครื่องเดียวกัน
+> คนละการตั้งค่า คนละประวัติ คนละความจำ คนละคีย์ ลงทั้งสองทางคือทางลัดที่สุด
+> ไปสู่คำถามว่าแชทเก่าหายไปไหน
+
 ### ถ้า SmartScreen หรือแอนตี้ไวรัสขึ้นเตือน
 
-มีสองเตือนคนละอาการ คนละสาเหตุ
+**ตัวที่ลงจาก Store ไม่เจอเรื่องพวกนี้เลย** เพราะไมโครซอฟท์เซ็นให้ ที่เขียนต่อจากนี้
+เป็นเรื่องของตัวติดตั้งกับไฟล์ zip มีสองเตือนคนละอาการ คนละสาเหตุ
 
 **"Windows protected your PC" บอกว่าไม่รู้จักผู้เผยแพร่** — ตัวติดตั้งยังไม่ได้เซ็นโค้ด
 Windows จึงไม่มีชื่อผู้เผยแพร่จะแสดง กด **More info → Run anyway**
