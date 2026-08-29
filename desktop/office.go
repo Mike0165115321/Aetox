@@ -18,6 +18,7 @@ import (
 	"github.com/Mikedev115/Aetox/internal/config"
 	"github.com/Mikedev115/Aetox/internal/mcp"
 	"github.com/Mikedev115/Aetox/internal/mode"
+	"github.com/Mikedev115/Aetox/internal/skill"
 	"github.com/Mikedev115/Aetox/internal/subagent"
 )
 
@@ -95,7 +96,27 @@ func missingTools(p subagent.Profile, held []string) []string {
 	}
 	have := make(map[string]bool, len(held))
 	for _, name := range held {
-		have[strings.ToLower(strings.TrimSpace(name))] = true
+		name = strings.ToLower(strings.TrimSpace(name))
+		have[name] = true
+		// A packed tool arrives under the PACK's name, and every list a profile
+		// is written in speaks per-action names — `write`, `grep`, `image_ocr`
+		// — because those were the tool names before §99 packed them and every
+		// manifest, profile and permission rule still says them. Comparing the
+		// two flatly reported all of them missing.
+		//
+		// Measured 30 ส.ค., which is how it was found: `doc` held change,
+		// search, media_read and desk, and its card said it was without write,
+		// edit, edits, delete, grep, list, glob, image_ocr, video_ocr,
+		// audio_transcribe, desk_open and desk_list — 13 of the 14 names it
+		// listed. Every agent's card printed the same list, because the list
+		// was never about the agent. Reported as "อันนี้อ่ะจะมาแสดงทำไมว่ะ".
+		//
+		// PackedActions is asked rather than a table written here, for the
+		// reason mcp.ToolBelongsTo is asked below: a second copy of a naming
+		// rule is a second answer to the same question.
+		for _, action := range skill.PackedActions(name) {
+			have[action] = true
+		}
 	}
 	servers := config.MCPServersForAgent(p.Name)
 	var out []string

@@ -167,27 +167,62 @@
                 {#if c.overrides}<span class="badge">{t('office.overrides')}</span>{/if}
               </div>
               <p class="chair-desc">{c.description}</p>
-              <!-- Only when there is something to say. The tools list was taken
-                   off this card because it was the same on every one of them;
-                   this is the opposite kind of line, and it appears on a card
-                   only when that agent asked for something it did not get. -->
-              {#if c.missing?.length}
-                <p class="chair-missing">{t('office.missingTools', { list: c.missing.join(', ') })}</p>
+              <!-- What this agent has actually done, as a quiet line inside the
+                   card rather than a column of the foot (owner, 30 ส.ค.). It is
+                   a fact ABOUT the agent, like the sentence above it; the foot
+                   is where the card's actions are, and a number sharing that
+                   row was what kept the chat button down to an icon. -->
+              {#if c.jobs > 0}
+                <div class="chair-stat"><span class="n">{c.jobs}</span> {t('office.jobsDone')} · {agoLabel(c.lastUsed ?? '')}</div>
+              {:else}
+                <div class="chair-stat idle">{t('office.neverUsed')}</div>
               {/if}
             </div>
+            <!-- Only when there is something to say, and then a count rather
+                 than the names (owner, 30 ส.ค.).
+                 
+                 It printed the names until then, which was wrong twice over.
+                 They were mostly false — the registry hands back a packed
+                 tool's name while a profile names the actions inside it, so
+                 `doc` was reported as missing 14 tools it held 13 of — and even
+                 once true they are internal identifiers: `desk_open`,
+                 `audio_transcribe`. This page answers "who works here and what
+                 for", and six lines of names a reader can do nothing about was
+                 the loudest thing on every card.
+                 
+                 The names live behind the gear instead, which is the only place
+                 they can be changed. Same destination as the gear itself, so
+                 there is one way in rather than two. -->
+            {#if c.missing?.length}
+              <button class="chair-missing" onclick={() => configure(c)}>
+                <Icon name="alertTriangle" size={13} />
+                <span class="t">{t('office.missingCount', { n: c.missing.length })}</span>
+                <span class="go">{t('office.missingOpen')}</span>
+              </button>
+            {/if}
+            <!-- The one thing this page is for: walking in and talking to a
+                 specialist (COMPANY.md, the reason the roster sits behind the
+                 storefront and not in another building). It was a 13px sparkles
+                 icon until 30 ส.ค. — the smallest thing on the card, wearing a
+                 mark that means "chat" to nobody. Reported as "ไม่ใช่ไอค่อนโง่ ๆ
+                 แบบปัจจุบัน".
+                 
+                 It takes the whole row and the gear keeps its icon: a cog reads
+                 as settings anywhere, and settings is the errand you run
+                 occasionally rather than the reason you opened the page.
+                 
+                 Named with the agent, not "this agent", because that is what
+                 walking in is — and the row cannot overflow, which the version
+                 sharing a line with the job count could the first time somebody
+                 hired an agent with a long name. -->
             <div class="chair-foot">
-              {#if c.jobs > 0}
-                <span class="stat"><span class="n">{c.jobs}</span> {t('office.jobsDone')} · {agoLabel(c.lastUsed ?? '')}</span>
-              {:else}
-                <span class="stat idle">{t('office.neverUsed')}</span>
-              {/if}
+              <button class="chair-talk" onclick={() => talkTo(c)}>
+                <Icon name="messageSquare" size={14} />
+                <span class="t">{t('office.chatWith', { name: c.name })}</span>
+              </button>
               <button class="icobtn tiny tip-l" aria-label={t('settings.agentConfigure')}
                 data-tip={t('settings.agentConfigure')} onclick={() => configure(c)}>
                 <Icon name="settings" size={13} />
-              </button>
-              <button class="icobtn tiny tip-l chair-chat" aria-label={t('office.chat')}
-                data-tip={t('office.chat')} onclick={() => talkTo(c)}>
-                <Icon name="sparkles" size={13} />
               </button>
             </div>
           </div>

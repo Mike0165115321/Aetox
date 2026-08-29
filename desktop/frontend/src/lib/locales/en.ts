@@ -296,6 +296,10 @@ export const en: Record<keyof typeof th, string> = {
 
   'bgw.running': 'working',
   'bgw.waiting': 'needs you',
+  'bgw.queued': 'queued',
+  'bgw.queuedNote': 'starts as soon as a slot frees',
+  'bgw.queueCount': '{n} more waiting',
+  'bgw.stopQueue': 'cancel the queue',
   'bgw.finished': 'finished, reading the result…',
   'bgw.failed': 'could not finish',
   'bgw.stopped': 'you stopped this',
@@ -1306,6 +1310,9 @@ Check your own work before answering; say so plainly if unsure.
   'office.jobsDone': 'jobs',
   'office.neverUsed': 'nothing yet',
   'office.noChairs': 'Nobody on the team yet',
+  'office.chatWith': 'Chat with {name}',
+  'office.missingCount': 'Missing {n} tools',
+  'office.missingOpen': 'See which',
   'office.missingTools': 'Asked for tools it does not hold: {list}. It still works with the rest, but anything needing these will not happen.',
   'office.noJobs': 'No work has come in yet, ask the assistant for a document, a deck or a workbook.',
   'office.hiringNote': 'Hiring is dropping one more .md file in the folder. No update needed.',
@@ -1348,6 +1355,8 @@ Check your own work before answering; say so plainly if unsure.
   // the same names and the difference between them is the whole point: one
   // moves you into someone's room, the other says one sentence to them from
   // where you are.
+  'chat.addressedTo': 'This message goes to @{name}',
+  'chat.addressedCancel': 'Send to the assistant instead',
   'chat.mentionNote': '@ sends this one message to them. The chat stays with the assistant.',
   'chat.shellTitle': 'Which shell runs the commands the agent writes',
   'chat.shellNote': 'Saved for this project. Takes effect on the next command, one already running is not moved.',

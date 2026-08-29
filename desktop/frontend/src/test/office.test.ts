@@ -69,7 +69,10 @@ describe('the office roster', () => {
     const { container } = render(Office, { onClose: () => {} })
 
     await waitFor(() => expect(screen.getByText('3')).toBeTruthy())
-    expect(container.querySelector('.chair-foot .stat')?.textContent).toMatch(/3\s*งาน/)
+    // In the card's body since 30 ส.ค., not in the foot. It is a fact about the
+    // agent like the sentence above it; the foot is the card's actions, and a
+    // number sharing that row is what kept the chat button down to an icon.
+    expect(container.querySelector('.chair-stat')?.textContent).toMatch(/3\s*งาน/)
   })
 
   // The hiring door is the section's own control rather than a card in the
@@ -104,12 +107,18 @@ describe('the office roster', () => {
 
   // Walking into the room (§85): the card's chat button opens a session bound
   // to that agent, and the view moves to the chat that session now owns.
-  it('opens a direct chat with the agent on its card', async () => {
+  // In words, and naming the agent. It was a 13px sparkles icon sharing the
+  // foot with the job count until 30 ส.ค. — the smallest thing on the card,
+  // wearing a mark that means "chat" to nobody, on a page whose whole purpose
+  // is walking in and talking to a specialist. Read by its visible text here on
+  // purpose: an aria-label would pass this test with the icon back.
+  it('opens a direct chat from a button that says so in words', async () => {
     vi.mocked(NewChairSession).mockResolvedValue('20260805-100000.000' as any)
-    render(Office, { onClose: () => {} })
+    const { container } = render(Office, { onClose: () => {} })
 
-    await waitFor(() => expect(screen.getByLabelText('แชทกับเอเจนนี้')).toBeTruthy())
-    await fireEvent.click(screen.getByLabelText('แชทกับเอเจนนี้'))
+    await waitFor(() => expect(screen.getByText('คุยกับ doc')).toBeTruthy())
+    expect(container.querySelector('.chair-talk')?.textContent?.trim()).toBe('คุยกับ doc')
+    await fireEvent.click(screen.getByText('คุยกับ doc'))
 
     await waitFor(() => expect(vi.mocked(NewChairSession).mock.calls[0][0]).toBe('doc'))
     expect(cockpit.activeView).toBe('chat')

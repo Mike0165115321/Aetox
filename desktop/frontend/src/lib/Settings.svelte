@@ -2009,6 +2009,11 @@
   // Which profiles are agents — asked of ListChairs, the same answer the team
   // page draws, never re-derived from a file's fields here.
   let chairNames = $state(new Set<string>())
+  // What each office agent's `tools:` asked for and did not get, by agent name.
+  // The roster only says how many (Office.svelte); the names belong here,
+  // because this is the page where `tools:` can actually be changed. Same
+  // source as the count, so the two cannot disagree about what is missing.
+  let chairMissing = $state<Record<string, string[]>>({})
   // null = the list. Anything else = the editor on that profile's raw file.
   let agentEditing = $state<SubagentRow | null>(null)
   let agentDraftName = $state('')
@@ -2309,9 +2314,12 @@
     // the same rule here is a second answer waiting to disagree with the page
     // that actually draws the roster.
     try {
-      chairNames = new Set((await ListChairs()).map((c) => c.name))
+      const roster = await ListChairs()
+      chairNames = new Set(roster.map((c) => c.name))
+      chairMissing = Object.fromEntries(roster.filter((c) => c.missing?.length).map((c) => [c.name, c.missing ?? []]))
     } catch {
       chairNames = new Set() // engine not up: rows just carry no room label
+      chairMissing = {}
     }
     try {
       agentModels = await ListModelsForProvider(cockpit.model.provider)
@@ -3803,6 +3811,15 @@
             <div class="ag-toolsum-txt">
               <div class="t">{agentToolSummary}</div>
               <div class="d muted">{t('settings.agentToolsRule')}</div>
+              <!-- The names behind the roster's count. Here and not on the card
+                   because this is the row that can act on them: what is missing
+                   is a line in `tools:`, and `tools:` is edited through the
+                   button beside this text. -->
+              {#if chairMissing[agentDraftName]?.length}
+                <div class="d ag-toolsum-missing">
+                  {t('office.missingTools', { list: chairMissing[agentDraftName].join(', ') })}
+                </div>
+              {/if}
             </div>
             <button type="button" class="ctrl" onclick={() => (toolPickerOpen = true)}>
               {t('settings.agentToolsConfigure')} <Icon name="chevronRight" size={13} />

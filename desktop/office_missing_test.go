@@ -49,3 +49,46 @@ func TestMissingToolsDoesNotAccuseADeferredMCPServer(t *testing.T) {
 		t.Fatalf("missing = %v — the MCP tool of a placed server must not be accused, the invented one must be", got)
 	}
 }
+
+// The false positive that actually shipped, and the one that made this warning
+// worthless: after §99 packed the tools, the registry hands back the PACK's name
+// while every profile still names the per-action ones — the names those tools
+// had before packing, and the names every desk manifest and permission rule
+// still uses. Compared flatly, an agent holding `change` was reported as missing
+// write, edit, edits AND delete.
+//
+// Measured in the running app on 30 ส.ค.: `doc` reported 14 missing tools, of
+// which 13 it was holding. Every card on the roster printed nearly the same
+// list, because the list had stopped being about the agent at all. Reported as
+// "อันนี้อ่ะจะมาแสดงทำไมว่ะ".
+func TestMissingToolsResolvesAPackedToolToTheActionsItCarries(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	p := subagent.Profile{Name: "doc", Tools: []string{
+		"write", "edit", "edits", "delete", // change
+		"grep", "list", "glob", // search
+		"image_ocr", "video_ocr", "audio_transcribe", // media_read
+		"desk_open", "desk_list", // desk
+		"read", "ตัวที่ไม่มีจริง",
+	}}
+
+	got := missingTools(p, []string{"read", "change", "search", "media_read", "desk"})
+
+	if len(got) != 1 || got[0] != "ตัวที่ไม่มีจริง" {
+		t.Fatalf("missing = %v — every name but the invented one is carried by a pack the agent holds", got)
+	}
+}
+
+// The other half, which the fix must not trade away: a pack the agent does NOT
+// hold cannot excuse the actions inside it. Without this, resolving packs would
+// turn the warning off for everything and the tool that left the build would go
+// silent again — the exact failure this whole file exists for.
+func TestMissingToolsStillAccusesAnActionWhosePackIsAbsent(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	p := subagent.Profile{Name: "reader", Tools: []string{"read", "write", "grep"}}
+
+	got := missingTools(p, []string{"read", "search"})
+
+	if len(got) != 1 || got[0] != "write" {
+		t.Fatalf("missing = %v — grep comes with the search pack, write does not come with anything held", got)
+	}
+}

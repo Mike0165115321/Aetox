@@ -1110,6 +1110,15 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   font-size:var(--fs-xs); color:var(--text-dim); font-variant-numeric:tabular-nums;
   padding:0; text-align:left;
 }
+/* The other clock, and the reason there are two lines instead of one. A phase
+   thinks, writes, then works, so a single line carrying both numbers has to sit
+   on one side of the prose and be wrong about the other. This one sits above
+   because that is when it happened; .phase-head sits below for the same reason.
+   Not a control: what it would open is the reasoning text, which is one blob
+   for the whole turn and belongs to no single phase. */
+.phase-think {
+  font-size:var(--fs-xs); color:var(--text-dim); font-variant-numeric:tabular-nums;
+}
 button.phase-head:hover { color:var(--text-muted); }
 .phase-head .chev { display:inline-flex; flex:0 0 auto; }
 /* Body size, body colour, full markdown. This is the whole fix: a table, a
@@ -1658,6 +1667,33 @@ button.phase-head:hover { color:var(--text-muted); }
     background:color-mix(in srgb, var(--interactive) 55%, transparent);
   }
 }
+/* The queue as one row. It sits under the cards because it is the tail of the
+   list in every sense: the work furthest from being done, and the only row here
+   that is a summary rather than a thing. Quiet, and readable in one glance —
+   the count is the whole message, and the brake beside it is the only action
+   anyone can take on a line that has not started. */
+.bgw-queue { display:flex; align-items:center; gap:6px; padding:2px 0 2px 2px; }
+.bgw-queue-head {
+  display:flex; align-items:center; gap:6px;
+  background:none; border:none; padding:2px 4px; cursor:pointer;
+  color:var(--text-dim); font:inherit;
+}
+.bgw-queue-head:hover { color:var(--text-secondary); }
+.bgw-queue-count { font-size:var(--fs-xs); font-variant-numeric:tabular-nums; }
+.bgw-queue .bgw-stop { margin-left:auto; }
+/* Asked for, not begun. Dim rather than coloured, and the only card here with
+   no clock on it: a queued delegate is the one state on this tray that needs
+   nothing from anybody and is costing nothing, and drawing it as loud as work
+   in flight would make a four-slot queue look like a machine under load. */
+.bgw-card.is-queued { border-color:var(--border-subtle); }
+/* The beam says "something is happening here", and on a queued card nothing is.
+   It is lit by `.run`, which the transcript's card legitimately carries — a
+   queued delegation IS live work — so the light is taken off here rather than
+   by lying about the state. */
+.bgw-card.run.is-queued { animation:none; }
+.bgw-card.run.is-queued::before { display:none; }
+.bgw-mark.queue { color:var(--text-dim); }
+.bgw-badge.queue { color:var(--text-dim); border:1px solid var(--border-default); }
 .bgw-card.is-waiting { border-color:var(--status-modified); }
 .bgw-card.is-done { display:flex; align-items:center; gap:9px; padding:7px 13px; }
 .bgw-head { display:flex; align-items:center; gap:8px; }
@@ -3346,9 +3382,13 @@ button.phase-head:hover { color:var(--text-muted); }
 }
 .chair-name { font-size:var(--fs-lg); font-weight:600; color:var(--text-primary); min-width:0;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* Three lines since 30 ส.ค., not two. The card's own sentence used to be
+   clamped mid-word at two lines while a block of tool names below it got six —
+   the diagnostic outweighed the identity on a page whose whole question is who
+   works here and what for. The block left; the sentence gets the room. */
 .chair-desc {
   margin:0; color:var(--text-secondary); font-size:var(--fs-xs); line-height:1.5;
-  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
 }
 .chair-card.empty { border-style:dashed; background:none; }
 .chair-card.empty .chair-body { padding-bottom:11px; }
@@ -3358,20 +3398,30 @@ button.phase-head:hover { color:var(--text-muted); }
    actions, space-between spread them apart and left the gear stranded in the
    middle of the row — present, and impossible to find. */
 .chair-foot {
-  display:flex; align-items:center; gap:2px;
+  display:flex; align-items:center; gap:6px;
   border-top:1px solid var(--border-subtle);
-  margin-top:11px; padding:6px 8px 6px 12px;
+  margin-top:11px; padding:8px 10px;
 }
-/* Wraps rather than truncates. Thai has no word breaks for an ellipsis to fall
-   on kindly, so a clipped stat line read as "2 งานที่…" — the number survived
-   and the sentence did not. */
-.chair-foot .stat { flex:1; min-width:0; font-size:var(--fs-2xs); color:var(--text-dim); line-height:1.4; }
 .chair-foot .icobtn { flex:none; }
-.chair-foot .stat .n { font-size:var(--fs-md); font-weight:600; color:var(--text-secondary); }
-/* The door into a direct chat (§85) — the one action a card is for, so it is
-   the one thing in the foot wearing a colour. The gear beside it is the
-   occasional errand and stays grey. */
-.chair-foot .chair-chat { color:var(--interactive); }
+/* What this agent has done, inside the card now rather than in the foot. Wraps
+   rather than truncates: Thai has no word breaks for an ellipsis to fall on
+   kindly, so a clipped stat line read as "2 งานที่…" — the number survived and
+   the sentence did not. */
+.chair-stat { margin-top:9px; font-size:var(--fs-2xs); color:var(--text-dim); line-height:1.4; }
+.chair-stat .n { font-size:var(--fs-md); font-weight:600; color:var(--text-secondary); }
+/* The door into a direct chat (§85), and the whole reason the roster exists —
+   so it takes the foot's whole width and says what it does in words. It was a
+   13px sparkles icon sharing the row with the job count until 30 ส.ค.
+   Outline rather than a solid fill: five of these are on screen at once, and
+   five solid buttons is a wall rather than five invitations. */
+.chair-talk {
+  flex:1; min-width:0; display:flex; align-items:center; justify-content:center; gap:7px;
+  height:32px; padding:0 10px; border-radius:var(--r-md);
+  border:1px solid var(--border-default); background:var(--surface-raised);
+  color:var(--interactive); font-size:var(--fs-xs); cursor:pointer;
+}
+.chair-talk .t { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.chair-talk:hover { border-color:var(--interactive); background:var(--surface-hover); }
 /* Takes the slack the work count takes on the team page, so both feet put
    their one action in the same place. `min-width:0` because a model id is long
    enough to push the gear off a 240px card without it.
@@ -3386,6 +3436,23 @@ button.phase-head:hover { color:var(--text-muted); }
   flex:1; min-width:0; height:26px; padding:0 22px 0 6px;
   font-size:var(--fs-2xs); color:var(--text-secondary);
 }
+/* Who this message is addressed to, standing inside the composer above the
+   text — the same place an attachment sits, because it is the same kind of
+   fact: part of the message being written, not a banner over it.
+
+   It exists because the alternative was tested in the wild and failed: a turn
+   that left this room looked exactly like one that stayed, so a worker quietly
+   reading files for 78 seconds read as the app having gone silent. A row that
+   names the destination costs one line and removes the entire class of
+   "where did my answer go". */
+.addressed {
+  display:flex; align-items:center; gap:6px; align-self:flex-start;
+  margin:2px 0 6px; padding:3px 4px 3px 8px; border-radius:var(--r-full);
+  background:var(--surface-sunken); border:1px solid var(--border-default);
+}
+.addressed .ic { display:flex; color:var(--accent); }
+.addressed .who { font-size:var(--fs-xs); color:var(--text-secondary); }
+
 /* The roster, offered while an "@" is being completed in the composer.
    Absolute so it floats over the transcript instead of pushing the box down as
    you type — a composer that jumps while a sentence is half-written is one you
@@ -4984,7 +5051,21 @@ button.phase-head:hover { color:var(--text-muted); }
 /* Why a file cannot run — the loud half of "refused loudly". */
 .ag-invalid { color:var(--status-danger); }
 .ag-notice { color:var(--text-muted); border-left:3px solid var(--status-warning, #d29922); padding-left:8px; }
-.chair-missing { margin:6px 0 0; font-size:var(--fs-xs); line-height:1.5; color:var(--text-muted); border-left:3px solid var(--status-warning, #d29922); padding-left:8px; }
+/* The missing names, in the one place they can be acted on. Warning-coloured
+   and small: it explains a summary, it is not the summary. */
+.ag-toolsum-missing { margin-top:6px; color:var(--status-warning, #d29922); }
+/* One row on the card, above the footer and reading as part of it: a count and
+   a way to the place that can fix it. It was a bordered paragraph of tool names
+   until 30 ส.ค. — see Office.svelte for why the names left. */
+.chair-missing {
+  display:flex; align-items:center; gap:7px; width:100%;
+  padding:8px 14px; border-top:1px solid var(--border-subtle);
+  font-size:var(--fs-xs); color:var(--status-warning, #d29922); cursor:pointer; text-align:left;
+}
+.chair-missing .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-muted); }
+.chair-missing .go { flex:none; color:var(--text-dim); text-decoration:underline; text-underline-offset:2px; }
+.chair-missing:hover { background:var(--surface-row-hover); }
+.chair-missing:hover .go { color:var(--text-primary); }
 .tag.ag-deny { background:var(--diff-del-bg); color:var(--status-danger); border-color:var(--status-danger); }
 /* min-height is the floor a short file sits at — the size this field always
    had — while the height itself is set to the content by `autogrow`, so a long

@@ -289,6 +289,10 @@ export const th = {
 
   'bgw.running': 'กำลังทำงาน',
   'bgw.waiting': 'รอคำตอบ',
+  'bgw.queued': 'รอคิว',
+  'bgw.queuedNote': 'เริ่มทันทีที่มีที่ว่าง',
+  'bgw.queueCount': 'รอคิวอีก {n} งาน',
+  'bgw.stopQueue': 'ยกเลิกทั้งคิว',
  'bgw.finished': 'เสร็จแล้ว กำลังให้เอเจนอ่านผล…',
   'bgw.failed': 'ไปต่อไม่ได้',
   'bgw.stopped': 'คุณสั่งหยุดไว้',
@@ -1324,6 +1328,10 @@ export const th = {
   'office.jobsDone': 'งาน',
   'office.neverUsed': 'ยังไม่เคยรับงาน',
   'office.noChairs': 'ยังไม่มีใครในทีม',
+  // บนการ์ดบอกแค่จำนวน ชื่อจริงอยู่ในหน้าตั้งค่าของเอเจน ซึ่งเป็นที่เดียวที่แก้มันได้
+  'office.chatWith': 'คุยกับ {name}',
+  'office.missingCount': 'ขาดเครื่องมือ {n} อย่าง',
+  'office.missingOpen': 'ดูรายละเอียด',
   'office.missingTools': 'ขอเครื่องมือที่ไม่ได้ถือ: {list} เอเจนยังทำงานได้ด้วยเครื่องมือที่เหลือ แต่ส่วนที่ต้องใช้ตัวนี้จะทำไม่ได้',
  'office.noJobs': 'ยังไม่มีงานส่งเข้ามา ลองบอกผู้ช่วยว่าอยากได้เอกสาร สไลด์ หรือสเปรดชีตสักไฟล์',
   'office.hiringNote': 'เพิ่มเอเจน = วางไฟล์ .md เพิ่มหนึ่งไฟล์ ไม่ต้องอัปเดตแอป',
@@ -1363,6 +1371,8 @@ export const th = {
   // the same names and the difference between them is the whole point: one
   // moves you into someone's room, the other says one sentence to them from
   // where you are.
+  'chat.addressedTo': 'ข้อความนี้จะส่งถึง @{name}',
+  'chat.addressedCancel': 'ไม่ต้องส่งถึงเอเจน',
  'chat.mentionNote': '@ = ส่งข้อความนี้ให้เขาอ่านเอง แชทนี้ยังอยู่กับผู้ช่วยหลัก',
   'chat.shellTitle': 'คำสั่งที่เอเจนพิมพ์ จะรันด้วยเชลล์ไหน',
  'chat.shellNote': 'จำไว้ต่อโปรเจกต์ มีผลกับคำสั่งถัดไป คำสั่งที่รันอยู่ไม่ถูกย้าย',
