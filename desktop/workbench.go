@@ -99,22 +99,25 @@ func unrenderableFile(url string) string {
 
 // workbenchOpenBrowser asks the frontend to open a workbench browser tab, then
 // waits until the native tab exists and its first navigation completes.
-func (a *App) workbenchOpenBrowser(ctx context.Context, url string, newTab bool) (title, finalURL string, err error) {
+//
+// duplicateOf names the tab a `newTab` request was answered with instead of a
+// new one, because that tab was already on this page. Empty every other time.
+func (a *App) workbenchOpenBrowser(ctx context.Context, url string, newTab bool) (title, finalURL, duplicateOf string, err error) {
 	if a.ctx == nil {
-		return "", "", fmt.Errorf("UI not ready")
+		return "", "", "", fmt.Errorf("UI not ready")
 	}
 	url = strings.TrimSpace(url)
 	if url == "" {
-		return "", "", fmt.Errorf("url is required")
+		return "", "", "", fmt.Errorf("url is required")
 	}
 	url, query := normalizeWorkbenchURL(url, a.cur().cfg.SandboxRoot, a.outputSubdir)
 	if query != "" {
-		return "", "", fmt.Errorf("%q is not an address, it is something to search for — use web_search, then open a result", query)
+		return "", "", "", fmt.Errorf("%q is not an address, it is something to search for — use web_search, then open a result", query)
 	}
 	// Refused before a tab is opened: the tab would only show the failure too,
 	// and the user would be left looking at a download prompt or a blank page.
 	if why := unrenderableFile(url); why != "" {
-		return "", "", errors.New(why)
+		return "", "", "", errors.New(why)
 	}
 
 	// The agent browses in ONE tab, and every later call steers that tab.
@@ -135,6 +138,29 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string, newTab bool)
 	// tab-after-tab strandedness the owner watched happen on 2026-08-10.
 	id, err := a.agentTab()
 	reusing := err == nil && !newTab
+
+	// A second tab on a page the agent already has open is not a second view of
+	// it, it is a duplicate — and one it cannot see, because nothing in the
+	// answer says the tab is new rather than found. On 28 ส.ค. the same picture
+	// was asked for twice within ten seconds, which produced web-agent-2 and
+	// web-agent-3 on one file; the agent worked out what it had done four
+	// actions later ("ผมมีแท็บรูปซ้ำกันแล้ว") and spent a fifth closing one.
+	//
+	// The ability to ask for a second tab is not what was wrong, so it is not
+	// what is taken away: newTab still opens one for every page that is not
+	// already up. This only refuses to open the same page twice, and says so,
+	// which is the fact the agent was missing.
+	if newTab {
+		if already, found := a.agentTabOn(url); found {
+			// Moved to as well as reused. Every browsing tool after this works
+			// whichever tab is current (agentTab), so pointing at a tab without
+			// going to it would answer "here is your page" and then read a
+			// different one — a worse failure than the duplicate it replaces.
+			if selErr := a.selectAgentTab(string(already)); selErr == nil {
+				id, reusing, duplicateOf = already, true, string(already)
+			}
+		}
+	}
 	if !reusing {
 		id = AgentTabID(fmt.Sprintf(agentTabPrefix+"%d", atomic.AddInt64(&agentBrowserSeq, 1)))
 	}
@@ -169,7 +195,7 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string, newTab bool)
 	var tab *browserTab
 	for tab == nil {
 		if time.Now().After(deadline) {
-			return "", "", fmt.Errorf("browser tab did not open in time")
+			return "", "", "", fmt.Errorf("browser tab did not open in time")
 		}
 		if h := a.browsers; h != nil {
 			tab = h.tab(string(id))
@@ -177,7 +203,7 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string, newTab bool)
 		if tab == nil {
 			select {
 			case <-ctx.Done():
-				return "", "", ctx.Err()
+				return "", "", "", ctx.Err()
 			case <-time.After(100 * time.Millisecond):
 			}
 		}
@@ -186,7 +212,7 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string, newTab bool)
 	if err := tab.awaitNavigation(ctx, 20*time.Second); err != nil {
 		// Naming the URL matters here: it is usually a path the model built
 		// itself, and seeing it back is what tells it the path was the problem.
-		return "", "", fmt.Errorf("%w: %s", err, url)
+		return "", "", "", fmt.Errorf("%w: %s", err, url)
 	}
 	// meta (title/url) arrives from the page a beat after it loads — give it
 	// one. armNavigation cleared whatever the last page left here, so this waits
@@ -204,7 +230,7 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string, newTab bool)
 	if finalURL == "" {
 		finalURL = url
 	}
-	return title, finalURL, nil
+	return title, finalURL, duplicateOf, nil
 }
 
 // AgentTabID names the tab the agent is working, and is a different type from
@@ -373,13 +399,34 @@ func (a *App) browserWhere(id AgentTabID) string {
 	if t == nil {
 		return ""
 	}
-	ref := browserPageRef(t.meta())
-	if ref == "" {
+	return browserTabRef(id, browserPageRef(t.meta()))
+}
+
+// browserTabRef is the one spelling of "which tab", with or without the page
+// that tab is on.
+//
+// Every browser answer named the page and none of them named the tab, which was
+// harmless while there was only ever one and stopped being harmless the day
+// there could be several. Reading a transcript back on 28 ส.ค. the owner could
+// not tell which tab an action had happened in — *"เวลาเอเจนทำในแท็ปไหน มันควร
+// ระบุแท็ปด้วย"* — and neither could the agent: with the same file open twice,
+// two tabs produced two identical answers, and it took four actions to notice.
+//
+// The page half is optional because it is often already in the sentence: a
+// capture says which page it photographed, so repeating it in the bracket would
+// name the same thing twice. Which tab is never already there, which is the
+// whole point.
+//
+// Square brackets outside the page ref's own parentheses, so "Title (url)" does
+// not end up nested inside a second pair and read as a typo.
+func browserTabRef(id AgentTabID, page string) string {
+	if strings.TrimSpace(string(id)) == "" {
 		return ""
 	}
-	// Square brackets outside the ref's own parentheses, so "Title (url)" does
-	// not end up nested inside a second pair and read as a typo.
-	return " [อยู่ที่ " + ref + "]"
+	if page = strings.TrimSpace(page); page != "" {
+		return " [แท็บ " + string(id) + " อยู่ที่ " + page + "]"
+	}
+	return " [แท็บ " + string(id) + "]"
 }
 
 // workbenchReadBrowser reads the page the agent has open in the workbench
@@ -452,7 +499,7 @@ func (s *browserOpenSkill) Execute(ctx context.Context, input skill.Input) (skil
 
 func (s *browserOpenSkill) open(ctx context.Context, url string, newTab bool) (skill.Output, error) {
 	start := time.Now()
-	title, finalURL, err := s.app.workbenchOpenBrowser(ctx, url, newTab)
+	title, finalURL, duplicateOf, err := s.app.workbenchOpenBrowser(ctx, url, newTab)
 	out := skill.Output{
 		Name:       "browser_open",
 		Command:    "browser_open " + url,
@@ -465,6 +512,13 @@ func (s *browserOpenSkill) open(ctx context.Context, url string, newTab bool) (s
 		return out, err
 	}
 	out.Content = browserOpenedLine(title, finalURL)
+	if duplicateOf != "" {
+		// Said rather than done quietly, because the whole failure this
+		// prevents is an agent that could not tell a new tab from a found one.
+		// Which tab it is comes from the stamp every browser answer now carries,
+		// so it is not named twice here. See browserTabRef.
+		out.Content += "\nหน้านี้เปิดอยู่ในแท็บนี้แล้ว จึงใช้แท็บเดิม ไม่ได้เปิดใบใหม่"
+	}
 	out.RawOutput = out.Content
 	return out, nil
 }
@@ -581,24 +635,33 @@ func urlFromArgs(args string) string {
 	return u
 }
 
+// localFileBehind answers with the file on disk a page URL is showing, or ""
+// for a page that is not a local file or is one that has since gone.
+//
+// Unescaped first, then raw: a Thai filename may be percent-encoded on the way
+// into the URL and is not on the way out of os.WriteFile.
+func localFileBehind(pageURL string) string {
+	if !strings.HasPrefix(pageURL, "file:///") {
+		return ""
+	}
+	p := filepath.FromSlash(strings.TrimPrefix(pageURL, "file:///"))
+	if unescaped, err := neturl.PathUnescape(p); err == nil {
+		if _, err := os.Stat(unescaped); err == nil {
+			return unescaped
+		}
+	}
+	if _, err := os.Stat(p); err == nil {
+		return p
+	}
+	return ""
+}
+
 // stillOpenable drops a local file that has since been deleted — session output
 // folders age out, and a row that opens the engine's "not found" page is the
 // dead end this surface exists to prevent. Remote pages are not checked: a 404
 // still has back, reload and the address bar directly above it.
 func stillOpenable(pageURL string) bool {
-	if !strings.HasPrefix(pageURL, "file:///") {
-		return true
-	}
-	p := filepath.FromSlash(strings.TrimPrefix(pageURL, "file:///"))
-	// Unescaped first, then raw: a Thai filename may be percent-encoded on the
-	// way into the URL and is not on the way out of os.WriteFile.
-	if unescaped, err := neturl.PathUnescape(p); err == nil {
-		if _, err := os.Stat(unescaped); err == nil {
-			return true
-		}
-	}
-	_, err := os.Stat(p)
-	return err == nil
+	return !strings.HasPrefix(pageURL, "file:///") || localFileBehind(pageURL) != ""
 }
 
 // RecentAgentPages returns the pages the agent opened, newest first, one row

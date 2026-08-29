@@ -183,6 +183,11 @@ func TestArmingForgetsTheLastNavigationsEngineError(t *testing.T) {
 
 // Steering one tab of your own is half an answer; the other half is knowing what
 // is in it. click and type say so now, and after a click the page may have moved.
+//
+// Since 28 ส.ค. it also says WHICH tab, and that half survives a page that
+// cannot be named: a tab that has navigated nowhere yet is still a tab the
+// action happened in, and with several of them open that is the fact a reader
+// cannot recover from anywhere else.
 func TestBrowserWhereNamesThePageTheActionLandedOn(t *testing.T) {
 	app := &App{}
 	app.browsers = &browserHost{app: app, tabs: map[string]*browserTab{
@@ -190,12 +195,22 @@ func TestBrowserWhereNamesThePageTheActionLandedOn(t *testing.T) {
 		"web-agent-2": {}, // navigated nowhere yet
 	}, views: map[string]tabView{"web-agent-1": &fakeView{}, "web-agent-2": &fakeView{}}}
 
-	if got := app.browserWhere("web-agent-1"); !strings.Contains(got, "https://example.com/after-click") {
+	got := app.browserWhere("web-agent-1")
+	if !strings.Contains(got, "https://example.com/after-click") {
 		t.Errorf("browserWhere() = %q, want the page named in it", got)
 	}
-	if got := app.browserWhere("web-agent-2"); got != "" {
-		t.Errorf("browserWhere() on a tab with no URL = %q, want nothing appended", got)
+	if !strings.Contains(got, "web-agent-1") {
+		t.Errorf("browserWhere() = %q, want the tab named in it too", got)
 	}
+
+	nowhere := app.browserWhere("web-agent-2")
+	if !strings.Contains(nowhere, "web-agent-2") {
+		t.Errorf("browserWhere() on a tab with no URL = %q, want it to still name the tab", nowhere)
+	}
+	if strings.Contains(nowhere, "อยู่ที่") {
+		t.Errorf("browserWhere() on a tab with no URL = %q, want no claim about where it is", nowhere)
+	}
+
 	if got := app.browserWhere("web-9"); got != "" {
 		t.Errorf("browserWhere() on an unknown tab = %q, want nothing appended", got)
 	}

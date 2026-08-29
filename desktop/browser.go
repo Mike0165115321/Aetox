@@ -16,6 +16,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -609,6 +610,53 @@ type browserTab struct {
 	// about the navigation being waited on and never a leftover from the last
 	// one. See tabCallbacks.onEngineError for why it exists at all.
 	engErr error
+
+	// shotMu guards what this tab's last capture looked like.
+	//
+	// A capture used to hand back a picture and nothing else, which meant two
+	// captures of an unchanged page were two identical pictures with nothing
+	// saying they were identical. A model reading the second one cannot tell
+	// "the edit did not land" from "nothing here was going to change", and it
+	// reads it as the first: on 28 ส.ค. three of one chat's thirteen captures
+	// came back byte-for-byte identical, and each one sent the agent round to
+	// edit again — the deck's opening slide was rewritten four times over a
+	// picture that had never changed.
+	//
+	// The sum is of the PNG bytes and not of the pixels. That can only ever
+	// MISS a duplicate, never invent one: an encoder that wrote the same image
+	// two ways leaves both captures reported as new, which is exactly what
+	// every capture did before this existed. A false "nothing changed" would
+	// be the dangerous direction, and this cannot produce one.
+	shotMu   sync.Mutex
+	shotSum  [sha256.Size]byte
+	shotPath string // where the remembered capture was written
+	shotHave bool   // whether shotSum means anything yet
+	shotSame int    // how many captures in a row have come back identical
+}
+
+// lastShot reports whether a capture just taken is byte-for-byte the one this
+// tab last handed back, where that one was written, and how many captures in a
+// row have now come back identical.
+//
+// It counts as well as answers, because "the same picture again" and "the same
+// picture for the third time" are different facts about how a turn is going,
+// and only the tab is in a position to know either.
+func (t *browserTab) lastShot(sum [sha256.Size]byte) (where string, inARow int, same bool) {
+	t.shotMu.Lock()
+	defer t.shotMu.Unlock()
+	if !t.shotHave || t.shotSum != sum {
+		return "", 0, false
+	}
+	t.shotSame++
+	return t.shotPath, t.shotSame, true
+}
+
+// rememberShot makes this capture the one the next is measured against, and
+// ends whatever run of identical ones came before it.
+func (t *browserTab) rememberShot(sum [sha256.Size]byte, where string) {
+	t.shotMu.Lock()
+	defer t.shotMu.Unlock()
+	t.shotSum, t.shotPath, t.shotHave, t.shotSame = sum, where, true, 0
 }
 
 // noteEngineError records what the engine said. Called from whatever thread the

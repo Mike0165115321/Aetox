@@ -196,6 +196,41 @@ func (s *browserSkill) run(ctx context.Context, args map[string]any) (skill.Outp
 			action, strings.Join(s.allowedActions(), ", "))
 	}
 
+	out, err := s.dispatch(ctx, action, args)
+
+	// Which tab, stamped once, here, for every action that does not already say
+	// it mid-sentence. This is the one door every browser action comes through,
+	// which is the only reason the fact can be added in one place rather than
+	// in eleven — and eleven places saying the same thing is how the four
+	// spellings of "which page" happened. See browserTabRef.
+	//
+	// Read AFTER the action rather than before: `open` and `tabs select` both
+	// move which tab is current, and the tab an answer belongs to is the one it
+	// left the agent on.
+	if out.Content != "" && !browserNamesItsOwnTab[action] {
+		if id, tabErr := s.app.agentTab(); tabErr == nil {
+			out.Content += browserTabRef(id, "")
+			// RawOutput is the same sentence when it is set at all, and an
+			// empty one is a deliberate state on the error paths.
+			if out.RawOutput != "" {
+				out.RawOutput = out.Content
+			}
+		}
+	}
+	return out, err
+}
+
+// browserNamesItsOwnTab is the actions whose answers already carry the tab.
+//
+// The first three say it mid-sentence through browserWhere, where the fact
+// belongs — a click that landed somewhere is about the page it landed on, not
+// about a bracket at the end. `tabs` enumerates every tab by id and marks the
+// current one, so a stamp would be a fourth mention in three lines.
+var browserNamesItsOwnTab = map[string]bool{
+	"click": true, "type": true, "back": true, "tabs": true,
+}
+
+func (s *browserSkill) dispatch(ctx context.Context, action string, args map[string]any) (skill.Output, error) {
 	switch action {
 	case "open":
 		return (&browserOpenSkill{app: s.app}).open(ctx, str(args["url"]), boolArg(args["newTab"]))

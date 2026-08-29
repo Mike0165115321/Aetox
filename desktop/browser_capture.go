@@ -24,6 +24,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -33,6 +34,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Mikedev115/Aetox/internal/deck"
 	"github.com/Mikedev115/Aetox/internal/model"
 	"github.com/Mikedev115/Aetox/internal/skill"
 )
@@ -89,8 +91,9 @@ func (s *browserCaptureSkill) capture(ctx context.Context, full bool) (skill.Out
 	a.clearPageMarks(id)
 
 	var title, url string
-	if t := a.browsers.tab(string(id)); t != nil {
-		title, url = t.meta()
+	tab := a.browsers.tab(string(id))
+	if tab != nil {
+		title, url = tab.meta()
 	}
 	a.deskEvent("", "open-browser", map[string]string{"id": string(id), "url": url})
 	select {
@@ -100,12 +103,13 @@ func (s *browserCaptureSkill) capture(ctx context.Context, full bool) (skill.Out
 	case <-time.After(400 * time.Millisecond): // the raise has to reach the native view and it has to draw
 	}
 
-	// note is whatever this picture is not. It is built here and spent at the
-	// bottom, because both things it can say are things a caller would
-	// otherwise have to infer from a picture that looks perfectly fine: a page
-	// cut off at a height it cannot see, and a full-page request quietly served
-	// by the viewport path.
-	var note string
+	// notes are whatever this picture is not. They are collected as they are
+	// learnt and spent at the bottom, because every one of them is a thing a
+	// caller would otherwise have to infer from a picture that looks perfectly
+	// fine: a page cut off at a height it cannot see, a full-page request
+	// quietly served by the viewport path, and a deck photographed by a
+	// renderer that is not the one that exports it.
+	var notes []string
 	var dataURL string
 	if full {
 		var cutAt int
@@ -116,10 +120,10 @@ func (s *browserCaptureSkill) capture(ctx context.Context, full bool) (skill.Out
 			// still an answer to most questions. Saying so is not optional: a
 			// caller that asked for the whole page and was handed the top of it
 			// without being told would report on a page it never saw.
-			note = "ถ่ายทั้งหน้าไม่สำเร็จ (" + err.Error() + ") ภาพนี้จึงเป็นเฉพาะส่วนที่เห็นบนจอ"
+			notes = append(notes, "ถ่ายทั้งหน้าไม่สำเร็จ ("+err.Error()+") ภาพนี้จึงเป็นเฉพาะส่วนที่เห็นบนจอ")
 			dataURL, err = a.BrowserCapturePNG(string(id))
 		case cutAt > 0:
-			note = fmt.Sprintf("หน้านี้ยาวกว่าที่ตัวเรนเดอร์วาดได้ ภาพนี้คือ %d พิกเซลแรกจากบนสุด ส่วนที่เหลือไม่ได้อยู่ในภาพ", cutAt)
+			notes = append(notes, fmt.Sprintf("หน้านี้ยาวกว่าที่ตัวเรนเดอร์วาดได้ ภาพนี้คือ %d พิกเซลแรกจากบนสุด ส่วนที่เหลือไม่ได้อยู่ในภาพ", cutAt))
 		}
 	} else {
 		dataURL, err = a.BrowserCapturePNG(string(id))
@@ -136,11 +140,49 @@ func (s *browserCaptureSkill) capture(ctx context.Context, full bool) (skill.Out
 		return out, err
 	}
 
+	if deckNote := a.deckRendererNote(url); deckNote != "" {
+		notes = append(notes, deckNote)
+	}
+
+	// Named the way every other browser action names a page. See browserPageRef.
+	where := browserPageRef(title, url)
+	if where == "" {
+		where = "the open page"
+	}
+
+	// "Nothing changed" is an answer, and until the tab began remembering its
+	// last picture it was the one answer this tool could not give. It handed
+	// back the identical image and left the caller to notice for itself, which
+	// no caller ever did — see browserTab.lastShot for what that cost.
+	//
+	// Neither attached nor written a second time, and both halves are the same
+	// point: the caller is already holding this exact image, from the capture
+	// this one is identical to. Sending it again spends the tokens of a picture
+	// to say nothing, and a duplicate under output/<session>/work is a card in
+	// the gallery for a photograph nobody took.
+	sum := sha256.Sum256(png)
+	if tab != nil {
+		if at, inARow, same := tab.lastShot(sum); same {
+			out.Success = true
+			out.DurationMs = time.Since(start).Milliseconds()
+			out.Content = fmt.Sprintf("ภาพของ %s เหมือนกับ %s ทุกไบต์ หน้านี้ไม่ได้เปลี่ยนอะไรเลยตั้งแต่แคปครั้งก่อน จึงไม่ได้เก็บไฟล์ซ้ำและไม่ได้ส่งภาพเดิมมาซ้ำ", where, at)
+			if inARow > 1 {
+				out.Content += fmt.Sprintf("\nเป็นครั้งที่ %d ติดกันแล้วที่ได้ภาพเดิม", inARow)
+			}
+			out.Content += captureNotes(notes)
+			out.RawOutput = out.Content
+			return out, nil
+		}
+	}
+
 	rel, err := a.writeBrowserShot(png)
 	if err != nil {
 		out.Content, out.Stderr = "เก็บภาพไม่สำเร็จ: "+err.Error(), err.Error()
 		out.DurationMs = time.Since(start).Milliseconds()
 		return out, err
+	}
+	if tab != nil {
+		tab.rememberShot(sum, rel)
 	}
 
 	out.Success = true
@@ -152,22 +194,66 @@ func (s *browserCaptureSkill) capture(ctx context.Context, full bool) (skill.Out
 	// image, which is the same trade visionAttachments makes for a user's
 	// attachment — one question, one answer, asked in both places by the same
 	// function.
-	// Named the way every other browser action names a page. See browserPageRef.
-	where := browserPageRef(title, url)
-	if where == "" {
-		where = "the open page"
-	}
 	if model.ResolveVision(a.cur().cfg.ModelProvider, a.cur().cfg.ModelName) {
 		out.Images = []model.Image{{MediaType: "image/png", Data: png}}
 		out.Content = fmt.Sprintf("ภาพของ %s อยู่ด้านล่าง และเก็บไว้ที่ %s", where, rel)
 	} else {
 		out.Content = fmt.Sprintf("เก็บภาพของ %s ไว้ที่ %s แล้ว ใช้ image_ocr กับไฟล์นี้เพื่ออ่านข้อความในภาพ", where, rel)
 	}
-	if note != "" {
-		out.Content += "\n" + note
-	}
+	out.Content += captureNotes(notes)
 	out.RawOutput = out.Content
 	return out, nil
+}
+
+// captureNotes is the tail of a capture's answer: each thing the picture is
+// not, on a line of its own, or nothing at all.
+func captureNotes(notes []string) string {
+	if len(notes) == 0 {
+		return ""
+	}
+	return "\n" + strings.Join(notes, "\n")
+}
+
+// deckRendererNote is what a photograph of a deck is not.
+//
+// A deck is not exported by the tab it is being looked at in. deck_render.go
+// opens the file in a window of its own, parked off-screen at exactly
+// deckSlideWidthPx by deckSlideHeightPx, and photographs one slide at a time;
+// a tab on somebody's monitor is neither that size nor that shape. A layout
+// that depends on the window it is in therefore has two answers, and a capture
+// only ever shows one of them.
+//
+// It is a note and not a refusal because the capture is still the right tool
+// most of the time — most of a deck does not care how wide the window is. It
+// exists because on 28 ส.ค. the complaint was "หน้าแรกพังครับ ตอนกดส่งออก" and
+// every verification round that followed was a capture of the on-screen tab,
+// so the renderer that had actually broken was never once looked at.
+//
+// Nothing new is exposed by the read: this is the file the tab in front of the
+// user is already displaying.
+func (a *App) deckRendererNote(pageURL string) string {
+	full := localFileBehind(pageURL)
+	if full == "" {
+		return ""
+	}
+	if ext := strings.ToLower(filepath.Ext(full)); ext != ".html" && ext != ".htm" {
+		return ""
+	}
+	// Bounded the way the deck listing bounds itself, and for the same reason:
+	// deciding costs a read and an HTML parse, and a deck with its pictures
+	// inline is megabytes.
+	if info, err := os.Stat(full); err != nil || info.Size() > maxDeckBytes {
+		return ""
+	}
+	source, err := os.ReadFile(full)
+	if err != nil || !deck.Is(source) {
+		return ""
+	}
+	return fmt.Sprintf(
+		"ไฟล์นี้เป็นเด็ค ภาพนี้คือแท็บบนจอ ไม่ใช่สิ่งที่ตัวส่งออกวาด "+
+			"ตัวส่งออกเปิดเด็คในหน้าต่างของมันเอง กว้าง %d สูง %d พอดี แล้วถ่ายทีละสไลด์ "+
+			"เลย์เอาต์ที่อิงขนาดหน้าต่างจึงออกมาคนละอย่างได้ระหว่างสองที่นี้",
+		deckSlideWidthPx, deckSlideHeightPx)
 }
 
 // workFileDir is where a file the agent produced **while working** goes, as a

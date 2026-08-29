@@ -115,6 +115,30 @@ func (a *App) agentTabs() []string {
 	return live
 }
 
+// agentTabOn finds the agent's own tab already showing a page, if it has one.
+//
+// Compared case-insensitively because a file URL is the same file whichever way
+// Windows spelled the drive letter, and the newest match wins: agentTabs is
+// oldest first, so walking backwards lands on the tab most recently opened on
+// that page, which is the one a caller asking for it again means.
+func (a *App) agentTabOn(pageURL string) (AgentTabID, bool) {
+	pageURL = strings.TrimSpace(pageURL)
+	if pageURL == "" || a.browsers == nil {
+		return "", false
+	}
+	ids := a.agentTabs()
+	for i := len(ids) - 1; i >= 0; i-- {
+		t := a.browsers.tab(ids[i])
+		if t == nil {
+			continue
+		}
+		if _, url := t.meta(); strings.EqualFold(strings.TrimSpace(url), pageURL) {
+			return AgentTabID(ids[i]), true
+		}
+	}
+	return "", false
+}
+
 func (a *App) agentTabList() string {
 	ids := a.agentTabs()
 	if len(ids) == 0 {
