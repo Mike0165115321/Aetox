@@ -1090,6 +1090,10 @@ export function StopMobileRemote() {
   return window['go']['main']['App']['StopMobileRemote']();
 }
 
+export function StopQueuedTasks() {
+  return window['go']['main']['App']['StopQueuedTasks']();
+}
+
 export function SupportedProviders() {
   return window['go']['main']['App']['SupportedProviders']();
 }

@@ -45,6 +45,16 @@ import (
 // and general.md's prompt says the same. That matches how delegation is meant to
 // be used, so it holds until it doesn't. If two delegates ever really do need to
 // write at the same time, the fix is a worktree each, not a lock here.
+//
+// It is a limit on how many run AT ONCE, not on how many you may ask for. The
+// fifth waits (see start); it used to be refused, and the refusal is what the
+// owner saw on 30 ส.ค.: six workers dispatched in one round, four running and
+// two red cards reading "4 sub-agents are already running". Every one of those
+// six was a real job the model had already decided on, and the two that lost the
+// race were not the two that mattered least — they were the two the scheduler
+// happened to reach last. A cap that turns a queue into a failure makes the
+// model's fan-out a lottery, and asks it to hand-manage a scheduler it cannot
+// see. **"เราต้องสร้างระบบแบบ รอโมเดลด้วย"** (owner, 30 ส.ค.).
 const maxConcurrent = 4
 
 // runningTask is one delegation in flight or finished. Fields after done is
@@ -60,9 +70,11 @@ type runningTask struct {
 	model string
 	// run and phase are the declared job this delegation belongs to, both empty
 	// for a loose delegate (see run.go). Written at start and never again.
-	run     string
-	phase   string
-	started time.Time
+	run   string
+	phase string
+	// asked is when the delegation was requested, which is not when it began:
+	// with four already running it waits its turn first. Write-once.
+	asked time.Time
 	// ctx is the delegate's own, so a collector can tell "stopped" from "still
 	// working" the instant Stop is pressed rather than when the goroutine
 	// happens to notice.
@@ -76,7 +88,20 @@ type runningTask struct {
 	// twice (see ask.go).
 	asks chan *pendingAsk
 
-	mu        sync.Mutex
+	mu sync.Mutex
+	// started is when the work actually began — after the wait for a slot, not
+	// before it. Under the lock because it is written once the delegate is
+	// admitted and read live by the tray, and because the difference is the
+	// whole point: a delegate that waited 40s for a slot and then worked for 5
+	// must not report 45, or every duration in the app inherits the queue.
+	//
+	// Set to `asked` until then, so nothing reads a zero time and the tray can
+	// sort a queued row among the rest.
+	started time.Time
+	// queued: registered, and still waiting for one of the maxConcurrent slots.
+	// It has an id, it is in the register, it is collectable and Stop reaches
+	// it — it simply has not started.
+	queued    bool
 	toolCalls int
 	// tokensUsed is this delegate's own spend, summed as its rounds come back.
 	//
@@ -124,6 +149,30 @@ type runningTask struct {
 
 	// Written exactly once, before done is closed.
 	output skill.Output
+}
+
+// startedAt is when the work began, or when it was asked for while it is still
+// waiting for a slot.
+func (r *runningTask) startedAt() time.Time {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.started
+}
+
+// isQueued reports whether this delegation is still waiting for a slot.
+func (r *runningTask) isQueued() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.queued
+}
+
+// beginRun marks the moment a waiting delegation was admitted. The clock every
+// duration is measured from starts here.
+func (r *runningTask) beginRun() {
+	r.mu.Lock()
+	r.queued = false
+	r.started = time.Now()
+	r.mu.Unlock()
 }
 
 func (r *runningTask) countCall() {
@@ -303,6 +352,20 @@ type Delegations struct {
 	tasks   map[string]*runningTask
 	counter atomic.Uint64
 
+	// slots is the concurrency limit as a thing you wait on rather than a number
+	// you are refused by: maxConcurrent tokens, taken before a delegate's work
+	// begins and returned when it ends. Go queues blocked senders in arrival
+	// order, so once the slots are full the waiting delegates start in the order
+	// they began waiting — the model's own ordering survives, which is the part
+	// a refusal destroyed. (Delegates dispatched in the same breath race each
+	// other to the wait, which is not an order anybody promised: what matters is
+	// that all of them run.)
+	//
+	// Held by the delegate's own goroutine for exactly as long as it works, so a
+	// slot cannot be leaked by an early return: the release is deferred beside
+	// the close of `done`.
+	slots chan struct{}
+
 	// The declared jobs delegations can belong to (run.go). openRun is the one a
 	// delegate joins by naming a phase of it; runOrder keeps declaration order,
 	// which is the order the tray reads them back in.
@@ -316,7 +379,11 @@ type Delegations struct {
 // can stop what is running; one that does not gets the same behaviour minus
 // that door, which is what every test and the CLI want (see TaskOptions).
 func NewDelegations() *Delegations {
-	return &Delegations{tasks: map[string]*runningTask{}, runs: map[string]*Run{}}
+	return &Delegations{
+		tasks: map[string]*runningTask{},
+		runs:  map[string]*Run{},
+		slots: make(chan struct{}, maxConcurrent),
+	}
 }
 
 // delegation is what start needs to know about a job before it runs it. A struct
@@ -347,35 +414,71 @@ type delegation struct {
 // What still ends one early is StopAll, and only StopAll: the user pressing
 // Stop is a statement about the work, not about the turn the work happened to
 // start in. Nothing outlives the process — a goroutine cannot.
-func (r *Delegations) start(spec delegation, work func(context.Context, *runningTask) skill.Output) (*runningTask, error) {
+// Nothing here refuses. A job asked for while maxConcurrent are already working
+// waits for a slot and starts in the order it was asked, however many are ahead
+// of it.
+//
+// There was a ceiling on outstanding delegations for one round of this change,
+// on the argument that a model asking for a seventeenth job without collecting
+// one is looping rather than fanning out. That argument is true and it is not
+// this function's to act on. It is the same bargain §110 and §163 already
+// settled twice: **the bound is a number on screen with a hand on the switch,
+// never a refusal** — a refusal picks which of the user's jobs dies by whichever
+// one asked last, which is not a decision anybody made. What makes it honest
+// here is that both halves finally exist for a queue too: the tray draws what is
+// waiting, and StopQueued clears the whole line in one press.
+func (r *Delegations) start(spec delegation, work func(context.Context, *runningTask) skill.Output) *runningTask {
+	now := time.Now()
 	r.mu.Lock()
-	inFlight := 0
-	for _, t := range r.tasks {
-		if !t.finished() {
-			inFlight++
-		}
-	}
-	if inFlight >= maxConcurrent {
-		r.mu.Unlock()
-		return nil, fmt.Errorf("%d sub-agents are already running (the limit is %d) — collect one with task(action=collect) before starting another", inFlight, maxConcurrent)
-	}
 	id := "task_" + strconv.FormatUint(r.counter.Add(1), 10)
 	childCtx, cancel := context.WithCancel(context.Background())
 	task := &runningTask{
 		id: id, profile: spec.profile, label: spec.label, model: spec.model,
 		run: spec.run, phase: spec.phase,
-		started: time.Now(), ctx: childCtx, cancel: cancel, done: make(chan struct{}),
+		asked: now, started: now, queued: true,
+		ctx: childCtx, cancel: cancel, done: make(chan struct{}),
 		asks: make(chan *pendingAsk, 1),
 	}
 	r.tasks[id] = task
 	r.mu.Unlock()
 
 	go func() {
+		// Order matters and is the reverse of how it reads: cancel, then close,
+		// then hand the slot back. Releasing before `done` closes would admit the
+		// next delegate while this one still counted as working, and the count is
+		// what the tray and the model are both reading.
+		defer r.release(task)
 		defer close(task.done)
 		defer cancel()
+
+		// The wait, and the one place a delegation can end without ever having
+		// run: Stop reaches a queued delegate through the same context every
+		// other part of this uses, so a user who changes their mind about a
+		// fan-out does not have to wait for it to start before stopping it.
+		select {
+		case r.slots <- struct{}{}:
+		case <-childCtx.Done():
+			task.output = failure(task.id, spec.label, 0,
+				"sub-agent stopped while it was waiting for a free slot")
+			return
+		}
+		task.beginRun()
 		task.output = work(childCtx, task)
 	}()
-	return task, nil
+	return task
+}
+
+// release hands a slot back, and only for a delegate that took one. A delegation
+// stopped while queued never held one, and returning a token it did not take
+// would raise the concurrency limit by one for the rest of the session.
+func (r *Delegations) release(task *runningTask) {
+	if task.isQueued() {
+		return
+	}
+	select {
+	case <-r.slots:
+	default:
+	}
 }
 
 // collect waits for one delegation and returns it, or the question it is stuck
@@ -532,10 +635,15 @@ type TaskInfo struct {
 	Phase string `json:"phase,omitempty"`
 	// ToolCalls so far — live while running, final once done.
 	ToolCalls int `json:"toolCalls"`
-	// Running means the work is still going. Waiting narrows it: parked on a
-	// question, going nowhere until somebody answers.
+	// Running means the work is still going. Waiting and Queued each narrow it,
+	// and they are opposite kinds of stuck: Waiting is parked on a question and
+	// goes nowhere until somebody answers, Queued has not begun at all because
+	// maxConcurrent delegates are already working. Only one of the two is
+	// anybody's to act on, which is why the tray must be able to tell them apart
+	// rather than drawing both as a spinner.
 	Running  bool   `json:"running"`
 	Waiting  bool   `json:"waiting"`
+	Queued   bool   `json:"queued"`
 	Question string `json:"question,omitempty"`
 	// OK is the outcome, meaningful only once Running is false.
 	OK bool `json:"ok"`
@@ -578,7 +686,7 @@ func (r *Delegations) Snapshot() []TaskInfo {
 		info := TaskInfo{
 			ID: t.id, Profile: t.profile, Label: t.label,
 			Model: t.model, Run: t.run, Phase: t.phase,
-			Started: t.started, ToolCalls: t.calls(), Tokens: t.tokens(),
+			Started: t.startedAt(), ToolCalls: t.calls(), Tokens: t.tokens(),
 			TokensIn: tokIn, TokensOut: tokOut, CachedIn: tokCached, CacheReported: tokReported,
 			Running: !t.finished(),
 			// Read before the running check rather than inside the finished
@@ -589,6 +697,7 @@ func (r *Delegations) Snapshot() []TaskInfo {
 			Stopped: t.wasStopped(),
 		}
 		if info.Running {
+			info.Queued = t.isQueued()
 			if p := t.parkedAsk(); p != nil {
 				info.Waiting = true
 				info.Question = p.question
@@ -620,6 +729,32 @@ func (r *Delegations) StopAll() int {
 	stopping := make([]*runningTask, 0, len(r.tasks))
 	for _, t := range r.tasks {
 		if !t.finished() {
+			stopping = append(stopping, t)
+		}
+	}
+	r.mu.Unlock()
+
+	for _, t := range stopping {
+		stop(t)
+	}
+	return len(stopping)
+}
+
+// StopQueued ends every delegation that has not started yet, and leaves the ones
+// already working alone. It reports how many it found.
+//
+// The brake the queue needs, and the reason there is no ceiling above it. With
+// nothing refusing a fan-out, a model that has asked for two hundred jobs leaves
+// a line two hundred long, and a line you can only cancel one row at a time is
+// not one anybody can actually stop — the user would be clicking while the queue
+// drains into the bill. One press, the whole line, and the four in flight keep
+// going: work already begun has been paid for, and throwing it away is a
+// different decision (StopAll) taken with a different button.
+func (r *Delegations) StopQueued() int {
+	r.mu.Lock()
+	stopping := make([]*runningTask, 0, len(r.tasks))
+	for _, t := range r.tasks {
+		if t.isQueued() && !t.finished() {
 			stopping = append(stopping, t)
 		}
 	}

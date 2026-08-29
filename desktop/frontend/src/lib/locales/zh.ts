@@ -409,6 +409,10 @@ export const zh: Partial<Record<keyof typeof th, string>> = {
   // ---- 后台工作 ----
   'bgw.running': '进行中',
   'bgw.waiting': '需要你',
+  'bgw.queued': '排队中',
+  'bgw.queuedNote': '有空位就开始',
+  'bgw.queueCount': '还有 {n} 个在排队',
+  'bgw.stopQueue': '取消整个队列',
   'bgw.finished': '已完成，正在读取结果…',
   'bgw.failed': '无法完成',
   'bgw.stopped': '你已停止它',

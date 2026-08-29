@@ -56,8 +56,8 @@ type BackgroundTask struct {
 	TokensOut     int  `json:"tokensOut"`
 	CachedIn      int  `json:"cachedIn"`
 	CacheReported bool `json:"cacheReported"`
-	// State: "running" | "waiting" (parked on a question) | "done" | "failed"
-	// | "stopped" (the user ended it).
+	// State: "running" | "queued" (waiting for one of the four slots) | "waiting"
+	// (parked on a question) | "done" | "failed" | "stopped" (the user ended it).
 	State string `json:"state"`
 	// ElapsedMs is the finished delegation's real duration, 0 while it runs —
 	// the clock is still going then, and the frontend runs it from StartedAt.
@@ -170,6 +170,11 @@ func taskState(t subagent.TaskInfo) string {
 		return "stopped"
 	case t.Waiting:
 		return "waiting"
+	// Before "running", because a queued delegation is Running too — the work is
+	// alive, it simply has not begun. Drawn as its own state so a row that has
+	// not started is not a spinner over a clock counting time nobody is spending.
+	case t.Queued:
+		return "queued"
 	case t.Running:
 		return "running"
 	case t.OK:
@@ -198,6 +203,25 @@ func (a *App) StopBackgroundTask(id string) bool {
 	}
 	stopped := a.cur().delegations.Stop(id)
 	debuglog.Msg("stop: sub-agent %s stopped=%v", id, stopped)
+	return stopped
+}
+
+// StopQueuedTasks ends every delegation that has not started yet and reports how
+// many it found. The ones already working are left alone.
+//
+// The brake the queue needs, and the reason nothing refuses a fan-out any more
+// (internal/subagent/runner.go). Four delegates run at once and the rest wait,
+// so a model that asked for two hundred jobs leaves a line of one hundred and
+// ninety-six — and a line that can only be cancelled a row at a time is not one
+// anybody can stop: the user would be clicking while the queue drains into the
+// bill. One press ends the line; the four in flight keep going, because throwing
+// away work already paid for is a different decision with its own button.
+func (a *App) StopQueuedTasks() int {
+	if a.cur().delegations == nil {
+		return 0
+	}
+	stopped := a.cur().delegations.StopQueued()
+	debuglog.Msg("stop: %d queued sub-agent(s) cleared", stopped)
 	return stopped
 }
 

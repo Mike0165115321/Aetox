@@ -20,6 +20,7 @@ import {
   BackgroundTasks,
   BackgroundRuns,
   StopBackgroundTask, StopBackgroundRun,
+  StopQueuedTasks,
   RateTurn, PendingLearnedCount, PendingIssueCount,
   WorkspaceFolders, AddWorkspaceFolder, RemoveWorkspaceFolder,
   RetryFailedTurn, RegenerateReply, ResendEdited, SwitchVariant,
@@ -2235,6 +2236,24 @@ export async function stopBackgroundTask(id: string): Promise<void> {
   } catch {
     // Engine unreachable. The row stays as it was; nothing is lost by silence,
     // and there is no second way to say this that the user could act on.
+  }
+  await refreshBackgroundTasks()
+}
+
+/**
+ * The same brake, shaped like the line: every delegation that has not started.
+ *
+ * Nothing refuses a fan-out any more (internal/subagent/runner.go), so a model
+ * that asked for two hundred jobs leaves a queue of one hundred and ninety-six,
+ * and cancelling that a row at a time is not stopping it. The four already
+ * working are left alone — they have been paid for, and ending them is StopAll's
+ * decision rather than this one.
+ */
+export async function stopQueuedTasks(): Promise<void> {
+  try {
+    await StopQueuedTasks()
+  } catch {
+    // As above.
   }
   await refreshBackgroundTasks()
 }

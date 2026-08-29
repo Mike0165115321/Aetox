@@ -33,7 +33,7 @@
     addProjectFolder, removeProjectFolder,
     retryActiveProvider, undoLastTurn, rewindTo, pendingRestore, switchApprovalMode,
     startTaskChip, dismissTaskChip,
-    stopBackgroundTask, stopBackgroundRun,
+    stopBackgroundTask, stopBackgroundRun, stopQueuedTasks,
     retryFailedTurn, editFailedTurn, regenerateReply, switchVariant, resendEdited, rateReply,
     setActiveView, newChairSession, newSessionAt, openSettingsAt, setStance,
     sendUserMessage, liveThinkSecs,
@@ -193,7 +193,8 @@
   // are deliberately the same card, so they had to stop telling two stories.
   const registerTask = (node: TimelineNode): BackgroundTask | undefined =>
     node.step.task ? cockpit.backgroundTasks.find((b) => b.id === node.step.task) : undefined
-  const stillWorking = (b?: BackgroundTask) => b?.state === 'running' || b?.state === 'waiting'
+  const stillWorking = (b?: BackgroundTask) =>
+    b?.state === 'running' || b?.state === 'waiting' || b?.state === 'queued'
   // A card whose ✗ this window inferred rather than was told. Worth telling
   // apart from a delegate that reported failure: the mark is the same and the
   // reason is not, and a card that says only ✗ over work nobody ever heard back
@@ -2182,14 +2183,24 @@
              second the worker started. -->
         {@const state = cardState(node, live)}
         {@const secs = cardSecs(node, live)}
+        <!-- Asked for and not begun is its own thing, and the register is the
+             only place that knows: `cardState` folds it into 'run' because a
+             queued delegation is live work, which is true and is not what the
+             head of a card should say. A spinner over a beam over a ticking
+             clock, for a worker that has not started, is the same lie the tray
+             was fixed of — and this is the card the user actually reads, since
+             one delegation gets one card and the transcript's wins. -->
+        {@const queued = registerTask(node)?.state === 'queued'}
         <!-- Folds shut rather than vanishing. A delegate that finishes leaves
              the live area for the collapsed count above, and in one frame the
              card, its beam and its steps were simply gone — the work looked
              lost rather than done. Out only: a delegation appearing is the
              model starting one, and that should be immediate. -->
-        <div class="bgw-card {state}" out:fold>
+        <div class="bgw-card {state}" class:is-queued={queued} out:fold>
           <div class="bgw-head">
-            {#if state === 'run'}
+            {#if queued}
+              <span class="bgw-mark queue"><Icon name="clock" size={15} /></span>
+            {:else if state === 'run'}
               <span class="bgw-mark run"><Icon name="loaderCircle" size={15} /></span>
             {:else}
               <span class="bgw-mark {state === 'done' ? 'ok' : 'fail'}">
@@ -2205,11 +2216,13 @@
             <b class="bgw-agent">{node.step.agent
               ? (isAgentNode(node) ? '@' + node.step.agent : node.step.agent)
               : t(isAgentNode(node) ? 'chat.agent' : 'chat.subagent')}</b>
-            {#if state === 'run'}
+            {#if queued}
+              <span class="bgw-badge queue">{t('bgw.queued')}</span>
+            {:else if state === 'run'}
               <span class="bgw-badge run">{t('bgw.running')}</span>
             {/if}
             <span class="bgw-meta">
-              {#if secs !== undefined}{clockLabel(secs)}{/if}
+              {#if queued}{t('bgw.queuedNote')}{:else if secs !== undefined}{clockLabel(secs)}{/if}
             </span>
           </div>
           <div class="bgw-brief">{node.step.label.replace(/^task\s*/, '')}</div>
@@ -2802,6 +2815,7 @@
       onAnswer={answerBgTask}
       onStop={stopBackgroundTask}
       onStopRun={stopBackgroundRun}
+      onStopQueue={stopQueuedTasks}
     />
     <!-- Side work the agent flagged (suggest_task): each chip starts its own
          fresh session on click. Lives on the composer, not in the transcript —

@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -936,31 +937,216 @@ func waitFor(t *testing.T, cond func() bool, msg string) {
 	}
 }
 
-// A model in a loop must not be able to melt the machine or the provider's rate
-// limit, so there is a ceiling on delegates in flight.
-func TestConcurrencyIsCapped(t *testing.T) {
+// Four delegates run at once. A fifth waits — it is not refused.
+//
+// The refusal is what the owner saw on 30 ส.ค.: six workers dispatched in one
+// round, four running and two red cards saying "4 sub-agents are already
+// running (the limit is 4)". Both of those were jobs the model had decided on;
+// they lost nothing but the race to be scheduled.
+func TestAFifthDelegateWaitsRatherThanBeingRefused(t *testing.T) {
 	isolate(t)
 	r := NewDelegations()
 	block := make(chan struct{})
 	defer close(block)
 
-	for i := range maxConcurrent {
-		if _, err := r.start(delegation{profile: "explore", label: "held"}, func(context.Context, *runningTask) skill.Output {
-			<-block
-			return skill.Output{Success: true}
-		}); err != nil {
-			t.Fatalf("start %d refused early: %v", i, err)
+	var ran atomic.Int32
+	held := func(context.Context, *runningTask) skill.Output {
+		ran.Add(1)
+		<-block
+		return skill.Output{Success: true}
+	}
+	for range maxConcurrent {
+		r.start(delegation{profile: "explore", label: "held"}, held)
+	}
+	waitFor(t, func() bool { return ran.Load() == int32(maxConcurrent) }, "the first four never started")
+
+	fifth := r.start(delegation{profile: "explore", label: "the one that used to be refused"}, held)
+	// Queued, and saying so: the tray must be able to draw "not started yet"
+	// rather than a spinner over a clock counting time nobody is spending.
+	waitFor(t, fifth.isQueued, "the fifth never went into the queue")
+	if ran.Load() != int32(maxConcurrent) {
+		t.Errorf("%d delegates ran with a limit of %d — the wait is not holding", ran.Load(), maxConcurrent)
+	}
+	var queued int
+	for _, info := range r.Snapshot() {
+		if info.Queued {
+			queued++
 		}
 	}
-	_, err := r.start(delegation{profile: "explore", label: "one too many"}, func(context.Context, *runningTask) skill.Output {
-		return skill.Output{}
-	})
-	if err == nil {
-		t.Fatal("the cap did not hold")
+	if queued != 1 {
+		t.Errorf("the tray sees %d queued delegations, want 1", queued)
 	}
-	t.Logf("refusal the model reads: %v", err)
-	if !strings.Contains(err.Error(), "action=collect") {
-		t.Errorf("the refusal does not say how to make room: %v", err)
+}
+
+// And it starts on its own the moment a slot frees, with nobody collecting
+// anything to make room. That is the whole difference: the model asked for five
+// jobs and gets five, in the order it asked.
+func TestAWaitingDelegateStartsWhenASlotFrees(t *testing.T) {
+	isolate(t)
+	r := NewDelegations()
+	release := make(chan struct{})
+
+	var ran atomic.Int32
+	work := func(context.Context, *runningTask) skill.Output {
+		ran.Add(1)
+		<-release
+		return skill.Output{Success: true}
+	}
+	for range maxConcurrent {
+		r.start(delegation{profile: "explore", label: "held"}, work)
+	}
+	// Only once the four hold the slots: started together, they reach the wait
+	// in whatever order the scheduler picks, and a fifth asked for in the same
+	// breath could legitimately be one of the four that gets in.
+	waitFor(t, func() bool { return ran.Load() == int32(maxConcurrent) }, "the first four never started")
+
+	fifth := r.start(delegation{profile: "explore", label: "waiting"}, work)
+	waitFor(t, fifth.isQueued, "the fifth never went into the queue")
+
+	// A measurable spell in the queue, so the clock check below is testing this
+	// package rather than the resolution of the platform's clock.
+	time.Sleep(60 * time.Millisecond)
+	close(release) // the four finish
+	waitFor(t, func() bool { return ran.Load() == int32(maxConcurrent)+1 }, "the fifth never started after the slots freed")
+	waitFor(t, fifth.finished, "the fifth never finished")
+	if fifth.isQueued() {
+		t.Error("a delegate that has run still reports itself as queued")
+	}
+	// Its duration is its own work, not the wait: a delegate that sat in the
+	// queue for a minute and worked for one second must not report a minute, or
+	// every number the tray draws inherits the queue.
+	if wait := fifth.startedAt().Sub(fifth.asked); wait < 40*time.Millisecond {
+		t.Errorf("the clock started %v after the job was asked for; it waited at least 60ms, so it is running from the wrong moment", wait)
+	}
+}
+
+// Nothing refuses a fan-out, however wide. Twenty jobs asked for at once are
+// twenty jobs done, four at a time — which is the sentence the old ceiling made
+// false, first at five and then at seventeen.
+func TestAWideFanOutAllRunsFourAtATime(t *testing.T) {
+	isolate(t)
+	r := NewDelegations()
+
+	const jobs = 20
+	var running, peak, done atomic.Int32
+	work := func(context.Context, *runningTask) skill.Output {
+		now := running.Add(1)
+		for {
+			high := peak.Load()
+			if now <= high || peak.CompareAndSwap(high, now) {
+				break
+			}
+		}
+		time.Sleep(2 * time.Millisecond)
+		running.Add(-1)
+		done.Add(1)
+		return skill.Output{Success: true}
+	}
+	tasks := make([]*runningTask, 0, jobs)
+	for range jobs {
+		tasks = append(tasks, r.start(delegation{profile: "explore", label: "one of many"}, work))
+	}
+	for _, task := range tasks {
+		waitFor(t, task.finished, "a delegation in a 20-way fan-out never finished")
+	}
+	if done.Load() != jobs {
+		t.Errorf("%d of %d jobs ran — a fan-out lost work", done.Load(), jobs)
+	}
+	if peak.Load() > maxConcurrent {
+		t.Errorf("%d ran at once with a limit of %d", peak.Load(), maxConcurrent)
+	}
+}
+
+// Stop reaches a delegation that has not started. The cheapest moment to change
+// your mind about a fan-out is before the work begins, and a queue that could
+// only be cancelled after it started would be the worst of both.
+func TestStopReachesADelegateStillWaitingForASlot(t *testing.T) {
+	isolate(t)
+	r := NewDelegations()
+	block := make(chan struct{})
+	defer close(block)
+
+	var ran atomic.Int32
+	work := func(context.Context, *runningTask) skill.Output {
+		ran.Add(1)
+		<-block
+		return skill.Output{Success: true}
+	}
+	for range maxConcurrent {
+		r.start(delegation{profile: "explore", label: "held"}, work)
+	}
+	// The four have to be holding the slots before the fifth is asked for, or it
+	// races them for one and this stops being a test about the queue.
+	waitFor(t, func() bool { return ran.Load() == int32(maxConcurrent) }, "the first four never started")
+
+	queued := r.start(delegation{profile: "explore", label: "never runs"}, work)
+	waitFor(t, queued.isQueued, "the fifth never went into the queue")
+
+	if !r.Stop(queued.id) {
+		t.Fatal("Stop found nothing to end")
+	}
+	waitFor(t, queued.finished, "a stopped queued delegate never ended")
+	if ran.Load() != int32(maxConcurrent) {
+		t.Error("a delegate stopped while queued ran anyway")
+	}
+	if !queued.wasStopped() {
+		t.Error("it did not come back as stopped")
+	}
+	// And it must not have handed back a slot it never took, which would raise
+	// the concurrency limit by one for the rest of the session.
+	sixth := r.start(delegation{profile: "explore", label: "must also wait"}, work)
+	waitFor(t, sixth.isQueued, "a slot appeared from a delegate that never took one")
+}
+
+// The brake the queue needs, now that nothing refuses one: clear the whole line
+// in one press, and leave the work already paid for alone.
+//
+// It is what stands where the ceiling used to. A line you can only cancel a row
+// at a time is not one anybody can stop — with two hundred queued the user would
+// be clicking while the queue drains into the bill.
+func TestStopQueuedClearsTheLineAndLeavesTheWorkingAlone(t *testing.T) {
+	isolate(t)
+	r := NewDelegations()
+	block := make(chan struct{})
+	defer close(block)
+
+	var ran atomic.Int32
+	work := func(context.Context, *runningTask) skill.Output {
+		ran.Add(1)
+		<-block
+		return skill.Output{Success: true}
+	}
+	for range maxConcurrent {
+		r.start(delegation{profile: "explore", label: "working"}, work)
+	}
+	waitFor(t, func() bool { return ran.Load() == int32(maxConcurrent) }, "the first four never started")
+
+	waiting := make([]*runningTask, 0, 6)
+	for range 6 {
+		waiting = append(waiting, r.start(delegation{profile: "explore", label: "queued"}, work))
+	}
+	for _, task := range waiting {
+		waitFor(t, task.isQueued, "a delegation never went into the queue")
+	}
+
+	if n := r.StopQueued(); n != 6 {
+		t.Errorf("StopQueued ended %d, want the 6 that had not started", n)
+	}
+	for _, task := range waiting {
+		waitFor(t, task.finished, "a queued delegation survived StopQueued")
+		if !task.wasStopped() {
+			t.Error("a cleared delegation did not come back as stopped")
+		}
+	}
+	// The four that were working are untouched: throwing away work already begun
+	// is a different decision, taken with StopAll.
+	if ran.Load() != int32(maxConcurrent) {
+		t.Errorf("%d delegates had run; clearing the queue started or ended work it should not have touched", ran.Load())
+	}
+	for _, info := range r.Snapshot() {
+		if info.Label == "working" && !info.Running {
+			t.Error("StopQueued ended a delegate that was already working")
+		}
 	}
 }
 

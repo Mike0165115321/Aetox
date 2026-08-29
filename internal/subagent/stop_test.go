@@ -22,15 +22,11 @@ import (
 // is every delegation from the brake's point of view.
 func blocker(t *testing.T, r *Delegations, label string) *runningTask {
 	t.Helper()
-	task, err := r.start(delegation{profile: "explore", label: label},
+	return r.start(delegation{profile: "explore", label: label},
 		func(ctx context.Context, self *runningTask) skill.Output {
 			<-ctx.Done()
 			return skill.Output{Success: false, Content: "cancelled"}
 		})
-	if err != nil {
-		t.Fatalf("start %s: %v", label, err)
-	}
-	return task
 }
 
 func waitFinished(t *testing.T, task *runningTask) {
@@ -91,13 +87,10 @@ func TestStopIsFalseWhenThereIsNothingLeftToStop(t *testing.T) {
 	if r.Stop("task_nope") {
 		t.Error("Stop claimed to end a delegation that never existed")
 	}
-	task, err := r.start(delegation{profile: "explore", label: "quick"},
+	task := r.start(delegation{profile: "explore", label: "quick"},
 		func(context.Context, *runningTask) skill.Output {
 			return skill.Output{Success: true, Content: "done"}
 		})
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
 	<-task.done
 	// Not an error, and the tray depends on that: it polls every two seconds,
 	// so a row can finish between the paint and the click, and "it is already
@@ -111,15 +104,11 @@ func TestStopRunEndsEveryWorkerInThatJobOnly(t *testing.T) {
 	r := NewDelegations()
 	inRun := []*runningTask{}
 	for _, phase := range []string{"หา", "ตรวจ"} {
-		task, err := r.start(delegation{profile: "explore", label: phase, run: "run_1", phase: phase},
+		inRun = append(inRun, r.start(delegation{profile: "explore", label: phase, run: "run_1", phase: phase},
 			func(ctx context.Context, self *runningTask) skill.Output {
 				<-ctx.Done()
 				return skill.Output{}
-			})
-		if err != nil {
-			t.Fatalf("start %s: %v", phase, err)
-		}
-		inRun = append(inRun, task)
+			}))
 	}
 	loose := blocker(t, r, "not part of the job")
 

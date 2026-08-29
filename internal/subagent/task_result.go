@@ -41,7 +41,7 @@ func (t *taskResultTool) ExecuteTool(ctx context.Context, args map[string]any) (
 			return t.question(started, task, ask), nil
 		}
 		out := task.output
-		out.DurationMs = time.Since(task.started).Milliseconds()
+		out.DurationMs = time.Since(task.startedAt()).Milliseconds()
 		return out, nil
 	}
 

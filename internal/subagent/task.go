@@ -467,7 +467,7 @@ func (t *taskTool) Direct(ctx context.Context, agent, brief string) (Reply, erro
 	if err != nil || task == nil {
 		return Reply{Output: out, Agent: agent}, err // a refusal, already shaped as a failed result
 	}
-	return t.redeem(ctx, task.id, agent, task.started)
+	return t.redeem(ctx, task.id, agent, task.startedAt())
 }
 
 // Answer gives a waiting worker the decision it stopped for, and waits again.
@@ -676,7 +676,7 @@ func (t *taskTool) begin(ctx context.Context, args map[string]any, out **running
 		Rules: append(append([]safety.PermissionRule{}, t.opts.Permissions.Rules...), profile.DenyRules()...),
 	}
 
-	task, err := t.runner.start(delegation{
+	task := t.runner.start(delegation{
 		profile: profile.Name, label: label, model: childModel, run: runID, phase: phase,
 	}, func(runCtx context.Context, self *runningTask) skill.Output {
 		defer debuglog.Block("task: " + profile.Name + " — " + truncate(label, 60))()
@@ -752,7 +752,7 @@ func (t *taskTool) begin(ctx context.Context, args map[string]any, out **running
 		// brief, and a brief that happens to start with a tool name ("read every
 		// test file and…") would run as a single explicit tool call, not a turn.
 		result, runErr := exec.Execute(runCtx, brief, command.Intent{Raw: brief, Kind: command.KindConversation}, nil, nil, nil)
-		elapsed := time.Since(self.started)
+		elapsed := time.Since(self.startedAt())
 
 		// Cancellation is checked BEFORE runErr and independently of it: a stopped
 		// turn can come back with runErr == nil carrying the empty-reply fallback,
@@ -800,15 +800,21 @@ func (t *taskTool) begin(ctx context.Context, args map[string]any, out **running
 			DurationMs: elapsed.Milliseconds(),
 		}
 	})
-	if err != nil {
-		return t.fail(label, started, err.Error())
-	}
 	if out != nil {
 		*out = task
 	}
 
-	started_ := fmt.Sprintf("started sub-agent %s as %s — it is running now. Do other work, then call task(action=collect, task_id=%q) to collect it.",
-		profile.Name, task.id, task.id)
+	// Started or queued, said plainly. The model does the same thing either way
+	// — go and do something else, then collect — but "it is running now" about a
+	// delegate that has not begun is a small lie the model will reason from, and
+	// the honest version is also the one that explains a collect that takes
+	// longer than it expected.
+	began := fmt.Sprintf("started sub-agent %s as %s — it is running now.", profile.Name, task.id)
+	if task.isQueued() {
+		began = fmt.Sprintf("queued sub-agent %s as %s — %d sub-agents are already running, so this one begins the moment a slot frees. Nothing is lost and you need do nothing.",
+			profile.Name, task.id, maxConcurrent)
+	}
+	started_ := began + fmt.Sprintf(" Do other work, then call task(action=collect, task_id=%q) to collect it.", task.id)
 	return skill.Output{
 		Name:       t.Name(),
 		Command:    "task " + profile.Name,

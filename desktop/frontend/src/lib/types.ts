@@ -353,7 +353,8 @@ export interface BackgroundTask {
    *  its own (internal/subagent/run.go). */
   run?: string
   phase?: string
-  /** 'running' | 'waiting' (parked on a question) | 'done' | 'failed'
+  /** 'running' | 'queued' (asked for, waiting for one of the four slots)
+   *  | 'waiting' (parked on a question) | 'done' | 'failed'
    *  | 'stopped' (the user ended it, which is neither of the last two) */
   state: string
   /** How long the delegation really took, present only once it has finished.

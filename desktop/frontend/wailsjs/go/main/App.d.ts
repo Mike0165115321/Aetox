@@ -559,6 +559,8 @@ export function StopBackgroundTask(arg1:string):Promise<boolean>;
 
 export function StopMobileRemote():Promise<main.RemoteStatus>;
 
+export function StopQueuedTasks():Promise<number>;
+
 export function SupportedProviders():Promise<Array<string>>;
 
 export function SupportedThinkLevels():Promise<Array<string>>;
