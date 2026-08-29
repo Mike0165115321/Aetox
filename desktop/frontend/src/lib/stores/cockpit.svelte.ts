@@ -3064,10 +3064,16 @@ export async function refreshSpaceHistory(): Promise<void> {
     return
   }
   const [metas, current] = await Promise.all([SessionsInSpace(cockpit.space), CurrentSessionID()])
-  cockpit.spaceHistory = (metas ?? []).map((m) => ({
+  // Through draftRow for the same reason the two lists above are: a chat that
+  // has had nothing said in it has no row in the database yet, and this list is
+  // drawn directly under the project it belongs to. Without it, clicking a
+  // project handed you a blank chat and a column that did not have it —
+  // the chat you are in nowhere on the list of the chats you are in, which is
+  // the exact thing §90 built this list to stop.
+  cockpit.spaceHistory = draftRow(current, (metas ?? []).map((m) => ({
     id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt,
     active: m.id === onScreenSession(current), mode: m.mode, agent: m.agent,
-  }))
+  })))
 }
 
 /** Start a chat inside a โปรเจกต์ (COMPANY.md §84).
@@ -3167,6 +3173,17 @@ async function afterNewSession(): Promise<void> {
   await refreshUndo()
   await refreshSessions()
   await refreshGlobalHistory()
+  // And the โปรเจกต์'s own list, which every other arrival gets through
+  // refreshDesk and this one never did (fixed 30 ส.ค.). It went unseen while
+  // the only way into a project was selectGlobalSession — which does go through
+  // refreshDesk — and surfaced the moment the rail could open one directly: the
+  // heading said "แชทใน Aetox โพสต์" over a list that had gone empty.
+  //
+  // Here rather than in newSpaceSession, because the same call is what CLEARS
+  // the list on the way out: newSessionAt and newChairSession both drop the
+  // project, and refreshSpaceHistory answers "" with an empty list by
+  // construction. One line, every door, no branch about which one was used.
+  await refreshSpaceHistory()
 }
 
 /** Walk through the other door (§86): remember it, and land on its desk.
