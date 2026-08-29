@@ -148,6 +148,11 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		// need nothing.
 		&diagnosticsSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&symbolSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
+		&renameSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
+		// Open (unfocused) rides in so the tool can refuse to map "the whole
+		// machine" — the map is only honest with a project to stand in
+		// (docs/aider-study/EXECUTION.md, ที่อยู่ในบริษัท).
+		&repoMapSkill{root: opts.SandboxRoot, open: opts.OpenSandbox},
 		&deleteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
 		&pluginInstallSkill{},
 		// The automation engines the user connected. Registered unconditionally

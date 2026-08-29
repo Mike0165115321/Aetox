@@ -315,6 +315,9 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 		"read": {args: map[string]any{"path": "notes.txt"}, check: outputContains("alpha")},
 		"grep": {args: map[string]any{"pattern": "alpha"}, check: outputContains("notes.txt")},
 		"glob": {args: map[string]any{"pattern": "*.txt"}, check: outputContains("notes.txt")},
+		// Checked on a symbol, not a filename: a map that listed files without
+		// parsing anything would still contain "main.go" and prove nothing.
+		"repo_map": {args: map[string]any{}, check: outputContains("func main")},
 		"write": {
 			args:  map[string]any{"path": "written.txt", "content": "from the tool\n"},
 			check: fileContains("written.txt", "from the tool"),
@@ -494,6 +497,12 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 			args:      map[string]any{"path": "main.go", "name": "main"},
 			available: haveBinary("gopls"),
 			why:       "no gopls",
+		},
+		"rename": {
+			args:      map[string]any{"path": "renameme.go", "name": "helper", "new_name": "assist"},
+			available: haveBinary("gopls"),
+			why:       "no gopls",
+			check:     fileContains("renameme.go", "func assist"),
 		},
 		// No check: Success already means git was found, the action passed the
 		// read-only allowlist, ensureGitRepo confirmed a real repository and
@@ -861,6 +870,7 @@ func writeToolFixtures(t *testing.T, root string) {
 	write("edits-me.txt", "one\ntwo\nthree\n")
 	write("victim.txt", "delete me\n")
 	write("main.go", "package main\n\nfunc main() {}\n")
+	write("renameme.go", "package main\n\nfunc helper() int { return 1 }\n\nvar _ = helper\n")
 	write(filepath.Join("sub", "inner.txt"), "alpha inside\n")
 	// A deck. The whole of what makes an .html one is a <section class="slide">
 	// (docs/architecture/html-deck-2026-08-19.md), and the anatomy inside it is
