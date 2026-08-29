@@ -29,8 +29,13 @@ const daysAgo = (n: number, hour = 12): string => {
 const chat = (id: string, title: string, updatedAt: string): Session =>
   ({ id, title, ago: '', updatedAt })
 
+// The DAY headings only. The column also carries section headings — ที่ปักหมุด
+// and โปรเจกต์, which arrived on 30 ส.ค. — and they wear .sect precisely because
+// they are a different kind of thing: furniture that is there whether or not
+// anything is under it, where a day heading is generated from the rows it
+// heads. Every assertion in this file is about the second kind.
 const dayHeads = (): string[] =>
-  Array.from(document.querySelectorAll('.sess-day-head')).map((e) => e.textContent?.trim() ?? '')
+  Array.from(document.querySelectorAll('.sess-day-head:not(.sect)')).map((e) => e.textContent?.trim() ?? '')
 
 beforeEach(() => {
   vi.clearAllMocks()

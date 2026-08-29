@@ -5146,11 +5146,28 @@ button.ctrl, label.ctrl { display:inline-flex; align-items:center; justify-conte
 .mcp-more > summary:hover { color:var(--text-primary); }
 .mcp-more-body { display:flex; flex-direction:column; gap:12px; padding:10px 0 2px; }
 
-/* The sidebar column while standing inside a โปรเจกต์ (§90): the project's own
-   chats, under a header that names it. Same weight as a day header — it is the
-   same kind of thing, a label saying what the rows below it have in common. */
-.sess-day-head.space-head { display:flex; align-items:center; gap:6px; color:var(--text-secondary); }
+/* .space-head went on 30 ส.ค. with the folder icon it drew. The heading over a
+   project's chats sits directly under that project's own row, which already
+   shows an open folder — a second folder six pixels below it was the same fact
+   twice. It is an ordinary .sess-day-head now. */
+/* A section of the rail, not a day. Same weight — both are rulers the eye
+   skips on — but they are different kinds of thing: a day heading is generated
+   from the rows under it and disappears with them, a section is furniture that
+   is there whether or not the list below it has anything in it. Named apart so
+   the difference is legible in the DOM too. */
+.sess-day-head.sect { color:var(--text-dim); }
+/* Past the handful of projects the rail draws: the rest are on the page. */
 .space-all { display:block; margin:10px 0 0 10px; font-size:var(--fs-2xs); }
+/* "New project" at the foot of the rail's project list. The same row shape as
+   the projects above it, one step quieter, rather than .proj-add's dashed box
+   — that box is the top of the workshop's whole panel, and borrowed into a
+   list of quiet rows it would make the least important thing the loudest. */
+.space-new {
+  display:flex; align-items:center; gap:8px; width:100%; padding:7px 8px;
+  border-radius:var(--r-sm); color:var(--text-dim); font-size:var(--fs-xs); cursor:pointer;
+}
+.space-new:hover { background:var(--surface-row-hover); color:var(--text-primary); }
+.space-new .ic { width:15px; display:flex; justify-content:center; flex:none; }
 /* The breadcrumb over a project chat: where this conversation sits, and the
    way back up. Reuses .chair-strip's box so the two banners are one thing in
    two moods rather than two strips that drifted apart. */

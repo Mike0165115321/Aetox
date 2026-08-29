@@ -4,9 +4,9 @@
     cockpit, newSession, openFolder, openProject, openDesk, setActiveView,
     searchGlobalHistory, selectGlobalSession, deleteSession, exportChat, importChat,
     sessionWorking,
-    newChairSession,
+    newChairSession, openSpace,
   } from './stores/cockpit.svelte'
-  import type { Session } from './types'
+  import type { Session, SpaceRow } from './types'
   import {
     UserName, SetUserName, ListModes, ProviderAccountFor,
     AccountStatus, AccountRefresh,
@@ -209,6 +209,18 @@
   let pinnedChats = $state<Record<string, boolean>>(readFlags('chatsPinned'))
   $effect(() => writeFlags('chatsPinned', pinnedChats))
 
+  // And the storefront's โปรเจกต์ (§84), which are a third list and need a
+  // third map: the two above are keyed by a workshop project's `key` and by a
+  // session id, and a space has neither — its name IS its key, because a space
+  // exists because its folder exists (desktop/spaces.go).
+  //
+  // One map rather than folding spaces into pinnedProjects, even though both
+  // are called "project" on screen. They are different things behind two
+  // different doors (COMPANY.md §8), and a shared map would let a workshop
+  // folder and a storefront project named the same thing pin each other.
+  let pinnedSpaces = $state<Record<string, boolean>>(readFlags('spacesPinned'))
+  $effect(() => writeFlags('spacesPinned', pinnedSpaces))
+
   // Two-step delete: first click arms ("ยืนยัน?"), second click deletes.
   let confirmDeleteId = $state('')
   function onDeleteSession(s: Session) {
@@ -373,6 +385,18 @@
     }
     return out
   })
+
+  // How many โปรเจกต์ the rail draws before it stops and points at the page.
+  // The rail's job is the ones you are actually working in; a person with
+  // thirty projects must not lose the chat list under them.
+  const SPACE_PREVIEW = 8
+
+  // The projects the user pinned, and the rest — the same split the chats
+  // above make, drawn from the same gesture, so ที่ปักหมุด is one heading over
+  // both rather than two headings that mean the same word.
+  const pinnedSpaces_ = $derived(cockpit.spaces.filter((p) => pinnedSpaces[p.name]))
+  const looseSpaces = $derived(cockpit.spaces.filter((p) => !pinnedSpaces[p.name]))
+  const shownSpaces = $derived(looseSpaces.slice(0, SPACE_PREVIEW))
 </script>
 
 <svelte:window
@@ -388,7 +412,7 @@
 <!-- One row, two callers: the flat search results and the day-grouped list are
      the same rows in a different order, and a copy of this markup in each
      branch is a copy that drifts. -->
-{#snippet sessionRow(s: Session)}
+{#snippet sessionRow(s: Session, hideDesk: boolean)}
   <button
     type="button" class="sess-row"
     class:active={s.active}
@@ -422,7 +446,13 @@
              where: every chair lives in the office, so the agent's
              name subsumes the desk chip below. -->
         <span class="sess-desk agent">{s.agent}</span>
-      {:else if deskLabelKey(s.mode)}
+      {:else if !hideDesk && deskLabelKey(s.mode)}
+        <!-- Not inside a โปรเจกต์. Every chat in one runs at the assistant's
+             desk, so this chip could only ever read ผู้ช่วย, on every row, for
+             ever — measured in the running app on 30 ส.ค., where both rows of
+             a project's list said "ผู้ช่วย · 1 นาที" and "ผู้ช่วย · 50 นาที".
+             A label that cannot vary is not a label, it is furniture, and it
+             was taking the half of the line the time actually needs. -->
         <span class="sess-desk">{t(deskLabelKey(s.mode) as TKey)}</span>
       {/if}
       <span class="ago">{s.ago}</span>
@@ -465,6 +495,31 @@
          a no-focus chat it printed the raw project_key. -->
     {#if s.snippet}<span class="snip">{s.snippet}</span>{/if}
   </button>
+{/snippet}
+
+<!-- One โปรเจกต์ in the rail (§84). Deliberately the same markup the workshop
+     draws its projects with — .proj-group-row and friends — because it is the
+     same row: a folder icon, the name, and a pin that stays lit once it is on.
+     A second set of classes for a row that already exists is how two doors
+     start looking like two apps. -->
+{#snippet spaceRow(p: SpaceRow)}
+  {@const here = cockpit.space === p.name}
+  <div class="proj-group-row">
+    <button type="button" class="proj-group-head" class:active={here} onclick={() => openSpace(p.name)}>
+      <!-- folderOpen for the one you are standing in. The app's own way of
+           saying "this is the one", already used on the workshop's rows, so
+           the rail needs no accent bar or dot of its own to say it again. -->
+      <span class="ic"><Icon name={here ? 'folderOpen' : 'folder'} size={14} /></span>
+      <span class="t">{p.name}</span>
+    </button>
+    <button type="button" class="proj-group-pin tip-r" class:on={pinnedSpaces[p.name]}
+      data-tip={pinnedSpaces[p.name] ? t('sidebar.unpinProject') : t('sidebar.pinProject')}
+      aria-label={pinnedSpaces[p.name] ? t('sidebar.unpinProject') : t('sidebar.pinProject')}
+      aria-pressed={!!pinnedSpaces[p.name]}
+      onclick={() => (pinnedSpaces[p.name] = !pinnedSpaces[p.name])}>
+      <Icon name="pin" size={13} />
+    </button>
+  </div>
 {/snippet}
 
 <aside class="side">
@@ -531,7 +586,7 @@
              wired to the store here but had no renderer on this side, so
              typing in it did nothing at all in this window. -->
         {#if searching}
-          {#each visibleHistory as s (s.id)}{@render sessionRow(s)}{/each}
+          {#each visibleHistory as s (s.id)}{@render sessionRow(s, false)}{/each}
           {#if visibleHistory.length === 0}
             <div class="sess-empty">{t('sidebar.noMatches')}</div>
           {/if}
@@ -620,44 +675,68 @@
         {/if}
       </div>
     {:else}
+      <!-- Three sections, one column (owner, 30 ส.ค.): what you pinned, your
+           projects, then the chats. Measured before it was drawn — standing
+           inside a project on a 900px-tall window, this column held 186px of
+           list in the 537px it is given, and the projects were four clicks away
+           behind a page you only ever passed through. The sections go in the
+           351px that was already empty. -->
       <div class="scroll">
         {#if searching}
-          {#each visibleHistory as s (s.id)}{@render sessionRow(s)}{/each}
-        {:else if inSpace}
-          <!-- Standing inside a โปรเจกต์, this column is that project's chats
-               (§90). The general list cannot show them — they were taken out of
-               it on purpose — so leaving it up meant a column of unrelated
-               conversations with the chat you were in nowhere on it. The header
-               names the project, so a list that changed under you says why. -->
-          <div class="sess-day-head space-head">
-            <Icon name="folder" size={12} /> {cockpit.space}
-          </div>
-          {#each cockpit.spaceHistory as s (s.id)}{@render sessionRow(s)}{/each}
-          {#if cockpit.spaceHistory.length === 0}
-            <div class="sess-empty">{t('projects.noChats')}</div>
+          <!-- A search is a question about every chat there is, so it answers
+               with chats and nothing else. Sections here would be three
+               headings over one flat set of hits. -->
+          {#each visibleHistory as s (s.id)}{@render sessionRow(s, false)}{/each}
+          {#if visibleHistory.length === 0}
+            <div class="empty">{t('sidebar.noResults')}</div>
           {/if}
-          <button type="button" class="linkish space-all" onclick={() => setActiveView('projects')}>
-            {t('projects.allProjects')}
-          </button>
         {:else}
-          <!-- Pinned first, under their own heading and above every day
-               group: they are not a day, they are the chats you said you keep
-               coming back to. Absent entirely when nothing is pinned, so the
-               list is exactly what it was for anyone who never presses it. -->
-          {#if pinnedHistory.length}
-            <div class="sess-day-head">{t('sidebar.pinnedChats')}</div>
-            {#each pinnedHistory as s (s.id)}{@render sessionRow(s)}{/each}
+          <!-- ที่ปักหมุด — one heading over both kinds. Pinning a project and
+               pinning a chat are the same gesture meaning the same thing, "keep
+               this at the top", and two headings for one sentence is how a
+               column stops being read. Absent entirely until something is
+               pinned. -->
+          {#if pinnedSpaces_.length || pinnedHistory.length}
+            <div class="sess-day-head sect">{t('sidebar.pinned')}</div>
+            {#each pinnedSpaces_ as p (p.name)}{@render spaceRow(p)}{/each}
+            {#each pinnedHistory as s (s.id)}{@render sessionRow(s, false)}{/each}
           {/if}
-          {#each historyGroups as g (g.key)}
-            <div class="sess-day-head">{t(g.key)}</div>
-            {#each g.items as s (s.id)}{@render sessionRow(s)}{/each}
-          {/each}
-        {/if}
-        {#if visibleHistory.length === 0}
-          <div class="empty">
-            {#if historyQuery.trim()}{t('sidebar.noResults')}
-            {:else}{t('sidebar.noHistory')}{/if}
-          </div>
+
+          <!-- โปรเจกต์. The rail is the door now: clicking a name opens a fresh
+               chat inside that project (openSpace), so the page is where you go
+               to make and manage them, not where you go to talk. Going back to
+               an earlier conversation is the list below. -->
+          <div class="sess-day-head sect">{t('desk.projects')}</div>
+          {#each shownSpaces as p (p.name)}{@render spaceRow(p)}{/each}
+          {#if looseSpaces.length > shownSpaces.length}
+            <button type="button" class="linkish space-all" onclick={() => setActiveView('projects')}>
+              {t('projects.allProjects')}
+            </button>
+          {/if}
+          <button type="button" class="space-new" onclick={() => setActiveView('projects')}>
+            <span class="ic"><Icon name="plus" size={13} /></span>{t('projects.create')}
+          </button>
+
+          <!-- แชท. Inside a project this is that project's own chats (§90) —
+               the general list drops them on purpose, so without this branch
+               the chat you are in would be nowhere on the column it is drawn
+               beside. The heading names the project rather than a day, because
+               a list that changed under you has to say why. -->
+          {#if inSpace}
+            <div class="sess-day-head sect">{t('sidebar.chatsInSpace', { name: cockpit.space })}</div>
+            {#each cockpit.spaceHistory as s (s.id)}{@render sessionRow(s, true)}{/each}
+            {#if cockpit.spaceHistory.length === 0}
+              <div class="sess-empty">{t('projects.noChats')}</div>
+            {/if}
+          {:else}
+            {#each historyGroups as g (g.key)}
+              <div class="sess-day-head">{t(g.key)}</div>
+              {#each g.items as s (s.id)}{@render sessionRow(s, false)}{/each}
+            {/each}
+            {#if visibleHistory.length === 0}
+              <div class="empty">{t('sidebar.noHistory')}</div>
+            {/if}
+          {/if}
         {/if}
       </div>
     {/if}

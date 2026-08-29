@@ -18,7 +18,8 @@ export const th = {
   'sidebar.pinProject': 'ปักหมุดไว้บนสุด',
   'sidebar.pinChat': 'ปักหมุดแชทนี้',
   'sidebar.unpinChat': 'เอาหมุดออก',
-  'sidebar.pinnedChats': 'ปักหมุดไว้',
+  'sidebar.pinned': 'ปักหมุดไว้',
+  'sidebar.chatsInSpace': 'แชทใน {name}',
   'sidebar.unpinProject': 'เอาหมุดออก',
   // แถวของแชทที่เพิ่งสร้าง ยังไม่มีชื่อเพราะยังไม่ได้คุย ชื่อจริงมาแทนตอนตอบรอบแรก
   'sidebar.draftChat': 'แชทใหม่',

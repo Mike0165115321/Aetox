@@ -66,25 +66,21 @@ export const NAV: NavEntry[] = [
   // a list of. The view id stays `office`, the way every desk name in the engine
   // stays what it was while the label on its button changed (COMPANY.md §2).
   { id: 'office', kind: 'page', labelKey: 'desk.office', blurbKey: 'desk.officeBlurb', icon: 'bot', shell: 'assistant' },
-  // Workflows, not a clock — which is why the icon is `gitBranch` and not the
-  // `timer` it carried while this room still meant "scheduled work". Aetox has
-  // no cloud, so a schedule only fires while the machine is awake; the owner
-  // withdrew it rather than ship a promise that quietly depends on the laptop
-  // never closing (2026-08-09).
+  // ระบบออโตเมชั่น was a room here until 2026-08-30, and it went for the reason
+  // its own comment gave when it arrived: a room that is a second place
+  // answering a question that already has a home does not get to stay. Its
+  // button called `newChairSession('automation')` — the identical line the
+  // roster's own "แชทกับเอเจนนี้" button calls — so the nav was not a room, it
+  // was a shortcut to a chair that lives in เอเจนเฉพาะทาง like every other one.
   //
-  // It was a page for one day, drawing cards for the engines you could connect.
-  // That was the wrong shape: connecting an account is register work and the
-  // register already does it (ตั้งค่า → การเชื่อมต่อ), so the room was a second
-  // place answering a question that already had a home — while the thing the
-  // user actually comes here to do, describe an automation and have it built,
-  // had nowhere at all.
+  // What it bought was not reach but announcement: it was the only place the
+  // product said out loud that Aetox does automation. That is a real cost and
+  // the owner took it knowingly (30 ส.ค.) — if automation earns a nav row for
+  // being important, every agent can make the same argument, and then the
+  // roster has no reason to exist.
   //
-  // So it is a conversation, and the person on the other side is the automation
-  // specialist rather than the assistant (owner, 10 ส.ค.). Not a fourth desk:
-  // a desk would need its own manifest, tool list and prompt, all of which the
-  // agent already carries — including the one thing a desk could not, which is
-  // knowing how n8n's graphs actually work.
-  { id: 'auto', kind: 'desk', labelKey: 'desk.auto', blurbKey: 'desk.autoBlurb', icon: 'gitBranch', shell: 'assistant', chair: 'automation' },
+  // `chair` below stays. It is the one line a room needs to be a chat with a
+  // specialist, and nothing uses it today.
   { id: 'artifacts', kind: 'page', labelKey: 'desk.artifacts', blurbKey: 'desk.artifactsBlurb', icon: 'package', shell: 'assistant' },
   { id: 'coding', kind: 'desk', labelKey: 'desk.coding', blurbKey: 'desk.codingBlurb', icon: 'fileCode', shell: 'code' },
   // ---- Aetox ทีม (§158) ----

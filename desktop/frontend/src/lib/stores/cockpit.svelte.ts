@@ -9,7 +9,7 @@ import {
   SendMessage, GetProjectStatus, GetModelInfo, OpenProjectFolder, OpenProjectPath,
   SwitchProvider, SwitchThinkLevel, SwitchApprovalMode, SetProviderWireFormat,
   SwitchModel, SetAPIKey, SetProviderBaseURL, ProjectTree, ReadFile,
-  ListSessions, LoadSession, NewSession, NewSessionAt, NewChairSession, NewSessionInSpace, CurrentSpace, SessionsInSpace, SessionMode, SessionAgent, CurrentSessionID, SearchSessions, DeleteSession,
+  ListSessions, LoadSession, NewSession, NewSessionAt, NewChairSession, NewSessionInSpace, CurrentSpace, SessionsInSpace, Spaces, SessionMode, SessionAgent, CurrentSessionID, SearchSessions, DeleteSession,
   SessionTranscript, TurnInFlight,
   SaveChatImage, SaveChatImageData, SaveChatFile, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
   ListSessionsForDoor, SearchSessionsForDoor, LoadSessionAnyProject, ClearProjectFocus,
@@ -207,6 +207,28 @@ export async function refreshGlobalHistory(): Promise<void> {
   cockpit.history = draftRow(current, metas.map((m) => ({
     id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt, active: m.id === onScreenSession(current), projectName: m.projectName, mode: m.mode, agent: m.agent,
   })), cockpit.project.name)
+  // The rail's two lists in one breath. They are one column and the user reads
+  // them as one column, so a โปรเจกต์ whose newest chat just changed name must
+  // not be sitting above a chat list that already knows — refreshing them apart
+  // is how a rail starts contradicting itself while nobody touches anything.
+  await refreshSpaces()
+}
+
+/** Pull every โปรเจกต์ for the rail (§84), newest activity first.
+ *
+ * The disk is the list — Spaces() reads the folder rather than a table — so a
+ * project the user made in Explorer shows up here without anything being told.
+ * Failing quietly is deliberate: no spaces folder yet is zero projects, which
+ * is the honest answer on a fresh install and not worth an error the user
+ * cannot act on. */
+export async function refreshSpaces(): Promise<void> {
+  try {
+    cockpit.spaces = (await Spaces() ?? []).map((s) => ({
+      name: s.name, chats: s.chats, updatedAt: s.updatedAt,
+    }))
+  } catch {
+    /* engine not up yet — the rail draws no projects, which is what it drew before */
+  }
 }
 
 /** Full-text search this door's chat history across every project. */
@@ -3072,6 +3094,41 @@ export async function newSpaceSession(space: string): Promise<void> {
   cockpit.space = space
   setShell('assistant')
   await afterNewSession()
+}
+
+/** Walk into a โปรเจกต์ from the rail: a fresh, empty chat inside it.
+ *
+ *  The whole point of the row (owner, 30 ส.ค.). Before this the only way in was
+ *  the โปรเจกต์ page, and getting to a conversation meant four clicks of which
+ *  three offered no choice — pick the room, pick the project, then press the
+ *  one button on a page you were only passing through.
+ *
+ *  A NEW chat rather than the newest one, which is what this opened for about
+ *  an hour on 30 ส.ค. before the owner corrected it — and the correction is the
+ *  more useful behaviour twice over. Clicking a project is how you say "I want
+ *  to work on this", which starts with a blank page far more often than it
+ *  starts mid-thread; and it is the only way to open a second chat inside the
+ *  project you are already standing in, which nothing else offered — the rail's
+ *  ✎ starts a chat at the door's desk and drops the project on the way out.
+ *  Going back to an earlier conversation is what the list directly under the
+ *  row is for.
+ *
+ *  Through newSpaceSession rather than the binding, because the engine's
+ *  session and the window's session are two facts and that function is what
+ *  keeps them one — see the comment on it for the bug that comes of skipping
+ *  it. */
+export async function openSpace(name: string): Promise<void> {
+  // Already in this project, on a chat nothing has been said in yet: that IS
+  // the blank page this click asks for. Making a second would leave two
+  // "แชทใหม่" rows in the list and move the user off the one their cursor was
+  // already in. Same shape as openDesk's "already here" guard, and narrower on
+  // purpose — being in the project is not enough, because wanting a second
+  // chat about it is exactly why this row exists.
+  if (cockpit.space === name && cockpit.chat.length === 0) {
+    setActiveView('chat')
+    return
+  }
+  await newSpaceSession(name)
 }
 
 /** Open a direct chat with one of the office's agents (§85). The desk is

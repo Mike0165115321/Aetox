@@ -3,15 +3,16 @@
 // What is worth pinning here is not that a row of buttons renders — it is the
 // rules a nav that opens sessions has to keep: clicking a desk you are not at
 // opens a session THERE, clicking the desk you are already at does not throw
-// away the conversation in front of you, ระบบออโตเมชั่น is a room with the door built
-// and nothing behind it, and — since the split — each door draws only its own
-// rooms, so the workshop never shows the office's.
+// away the conversation in front of you, no room here is a second door onto a
+// chair the roster already holds, and — since the split — each door draws only
+// its own rooms, so the workshop never shows the office's.
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte'
 import Sidebar from '../lib/Sidebar.svelte'
 import { NewSessionAt, NewChairSession, ListModes, SessionMode, CurrentSessionID } from './mocks/wailsApp'
 import { cockpit, switchShell } from '../lib/stores/cockpit.svelte'
 import { setShell, deskFilterFor, shellForDesk } from '../lib/shell.svelte'
+import { NAV } from '../lib/desks'
 
 const deskButton = (label: string): HTMLButtonElement => {
   const el = Array.from(document.querySelectorAll('.desk-btn'))
@@ -35,13 +36,15 @@ describe('the rooms behind each door', () => {
   it('offers every storefront room, and none of them still claims to be coming', () => {
     render(Sidebar, { onOpenSettings: () => {} })
 
-    // โปรเจกต์ opened on 2026-08-07 (§90), ระบบออโตเมชั่น on 2026-08-09. A room
-    // that has been built must stop saying it is coming: the badge is the
-    // promise, and a promise left up after it is kept is the same lie as one
-    // that was never kept. Every room behind this door is now open, so the
-    // whole row is checked rather than a list of exceptions — the next `soon`
-    // room to be added has to come back here and say so out loud.
-    for (const label of ['ผู้ช่วย', 'โปรเจกต์', 'เอเจนเฉพาะทาง', 'ระบบออโตเมชั่น', 'ผลงาน']) {
+    // โปรเจกต์ opened on 2026-08-07 (§90). A room that has been built must stop
+    // saying it is coming: the badge is the promise, and a promise left up
+    // after it is kept is the same lie as one that was never kept. Every room
+    // behind this door is now open, so the whole row is checked rather than a
+    // list of exceptions — the next `soon` room to be added has to come back
+    // here and say so out loud.
+    //
+    // ระบบออโตเมชั่น was in this list until 30 ส.ค. See the test below.
+    for (const label of ['ผู้ช่วย', 'โปรเจกต์', 'เอเจนเฉพาะทาง', 'ผลงาน']) {
       expect(deskButton(label)).toBeTruthy()
       expect(deskButton(label).disabled).toBe(false)
       expect(deskButton(label).textContent).not.toContain('เร็ว ๆ นี้')
@@ -56,7 +59,7 @@ describe('the rooms behind each door', () => {
     render(Sidebar, { onOpenSettings: () => {} })
 
     expect(deskButton('โค้ด')).toBeTruthy()
-    for (const hidden of ['ผู้ช่วย', 'โปรเจกต์', 'เอเจนเฉพาะทาง', 'ห้องทำงาน', 'ระบบออโตเมชั่น', 'ผลงาน']) {
+    for (const hidden of ['ผู้ช่วย', 'โปรเจกต์', 'เอเจนเฉพาะทาง', 'ห้องทำงาน', 'ผลงาน']) {
       expect(() => deskButton(hidden)).toThrow()
     }
   })
@@ -70,7 +73,7 @@ describe('the rooms behind each door', () => {
     render(Sidebar, { onOpenSettings: () => {} })
 
     expect(deskButton('ห้องทำงาน').disabled).toBe(false)
-    for (const hidden of ['ผู้ช่วย', 'โปรเจกต์', 'เอเจนเฉพาะทาง', 'ระบบออโตเมชั่น', 'ผลงาน', 'โค้ด']) {
+    for (const hidden of ['ผู้ช่วย', 'โปรเจกต์', 'เอเจนเฉพาะทาง', 'ผลงาน', 'โค้ด']) {
       expect(() => deskButton(hidden)).toThrow()
     }
   })
@@ -149,39 +152,24 @@ describe('the rooms behind each door', () => {
     expect(vi.mocked(NewSessionAt)).not.toHaveBeenCalled()
   })
 
-  // ระบบออโตเมชั่น is a conversation, and the person on the other side is the
-  // automation specialist rather than the assistant. It opens through the same
-  // door the office roster's "แชทกับเอเจนนี้" uses — one way in, so a chat
-  // started from the nav and one started from the roster are the same chat with
-  // the same tools, memory and prompt.
+  // ระบบออโตเมชั่น left the nav on 30 ส.ค., and the two tests that stood here —
+  // that it opened a chat with the automation agent, and that it lit itself
+  // rather than the office — went with it.
   //
-  // It was a page for a day, drawing cards for the engines you could connect.
-  // Connecting an account is register work and the register already does it, so
-  // the room was answering a question that had a home while the thing people
-  // come here for had none.
-  it('opens ระบบออโตเมชั่น as a chat with the automation agent', async () => {
-    render(Sidebar, { onOpenSettings: () => {} })
-
-    await fireEvent.click(deskButton('ระบบออโตเมชั่น'))
-
-    await waitFor(() => expect(vi.mocked(NewChairSession)).toHaveBeenCalledWith('automation'))
-    expect(cockpit.activeView).toBe('chat')
-    expect(cockpit.chair).toBe('automation')
-    // Not a desk session: the agent brings its own tools and prompt, and asking
-    // for a desk as well would be two masters for one turn.
-    expect(vi.mocked(NewSessionAt)).not.toHaveBeenCalled()
-  })
-
-  // A chair chat runs at the office desk, so lighting the nav by desk would
-  // leave the wrong room lit while the user is standing in ระบบออโตเมชั่น.
-  it('lights the room by who you are talking to, not by the desk', async () => {
-    cockpit.desk = 'specialized'
-    cockpit.chair = 'automation'
-    cockpit.activeView = 'chat'
-    render(Sidebar, { onOpenSettings: () => {} })
-
-    expect(deskButton('ระบบออโตเมชั่น').className).toContain('active')
-    expect(deskButton('เอเจนเฉพาะทาง').className).not.toContain('active')
+  // It was removed because its button called `newChairSession('automation')`,
+  // the identical line the roster's own "แชทกับเอเจนนี้" calls: the nav row was
+  // not a room, it was a second door onto a chair that lives in เอเจนเฉพาะทาง.
+  // The cost was announcement — it was the only place the product said out loud
+  // that Aetox does automation — and the owner took it knowingly, on the
+  // grounds that if automation earns a nav row for being important then every
+  // agent can make the same argument and the roster has no reason to exist.
+  //
+  // This is the rule that replaced them, and it is the one worth keeping: no
+  // room in the nav may be a shortcut to a chair. The `chair` field stays on
+  // NavEntry — it is how such a room WOULD be built — so nothing but this
+  // assertion stops the shortcut growing back.
+  it('offers no room that is only a shortcut to a chair', () => {
+    expect(NAV.filter((room) => room.chair)).toEqual([])
   })
 
   // Every chat with an เอเจน runs at the specialized desk and is the

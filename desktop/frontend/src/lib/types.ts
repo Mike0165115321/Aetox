@@ -68,6 +68,23 @@ export interface RecentProject {
   snippet?: string
 }
 
+/** One โปรเจกต์ at the storefront door (COMPANY.md §84) as the sidebar needs
+ *  it: enough to draw a row and open it, and nothing more.
+ *
+ *  Deliberately not `main.Space`. The binding's type carries `path`,
+ *  `contextPath` and the context file names, which are the โปรเจกต์ page's
+ *  business — a sidebar row that held them would be a second place those
+ *  answers live, and the one that goes stale first. The name IS the key here:
+ *  a space exists because its folder exists (desktop/spaces.go), so there is no
+ *  id to carry. */
+export interface SpaceRow {
+  name: string
+  /** How many chats are filed in it. Not drawn on the row — see the sidebar —
+   *  but it is what tells an empty project from a used one. */
+  chats: number
+  updatedAt: string
+}
+
 export interface ProjectInfo {
   name: string
   path: string
@@ -700,6 +717,14 @@ export interface CockpitState {
    *  the open chat is in no project — which is most of the time, and is what
    *  puts `history` back on screen. */
   spaceHistory: Session[]
+  /** Every โปรเจกต์ the user has, newest first — the sidebar's own list (§84).
+   *
+   *  Held here rather than fetched by the sidebar the way the โปรเจกต์ page
+   *  fetches it, because two lists of the same folders that refresh at
+   *  different moments disagree in front of the user: the page can afford to
+   *  read the disk when it opens, the rail is on screen while the disk is
+   *  being changed. */
+  spaces: SpaceRow[]
   model: ModelStatus
   chat: ChatMessage[]
   task: TaskState
@@ -867,6 +892,7 @@ export function emptyCockpitState(): CockpitState {
     sessions: [],
     history: [],
     spaceHistory: [],
+    spaces: [],
     model: { provider: '', modelName: '', thinkLevel: '', contextUsed: 0, contextMax: 0, approval: 'ask', wireFormat: '', warning: '' },
     chat: [],
     task: { elapsed: '', steps: [] },
