@@ -125,6 +125,13 @@ func (c *Context) enforceLimits() {
 		c.messages = trimmed
 	}
 
+	// Before the char budget rather than after, and that order is the point: a
+	// stale screenshot should cost the conversation nothing, not cost it a turn
+	// of real transcript to evict. Dropping the oldest turn to make room for
+	// pictures nobody is looking at is how a long turn forgets its own
+	// beginning.
+	c.forgetOldImages()
+
 	for c.maxChars > 0 && totalChars(c.messages) > c.maxChars && len(c.messages) > 2 {
 		c.dropOldestTurn()
 	}
@@ -180,12 +187,84 @@ func (c *Context) truncateLastIfNeeded() {
 	c.messages[len(c.messages)-1] = last
 }
 
+// totalChars is the size of a conversation in the unit the budget is set in.
+//
+// Pictures are counted here and were not until 28 ส.ค. A message carrying a
+// 130 KB screenshot was measured as its 45-character caption, so nothing
+// involving one ever pushed the conversation over its limit and no screenshot
+// was ever dropped for being old — one turn in that day's log re-sent 22 of
+// them 620 times between them (DECISIONS §204). See model.Image.CharCost for
+// why the price is in pixels.
+//
+// Documents are still uncounted and that is a known hole of the same shape, not
+// an argument that a PDF is free. It is left rather than guessed at: an image's
+// cost follows from its area, and a document's does not follow from its bytes,
+// so pricing one wrong would evict real conversation to make room for nothing.
 func totalChars(messages []model.Message) int {
 	total := 0
 	for _, message := range messages {
 		total += len(message.Content)
+		for _, picture := range message.Images {
+			total += picture.CharCost()
+		}
 	}
 	return total
+}
+
+// imagesKept is how many pictures stay in the conversation as pictures.
+//
+// Two, because two is what a comparison needs: the shot just taken and the one
+// it is being compared against. Past that a screenshot's worth is in what was
+// said about it, and that is in the transcript already — the bytes are only
+// paying to be sent again. Nothing is lost that cannot be got back: the file is
+// still on disk and the tool result that made it still names the path, which is
+// the same route a model with no vision has always used.
+const imagesKept = 2
+
+// imageForgotten is said where the picture used to be.
+//
+// Saying it is not optional. These messages carry a caption reading "[the image
+// returned by browser follows]", and a caption promising a picture that is no
+// longer attached is a message that lies to the model about what it is holding.
+const imageForgotten = " (ภาพที่ว่าถูกถอดออกจากบทสนทนาแล้วเพื่อประหยัดที่ ไฟล์ยังอยู่ที่เดิม)"
+
+// forgetOldImages strips the bytes from every tool-produced picture but the
+// newest imagesKept, newest first.
+//
+// Only tool-produced ones. A picture the user attached is the subject of the
+// conversation rather than a step in it, and a room that quietly drops the
+// photo somebody asked about has broken the job to save room for itself. That
+// is what model.Message.ImagesFromTool separates.
+//
+// Idempotent by construction: a message whose bytes are gone has no Images
+// left, so a later pass skips it and the note is never appended twice.
+//
+// What it frees is counted into the same pair MicroCompact reports through, so
+// the context meter has one place to read and one story to tell. A third
+// mechanism quietly reclaiming space beside two that announce themselves is the
+// bug report against itself that those fields were added to prevent.
+func (c *Context) forgetOldImages() {
+	if c == nil {
+		return
+	}
+	kept := 0
+	for i := len(c.messages) - 1; i >= 0; i-- {
+		if !c.messages[i].ImagesFromTool || len(c.messages[i].Images) == 0 {
+			continue
+		}
+		if kept < imagesKept {
+			kept++
+			continue
+		}
+		freed := 0
+		for _, picture := range c.messages[i].Images {
+			freed += picture.CharCost()
+		}
+		c.messages[i].Images = nil
+		c.messages[i].Content += imageForgotten
+		c.sweptItems++
+		c.sweptChars += freed - len(imageForgotten)
+	}
 }
 
 func (c *Context) UsageStats() (messageCount int, usedChars int, maxChars int) {
