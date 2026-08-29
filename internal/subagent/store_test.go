@@ -1,6 +1,7 @@
 package subagent
 
 import (
+	"slices"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,12 +120,28 @@ func TestFilterRegistry(t *testing.T) {
 
 	explore, _ := Load("explore")
 	child := FilterRegistry(parent, explore, nil)
-	if got := len(child.Names()); got != 4 {
-		t.Fatalf("explore registry has %d tools, want 4: %v", got, child.Names())
+	// Two ENTRIES for four tools: `tools: grep, glob, list, read` reaches the
+	// registry as `read` plus `search` narrowed to the three acts it named
+	// (internal/skill/search_pack.go). This is the case Step 0's per-action
+	// narrowing exists for, seen from the sub-agent side - a profile that names
+	// actions must still get exactly those.
+	if got := len(child.Names()); got != 2 {
+		t.Fatalf("explore registry has %d entries, want 2: %v", got, child.Names())
 	}
 	for _, name := range explore.Tools {
-		if _, ok := child.Get(name); !ok {
-			t.Errorf("%q missing from the filtered registry", name)
+		if _, ok := child.Get(name); ok {
+			continue
+		}
+		// Not an entry of its own, so it has to be an act of one that is.
+		found := false
+		for _, entry := range child.Names() {
+			if slices.Contains(skill.PackedActions(entry), name) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("%q is neither a registry entry nor an act of one", name)
 		}
 	}
 	// Source survives the copy, or the Tools panel would relabel every builtin.

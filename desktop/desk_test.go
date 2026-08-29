@@ -128,13 +128,16 @@ func TestEachDeskSendsOnlyItsOwnTools(t *testing.T) {
 		want  bool
 		names []string
 	}{
-		{"coding", coding, true, []string{"shell", "read", "edit", "diagnostics", "task"}},
-		{"coding", coding, false, []string{"doc_write", "sheet_write", "image_ocr"}},
+		// `change` rather than `edit`, and `search` rather than `grep`: both are
+		// packed entries now (internal/skill/change_pack.go, search_pack.go), and
+		// what a desk sends is entries.
+		{"coding", coding, true, []string{"shell", "read", "change", "search", "codebase", "task"}},
+		{"coding", coding, false, []string{"doc_write", "sheet_write", "media_read"}},
 		// COMPANY.md §2: the assistant desk does everything on this machine
 		// except the developer tools. It has the shell — safety is the gate's
 		// job, not a missing tool's (§6.2) — and no diagnostics or symbol.
-		{"assistant", assistant, true, []string{"read", "edit", "shell", "web_search", "memory", "task"}},
-		{"assistant", assistant, false, []string{"diagnostics", "symbol", "github", "github_search"}},
+		{"assistant", assistant, true, []string{"read", "change", "search", "shell", "web_search", "memory", "task"}},
+		{"assistant", assistant, false, []string{"codebase", "github", "github_search"}},
 		// The writers left this desk on the owner's call (2026-08-06):
 		// *"เมนไม่ควรทำเองสิครับ มันคืองานของเอเจนเฉพาะทางที่เราสร้างมาแล้ว"*.
 		// The office had a chair per format, each carrying exactly one writer at
@@ -283,7 +286,10 @@ func TestAChairIsCappedByTheOfficeCeiling(t *testing.T) {
 	if !slices.Contains(names, "doc_write") {
 		t.Errorf("the chair lost the writer its job is: %v", names)
 	}
-	if !slices.Contains(names, "write") {
+	// `write` is an act of `change` now, so the entry to look for is the pack -
+	// which reaches the chair because the office's `tools:` names write and its
+	// `chairs:` names edit, edits and delete (mode.CarriesForChair).
+	if !slices.Contains(names, "change") {
 		t.Errorf("the chair lost a tool the office's own manifest names: %v", names)
 	}
 	// Shell reaches a chair that asks for it, because the office keeps it in

@@ -56,11 +56,15 @@ func paramNames(t *testing.T, name string, raw json.RawMessage) []string {
 
 func TestTheFileAndSearchToolsAskForExactlyTheseNames(t *testing.T) {
 	want := map[string][]string{
-		"edit":  {"all", "find", "mode", "path", "replace"},
-		"edits": {"edits", "find", "path", "path", "replace"}, // `path` twice: once per edit, once as the call-wide default
-		"grep":  {"context", "glob", "limit", "offset", "path", "pattern", "show"},
-		"glob":  {"limit", "offset", "path", "pattern"},
-		"read":  {"limit", "offset", "path"},
+		// write, edit, append, batch and delete are actions of `change` now
+		// (change_pack.go). `path` twice: once per edit inside batch, once as
+		// the call-wide default. `mode` is gone - append is an action.
+		"change": {"action", "all", "content", "edits", "find", "find", "path", "path", "recursive", "replace", "replace"},
+		// grep and glob are actions of `search` now (search_pack.go), so the
+		// names the model reads are the pack's - one `path`, one `pattern`, and
+		// grep's five own options beside them.
+		"search": {"action", "context", "glob", "limit", "multiline", "offset", "path", "pattern", "show", "type"},
+		"read":   {"limit", "offset", "path"},
 	}
 
 	registry := NewDefaultRegistry(RegistryOptions{SandboxRoot: t.TempDir()})
@@ -92,12 +96,14 @@ func TestTheFileAndSearchToolsAskForExactlyTheseNames(t *testing.T) {
 	}
 }
 
-// One idea, one name. `read`, `grep` and `glob` all page, and a reader who
-// learned the pair on one of them must not have to learn it again on the next.
+// One idea, one name. `read` pages and so do two of `search`'s three actions,
+// and a reader who learned the pair on one must not have to learn it again on
+// the next. Asked of the tools as the model meets them, which is why `search`
+// stands here for the grep and glob that used to.
 func TestPagingIsSpelledTheSameWayOnEveryToolThatPages(t *testing.T) {
 	registry := NewDefaultRegistry(RegistryOptions{SandboxRoot: t.TempDir()})
 
-	for _, name := range []string{"read", "grep", "glob"} {
+	for _, name := range []string{"read", "search"} {
 		sk, ok := registry.Get(name)
 		if !ok {
 			t.Fatalf("%s is not registered", name)

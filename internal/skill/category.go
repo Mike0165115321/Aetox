@@ -47,11 +47,19 @@ var CategoryOrder = []string{
 var toolCategories = map[string]string{
 	// Reading and changing what is on disk — the hands.
 	"read":          CategoryFiles,
+	// The tool the model is offered, and the four action names it gates on
+	// inside (change_pack.go). `append` is not listed: it is `edit`'s
+	// permission under another word, so the name a desk or a profile writes is
+	// still `edit`.
+	"change":        CategoryFiles,
 	"write":         CategoryFiles,
 	"edit":          CategoryFiles,
 	"edits":   CategoryFiles,
 	"delete":        CategoryFiles,
 	"list":          CategoryFiles,
+	// The tool the model is offered, and the three action names it gates on
+	// inside (search_pack.go) - both spellings listed, same reason as shell's.
+	"search":        CategoryFiles,
 	"glob":          CategoryFiles,
 	"grep":          CategoryFiles,
 	"fs":            CategoryFiles,
@@ -77,6 +85,9 @@ var toolCategories = map[string]string{
 	"deck_export": CategoryDeliverables,
 
 	// Senses a model does not have on its own — the group Aetox exists for.
+	// The tool the model is offered, and the three action names it gates on
+	// inside (media_pack.go) - both spellings, same reason as shell's.
+	"media_read":       CategoryMedia,
 	"image_ocr":        CategoryMedia,
 	"video_ocr":        CategoryMedia,
 	"pdf_read":         CategoryMedia,
@@ -142,6 +153,11 @@ var toolCategories = map[string]string{
 	// specialized desk carries no shell and must not carry this either.
 	"desk_terminal": CategoryShell,
 
+	// The tool the model is offered, and the three action names it gates on
+	// inside (codebase_pack.go). Named `codebase` and not `code` because `code`
+	// is this file's own category word: `tools: code` and `categories: code`
+	// must not be two grants spelled the same.
+	"codebase":    CategoryCode,
 	"diagnostics": CategoryCode,
 	"symbol":      CategoryCode,
 	"rename":      CategoryCode,
@@ -152,6 +168,17 @@ var toolCategories = map[string]string{
 	// The tool the model is offered, and the four action names it gates on
 	// inside (github_pack.go) — listed for the same reason the shell and
 	// browser action names are.
+	// Pull requests: the tool the model is offered and the five action names it
+	// gates on inside (pr_pack.go). Filed under code because that is what it is
+	// from outside - the developer's own repository - and it rides the same
+	// GitHub connection the github tools do.
+	"pr":                  CategoryCode,
+	"pr_list":             CategoryCode,
+	"pr_read":             CategoryCode,
+	"pr_checks":           CategoryCode,
+	"pr_create":           CategoryCode,
+	"pr_comment":          CategoryCode,
+
 	"github":              CategoryCode,
 	"github_search":       CategoryCode,
 	"github_read_file":    CategoryCode,

@@ -302,6 +302,33 @@ func (m *Mode) AllowsTool(name string) bool {
 	return slices.Contains(m.Categories, skill.CategoryOf(name))
 }
 
+// AllowsAction is AllowsTool one level down, for a packed tool: not "is
+// `browser` on this desk" but "is `browser_read`".
+//
+// Every list a manifest is written in already speaks per-action names — that is
+// what the both-spellings rule in internal/skill/category.go exists for, and
+// why the specialized desk can write `tools: read, write, list, glob` and mean
+// it. So this needs no new vocabulary: it asks the ordinary question about the
+// action, and adds the two answers a manifest can only give about the pack.
+//
+//   - `deny:` naming the PACK refuses all of it. A user who wrote "not the
+//     browser" meant the browser, not eleven twelfths of it.
+//   - `tools:` naming the PACK grants all of it, which is the one-word way of
+//     saying so and what every manifest written before packing existed meant.
+func (m *Mode) AllowsAction(tool, action string) bool {
+	if m == nil {
+		return true
+	}
+	tool = strings.ToLower(strings.TrimSpace(tool))
+	if slices.Contains(m.Deny, tool) {
+		return false
+	}
+	if m.AllowsTool(action) {
+		return true
+	}
+	return slices.Contains(m.Tools, tool)
+}
+
 // AllowsServer reports whether this desk attaches the named MCP server. An
 // absent `mcp:` field attaches none — the one default-closed field, see the
 // Mode doc for why — and a nil Mode (the pre-modes full desk) attaches all.
@@ -349,6 +376,20 @@ func (m *Mode) Carries(name string, source skill.Source) bool {
 	if !connect.Allows(name, m.Connections) {
 		return false
 	}
+	// A packed tool is carried when ANY of its actions is, because that is what
+	// carrying it now means: the dispatcher hands the session a copy offering
+	// only the allowed ones (skill.Dispatcher.cut). Asking AllowsTool about the
+	// packed name alone would drop `browser` from a desk that allows nine of
+	// its twelve rights — the coarse answer AllowsAction exists to replace, and
+	// the one this line used to give.
+	if actions := skill.PackedActions(name); len(actions) > 0 {
+		for _, action := range actions {
+			if m.AllowsAction(name, action) {
+				return true
+			}
+		}
+		return false
+	}
 	return m.AllowsTool(name)
 }
 
@@ -388,7 +429,20 @@ func (m *Mode) CarriesForChair(name string, source skill.Source) bool {
 	if slices.Contains(m.Deny, name) {
 		return false
 	}
-	return slices.Contains(m.Chairs, name)
+	if slices.Contains(m.Chairs, name) {
+		return true
+	}
+	// A `chairs:` list names actions as readily as tools - the office's says
+	// `edit, edits, delete`, which are three acts of one packed `change`. Kept
+	// in the room when any one of them is, the same rule Carries uses one
+	// method up, or a desk that keeps an act for its agents would lose it the
+	// day that act was packed.
+	for _, action := range skill.PackedActions(name) {
+		if slices.Contains(m.Chairs, action) {
+			return true
+		}
+	}
+	return false
 }
 
 // CarriesMCP reports whether an MCP tool named name came from a server this

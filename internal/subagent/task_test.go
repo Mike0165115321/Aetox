@@ -314,10 +314,22 @@ func TestSubagentBenchModelDrivesTheWholeDelegationItself(t *testing.T) {
 	// The delegate's own run is the part the bench exists to show: one tool call
 	// under a sub-agent block demonstrates nothing about how a delegation reads.
 	// It asks, then does a real job — and ends with a file on disk.
-	for _, want := range []string{"ask_main", "list", "write", "read", "grep"} {
+	// `search` twice, not `list` and `grep`: both are acts of one packed tool
+	// now (internal/skill/search_pack.go), and a timeline row carries the name
+	// the model called — the same way all four rounds above read as `task`.
+	for _, want := range []string{"ask_main", "search", "change", "read"} {
 		if !contains(subCalls, want) {
 			t.Errorf("the delegate never ran %s; it ran %v", want, subCalls)
 		}
+	}
+	searches := 0
+	for _, name := range subCalls {
+		if name == "search" {
+			searches++
+		}
+	}
+	if searches < 2 {
+		t.Errorf("the delegate searched %d times, want 2 (list then grep): %v", searches, subCalls)
 	}
 	if subCalls[0] != "ask_main" {
 		t.Errorf("the delegate worked before asking, so the bench never shows a parked run: %v", subCalls)
@@ -450,7 +462,10 @@ func TestTaskDelegateCannotRecurseOrMutate(t *testing.T) {
 	// general inherits everything the parent has, still minus task.
 	general, _ := Load("general")
 	generalRegistry := FilterRegistry(f.registry, general, nil)
-	if _, ok := generalRegistry.Get("write"); !ok {
+	// `change` is the entry writing lives in now (internal/skill/change_pack.go),
+	// and `general` denies plugin_install and delete without naming any tools -
+	// so it inherits the pack narrowed to everything but delete.
+	if _, ok := generalRegistry.Get("change"); !ok {
 		t.Error("general lost write, which it inherits")
 	}
 	if _, ok := generalRegistry.Get("task"); ok {
@@ -1182,6 +1197,11 @@ func (p *variedLoopProvider) Complete(_ context.Context, _ model.Request) (model
 func TestDelegateRunsAChainOfToolsAndOnlyTheAnswerComesBack(t *testing.T) {
 	f := newTaskFixture(t, "aetox-tools:test")
 
+	// The three acts the toolchain script walks (internal/model/noop.go), named
+	// here because the assertion below reads them out of the delegate's digest
+	// rather than out of the tool events.
+	toolchainActs := []string{"list", "glob", "grep"}
+
 	start := f.callTask(t, "call_chain", map[string]any{
 		"description": "walk the sandbox",
 		"prompt":      "toolchain: สำรวจโฟลเดอร์นี้ด้วยเครื่องมือทุกตัวที่มี แล้วรายงานผลของแต่ละตัว",
@@ -1197,15 +1217,25 @@ func TestDelegateRunsAChainOfToolsAndOnlyTheAnswerComesBack(t *testing.T) {
 	}
 
 	// 1. Every probe ran inside the delegate, not in the parent's own timeline.
-	inDelegate := map[string]bool{}
+	//
+	// Counted rather than named, because all three probes are acts of `search`
+	// now (internal/skill/search_pack.go) and a tool event carries the name the
+	// model called — one name for the three, the same way `shell` has answered
+	// for its four since it was packed. Which acts ran is asserted from the
+	// delegate's own digest just below, where the three are still spelled out.
+	inDelegate := 0
 	for _, ev := range f.toolEvents() {
 		if ev.Action == "call" && ev.Parent == "call_chain" {
-			inDelegate[ev.Name] = true
+			inDelegate++
 		}
 	}
-	for _, want := range []string{"list", "glob", "grep"} {
-		if !inDelegate[want] {
-			t.Errorf("%q never ran inside the delegate — its loop stopped early: %v", want, inDelegate)
+	if inDelegate < len(toolchainActs) {
+		t.Errorf("%d tool calls ran inside the delegate, want %d — its loop stopped early",
+			inDelegate, len(toolchainActs))
+	}
+	for _, want := range toolchainActs {
+		if !strings.Contains(out.Content, want) {
+			t.Errorf("%q is missing from the delegate's report — that probe never ran: %q", want, out.Content)
 		}
 	}
 
@@ -1231,8 +1261,8 @@ func TestDelegateRunsAChainOfToolsAndOnlyTheAnswerComesBack(t *testing.T) {
 	if _, err := fmt.Sscanf(out.Content[strings.Index(out.Content, "[task explore:"):], "[task explore: %d tool calls", &calls); err != nil {
 		t.Fatalf("cannot read the call count out of the receipt: %v", err)
 	}
-	if calls < len(inDelegate) {
-		t.Errorf("receipt counted %d calls, but %d ran", calls, len(inDelegate))
+	if calls < inDelegate {
+		t.Errorf("receipt counted %d calls, but %d ran", calls, inDelegate)
 	}
 }
 

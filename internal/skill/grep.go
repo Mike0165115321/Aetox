@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -48,6 +49,78 @@ var IgnoredDirs = map[string]bool{
 	"AppData": true,
 }
 
+// grepTypes maps a language name to the extensions it means, the way
+// ripgrep's --type does and the way Claude Code's Grep exposes it.
+//
+// Why a name and not just `glob`: glob answers "files spelled like this", which
+// is only the same question when the caller already knows how the repository
+// spells them. TypeScript is .ts and .tsx; C++ is six extensions; a model that
+// has not read the tree writes `*.ts` and silently misses every component.
+// A name is one token, cannot be spelled wrong without being told, and the two
+// compose — `type=ts glob=*store*` is both filters, not the later one winning.
+//
+// Deliberately short. This is not ripgrep's 800-entry table; it is the
+// languages this project's own map parses (internal/repomap/parse.go) plus the
+// configuration and text files a code search actually asks for. An unknown
+// name is refused by Execute rather than matching nothing, because a filter
+// that quietly matches nothing reports "(no matches)" — the answer that looks
+// like knowledge and is not.
+var grepTypes = map[string][]string{
+	"go":     {".go"},
+	"ts":     {".ts", ".tsx", ".mts", ".cts"},
+	"js":     {".js", ".jsx", ".mjs", ".cjs"},
+	"svelte": {".svelte"},
+	"vue":    {".vue"},
+	"py":     {".py", ".pyi"},
+	"rust":   {".rs"},
+	"java":   {".java"},
+	"kotlin": {".kt", ".kts"},
+	"cs":     {".cs"},
+	"c":      {".c", ".h"},
+	"cpp":    {".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx"},
+	"php":    {".php"},
+	"ruby":   {".rb"},
+	"swift":  {".swift"},
+	"dart":   {".dart"},
+	"sql":    {".sql"},
+	"sh":     {".sh", ".bash", ".zsh"},
+	"ps1":    {".ps1", ".psm1"},
+	"html":   {".html", ".htm"},
+	"css":    {".css", ".scss", ".sass", ".less"},
+	"json":   {".json", ".jsonc"},
+	"yaml":   {".yaml", ".yml"},
+	"toml":   {".toml"},
+	"md":     {".md", ".markdown"},
+}
+
+// GrepTypeNames lists every accepted type name, sorted, so the schema and the
+// refusal message read from the table rather than from a second copy of it.
+// Exported for the tool-block tests, which assert what the model is told.
+func GrepTypeNames() []string {
+	names := make([]string, 0, len(grepTypes))
+	for name := range grepTypes {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// matchesType reports whether a file belongs to a named type. An empty name
+// means no type filter and matches everything.
+func matchesType(name, fileName string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return true
+	}
+	ext := strings.ToLower(filepath.Ext(fileName))
+	for _, want := range grepTypes[name] {
+		if ext == want {
+			return true
+		}
+	}
+	return false
+}
+
 type grepSkill struct {
 	root         string
 	outputSubdir func() string
@@ -65,7 +138,7 @@ func (*grepSkill) ToolDefinition() model.ToolDefinition {
 		"properties": map[string]any{
 			"pattern": map[string]any{
 				"type":        "string",
-				"description": "Go regular expression to search for. Prefix with (?i) for case-insensitive.",
+				"description": "Go regular expression. Prefix (?i) for case-insensitive.",
 			},
 			"path": map[string]any{
 				"type":        "string",
@@ -77,7 +150,7 @@ func (*grepSkill) ToolDefinition() model.ToolDefinition {
 			},
 			"context": map[string]any{
 				"type":        "integer",
-				"description": "Lines of surrounding context around each match (default 0, max 50). Selects show=content.",
+				"description": "Lines around each match, max 50. Selects show=content.",
 			},
 			"show": map[string]any{
 				"type":        "string",
@@ -86,11 +159,19 @@ func (*grepSkill) ToolDefinition() model.ToolDefinition {
 			},
 			"limit": map[string]any{
 				"type":        "integer",
-				"description": "Return at most this many entries, matches in content mode, files otherwise.",
+				"description": "Cap on entries returned.",
 			},
 			"offset": map[string]any{
 				"type":        "integer",
-				"description": "Skip this many entries first. With limit, pages past the result cap.",
+				"description": "Skip this many entries first.",
+			},
+			"type": map[string]any{
+				"type":        "string",
+				"description": "Only this language's files: go, ts, py, rust and 20 more; an unknown name lists them.",
+			},
+			"multiline": map[string]any{
+				"type":        "boolean",
+				"description": "Let the pattern cross line boundaries.",
 			},
 		},
 		"required":             []string{"pattern"},
@@ -102,8 +183,7 @@ func (*grepSkill) ToolDefinition() model.ToolDefinition {
 		Function: model.ToolFunction{
 			Name: "grep",
 			Description: "Search file contents by regex (Go/RE2 syntax: no backreferences or lookaround). " +
-				"Returns the paths of matching files; show=content returns path:line:text instead, and path-line-text for context lines. " +
-				"Dependency and build directories are never searched.",
+				"Returns the paths of matching files; show=content returns path:line:text instead.",
 			Parameters: payload,
 		},
 	}
@@ -129,7 +209,16 @@ func (*grepSkill) Guidance(map[string]any) string {
 		"The result cap is 200 entries and limit only tightens it. A capped result names the offset to resume from, " +
 		"so a search that hit the ceiling is paged rather than re-invented as a narrower pattern.\n" +
 		"Matching lines are clipped at 200 characters, so a hit in generated code shows where it is and not what it says. " +
-		"Build an edit from what read returns, not from a grep line."
+		"Build an edit from what read returns, not from a grep line.\n" +
+		"Dependency and build directories are never searched, so a repo-wide search is the repository and not its node_modules. " +
+		"In content mode a context line reads path-line-text and a match reads path:line:text, which is how you tell them apart.\n" +
+		"limit and offset page the result: a capped result names the offset to continue from.\n" +
+		"type=go is how you say \"only this language\" across a whole repository without knowing its layout, and it composes " +
+		"with glob rather than replacing it. The names are one per language, not one per extension: ts covers .tsx too.\n" +
+		"multiline hands the pattern the whole file at once: . crosses newlines, ^ and $ still mean line edges, and CRLF is " +
+		"folded first so a pattern written with a newline works on any checkout. It is the only way to match a struct body or " +
+		"a two-line call. Keep it tight: a greedy .* now runs to the end of the file, and one match can be hundreds of lines " +
+		"that all count as one hit."
 }
 
 func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
@@ -153,6 +242,8 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 	// Named options rather than more positional args: the CLI form stays
 	// "grep <pattern> [path]" while a tool call can ask for more.
 	glob := strings.TrimSpace(stringArg(input["glob"]))
+	fileType := strings.ToLower(strings.TrimSpace(stringArg(input["type"])))
+	multiline := boolArg(input["multiline"])
 	ctxLines := intArg(input["context"])
 	if ctxLines < 0 {
 		ctxLines = 0
@@ -192,6 +283,13 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 		err := errors.New("show must be content, files_with_matches or count")
 		return newToolOutput("grep", "grep "+pattern, "", start, false, err), err
 	}
+	if fileType != "" && grepTypes[fileType] == nil {
+		// Named, not silent. A type nobody recognises would otherwise match no
+		// file and answer "(no matches)", which reads as "this string is not in
+		// your repository" — a wrong answer with a tick beside it.
+		err := errors.New("unknown type " + fileType + "; known types: " + strings.Join(GrepTypeNames(), ", "))
+		return newToolOutput("grep", "grep "+pattern, "", start, false, err), err
+	}
 	skip := intArg(input["offset"])
 	if skip < 0 {
 		skip = 0
@@ -202,6 +300,12 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 	}
 	if glob != "" {
 		command += " --glob " + glob
+	}
+	if fileType != "" {
+		command += " --type " + fileType
+	}
+	if multiline {
+		command += " --multiline"
 	}
 	if ctxLines > 0 {
 		command += " -C " + strconv.Itoa(ctxLines)
@@ -215,7 +319,15 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 		command += " --offset " + strconv.Itoa(skip)
 	}
 
-	re, err := regexp.Compile(pattern)
+	// (?s) so . crosses a newline and (?m) so ^ and $ still mean line edges —
+	// together they are ripgrep's -U --multiline-dotall, which is the behaviour
+	// a caller asking for multiline has in mind. Prefixed rather than wrapped:
+	// a pattern that turns a flag back off later still wins, as it should.
+	compiled := pattern
+	if multiline {
+		compiled = "(?sm)" + pattern
+	}
+	re, err := regexp.Compile(compiled)
 	if err != nil {
 		return newToolOutput("grep", command, "", start, false, err), err
 	}
@@ -274,6 +386,9 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 		if glob != "" && !matchesGlob(glob, d.Name()) {
 			return nil
 		}
+		if !matchesType(fileType, d.Name()) {
+			return nil
+		}
 		// The base was checked once; this is every file under it. Without it a
 		// grep rooted above <DataRoot> reads the credential files by content that
 		// `read` refuses by name.
@@ -308,24 +423,18 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 		lines := strings.Split(string(data), "\n")
 		lastShown := -1 // last line index already written out for this file
 		hits := 0
-		for i, line := range lines {
-			if !re.MatchString(line) {
-				continue
-			}
+		// files_with_matches has its answer for this file after one hit; count
+		// and content need every one.
+		for _, sp := range grepSpans(re, string(data), lines, multiline, mode == grepModeFiles) {
 			matches++
 			hits++
 			if mode != grepModeContent {
-				// files_with_matches has its answer for this file after one
-				// hit; count needs the tally, so it keeps going.
-				if mode == grepModeFiles {
-					break
-				}
 				continue
 			}
 			if matches <= skip {
 				continue // paging past a page already returned
 			}
-			from, to := i-ctxLines, i+ctxLines
+			from, to := sp.from-ctxLines, sp.to+ctxLines
 			if from < 0 {
 				from = 0
 			}
@@ -342,7 +451,7 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 			}
 			for j := from; j <= to; j++ {
 				sep := "-"
-				if j == i {
+				if j >= sp.from && j <= sp.to {
 					sep = ":"
 				}
 				results = append(results, display+sep+strconv.Itoa(j+1)+sep+clip(lines[j]))
@@ -439,6 +548,56 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 // instead of a read of the file it lives in.
 const maxGrepContext = 50
 
+// grepSpan is one hit as a range of line indexes, 0-based and inclusive. A
+// line-by-line search always produces from == to; a multiline one may not, and
+// that is the whole reason a hit is a range rather than a line number.
+type grepSpan struct{ from, to int }
+
+// grepSpans finds every hit in one file.
+//
+// Two searches behind one shape. Line by line is what grep has always done and
+// is byte-for-byte what it was. Multiline hands the pattern the whole file, with
+// CRLF folded to LF first: a pattern written with \n in mind must not fail on a
+// checked-out Windows file (lineendings.go makes the same promise for edit), and
+// folding cannot move a line number, since only the \r is dropped.
+//
+// firstOnly stops at one hit, for the mode that only needs to know whether the
+// file matched at all.
+func grepSpans(re *regexp.Regexp, data string, lines []string, multiline, firstOnly bool) []grepSpan {
+	var spans []grepSpan
+	if !multiline {
+		for i, line := range lines {
+			if !re.MatchString(line) {
+				continue
+			}
+			spans = append(spans, grepSpan{i, i})
+			if firstOnly {
+				break
+			}
+		}
+		return spans
+	}
+
+	text := strings.ReplaceAll(data, "\r\n", "\n")
+	locs := re.FindAllStringIndex(text, -1)
+	if firstOnly && len(locs) > 1 {
+		locs = locs[:1]
+	}
+	for _, loc := range locs {
+		// The end offset is exclusive, so a match ending exactly on a newline
+		// belongs to the line before it, not to the empty one after.
+		end := loc[1]
+		if end > loc[0] {
+			end--
+		}
+		spans = append(spans, grepSpan{
+			from: strings.Count(text[:loc[0]], "\n"),
+			to:   strings.Count(text[:end], "\n"),
+		})
+	}
+	return spans
+}
+
 // matchesGlob reports whether a file name satisfies a caller's glob. Supports
 // the two forms that actually get typed: "*.go" and "*.{ts,svelte}". A leading
 // "**/" is accepted and ignored — matching is on the file name — so a pattern
@@ -474,11 +633,13 @@ func (s *grepSkill) ExecuteTool(ctx context.Context, args map[string]any) (Outpu
 		callArgs = append(callArgs, strings.TrimSpace(path))
 	}
 	return s.Execute(ctx, Input{
-		"args":    callArgs,
-		"glob":    args["glob"],
-		"context": args["context"],
-		"show":    args["show"],
-		"limit":   args["limit"],
-		"offset":  args["offset"],
+		"args":      callArgs,
+		"glob":      args["glob"],
+		"context":   args["context"],
+		"show":      args["show"],
+		"limit":     args["limit"],
+		"offset":    args["offset"],
+		"type":      args["type"],
+		"multiline": args["multiline"],
 	})
 }

@@ -475,7 +475,19 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 	deskCarries := func(name string, source skill.Source) bool {
 		return opts.Mode.Carries(name, source) && stanceOf.Carries(name, source)
 	}
-	dispatcher := skill.NewDispatcherFor(registry, deskCarries)
+	// The same two axes asked one level down, for a packed tool: not "is
+	// `browser` on this desk" but "is `browser_read`". An AND for the same
+	// reason the line above is one — a stance may only ever subtract (§106.4) —
+	// and read at request time for the same reason too.
+	//
+	// Without it a pack is all-or-nothing to a desk and a stance, which is not
+	// a rough answer but a wrong one: วางแผน keeps every act that reads, and a
+	// pack holding one act that writes had to go entirely, taking its reads
+	// with it.
+	deskActions := func(tool, action string) bool {
+		return opts.Mode.AllowsAction(tool, action) && stanceOf.AllowsAction(tool, action)
+	}
+	dispatcher := skill.NewDispatcherFor(registry, deskCarries).WithActions(deskActions)
 	// The chair's cut is taken further down, after the task tools are in the
 	// registry, so that AttendedRegistry can see `task` and hand the chair its
 	// helper half (§151). Before that move it ran here and `task` was simply
@@ -633,7 +645,8 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		// The chair's cut is already a snapshot registry, so the desk filter has
 		// nothing left to say — but the stance does, and it is the one thing
 		// here the user can still change without reopening the chat.
-		dispatcher = skill.NewDispatcherFor(child, stanceOf.Carries)
+		dispatcher = skill.NewDispatcherFor(child, stanceOf.Carries).
+			WithActions(func(tool, action string) bool { return stanceOf.AllowsAction(tool, action) })
 	}
 
 	console := opts.Console

@@ -252,10 +252,11 @@ func TestNoopToolsModelScriptsToolLoop(t *testing.T) {
 // and system tests are supposed to run on this provider, not on a fake one.
 func TestNoopToolsModelScriptsADelegateRound(t *testing.T) {
 	p := NewNoopProvider("aetox-tools:test")
+	// What a read-only delegate is actually handed since search_pack.go: `read`
+	// and one packed `search` holding list, glob and grep.
 	readOnly := []ToolDefinition{
 		{Type: "function", Function: ToolFunction{Name: "read"}},
-		{Type: "function", Function: ToolFunction{Name: "grep"}},
-		{Type: "function", Function: ToolFunction{Name: "list"}},
+		{Type: "function", Function: ToolFunction{Name: "search"}},
 	}
 
 	r1, err := p.Complete(context.Background(), Request{
@@ -265,7 +266,7 @@ func TestNoopToolsModelScriptsADelegateRound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(r1.ToolCalls) != 1 || r1.ToolCalls[0].Function.Name != "list" {
+	if len(r1.ToolCalls) != 1 || r1.ToolCalls[0].Function.Name != "search" {
 		t.Fatalf("a delegate round must call a read-only tool it was given, got %+v", r1.ToolCalls)
 	}
 

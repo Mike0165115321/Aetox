@@ -96,10 +96,37 @@ var planKeeps = map[string]bool{
 	// Looking things up. web_fetch is a GET the user's machine makes; it is the
 	// same act as reading a file somebody else owns.
 	"web_search": true, "web_fetch": true,
-	// Reading code and repositories.
-	"diagnostics": true, "symbol": true,
+	// The browser's reading half, which วางแผน could not have until a stance
+	// could narrow a pack (Mode.AllowsAction, Dispatcher.WithActions). Before
+	// that this list could only say "browser" or nothing, and saying nothing
+	// cost a plan every page that has to be clicked into existence — the ones
+	// web_fetch cannot reach and the ones a plan most often needs to see.
+	//
+	// `browser_read` is two actions: `read` and `scroll` share it (packed.go),
+	// because a page's second screen is not a second permission.
+	//
+	// Absent on purpose, each for the reason its own note in packed.go gives:
+	// `browser_click`, `browser_type` and `browser_dialog` act on the page;
+	// `browser_tabs` can take one away from under the user; and
+	// `browser_capture` is a right of its own — "may read this page" and "may
+	// see it" are different grants, and a screenshot carries whatever else the
+	// user has on screen. An allow-list fails safe by leaving something out,
+	// so any of these is one line whenever it is decided on.
+	"browser_open": true, "browser_read": true, "browser_wait": true,
+	"browser_back": true, "browser_console": true, "browser_network": true,
+	// Reading code and repositories. `repo_map` is the shape of a project for
+	// about a thousand tokens, which is the single most useful thing a plan can
+	// be built on and was missing here only because it landed after this list
+	// was written.
+	"diagnostics": true, "symbol": true, "repo_map": true,
 	"github":      true, "github_search": true, "github_read_file": true,
 	"github_list_files": true, "github_repo_summary": true,
+	// Pull requests, the reading half only. This is the first pack วางแผน
+	// carries in PART rather than whole or not at all - `pr_create` and
+	// `pr_comment` are on the same tool and are absent, which the per-action
+	// filter (AllowsAction) is what makes possible. Reading the state of the
+	// work is exactly what a plan is built from.
+	"pr_list": true, "pr_read": true, "pr_checks": true,
 	// Reading the automations that exist, never starting or changing one.
 	"n8n_workflow_list": true, "n8n_workflow_read": true,
 	"windmill_workspace_list": true, "windmill_flow_list": true, "windmill_flow_read": true,
@@ -261,6 +288,32 @@ func (s Stance) AllowsTool(name string) bool {
 	return true
 }
 
+// AllowsAction is AllowsTool one level down, for a packed tool: not "does this
+// stance keep `browser`" but "does it keep `browser_read`".
+//
+// Two ways an action is kept, and the second is what makes the tables above
+// readable. Either the action's own permission name is on the list — which is
+// how `desk_list` and the four `github_*` entries already read — or the PACKED
+// name is, which is the one-word way of saying "this pack, whole", exactly what
+// `"desk": true` and `"github": true` were already written to mean.
+//
+// วางแผน is the stance this exists for. Before it, a pack holding one act that
+// writes had to go entirely, and the note above this file's allow-list said so:
+// browser and shell took four reads with them because they each carry one act
+// that does not read. Now they do not have to.
+func (s Stance) AllowsAction(tool, action string) bool {
+	switch s {
+	case StanceConsult:
+		return false
+	case StancePlan:
+		if planKeeps[strings.ToLower(strings.TrimSpace(action))] {
+			return true
+		}
+		return planKeeps[strings.ToLower(strings.TrimSpace(tool))]
+	}
+	return true
+}
+
 // CarriesNothing reports whether this stance withholds every tool there is.
 //
 // A question of its own rather than something derived, because it cannot be
@@ -308,6 +361,17 @@ func (s Stance) Carries(name string, source skill.Source) bool {
 	// per-server or per-tool declarations from the server side, which is a
 	// decision of its own rather than a default chosen here.
 	if source == skill.SourceMCP && s == StancePlan {
+		return false
+	}
+	// Same rule as Mode.Carries, and it has to be the same or the two axes
+	// disagree about what a pack is: carried when any action survives, because
+	// what the session is handed is a copy offering only those.
+	if actions := skill.PackedActions(name); len(actions) > 0 {
+		for _, action := range actions {
+			if s.AllowsAction(name, action) {
+				return true
+			}
+		}
 		return false
 	}
 	return s.AllowsTool(name)

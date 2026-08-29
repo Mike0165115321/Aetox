@@ -857,6 +857,11 @@ func (a *Agent) RespondWithTools(
 						Role:    model.RoleUser,
 						Content: "[the image returned by " + toolCall.Function.Name + " follows]",
 						Images:  images[k],
+						// Flagged as a tool's rather than the user's, which is
+						// the whole of what lets an old one be forgotten. The
+						// two are the same message on the wire and must not be
+						// the same message here. See memory.Context.forgetOldImages.
+						ImagesFromTool: true,
 					})
 				}
 				if toolErrs[k] != nil && cancelled == "" {
@@ -1075,7 +1080,12 @@ func renderCompactionTranscript(messages []model.Message) string {
 // ffmpeg and whisper, and four of those at once is a machine that stops
 // answering, not a faster turn.
 var parallelToolCalls = map[string]bool{
-	"read": true, "list": true, "glob": true, "grep": true, "tree": true,
+	// `search` is the packed name of list/glob/grep (internal/skill/search_pack.go),
+	// and it is here as one word BECAUSE all three of its actions are on this
+	// list: a pack straddling the line would have had to be judged per action,
+	// and this one was drawn so it does not.
+	"search": true,
+	"read":   true, "list": true, "glob": true, "grep": true, "tree": true,
 	"pdf_read": true, "web_fetch": true, "web_search": true, "calc": true,
 }
 

@@ -18,6 +18,28 @@ import (
 // approval rules it always did. Source is handed over because MCP tools are
 // judged by their server and skills are never judged at all.
 type ToolFilter func(name string, source Source) bool
+
+// ToolActionFilter is the finer question a packed tool makes possible: not
+// "is this tool on the desk" but "which of its actions are".
+//
+// It exists because a desk and a stance could only ever answer the coarse one,
+// and packing made that answer wrong rather than merely rough. `browser` is one
+// name over four rights and `shell` is one over four; วางแผน keeps every tool
+// that reads and drops every tool that writes, so a pack holding both had to go
+// whole — taking the reads with it (internal/mode/stance.go said so out loud
+// and left this undone on purpose). The same coarseness would have cost the
+// specialized desk its `list` and `glob` the day the file tools were packed,
+// because its manifest names actions and a pack has one name.
+//
+// tool is the packed name; action is the per-action PERMISSION name — the
+// spelling every gate below the tool block already judges by (Unpack), the one
+// desk manifests, sub-agent profiles and the user's permission rules are
+// written in. Nothing new has to be spelled anywhere for this to work.
+//
+// Nil means no narrowing, which is what every host had before this and what a
+// full desk still gets.
+type ToolActionFilter func(tool, action string) bool
+
 type Dispatcher struct {
 	registry   *Registry
 	commandSet map[string]struct{}
@@ -25,6 +47,11 @@ type Dispatcher struct {
 	// every host that has no modes. Nil means "carries everything", so the
 	// no-mode path is the original code path rather than a filter that says yes.
 	allow ToolFilter
+	// narrowActions is nil for every caller that has no opinion below the tool
+	// name. Set through WithActions rather than a fourth constructor parameter,
+	// so the two existing constructors and every one of their callers stay as
+	// they are.
+	narrowActions ToolActionFilter
 
 	// taught remembers which tools have already handed over their Guidance in
 	// this session, because guidance is a once-per-session thing and this is
@@ -68,6 +95,51 @@ func (d *Dispatcher) carries(name string) bool {
 		return false
 	}
 	return d.allow(name, source)
+}
+
+// WithActions attaches the per-action filter and hands the dispatcher back, so
+// a caller can build and narrow in one expression.
+func (d *Dispatcher) WithActions(f ToolActionFilter) *Dispatcher {
+	if d != nil {
+		d.narrowActions = f
+	}
+	return d
+}
+
+// cut applies the action filter to one registered skill.
+//
+// It answers with the skill the caller should actually use and whether it may
+// be used at all — a packed tool with no surviving action is not a tool that
+// refuses every call, it is a tool this desk does not have, and it must
+// disappear from the block rather than sit in it as a wall.
+//
+// pack.narrow is deliberately not used to decide that. Its silence rule reads
+// "named nothing" as "wants it whole", which is right for a sub-agent profile
+// that simply did not mention tools and would be exactly wrong here: a desk
+// that allows none of a pack's actions has said something, not nothing.
+func (d *Dispatcher) cut(name string, s Skill) (Skill, bool) {
+	if d == nil || d.narrowActions == nil {
+		return s, true
+	}
+	packed, ok := s.(Packed)
+	if !ok {
+		return s, true
+	}
+	var allowed []string
+	for _, action := range packed.Actions() {
+		if d.narrowActions(name, action) {
+			allowed = append(allowed, action)
+		}
+	}
+	switch {
+	case len(allowed) == 0:
+		return nil, false
+	case len(allowed) == len(packed.Actions()):
+		// Whole, so hand back the original rather than a copy of it. A pack
+		// that nobody narrowed must be byte-for-byte the tool it was.
+		return s, true
+	}
+	return packed.Narrow(allowed), true
 }
 
 func (d *Dispatcher) Execute(ctx context.Context, input string) (Output, bool, error) {
@@ -141,6 +213,13 @@ func (d *Dispatcher) ToolDefinitions() []model.ToolDefinition {
 		if source, ok := d.registry.SourceOf(name); ok && source == SourceSkill {
 			continue
 		}
+		cut, ok := d.cut(name, s)
+		if !ok {
+			continue
+		}
+		if tool, ok = cut.(Tool); !ok {
+			continue
+		}
 		definitions = append(definitions, tool.ToolDefinition())
 	}
 	return definitions
@@ -158,6 +237,14 @@ func (d *Dispatcher) ExecuteTool(ctx context.Context, name string, args map[stri
 	if !ok || skill == nil || !d.carries(skillName) {
 		// A tool this desk does not carry was never in the block the model was
 		// sent, so a call for it is a hallucinated name and answers like one.
+		return Output{}, false, nil
+	}
+	// The same cut the block was built through. Without it the definition would
+	// be narrowed and the door would not: a desk that was never offered an
+	// action would still run it for a model that named it anyway, which is the
+	// one failure a token filter must never turn into.
+	skill, ok = d.cut(skillName, skill)
+	if !ok {
 		return Output{}, false, nil
 	}
 	tool, ok := skill.(Tool)

@@ -128,8 +128,29 @@ func TestEveryToolRunsThroughTheRealDispatcher(t *testing.T) {
 		// below did not have to be rewritten, and a reader of the report still
 		// sees which act ran.
 		for _, call := range callsOf(def.Function.Name) {
+			// By ACTION first, then by the permission name it shares. Two
+			// actions can wear one permission — `change`'s `append` is `edit`
+			// with a flag, `browser`'s `scroll` is `browser_read` — and giving
+			// both the same arguments drives one of them wrong: an append sent
+			// `find` is refused, correctly, by the tool it reached.
+			// Keyed "tool.action" first, then by the permission name the act
+			// shares. Two actions can wear one permission — `change`'s `append`
+			// is `edit` with a flag, `browser`'s `scroll` is `browser_read` —
+			// and giving both the same arguments drives one of them wrong: an
+			// append sent `find` is refused, correctly, by the tool it reached.
+			//
+			// Qualified by the tool because bare action words collide across
+			// packs: `read` is a browser act and a file tool, `list` is n8n's,
+			// windmill's, shell's and search's. An unqualified lookup sent the
+			// browser a file path, which is exactly the kind of quiet wrongness
+			// this test exists to catch.
 			name := call.Permission
-			tc, ok := cases[name]
+			tc, ok := cases[def.Function.Name+"."+call.Action]
+			if !ok {
+				tc, ok = cases[name]
+			} else {
+				name = def.Function.Name + "." + call.Action
+			}
 			if !ok {
 				t.Errorf("%s is offered to the model but this test does not run it — add a case, or the tool ships unexercised", name)
 				continue
@@ -359,6 +380,12 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 			args:  map[string]any{"path": "notes.txt", "find": "beta", "replace": "BETA"},
 			check: fileContains("notes.txt", "BETA"),
 		},
+		// Its own case, not edit's: an append takes no `find`, and the tool
+		// refuses one that carries it.
+		"change.append": {
+			args:  map[string]any{"path": "notes.txt", "replace": "\nappended-by-coverage"},
+			check: fileContains("notes.txt", "appended-by-coverage"),
+		},
 		"edits": {
 			args: map[string]any{"edits": []any{
 				map[string]any{"path": "edits-me.txt", "find": "two", "replace": "TWO"},
@@ -569,6 +596,33 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 			args:      map[string]any{"repo_url": "not-a-repo-url"},
 			available: never,
 			why:       "not installing a plugin from a test",
+		},
+
+		// Pull requests (internal/skill/pr_pack.go). None of the five runs
+		// here, and the two reasons are different in kind.
+		//
+		// The three that read need a connected account AND a repository with
+		// pull requests in it, which no public fixture can promise from a test
+		// machine. They are exercised for real against a stub server in
+		// internal/skill/pr_pack_test.go — every act, every argument shape —
+		// which is the coverage this row cannot give.
+		//
+		// The two that write must never run from a test at all: they would open
+		// a real pull request, or leave a real comment, under whichever account
+		// the machine happens to have connected. `never`, for the same reason
+		// plugin_install is.
+		"pr_list":   {args: map[string]any{"repo": "golang/example"}, available: never, why: "needs a connected account and a repo with pull requests"},
+		"pr_read":   {args: map[string]any{"repo": "golang/example", "number": 1}, available: never, why: "needs a connected account and a repo with pull requests"},
+		"pr_checks": {args: map[string]any{"repo": "golang/example", "number": 1}, available: never, why: "needs a connected account and a repo with pull requests"},
+		"pr_create": {
+			args:      map[string]any{"repo": "golang/example", "title": "x", "head": "x"},
+			available: never,
+			why:       "not opening a real pull request from a test",
+		},
+		"pr_comment": {
+			args:      map[string]any{"repo": "golang/example", "number": 1, "body": "x"},
+			available: never,
+			why:       "not leaving a real comment from a test",
 		},
 
 		// --- needs the running desktop window ---

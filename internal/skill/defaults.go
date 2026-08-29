@@ -107,7 +107,10 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&echoSkill{},
 		&timeSkill{},
 		&calcSkill{},
-		&listSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
+		// One name, three actions: list, glob, grep (search_pack.go). The three
+		// types still exist and still do the work - what they stopped being is
+		// three entries in the tool block of every desk that can look at files.
+		&searchSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&readSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, vision: opts.Vision, files: opts.Files},
 		&gitSkill{root: opts.SandboxRoot},
 		&fsSkill{root: opts.SandboxRoot},
@@ -117,13 +120,11 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		// No backend here: which shell it runs in is read from the same record
 		// the file tools read, keyed by this root (setSandboxShell above).
 		&shellSkill{root: opts.SandboxRoot, shells: shells},
-		&writeSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
+		// One name, five actions: write, edit, append, batch, delete
+		// (change_pack.go). The four types still exist and still do the work.
+		&changeSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
 		&sheetWriteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
 		&docWriteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
-		&editSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
-		&grepSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
-		&globSkill{root: opts.SandboxRoot},
-		&editsSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
 		// `notebook_edit` is deliberately absent (owner's call, 2026-08-19).
 		// It is 317 tokens in the block of every desk that carries the files
 		// group, paid on every request before the user types, and `tool_runs`
@@ -146,14 +147,14 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		// profiles/agents that should hold it. Its category, its size pin, its
 		// coverage case and every `deny:` naming it are already written and
 		// need nothing.
-		&diagnosticsSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
-		&symbolSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
-		&renameSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
-		// Open (unfocused) rides in so the tool can refuse to map "the whole
-		// machine" — the map is only honest with a project to stand in
+		// One name, three actions: errors, symbol, map (codebase_pack.go).
+		// Open (unfocused) rides in so `map` can refuse to map "the whole
+		// machine" — a project map is only honest with a project to stand in
 		// (docs/aider-study/EXECUTION.md, ที่อยู่ในบริษัท).
-		&repoMapSkill{root: opts.SandboxRoot, open: opts.OpenSandbox},
-		&deleteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
+		&codebaseSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, open: opts.OpenSandbox},
+		// Not one of them: same language server, but it writes, so it sits on
+		// the other side of every gate the pack was drawn along.
+		&renameSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
 		&pluginInstallSkill{},
 		// The automation engines the user connected. Registered unconditionally
 		// and gated later by connect.Allows, the same as the github tool: the
@@ -163,16 +164,20 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		// tools now sit in the registry" cost note deflated to.
 		&n8nSkill{},
 		&windmillSkill{},
-		&imageOCRSkill{root: opts.SandboxRoot},
-		&videoOCRSkill{root: opts.SandboxRoot},
+		// One name, three actions: image, video, audio (media_pack.go).
+		&mediaReadSkill{root: opts.SandboxRoot, speech: opts.Speech},
 		&pdfReadSkill{root: opts.SandboxRoot},
-		&audioTranscribeSkill{root: opts.SandboxRoot, speech: opts.Speech},
 		&webFetchSkill{},
 		&webSearchSkill{},
 		// One name, four actions: search, repo_summary, list_files, read_file
 		// (github_pack.go). `plugin_install` above is not one of them — it
 		// installs rather than reads, which is a different grant.
 		&githubSkill{},
+		// Pull requests, five actions (pr_pack.go). Registered unconditionally
+		// and gated by connect.Allows like `github`: the registry is what this
+		// build CAN do, and whether an account is connected is a different
+		// question with a different answer.
+		&prSkill{root: opts.SandboxRoot},
 		// Progressive skill loading (see progressive.go): these two flat
 		// definitions are how the model reaches every SKILL.md, in place of
 		// one definition per discovered skill.

@@ -67,32 +67,68 @@ var overweight = map[string]int{
 	"n8n":       624,
 	"doc_write": 525,
 	"windmill":  484,
-	// 392 until 2026-08-27, when the mode prose moved into Guidance(). The
-	// ratchet tightens with it, or the saving is only on loan.
-	"grep":        326,
+	// `search` is what `grep`, `glob` and `list` became on 2026-08-29
+	// (search_pack.go), and the number is why the pack was worth building: the
+	// three of them were 320 + 206 + 77 = 603 tokens of every block that can
+	// look at a file, and one entry does the same three acts for 474.
+	//
+	// It is over its ceiling (100 + 28 per act = 184) and will stay over it:
+	// grep alone was 320 and exempted, because its options ARE its signature —
+	// show, context, type, multiline and the paging pair are what you pass it,
+	// not advice about when to reach for it. The prose already moved; what is
+	// left is the shape of the call.
+	//
+	// The ratchet still bites the same way. This may shrink and may not grow,
+	// and the two lines it replaced are gone rather than left to rot: a pin on
+	// a tool that is no longer registered is never checked and never fails.
+	//
+	// grep was 392 until 2026-08-27 (mode prose to Guidance) and 326 until
+	// 2026-08-29 (`type` and `multiline` added, paid for by more prose moving).
+	"search":      474,
 	"github":      390,
+	// `change` is what `write`, `edit`, `edits` and `delete` became on
+	// 2026-08-29 (change_pack.go), and the arithmetic is why it was worth
+	// building: 141 + 234 + 243 + 159 = 777 tokens of every block that can
+	// change a file, against 599 for one entry doing the same five acts.
+	//
+	// Over its ceiling (100 + 28 per act = 240) and staying there. What is left
+	// after the prose moved is signature: the 300-line cap and the placement
+	// rule ride in the block on purpose (write.go says why - both must be known
+	// BEFORE the first call, and Guidance arrives after it), and `batch` carries
+	// a nested array that cannot be described in fewer words than it has.
+	//
+	// The ratchet bites the same way: this may shrink and may not grow, and the
+	// four lines it replaced are gone rather than left to rot - a pin on a tool
+	// that is no longer registered is never checked and never fails.
+	"change":      599,
+	// `codebase` is diagnostics + symbol + repo_map (167 + 180 + 75 = 422 to
+	// 263) and `media_read` is the three senses (100 + 143 + 136 = 379 to 231),
+	// both on 2026-08-29. Over their 184-token ceilings because three acts with
+	// three different shapes cannot introduce themselves in fewer words - and
+	// under what the entries they replaced cost together, which is the number
+	// that was worth having.
+	"codebase":    263,
+	"media_read":  231,
+	// `pr` arrived packed (pr_pack.go) rather than as five tools, so there is
+	// no before to compare it against - five standalone entries carrying these
+	// same signatures would have been well past a thousand. Over the 240-token
+	// ceiling because five acts with five different argument sets cannot say
+	// what to pass them in fewer words; the judgment (push before you open,
+	// a comment is public and cannot be edited from here) is in Guidance().
+	"pr":          432,
+
 	"sheet_write": 368,
 	// Not registered since 2026-08-19 (defaults.go), so nothing reaches it
 	// today. The pin stays because the file does: it is the size this tool
 	// comes back at, and coming back over the standard should have to be
 	// noticed rather than inherited.
 	"notebook_edit":    317,
-	"edits":            243,
-	"edit":             234,
 	"web_fetch":        215,
-	"glob":             206,
 	"web_search":       198,
 	"read":             185,
-	"symbol":           180,
 	"git":              176,
-	"diagnostics":      167,
-	"delete":           159,
-	"video_ocr":        143,
-	"write":            141,
 	"calc":             137,
-	"audio_transcribe": 136,
 	"skill_view":       122,
-	"image_ocr":        100,
 	"pdf_read":         96,
 	"skills_list":      86,
 }

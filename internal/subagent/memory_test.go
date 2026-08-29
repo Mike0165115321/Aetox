@@ -62,7 +62,9 @@ func TestADelegateNeverInheritsTheParentsMemoryTool(t *testing.T) {
 	if _, ok := child.Get("memory"); ok {
 		t.Error("the parent's memory tool was inherited")
 	}
-	if _, ok := child.Get("grep"); !ok {
+	// grep is an act of `search` now (internal/skill/search_pack.go), so the
+	// registry entry to look for is the pack.
+	if _, ok := child.Get("search"); !ok {
 		t.Error("filtering dropped a tool it should have kept")
 	}
 }

@@ -385,9 +385,9 @@ func TestUnfocusedEngineRoamsFocusedEngineStaysWalled(t *testing.T) {
 
 	listOutside := func(a *App) (skill.Output, error) {
 		t.Helper()
-		s, ok := a.cur().registry.Get("list")
+		s, ok := a.cur().registry.Get("search")
 		if !ok {
-			t.Fatal("no list skill in the registry")
+			t.Fatal("no search skill in the registry")
 		}
 		tool, ok := s.(interface {
 			ExecuteTool(context.Context, map[string]any) (skill.Output, error)
@@ -395,7 +395,7 @@ func TestUnfocusedEngineRoamsFocusedEngineStaysWalled(t *testing.T) {
 		if !ok {
 			t.Fatal("list skill lost ExecuteTool")
 		}
-		return tool.ExecuteTool(context.Background(), map[string]any{"path": outside})
+		return tool.ExecuteTool(context.Background(), map[string]any{"action": "list", "path": outside})
 	}
 
 	a := &App{} // zero value: projectFocused=false, the unfocused startup state

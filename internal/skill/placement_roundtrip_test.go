@@ -46,7 +46,7 @@ func TestEveryFileToolFindsWhatWritePlaced(t *testing.T) {
 	placed := filepath.Join(root, filepath.FromSlash(subdir), "index.html")
 
 	// write: the model asks for a bare name and gets told where it really went.
-	out := toolCall(t, registry, "write", map[string]any{
+	out := toolCall(t, registry, "change", map[string]any{"action": "write",
 		"path": "index.html", "content": "<h1>alpha</h1>\n<p>beta</p>\n",
 	})
 	if want := "write done: " + subdir + "/index.html (on disk: " + placed + ")"; out.Content != want {
@@ -71,14 +71,14 @@ func TestEveryFileToolFindsWhatWritePlaced(t *testing.T) {
 	})
 
 	t.Run("grep", func(t *testing.T) {
-		out := toolCall(t, registry, "grep", map[string]any{"pattern": "beta", "path": "index.html", "show": grepModeContent})
+		out := toolCall(t, registry, "search", map[string]any{"action": "grep", "pattern": "beta", "path": "index.html", "show": grepModeContent})
 		if !strings.Contains(out.Content, "beta") {
 			t.Errorf("grep found nothing: %q", out.Content)
 		}
 	})
 
 	t.Run("glob", func(t *testing.T) {
-		out := toolCall(t, registry, "glob", map[string]any{"pattern": "**/index.html"})
+		out := toolCall(t, registry, "search", map[string]any{"action": "glob", "pattern": "**/index.html"})
 		if !strings.Contains(out.Content, "index.html") {
 			t.Errorf("glob found nothing: %q", out.Content)
 		}
@@ -86,7 +86,7 @@ func TestEveryFileToolFindsWhatWritePlaced(t *testing.T) {
 
 	t.Run("list", func(t *testing.T) {
 		// A directory the model never sees at the root either.
-		out := toolCall(t, registry, "list", map[string]any{"path": subdir})
+		out := toolCall(t, registry, "search", map[string]any{"action": "list", "path": subdir})
 		if !strings.Contains(out.Content, "index.html") {
 			t.Errorf("list returned %q", out.Content)
 		}
@@ -95,14 +95,14 @@ func TestEveryFileToolFindsWhatWritePlaced(t *testing.T) {
 	t.Run("diagnostics", func(t *testing.T) {
 		// No language server exists for .html; what matters is that the path
 		// resolved rather than erroring out before it got that far.
-		out := toolCall(t, registry, "diagnostics", map[string]any{"path": "index.html"})
+		out := toolCall(t, registry, "codebase", map[string]any{"action": "errors", "path": "index.html"})
 		if !strings.Contains(out.Command, subdir) {
 			t.Errorf("diagnostics echoed %q — path never resolved to the placed file", out.Command)
 		}
 	})
 
 	t.Run("edits", func(t *testing.T) {
-		toolCall(t, registry, "edits", map[string]any{
+		toolCall(t, registry, "change", map[string]any{"action": "batch",
 			"edits": []any{map[string]any{
 				"path": "index.html", "find": "<p>beta</p>", "replace": "<p>gamma</p>",
 			}},
@@ -114,7 +114,7 @@ func TestEveryFileToolFindsWhatWritePlaced(t *testing.T) {
 	})
 
 	t.Run("edit", func(t *testing.T) {
-		toolCall(t, registry, "edit", map[string]any{
+		toolCall(t, registry, "change", map[string]any{"action": "edit",
 			"path": "index.html", "find": "alpha", "replace": "delta",
 		})
 		data, err := os.ReadFile(placed)
@@ -125,7 +125,7 @@ func TestEveryFileToolFindsWhatWritePlaced(t *testing.T) {
 
 	// Last, because it removes what the others need.
 	t.Run("delete", func(t *testing.T) {
-		toolCall(t, registry, "delete", map[string]any{"path": "index.html"})
+		toolCall(t, registry, "change", map[string]any{"action": "delete", "path": "index.html"})
 		if _, err := os.Stat(placed); err == nil {
 			t.Error("delete did not reach the placed file")
 		}
@@ -141,7 +141,7 @@ func TestFileToolsUnchangedWhenFocusedOnAProject(t *testing.T) {
 		OutputSubdir: func() string { return "" },
 	})
 
-	out := toolCall(t, registry, "write", map[string]any{"path": "main.go", "content": "package main\n"})
+	out := toolCall(t, registry, "change", map[string]any{"action": "write", "path": "main.go", "content": "package main\n"})
 	if out.Content != "write done: main.go" {
 		t.Fatalf("write receipt = %q, want the path as asked", out.Content)
 	}
@@ -189,7 +189,7 @@ func TestFileToolsWithoutAnOutputFolderHook(t *testing.T) {
 	root := t.TempDir()
 	registry := NewDefaultRegistry(RegistryOptions{SandboxRoot: root})
 
-	toolCall(t, registry, "write", map[string]any{"path": "a.txt", "content": "hi"})
+	toolCall(t, registry, "change", map[string]any{"action": "write", "path": "a.txt", "content": "hi"})
 	out := toolCall(t, registry, "read", map[string]any{"path": "a.txt"})
 	if !strings.Contains(out.Content, "hi") {
 		t.Errorf("read returned %q", out.Content)

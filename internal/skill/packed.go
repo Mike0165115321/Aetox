@@ -201,6 +201,86 @@ var packs = map[string]*pack{
 			"read_file":    "github_read_file",
 		},
 	},
+	// Finding where something is, at three depths (search_pack.go). The action
+	// names ARE the permission names here, and that is not laziness: `list`,
+	// `glob` and `grep` were the tool names, they are what every desk manifest,
+	// sub-agent profile and user permission rule already says, and renaming
+	// them to buy tidiness would have silently widened or narrowed every one of
+	// those lists.
+	"search": {
+		tool: "search",
+		// No fallback. Listing a folder and grepping it are not one act with a
+		// different argument, and no one of the three is common enough that
+		// leaving it unnamed reads as obvious.
+		actions: []string{"list", "glob", "grep"},
+		names: map[string]string{
+			"list": "list",
+			"glob": "glob",
+			"grep": "grep",
+		},
+	},
+	// Changing what is on disk, at four sizes (change_pack.go). Same rule as
+	// `search` above: every act here writes, so the pack falls on one side of
+	// every gate that already sorts reads from writes.
+	//
+	// `append` is the one action whose name is not its permission. It rides on
+	// `edit` because it IS editing - the same call with mode=append - and it is
+	// a verb of its own in the block because a model choosing between five
+	// verbs makes fewer mistakes than one choosing a verb and remembering a
+	// flag. `browser`'s `scroll` sits on `browser_read` for the same reason.
+	"change": {
+		tool: "change",
+		// No fallback. Writing a whole file and deleting one are not one act
+		// with a different argument, and getting the wrong one is not a typo
+		// the user can undo.
+		actions: []string{"write", "edit", "append", "batch", "delete"},
+		names: map[string]string{
+			"write":  "write",
+			"edit":   "edit",
+			"append": "edit",
+			"batch":  "edits",
+			"delete": "delete",
+		},
+	},
+	// Reading a file a model has no sense for (media_pack.go). Action words
+	// rather than the old tool names because "image" IS the act here - the
+	// _ocr and _transcribe halves say how it is done, which is the tool's
+	// business and not the caller's.
+	"media_read": {
+		tool:    "media_read",
+		actions: []string{"image", "video", "audio"},
+		names: map[string]string{
+			"image": "image_ocr",
+			"video": "video_ocr",
+			"audio": "audio_transcribe",
+		},
+	},
+	// Asking the code about itself (codebase_pack.go). `rename` is not here:
+	// same language server, other side of every gate, because it writes.
+	"codebase": {
+		tool:    "codebase",
+		actions: []string{"errors", "symbol", "map"},
+		names: map[string]string{
+			"errors": "diagnostics",
+			"symbol": "symbol",
+			"map":    "repo_map",
+		},
+	},
+	// Pull requests (pr_pack.go). The first pack that straddles the read/write
+	// line, and it may because วางแผน can now narrow one act at a time (Step 0,
+	// mode.AllowsAction): the three reads stay, the two that announce something
+	// do not. The rule it replaces held only while a stance took tools whole.
+	"pr": {
+		tool:    "pr",
+		actions: []string{"list", "read", "checks", "create", "comment"},
+		names: map[string]string{
+			"list":    "pr_list",
+			"read":    "pr_read",
+			"checks":  "pr_checks",
+			"create":  "pr_create",
+			"comment": "pr_comment",
+		},
+	},
 	// The two engines, packed the same day as shell and github and for a
 	// sharper reason: these are the tools about to grow. §100's proof loop
 	// wants run and executions on n8n, and as five standalone names that work

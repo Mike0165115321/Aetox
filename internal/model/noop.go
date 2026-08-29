@@ -773,12 +773,23 @@ func (p *NoopProvider) noopSubagentReply(model string, req Request) Response {
 func (p *NoopProvider) noopSubagentDelegateReply(model string, req Request) Response {
 	const demoFile = "subagent-demo.md"
 	ran := map[string]string{}
+	// Also by call id, because a packed tool answers under ONE name: three acts
+	// of `search` all come back as "search" (cognitive/agent.go stamps the tool
+	// result with the name the model called), so `ran` alone can no longer tell
+	// a finished list from a finished grep. The ids here are ours and fixed, so
+	// they can. Without this the script re-issues the same call forever and the
+	// doom-loop guard stops the delegate - which is exactly what it did.
+	ranID := map[string]string{}
 	for _, m := range req.Messages {
 		if m.Role == RoleTool {
 			ran[strings.ToLower(strings.TrimSpace(m.Name))] = strings.TrimSpace(m.Content)
+			if id := strings.TrimSpace(m.ToolCallID); id != "" {
+				ranID[id] = strings.TrimSpace(m.Content)
+			}
 		}
 	}
 	did := func(name string) bool { _, ok := ran[name]; return ok }
+	didStep := func(id string) bool { _, ok := ranID[id]; return ok }
 	step := func(id, name, args string) Response {
 		return Response{Provider: p.Name(), Model: model, ToolCalls: []ToolCall{{
 			ID: id, Type: "function", Function: FunctionCall{Name: name, Arguments: args},
@@ -795,10 +806,13 @@ func (p *NoopProvider) noopSubagentDelegateReply(model string, req Request) Resp
 	// of interleaving rather than of a run.
 	if briefMentions(req, "runbench") {
 		switch {
-		case !did("list") && offersTool(req, "list"):
-			return step("noop_sub_list", "list", `{"path":"."}`)
-		case !did("grep") && offersTool(req, "grep"):
-			return step("noop_sub_grep", "grep", `{"pattern":"aetox","path":"."}`)
+		// Called through `search`, tracked by the inner name: a packed tool is
+		// one name in the block and the RESULT still carries the act's own
+		// (search_pack.go), so `did` reads the same words it always did.
+		case !didStep("noop_sub_list") && offersTool(req, "search"):
+			return step("noop_sub_list", "search", `{"action":"list","path":"."}`)
+		case !didStep("noop_sub_grep") && offersTool(req, "search"):
+			return step("noop_sub_grep", "search", `{"action":"grep","pattern":"aetox","path":"."}`)
 		}
 		return Response{Provider: p.Name(), Model: model, Text: p.say(phrase{
 			"th": "[run-test] ตรวจแล้ว: ข้อกล่าวอ้างนี้ตรงกับสิ่งที่อยู่ในโฟลเดอร์จริง",
@@ -822,14 +836,14 @@ func (p *NoopProvider) noopSubagentDelegateReply(model string, req Request) Resp
 			"th": `{"question":"[tools-test] ให้ลิสต์ทั้งโฟลเดอร์แล้วเขียนไฟล์สรุปเลยไหม หรือหยุดแค่นี้?"}`,
 			"en": `{"question":"[tools-test] list the whole folder and write the summary file, or stop here?"}`,
 		}))
-	case !did("list") && offersTool(req, "list"):
-		return step("noop_sub_list", "list", `{"path":"."}`)
-	case !did("write") && offersTool(req, "write"):
-		return step("noop_sub_write", "write", `{"path":"`+demoFile+`","content":"`+body+`"}`)
-	case !did("read") && offersTool(req, "read"):
+	case !didStep("noop_sub_list") && offersTool(req, "search"):
+		return step("noop_sub_list", "search", `{"action":"list","path":"."}`)
+	case !didStep("noop_sub_write") && offersTool(req, "change"):
+		return step("noop_sub_write", "change", `{"action":"write","path":"`+demoFile+`","content":"`+body+`"}`)
+	case !didStep("noop_sub_read") && offersTool(req, "read"):
 		return step("noop_sub_read", "read", `{"path":"`+demoFile+`"}`)
-	case !did("grep") && offersTool(req, "grep"):
-		return step("noop_sub_grep", "grep", `{"pattern":"checked|ตรวจแล้ว","path":"`+demoFile+`"}`)
+	case !didStep("noop_sub_grep") && offersTool(req, "search"):
+		return step("noop_sub_grep", "search", `{"action":"grep","pattern":"checked|ตรวจแล้ว","path":"`+demoFile+`"}`)
 	}
 
 	var b strings.Builder
@@ -839,12 +853,16 @@ func (p *NoopProvider) noopSubagentDelegateReply(model string, req Request) Resp
 		did  phrase
 	}{
 		{"doc_write", phrase{"th": "เขียนเอกสารส่งกลับ", "en": "wrote the document"}},
-		{"list", phrase{"th": "ดูไฟล์ในโฟลเดอร์", "en": "listed the folder"}},
+		{"noop_sub_list", phrase{"th": "ดูไฟล์ในโฟลเดอร์", "en": "listed the folder"}},
 		{"write", phrase{"th": "เขียนไฟล์ " + demoFile, "en": "wrote " + demoFile}},
 		{"read", phrase{"th": "อ่านกลับมายืนยัน", "en": "read it back to confirm"}},
-		{"grep", phrase{"th": "ค้นข้อความในไฟล์", "en": "grepped it"}},
+		{"noop_sub_grep", phrase{"th": "ค้นข้อความในไฟล์", "en": "grepped it"}},
 	} {
-		if out, ok := ran[s.tool]; ok {
+		out, ok := ran[s.tool]
+		if !ok {
+			out, ok = ranID[s.tool]
+		}
+		if ok {
 			fmt.Fprintf(&b, "- %s: %s\n", p.say(s.did), clipNoop(out, 160))
 		}
 	}
@@ -1095,30 +1113,37 @@ func taskIDIn(content string) string {
 // including an empty one. Every other script here stops after a single call,
 // which proves a delegate *can* call a tool but not that its loop survives
 // several of them with results accumulating in between.
-var toolchainProbes = []struct{ name, args string }{
-	{"list", `{"path":"."}`},
-	{"glob", `{"pattern":"*"}`},
-	{"grep", `{"pattern":"e","path":"."}`},
+// name is the act; tool is what to call, which since search_pack.go is one
+// name for all three. A finished probe is recognised by its CALL ID rather than
+// by the result's name, because a packed tool answers under one name and three
+// probes named "search" cannot be told apart.
+var toolchainProbes = []struct{ name, tool, args string }{
+	{"list", "search", `{"action":"list","path":"."}`},
+	{"glob", "search", `{"action":"glob","pattern":"*"}`},
+	{"grep", "search", `{"action":"grep","pattern":"e","path":"."}`},
 }
 
 // noopToolchainReply runs each probe it was actually handed, one per round, then
 // reports what every one of them returned. Stateless like its siblings: which
 // round we are in is read off the transcript, never counted.
 func (p *NoopProvider) noopToolchainReply(model string, req Request) Response {
+	// Keyed by call id, not by the result's name: see toolchainProbes.
 	ran := map[string]string{}
 	for _, m := range req.Messages {
 		if m.Role == RoleTool {
-			ran[strings.ToLower(strings.TrimSpace(m.Name))] = strings.TrimSpace(m.Content)
+			if id := strings.TrimSpace(m.ToolCallID); id != "" {
+				ran[id] = strings.TrimSpace(m.Content)
+			}
 		}
 	}
 	for _, probe := range toolchainProbes {
-		if _, done := ran[probe.name]; done || !offersTool(req, probe.name) {
+		if _, done := ran["noop_chain_"+probe.name]; done || !offersTool(req, probe.tool) {
 			continue
 		}
 		return Response{Provider: p.Name(), Model: model, ToolCalls: []ToolCall{{
 			ID:       "noop_chain_" + probe.name,
 			Type:     "function",
-			Function: FunctionCall{Name: probe.name, Arguments: probe.args},
+			Function: FunctionCall{Name: probe.tool, Arguments: probe.args},
 		}}}
 	}
 	if len(ran) == 0 {
@@ -1134,7 +1159,7 @@ func (p *NoopProvider) noopToolchainReply(model string, req Request) Response {
 	var b strings.Builder
 	b.WriteString(p.say(phrase{"th": "[tools-test] เรียกครบทุกตัวแล้ว:", "en": "[tools-test] ran the whole chain:"}))
 	for _, probe := range toolchainProbes {
-		if out, done := ran[probe.name]; done {
+		if out, done := ran["noop_chain_"+probe.name]; done {
 			fmt.Fprintf(&b, "\n- %s → %d bytes", probe.name, len(out))
 		}
 	}
@@ -1173,7 +1198,14 @@ func (p *NoopProvider) noopDelegateToolsReply(model string, req Request) Respons
 	if briefMentions(req, "office") && offersTool(req, "doc_write") {
 		return p.noopOfficeChairReply(model, req)
 	}
-	const probe = "list"
+	// Listing is an act of `search` now (internal/skill/search_pack.go), so the
+	// tool to offer and the act to ask for are two different words - and the
+	// finished round is recognised by CALL ID, because a packed tool answers
+	// under one name and its result cannot say which act it was.
+	const (
+		probe   = "search"
+		probeID = "noop_delegate_1"
+	)
 	result := ""
 	ran := false
 	answer := ""
@@ -1183,7 +1215,7 @@ func (p *NoopProvider) noopDelegateToolsReply(model string, req Request) Respons
 			continue
 		}
 		switch {
-		case strings.EqualFold(m.Name, probe):
+		case strings.TrimSpace(m.ToolCallID) == probeID:
 			ran, result = true, strings.TrimSpace(m.Content)
 		case strings.EqualFold(m.Name, "ask_main"):
 			asked, answer = true, strings.TrimSpace(m.Content)
@@ -1206,9 +1238,9 @@ func (p *NoopProvider) noopDelegateToolsReply(model string, req Request) Respons
 
 	if !ran && offersTool(req, probe) {
 		return Response{Provider: p.Name(), Model: model, ToolCalls: []ToolCall{{
-			ID:       "noop_delegate_1",
+			ID:       probeID,
 			Type:     "function",
-			Function: FunctionCall{Name: probe, Arguments: `{"path":"."}`},
+			Function: FunctionCall{Name: probe, Arguments: `{"action":"list","path":"."}`},
 		}}}
 	}
 

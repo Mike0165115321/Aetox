@@ -43,3 +43,19 @@ func stringSlice(value any) []string {
 	}
 	return result
 }
+
+// boolArg reads a flag from a tool call. A provider sends JSON true/false, and
+// a caller typing at the CLI sends the word — both mean the same thing, and a
+// flag that only works from one of the two doors is a flag with a trapdoor.
+func boolArg(value any) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "true", "yes", "1", "on":
+			return true
+		}
+	}
+	return false
+}
