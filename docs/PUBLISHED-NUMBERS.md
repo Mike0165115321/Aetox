@@ -36,6 +36,9 @@
 
 ## ลำดับตอนออกรุ่นใหม่
 
+> ครึ่งที่เป็นตัวเลขอยู่ข้างล่างนี้ · ครึ่งที่เป็นขั้นตอนการปล่อยรุ่น (tag, เอาออกจาก draft,
+> **อัป .msix ขึ้น Partner Center**, เติม scoop hash) อยู่ที่ [RELEASING.md](RELEASING.md)
+
 1. `go test ./...` — เวอร์ชันในหกไฟล์ตรงกันหรือยัง
 2. รอ CI ปล่อย artifact แล้ว `gh release view --json assets` → ขนาดตัวติดตั้ง
 3. โหลด zip แตกออก อ่านขนาด `aetox.exe`

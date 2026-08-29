@@ -540,6 +540,7 @@ Aetox ใช้ WebView2 ที่ Windows มีอยู่แล้ว — �
 [บริษัทนี้คืออะไร](COMPANY.md) · [มาตรฐานการออกแบบหน้าจอ](DESIGN.md) ·
 [กติกาการวัด](BENCHMARK.md) ·
 [ตัวเลขที่เผยแพร่อยู่ที่ไหนบ้าง](docs/PUBLISHED-NUMBERS.md) ·
+[ปล่อยรุ่นใหม่ยังไง](docs/RELEASING.md) ·
 [แพลตฟอร์มที่รองรับ](PLATFORM-SUPPORT.md) · [แผนงาน](ROADMAP.md) ·
 [เครื่องยนต์ออโตเมชั่น](docs/AUTOMATION-ENGINES.md)
 

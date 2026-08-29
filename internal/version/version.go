@@ -16,6 +16,10 @@ package version
 // Current is the release this build calls itself. Bump it here first — the
 // test will then name every other file that still disagrees.
 //
+// Bumping this constant is the FIRST step of a release, not the whole one. What
+// comes after it — tag, un-draft, the Microsoft Store package, the scoop hash —
+// is in docs/RELEASING.md, and no test can catch a step skipped there.
+//
 // Deliberately a plain constant rather than an -ldflags stamp: `wails dev` and
 // `go run` are how this app is actually run all day, and a stamp leaves both
 // of them reporting an empty or "dev" version — i.e. the update check would be

@@ -549,6 +549,7 @@ assistant door to the code door; a code-door team with defined roles.
 [What this company is](COMPANY.md) · [How a screen is designed](DESIGN.md) ·
 [Benchmark rules](BENCHMARK.md) ·
 [Where every published number lives](docs/PUBLISHED-NUMBERS.md) ·
+[How a release is cut](docs/RELEASING.md) ·
 [Platform support](PLATFORM-SUPPORT.md) · [Roadmap](ROADMAP.md) ·
 [Automation engines](docs/AUTOMATION-ENGINES.md)
 
