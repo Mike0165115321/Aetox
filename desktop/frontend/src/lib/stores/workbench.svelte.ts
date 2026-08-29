@@ -695,7 +695,15 @@ async function restoreWorkbench(sessionId: string): Promise<void> {
     // 2026-08-19 — still names it. Such a tab is simply skipped rather than
     // special-cased into an error: the rest of that session's tabs must still
     // come back.
+    //
+    // Every singleton room the snapshot admits has to be named here. The save
+    // filter takes everything that is not a terminal, so a room added later and
+    // not added to this list is saved and then silently dropped — the deck room
+    // or the working tree, open when you left a chat and gone when you came
+    // back to it.
     if (s.kind === 'files') openFilesTab()
+    else if (s.kind === 'decks') openDecksTab()
+    else if (s.kind === 'git') openGitTab()
     else if (s.kind === 'file' && s.path) await openFileTab(s.path, s.name, s.mine ?? false)
     else if (s.kind === 'browser') {
       const id = openBrowserTab()

@@ -920,12 +920,19 @@ export async function openFolder(): Promise<void> {
     return
   }
   cockpit.sessionError = ''
-  cockpit.chat = []
+  // The engine opened a NEW chat here (startNewSession, one call up), so this
+  // door is a session switch and has to arrive like one — afterNewSession is
+  // where arriving is defined. Clearing cockpit.chat by hand instead left the
+  // window bound to the chat it had left: the right-hand desk kept that chat's
+  // tabs, so another project's code map stayed on screen in a chat that had
+  // never opened one, and the chat being left was wiped rather than parked.
+  //
+  // Before the refreshes, where the bare `cockpit.chat = []` was: the screen
+  // has to answer the click now, not after three round trips.
+  await afterNewSession()
   await refreshWorkspace()
   await refreshProjectFolders()
-  await refreshSessions()
   await refreshProjects()
-  await refreshGlobalHistory()
 }
 
 /** Switch straight to a previously-opened project (sidebar's project list), no dialog. */
@@ -942,12 +949,19 @@ export async function openProject(path: string): Promise<void> {
     return
   }
   cockpit.sessionError = ''
-  cockpit.chat = []
+  // The engine opened a NEW chat here (startNewSession, one call up), so this
+  // door is a session switch and has to arrive like one — afterNewSession is
+  // where arriving is defined. Clearing cockpit.chat by hand instead left the
+  // window bound to the chat it had left: the right-hand desk kept that chat's
+  // tabs, so another project's code map stayed on screen in a chat that had
+  // never opened one, and the chat being left was wiped rather than parked.
+  //
+  // Before the refreshes, where the bare `cockpit.chat = []` was: the screen
+  // has to answer the click now, not after three round trips.
+  await afterNewSession()
   await refreshWorkspace()
   await refreshProjectFolders()
-  await refreshSessions()
   await refreshProjects()
-  await refreshGlobalHistory()
 }
 
 /** Drop project focus: the AI keeps full machine access (files/git/terminal)
@@ -965,12 +979,19 @@ export async function clearProjectFocus(): Promise<void> {
     return
   }
   cockpit.sessionError = ''
-  cockpit.chat = []
+  // The engine opened a NEW chat here (startNewSession, one call up), so this
+  // door is a session switch and has to arrive like one — afterNewSession is
+  // where arriving is defined. Clearing cockpit.chat by hand instead left the
+  // window bound to the chat it had left: the right-hand desk kept that chat's
+  // tabs, so another project's code map stayed on screen in a chat that had
+  // never opened one, and the chat being left was wiped rather than parked.
+  //
+  // Before the refreshes, where the bare `cockpit.chat = []` was: the screen
+  // has to answer the click now, not after three round trips.
+  await afterNewSession()
   await refreshWorkspace()
   await refreshProjectFolders()
-  await refreshSessions()
   await refreshProjects()
-  await refreshGlobalHistory()
 }
 
 export async function switchProvider(provider: string): Promise<void> {
