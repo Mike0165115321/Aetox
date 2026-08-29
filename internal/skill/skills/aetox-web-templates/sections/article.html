@@ -1,0 +1,57 @@
+<!-- Article. A post, a case study, anything long enough to be read rather than
+     scanned.
+
+     The measure is capped at 68 characters because that is where the eye stops
+     finding the next line reliably, and the cap is on the text rather than on
+     the page, so a figure or a code block can still run wider than the prose.
+
+     time carries a machine-readable datetime; a date rendered only as Thai text
+     is invisible to anything that wants to sort or syndicate it. -->
+<style>
+  .w-article{ padding-block:clamp(36px,6vw,72px) }
+  .w-article .head{ max-width:68ch; margin-inline:auto }
+  .w-article h1{ font-size:clamp(30px,4.6vw,50px); line-height:1.15; letter-spacing:-.025em }
+  .w-article .meta{ color:var(--muted); font-size:15px; margin-top:14px;
+                    display:flex; flex-wrap:wrap; gap:10px; align-items:center }
+  .w-article .prose{ max-width:68ch; margin-inline:auto; margin-top:clamp(28px,4vw,44px);
+                     font-size:clamp(17px,1.7vw,19px) }
+  .w-article .prose > * + *{ margin-top:1.1em }
+  .w-article .prose h2{ font-size:1.45em; letter-spacing:-.015em; margin-top:1.9em; line-height:1.25 }
+  .w-article .prose h3{ font-size:1.15em; margin-top:1.6em }
+  .w-article .prose ul,.w-article .prose ol{ padding-left:1.3em }
+  .w-article .prose li + li{ margin-top:.45em }
+  .w-article .prose blockquote{ border-left:3px solid var(--accent); padding-left:18px;
+                                color:var(--muted) }
+  .w-article .prose pre{ background:var(--surface); border:1px solid var(--line);
+                         border-radius:10px; padding:16px 18px; overflow-x:auto;
+                         font-family:var(--mono); font-size:.86em; line-height:1.7 }
+  .w-article .prose code{ font-family:var(--mono); font-size:.88em }
+  .w-article figure{ max-width:none; margin-block:1.8em }
+  .w-article figcaption{ color:var(--muted); font-size:14px; margin-top:10px; text-align:center }
+</style>
+
+<article class="w-section w-article">
+  <div class="w-wrap">
+    <header class="head">
+      <p class="w-eyebrow">หมวดหมู่</p>
+      <h1>หัวเรื่องที่บอกว่าบทความนี้สรุปว่าอะไร</h1>
+      <p class="meta">
+        <span>ชื่อผู้เขียน</span>
+        <span>&middot;</span>
+        <time datetime="2026-08-29">29 สิงหาคม 2569</time>
+        <span>&middot;</span>
+        <span>อ่าน 6 นาที</span>
+      </p>
+    </header>
+    <div class="prose">
+      <p>ย่อหน้าแรกบอกข้อสรุป ไม่ใช่เกริ่นนำ คนที่อ่านแค่ย่อหน้านี้ต้องได้คำตอบไปแล้ว</p>
+      <h2>หัวข้อย่อย</h2>
+      <p>เนื้อหา</p>
+      <figure>
+        <img src="imgs/pic.jpg" alt="คำอธิบายภาพที่บอกสิ่งที่เห็น">
+        <figcaption>คำบรรยายภาพ</figcaption>
+      </figure>
+      <p>เนื้อหาต่อ</p>
+    </div>
+  </div>
+</article>

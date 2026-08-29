@@ -1,0 +1,30 @@
+<!-- Hero. The thesis of the page, stated in words.
+
+     Deliberately NOT the template answer that aetox-frontend-design warns
+     about: no giant number over a small label, no gradient wash, no floating
+     glass card. The claim carries it, and the one supporting line under the
+     buttons is a fact somebody can check rather than an adjective. -->
+<style>
+  .w-hero{ padding-block:clamp(56px,10vw,120px) }
+  .w-hero h1{ font-size:clamp(36px,6vw,68px); line-height:1.05; letter-spacing:-.03em;
+              max-width:16ch; font-weight:700 }
+  .w-hero .w-lede{ margin-top:20px }
+  .w-hero .acts{ display:flex; flex-wrap:wrap; gap:12px; margin-top:32px }
+  .w-hero .under{ margin-top:18px; font-size:14px; color:var(--muted) }
+  .w-hero .shot{ margin-top:clamp(36px,6vw,64px); border:1px solid var(--line);
+                 border-radius:var(--radius); overflow:hidden; background:var(--surface) }
+</style>
+
+<section class="w-section w-hero">
+  <div class="w-wrap">
+    <p class="w-eyebrow">หมวดหมู่</p>
+    <h1>ประโยคเดียวที่บอกว่านี่คืออะไร และทำไมต้องสน</h1>
+    <p class="w-lede">บรรทัดรองที่ขยายความ ไม่ใช่พูดซ้ำหัวเรื่อง บอกว่ามันทำงานยังไงหรือเพื่อใคร</p>
+    <div class="acts">
+      <a class="w-btn" href="#cta">เริ่มใช้งาน</a>
+      <a class="w-btn w-btn--ghost" href="#features">ดูว่าทำอะไรได้</a>
+    </div>
+    <p class="under">ข้อเท็จจริงที่ตรวจสอบได้ ไม่ใช่คำคุณศัพท์</p>
+    <div class="shot"><img src="imgs/หน้าจอ.png" alt="ภาพหน้าจอของผลิตภัณฑ์" width="1600" height="900"></div>
+  </div>
+</section>

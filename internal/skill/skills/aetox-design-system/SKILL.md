@@ -147,6 +147,17 @@ where those facts live; this skill decides what goes *on* the slides.
 | `data/slide-copy.csv` | 25 copywriting formulas (PAS, AIDA, FAB) |
 | `data/slide-charts.csv` | 25 chart types, each with a CSS/SVG route and a library route |
 
+These say which layout to reach for and what it is made of. They do not say what
+it looks like in markup: `slide-layouts.csv` describes each one in a
+`css_structure` column holding a single line of CSS, and everything else about
+the composition was left to be invented at write time, every time. That is why
+decks built from these same tables came out differently on every run, and mostly
+came out as the skeleton with different words in it.
+
+**The markup lives in `aetox-slide-templates`**, one file per layout, ready to paste.
+Deciding and copying are two questions, so they are two skills: read the row
+here, then open that layout's file there.
+
 ### Contextual Decision Flow
 
 ```
@@ -156,6 +167,8 @@ where those facts live; this skill decides what goes *on* the slides.
         ↓
 3. For each slide:
    a. Query slide-layout-logic.csv → layout + break_pattern
+   a2. Open that layout's file in aetox-slide-templates → real markup,
+       rather than inventing the composition again
    b. Query slide-typography.csv → type scale
    c. Query slide-color-logic.csv → color treatment
    d. Query slide-backgrounds.csv → image if needed
@@ -164,8 +177,8 @@ where those facts live; this skill decides what goes *on* the slides.
         ↓
 4. Generate HTML with design tokens
         ↓
-5. Validate by reading, then by capture (see "Checking a finished deck"
-   below), there is no slide-token-validator.py to run
+5. Validate by reading (see "Checking a finished deck" below), there is no
+   slide-token-validator.py to run
 ```
 
 ### Pattern Breaking (Duarte Sparkline)
@@ -177,20 +190,71 @@ Premium decks alternate between emotions for engagement:
 
 System calculates pattern breaks at 1/3 and 2/3 positions.
 
+### How a deck ends
+
+**The last two slides are a synthesis and a close, and a deck that stops on its
+final step is unfinished.**
+
+Every structure in `slide-strategies.csv` says so already and it is easy to read
+past: `1.Title ... 10.Ask`, `... 8.Call to Action 9.Q&A`, `... 9.Synthesis
+10.Resources 11.Q&A`. None of the fifteen ends on the last item of its own
+middle. A deck is an argument, and an argument that stops when it runs out of
+steps has not been concluded, only abandoned.
+
+- **The synthesis** says what the middle added up to, in the deck's own terms.
+  Not a list of the slide titles again. For a how-to it is the whole path in one
+  view, so somebody who followed along can see the shape of what they just did;
+  for a pitch it is the case in one line.
+- **The close** is the one thing to do, remember, or decide next. A command to
+  run, a link to keep, an ask, a line worth quoting.
+
+Not a "thank you for your attention" slide, which is the failure the close
+replaces rather than a smaller version of it. The `aetox-anti-slop` skill bans
+that slide in its presentation notes, and that is where this rule was
+half-written: a ban with no requirement beside it produces a deck that correctly
+avoids the empty ending and then simply has none. On 29 ส.ค. a seven-slide guide
+to SSH keys ran "สร้างคีย์ → เปิดดู public key → ใส่ key บน GitHub → ทดสอบ →
+พร้อม push แล้ว" and stopped there, on a step.
+
+A short deck does not get an exemption. Two slides of the seven is a heavier
+proportion than two of twenty, and that is the right proportion: the shorter the
+deck, the more of it the ending is.
+
 ### Checking a finished deck before calling it done
 
-The `browser` tool's `capture` action photographs a page, open the deck (or
-the slides room showing it), `capture` (`full: true` for the whole document,
-not just the visible part), then look at what came back. Run this before
-saying a deck is finished, the same way any UI change gets verified in a live
-preview rather than trusted from the source alone.
+**Check it by reading it. There is no photograph step here.**
 
-Two cheaper checks worth running even before that: count characters against
-the layout's stated max-width per line (a `slide-layouts.csv` row that says
-"short headline, 2-line max body" is a budget to check text against, not a
-suggestion), and re-read every `css_implementation` route for a chart against
-what the file actually carries, a chart drawn by a CDN-fetched library is the
-specific failure the export already warns about elsewhere in this document.
+A deck is one HTML file on disk and `read` returns all of it in one call, so
+every question worth asking before calling it done is answered exactly, in the
+source, for the price of one tool call:
+
+- **Line budgets.** Count characters against the layout's stated max-width per
+  line. A `slide-layouts.csv` row saying "short headline, 2-line max body" is a
+  budget to check text against, not a suggestion.
+- **The fold.** A slide is 1280x720 with `overflow:hidden`, so content past
+  720px is cut in silence, in the room and in the export both. Count the lines
+  to the fold yourself. A slide that has to be squeezed to fit is two slides.
+- **Charts.** Re-read every `css_implementation` route against what the file
+  actually carries. A chart drawn by a library fetched from a CDN is the
+  specific failure the export warns about elsewhere in this document, and it is
+  found by reading, never by looking.
+- **Selectors.** A rule scoped to the wrong element, a `z-index` on a box that
+  is not positioned, a stacking context nobody meant to create. All of it is in
+  the text.
+- **The ending.** Read the last two slides and ask what the deck concluded. If
+  the answer is the last step of the middle, it has no ending. See "How a deck
+  ends" above.
+
+Taking a picture of the deck was written into this document on 26 ส.ค. and is
+taken back out on 29 ส.ค., because of what it cost when a model followed it. A
+run took 22 screenshots of a 7-slide deck by scrolling one screen at a time,
+narrating that each slide "renders correctly", and re-sent those pictures 620
+times between them across the turn. It was reading a 17 KB file by photographing
+it, and everything it found was in the source.
+
+The `browser` tool is still there and still takes pictures. Nothing here asks
+for one, and "I have not looked at it" is not a reason to withhold a deck that
+reads correctly.
 
 ### What every slide owes the room
 

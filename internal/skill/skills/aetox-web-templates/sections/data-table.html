@@ -1,0 +1,44 @@
+<!-- Data table. A real table, with a caption and scope on every header, wrapped
+     in a scroller.
+
+     The wrapper carries tabindex="0" so the scroll region is reachable by
+     keyboard: a div that scrolls and cannot be focused is unreachable to
+     anybody not using a mouse. Numeric columns are right-aligned and set in the
+     mono face so digits line up down the column. -->
+<style>
+  .w-table{ border:1px solid var(--line); border-radius:var(--radius); overflow:hidden;
+            background:var(--surface) }
+  .w-table .scroll{ overflow-x:auto }
+  .w-table table{ width:100%; border-collapse:collapse; min-width:560px }
+  .w-table caption{ text-align:left; padding:16px 18px; font-weight:600 }
+  .w-table th,.w-table td{ text-align:left; padding:12px 18px; font-size:15px;
+                           border-top:1px solid var(--line); white-space:nowrap }
+  .w-table thead th{ color:var(--muted); font-size:13px; letter-spacing:.05em;
+                     text-transform:uppercase; font-weight:600 }
+  .w-table td.num,.w-table th.num{ text-align:right; font-family:var(--mono);
+                                   font-variant-numeric:tabular-nums }
+  .w-table tbody tr:hover{ background:var(--bg) }
+  .w-table .pill{ display:inline-block; padding:3px 9px; border-radius:999px; font-size:13px;
+                  border:1px solid var(--line) }
+</style>
+
+<div class="w-table">
+  <div class="scroll" tabindex="0" role="region" aria-label="ตารางข้อมูล เลื่อนแนวนอนได้">
+    <table>
+      <caption>รายการล่าสุด</caption>
+      <thead>
+        <tr>
+          <th scope="col">ชื่อ</th>
+          <th scope="col">สถานะ</th>
+          <th scope="col" class="num">จำนวน</th>
+          <th scope="col">อัปเดต</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">รายการแรก</th><td><span class="pill">เสร็จแล้ว</span></td><td class="num">108</td><td>29 ส.ค. 2569</td></tr>
+        <tr><th scope="row">รายการที่สอง</th><td><span class="pill">กำลังทำ</span></td><td class="num">13</td><td>29 ส.ค. 2569</td></tr>
+        <tr><th scope="row">รายการที่สาม</th><td><span class="pill">รอ</span></td><td class="num">0</td><td>28 ส.ค. 2569</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>

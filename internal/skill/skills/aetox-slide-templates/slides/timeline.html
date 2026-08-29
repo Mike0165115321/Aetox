@@ -1,0 +1,24 @@
+<!-- Timeline. Steps in order, when the order is the message. Horizontal for four or fewer. -->
+<style>
+  .l-flow .rail{ display:grid; grid-template-columns:repeat(4,1fr); margin-top:46px }
+  .l-flow .s{ position:relative; padding:0 22px 0 0 }
+  .l-flow .s::before{ content:''; position:absolute; left:0; top:17px; right:0;
+                      height:2px; background:rgba(255,255,255,.12) }
+  .l-flow .s:last-child::before{ display:none }
+  .l-flow .dot{ width:36px; height:36px; border-radius:50%; background:var(--stage);
+                border:2px solid var(--accent); color:var(--accent); font-weight:700;
+                display:flex; align-items:center; justify-content:center; position:relative; z-index:1 }
+  .l-flow .s h3{ font-size:21px; margin-top:20px }
+  .l-flow .s p{ font-size:16px; margin-top:8px }
+</style>
+
+<section class="slide l-flow">
+  <div class="kicker rise">ลำดับ</div>
+  <h1 class="rise" style="font-size:56px">ทำอะไรก่อนหลัง</h1>
+  <div class="rail rise">
+    <div class="s"><div class="dot">1</div><h3>ขั้นแรก</h3><p>สิ่งที่เกิดขึ้น</p></div>
+    <div class="s"><div class="dot">2</div><h3>ขั้นสอง</h3><p>สิ่งที่เกิดขึ้น</p></div>
+    <div class="s"><div class="dot">3</div><h3>ขั้นสาม</h3><p>สิ่งที่เกิดขึ้น</p></div>
+    <div class="s"><div class="dot">4</div><h3>ขั้นสี่</h3><p>สิ่งที่เกิดขึ้น</p></div>
+  </div>
+</section>

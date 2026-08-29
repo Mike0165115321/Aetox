@@ -71,6 +71,12 @@ while being useless. Before you call any UI done:
 - **Open it in a real browser and look at it.** Confirm content actually renders (for React,
   that `#root` is not empty). This is not optional, in testing, 4 of 10 apps shipped as
   blank pages that passed every code-level check.
+
+  Scoped to a page whose content is *built by code that has to run*, which is the failure
+  this was written from: a script throws, nothing mounts, and the source looks perfect. A
+  page whose content is already in the file, a deck above all, is not that case and is
+  checked by reading it (`aetox-design-system`, "Checking a finished deck"). Do not read
+  "any UI" as including one.
 - **In a CDN-React + Babel-standalone (`text/babel`) page, never use ESM `import`/`export`.**
   It throws `Uncaught SyntaxError: Cannot use import statement outside a module` and React
   never mounts. Use the globals (`React`, `ReactDOM`, hooks off `React`). Better: if the

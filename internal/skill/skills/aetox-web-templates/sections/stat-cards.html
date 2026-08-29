@@ -1,0 +1,27 @@
+<!-- Stat cards. The row at the top of a dashboard.
+
+     The change figure says its direction in a word as well as a colour, because
+     colour alone is not readable to everyone and is invisible in a printed or
+     greyscale copy. -->
+<style>
+  .w-cards{ display:grid; gap:var(--gap);
+            grid-template-columns:repeat(auto-fit,minmax(min(210px,100%),1fr)) }
+  .w-cards .c{ border:1px solid var(--line); border-radius:var(--radius);
+               padding:18px 20px; background:var(--surface) }
+  .w-cards .k{ color:var(--muted); font-size:14px }
+  .w-cards .v{ font-size:clamp(26px,3vw,34px); font-weight:800; letter-spacing:-.03em;
+               line-height:1.1; margin-top:8px }
+  .w-cards .d{ font-size:13px; margin-top:8px; color:var(--muted) }
+  .w-cards .up{ color:#1a7f4b }
+  .w-cards .down{ color:#b4291c }
+  @media (prefers-color-scheme:dark){
+    .w-cards .up{ color:#4fd18b } .w-cards .down{ color:#ff7a68 }
+  }
+</style>
+
+<section class="w-cards" aria-label="ตัวเลขสรุป">
+  <div class="c"><p class="k">คำสั่งที่ใช้</p><p class="v">13</p><p class="d up">ลดลง 88% จากเดิม 108</p></div>
+  <div class="c"><p class="k">ภาพที่ถ่าย</p><p class="v">0</p><p class="d up">ลดลง จากเดิม 22</p></div>
+  <div class="c"><p class="k">เวลาที่ใช้</p><p class="v">2:00</p><p class="d up">เร็วขึ้น จากเดิม 6:12</p></div>
+  <div class="c"><p class="k">ค่าใช้จ่าย</p><p class="v">-</p><p class="d down">ยังไม่มีข้อมูล</p></div>
+</section>

@@ -1,0 +1,38 @@
+<!-- FAQ. details and summary, so the accordion works with no script at all, is
+     keyboard operable for free, and the browser's own find-in-page can reach an
+     open answer. Every scripted accordion is a reimplementation of this with
+     fewer of those properties. -->
+<style>
+  .w-faq h2{ font-size:clamp(26px,3.4vw,40px); letter-spacing:-.02em }
+  .w-faq .list{ margin-top:clamp(24px,3vw,36px); max-width:76ch }
+  .w-faq details{ border-top:1px solid var(--line) }
+  .w-faq details:last-child{ border-bottom:1px solid var(--line) }
+  .w-faq summary{ cursor:pointer; padding:18px 34px 18px 0; font-weight:600; font-size:17px;
+                  position:relative; list-style:none }
+  .w-faq summary::-webkit-details-marker{ display:none }
+  .w-faq summary::after{ content:"+"; position:absolute; right:6px; top:16px;
+                         font:400 22px/1 var(--mono); color:var(--accent) }
+  .w-faq details[open] summary::after{ content:"\2212" }
+  .w-faq p{ color:var(--muted); padding:0 34px 20px 0; margin-top:-4px }
+</style>
+
+<section class="w-section w-faq" id="faq">
+  <div class="w-wrap">
+    <p class="w-eyebrow">คำถามที่พบบ่อย</p>
+    <h2>ถามกันบ่อย</h2>
+    <div class="list">
+      <details open>
+        <summary>คำถามที่คนถามมากที่สุด</summary>
+        <p>ตอบตรงประโยคแรก แล้วค่อยขยาย ไม่ใช่เกริ่นก่อนแล้วค่อยตอบ</p>
+      </details>
+      <details>
+        <summary>คำถามที่เป็นข้อกังวลจริง</summary>
+        <p>ถ้าคำตอบคือยังทำไม่ได้ ให้พูดตรงๆ คำถามนี้มีอยู่เพื่อคลายข้อกังวล ไม่ใช่เพื่อหลบมัน</p>
+      </details>
+      <details>
+        <summary>คำถามเรื่องราคาหรือการยกเลิก</summary>
+        <p>คำตอบ</p>
+      </details>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,54 @@
+<!-- Dashboard shell. Sidebar, topbar, content well.
+
+     A grid rather than a fixed sidebar plus a margin on the content: with grid
+     the two cannot drift out of agreement, which is what a hardcoded 260px
+     margin does the first time somebody changes the sidebar width.
+
+     On a narrow screen the sidebar becomes a horizontal scroller at the top
+     rather than a drawer, because a drawer needs script and state and a nav of
+     six links does not earn either. -->
+<style>
+  .w-app{ display:grid; grid-template-columns:248px 1fr; min-height:100dvh }
+  .w-app .side{ border-right:1px solid var(--line); background:var(--surface);
+                padding:20px 14px; display:flex; flex-direction:column; gap:20px }
+  .w-app .mark{ font-weight:700; font-size:18px; padding-inline:10px }
+  .w-app .side nav ul{ display:grid; gap:2px }
+  .w-app .side a{ display:block; text-decoration:none; color:var(--muted); font-size:15px;
+                  padding:9px 10px; border-radius:8px; white-space:nowrap }
+  .w-app .side a:hover{ background:var(--bg); color:var(--text) }
+  .w-app .side a[aria-current="page"]{ background:var(--bg); color:var(--text); font-weight:600 }
+  .w-app .top{ display:flex; align-items:center; gap:14px; padding:14px clamp(16px,3vw,28px);
+               border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5 }
+  .w-app .top h1{ font-size:20px; letter-spacing:-.01em }
+  .w-app .top .right{ margin-left:auto; display:flex; gap:10px; align-items:center }
+  .w-app .well{ padding:clamp(18px,3vw,32px) clamp(16px,3vw,28px) }
+  @media (max-width:820px){
+    .w-app{ grid-template-columns:1fr }
+    .w-app .side{ border-right:0; border-bottom:1px solid var(--line); flex-direction:row;
+                  align-items:center; gap:14px; overflow-x:auto; padding:12px }
+    .w-app .side nav ul{ grid-auto-flow:column; gap:4px }
+  }
+</style>
+
+<div class="w-app">
+  <aside class="side">
+    <span class="mark">แบรนด์</span>
+    <nav aria-label="เมนูแอป">
+      <ul>
+        <li><a href="#" aria-current="page">ภาพรวม</a></li>
+        <li><a href="#">รายการ</a></li>
+        <li><a href="#">รายงาน</a></li>
+        <li><a href="#">ตั้งค่า</a></li>
+      </ul>
+    </nav>
+  </aside>
+  <div>
+    <header class="top">
+      <h1>ภาพรวม</h1>
+      <div class="right"><a class="w-btn" href="#">สร้างใหม่</a></div>
+    </header>
+    <main class="well">
+      <!-- stat-cards.html, data-table.html here -->
+    </main>
+  </div>
+</div>

@@ -1,0 +1,19 @@
+<!-- Full bleed image. The picture is the slide. Text sits on a scrim, never
+     straight on the image, and the scrim is a gradient so the photograph
+     survives on the side it came from. -->
+<style>
+  .l-bleed{ padding:0; justify-content:flex-end }
+  .l-bleed img{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:0 }
+  .l-bleed::after{ content:''; position:absolute; inset:0; z-index:1;
+                   background:linear-gradient(0deg,rgba(5,6,8,.94) 0 32%,rgba(5,6,8,.15) 78%) }
+  .l-bleed .copy{ position:relative; z-index:2; padding:0 120px 96px }
+  .l-bleed h1{ font-size:76px; max-width:900px }
+</style>
+
+<section class="slide l-bleed">
+  <img src="imgs/ภาพ.jpg" alt="คำอธิบายภาพ">
+  <div class="copy">
+    <div class="kicker rise">หมวด</div>
+    <h1 class="rise">ข้อความบนภาพ</h1>
+  </div>
+</section>

@@ -1,0 +1,32 @@
+<!-- Newsletter / contact. A real form with a real label.
+
+     The label is visible rather than a placeholder: a placeholder disappears
+     the moment somebody types, which is exactly when they need to check what
+     the field was for. type="email" gets the right keyboard on a phone and the
+     browser's own validation for free. -->
+<style>
+  .w-signup h2{ font-size:clamp(24px,3vw,34px); letter-spacing:-.02em; max-width:22ch }
+  .w-signup form{ display:flex; flex-wrap:wrap; gap:10px; margin-top:22px; max-width:520px }
+  .w-signup .field{ flex:1 1 240px; display:flex; flex-direction:column; gap:6px }
+  .w-signup label{ font-size:14px; color:var(--muted) }
+  .w-signup input{ font:400 16px/1.4 var(--sans); color:var(--text); background:var(--bg);
+                   border:1px solid var(--line); border-radius:10px; padding:13px 14px; width:100% }
+  .w-signup button{ align-self:flex-end }
+  .w-signup .fine{ color:var(--muted); font-size:13px; margin-top:12px }
+</style>
+
+<section class="w-section w-signup">
+  <div class="w-wrap">
+    <p class="w-eyebrow">อัปเดต</p>
+    <h2>ส่งให้เดือนละครั้ง เฉพาะตอนมีของจริง</h2>
+    <form method="post" action="#">
+      <div class="field">
+        <label for="signup-email">อีเมล</label>
+        <input id="signup-email" name="email" type="email" autocomplete="email" required
+               placeholder="you@example.com">
+      </div>
+      <button class="w-btn" type="submit">สมัครรับ</button>
+    </form>
+    <p class="fine">ยกเลิกได้ทุกฉบับ ไม่ส่งต่อให้ใคร</p>
+  </div>
+</section>

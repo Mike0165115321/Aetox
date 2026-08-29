@@ -1,0 +1,20 @@
+<!-- Feature grid. Three or six cells. Vary what is inside them, or this becomes
+     the bullet template with borders around it. -->
+<style>
+  .l-grid .cells{ display:grid; grid-template-columns:repeat(3,1fr); gap:24px; margin-top:38px }
+  .l-grid .c{ background:rgba(255,255,255,.035); border:1px solid rgba(255,255,255,.08);
+              border-radius:16px; padding:26px 26px 28px }
+  .l-grid .c b{ display:block; font-size:23px; margin-bottom:10px }
+  .l-grid .c p{ font-size:17px }
+  .l-grid .c .tag{ color:var(--accent); font-size:14px; letter-spacing:.1em; text-transform:uppercase }
+</style>
+
+<section class="slide l-grid">
+  <div class="kicker rise">ประกอบด้วย</div>
+  <h1 class="rise" style="font-size:56px">สามส่วนที่ทำงานร่วมกัน</h1>
+  <div class="cells rise">
+    <div class="c"><span class="tag">หนึ่ง</span><b>ชื่อส่วน</b><p>ทำอะไร</p></div>
+    <div class="c"><span class="tag">สอง</span><b>ชื่อส่วน</b><p>ทำอะไร</p></div>
+    <div class="c"><span class="tag">สาม</span><b>ชื่อส่วน</b><p>ทำอะไร</p></div>
+  </div>
+</section>

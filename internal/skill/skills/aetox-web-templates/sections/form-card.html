@@ -1,0 +1,46 @@
+<!-- Form card. Sign in, sign up, or any short form.
+
+     Every input has a visible label, a name, and the right autocomplete token,
+     so a password manager can fill it and a phone shows the right keyboard.
+     The error is tied to its field with aria-describedby and stated as what to
+     do, not as what went wrong.
+
+     Never build a login form that posts somewhere the user did not choose. -->
+<style>
+  .w-form{ max-width:420px; margin-inline:auto; border:1px solid var(--line);
+           border-radius:var(--radius); padding:clamp(24px,4vw,34px); background:var(--surface) }
+  .w-form h1{ font-size:26px; letter-spacing:-.02em }
+  .w-form .sub{ color:var(--muted); font-size:15px; margin-top:6px }
+  .w-form form{ display:grid; gap:16px; margin-top:24px }
+  .w-form .field{ display:grid; gap:6px }
+  .w-form label{ font-size:14px; font-weight:600 }
+  .w-form input{ font:400 16px/1.4 var(--sans); color:var(--text); background:var(--bg);
+                 border:1px solid var(--line); border-radius:10px; padding:13px 14px }
+  .w-form input[aria-invalid="true"]{ border-color:#b4291c }
+  .w-form .err{ color:#b4291c; font-size:13px }
+  .w-form .w-btn{ justify-content:center }
+  .w-form .alt{ text-align:center; font-size:14px; color:var(--muted); margin-top:18px }
+  @media (prefers-color-scheme:dark){
+    .w-form input[aria-invalid="true"]{ border-color:#ff7a68 }
+    .w-form .err{ color:#ff7a68 }
+  }
+</style>
+
+<div class="w-form">
+  <h1>เข้าสู่ระบบ</h1>
+  <p class="sub">ใช้อีเมลที่สมัครไว้</p>
+  <form method="post" action="#">
+    <div class="field">
+      <label for="f-email">อีเมล</label>
+      <input id="f-email" name="email" type="email" autocomplete="email" required>
+    </div>
+    <div class="field">
+      <label for="f-pass">รหัสผ่าน</label>
+      <input id="f-pass" name="password" type="password" autocomplete="current-password"
+             required aria-invalid="true" aria-describedby="f-pass-err">
+      <p class="err" id="f-pass-err">รหัสผ่านไม่ถูกต้อง ลองใหม่หรือกดลืมรหัสผ่าน</p>
+    </div>
+    <button class="w-btn" type="submit">เข้าสู่ระบบ</button>
+  </form>
+  <p class="alt">ยังไม่มีบัญชี <a href="#">สมัคร</a></p>
+</div>

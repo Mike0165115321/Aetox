@@ -1,0 +1,51 @@
+<!-- Pricing. Three tiers at most, and the recommended one is marked once, with
+     a word, rather than shouted in every cell.
+
+     Each tier is a real heading and list rather than a table: people compare
+     tiers by scanning columns on a wide screen and by reading them one after
+     another on a narrow one, and a table cannot do the second without being
+     rebuilt in CSS. -->
+<style>
+  .w-pricing h2{ font-size:clamp(26px,3.4vw,40px); letter-spacing:-.02em }
+  .w-pricing .tiers{ display:grid; gap:var(--gap); margin-top:clamp(28px,4vw,44px);
+                     grid-template-columns:repeat(auto-fit,minmax(min(270px,100%),1fr)) }
+  .w-pricing .tier{ border:1px solid var(--line); border-radius:var(--radius);
+                    padding:clamp(22px,2.6vw,30px); background:var(--bg);
+                    display:flex; flex-direction:column; gap:14px }
+  .w-pricing .tier--pick{ border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent) }
+  .w-pricing .pick-tag{ align-self:flex-start; font:600 12px/1 var(--sans); letter-spacing:.08em;
+                        text-transform:uppercase; color:var(--accent) }
+  .w-pricing .price{ font-size:clamp(30px,3.6vw,42px); font-weight:800; letter-spacing:-.03em; line-height:1 }
+  .w-pricing .price small{ font-size:15px; font-weight:500; color:var(--muted) }
+  .w-pricing ul{ display:grid; gap:9px; color:var(--muted); font-size:15px }
+  .w-pricing li::before{ content:"\2713\00a0"; color:var(--accent) }
+  .w-pricing .w-btn{ justify-content:center; margin-top:auto }
+</style>
+
+<section class="w-section w-pricing" id="pricing">
+  <div class="w-wrap">
+    <p class="w-eyebrow">ราคา</p>
+    <h2>จ่ายเท่าที่ใช้</h2>
+    <div class="tiers">
+      <div class="tier">
+        <h3>เริ่มต้น</h3>
+        <p class="price">0<small> บาท</small></p>
+        <ul><li>สิ่งที่ได้</li><li>สิ่งที่ได้</li></ul>
+        <a class="w-btn w-btn--ghost" href="#cta">เริ่มฟรี</a>
+      </div>
+      <div class="tier tier--pick">
+        <span class="pick-tag">เหมาะกับคนส่วนใหญ่</span>
+        <h3>มาตรฐาน</h3>
+        <p class="price">490<small> บาท/เดือน</small></p>
+        <ul><li>ทุกอย่างในแผนเริ่มต้น</li><li>สิ่งที่เพิ่มมา</li><li>สิ่งที่เพิ่มมา</li></ul>
+        <a class="w-btn" href="#cta">เลือกแผนนี้</a>
+      </div>
+      <div class="tier">
+        <h3>องค์กร</h3>
+        <p class="price">คุยกัน</p>
+        <ul><li>ทุกอย่างในแผนมาตรฐาน</li><li>สิ่งที่เพิ่มมา</li></ul>
+        <a class="w-btn w-btn--ghost" href="#cta">ติดต่อ</a>
+      </div>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,35 @@
+<!-- Features. Scales from three to twelve without a second layout: auto-fit
+     means the row count follows the item count and the viewport, not a
+     breakpoint somebody has to maintain.
+
+     Vary what is inside the cards. Three identical icon-title-sentence cells
+     repeated down a page is the most reliable tell of a generated design. -->
+<style>
+  .w-features h2{ font-size:clamp(26px,3.4vw,40px); letter-spacing:-.02em; max-width:20ch }
+  .w-features .grid{ display:grid; gap:var(--gap); margin-top:clamp(28px,4vw,44px);
+                     grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr)) }
+  .w-features .card{ border:1px solid var(--line); border-radius:var(--radius);
+                     padding:clamp(20px,2.4vw,28px); background:var(--surface) }
+  .w-features .card h3{ font-size:19px; margin-bottom:8px }
+  .w-features .card p{ color:var(--muted); font-size:16px }
+  .w-features .card .num{ font:700 15px/1 var(--mono); color:var(--accent) }
+  .w-features .card--wide{ grid-column:span 2 }
+  @media (max-width:680px){ .w-features .card--wide{ grid-column:auto } }
+</style>
+
+<section class="w-section w-features" id="features">
+  <div class="w-wrap">
+    <p class="w-eyebrow">ความสามารถ</p>
+    <h2>หัวเรื่องที่บอกว่าทั้งหมดนี้รวมกันแล้วได้อะไร</h2>
+    <div class="grid">
+      <div class="card card--wide">
+        <span class="num">01</span>
+        <h3>อันที่สำคัญที่สุด</h3>
+        <p>ให้ใบนี้กว้างกว่าใบอื่น เพราะมันสำคัญกว่าจริง ไม่ใช่เพื่อความสวย</p>
+      </div>
+      <div class="card"><span class="num">02</span><h3>อันที่สอง</h3><p>ทำอะไร</p></div>
+      <div class="card"><span class="num">03</span><h3>อันที่สาม</h3><p>ทำอะไร</p></div>
+      <div class="card"><span class="num">04</span><h3>อันที่สี่</h3><p>ทำอะไร</p></div>
+    </div>
+  </div>
+</section>

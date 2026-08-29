@@ -1,0 +1,27 @@
+<!-- How it works. Numbered steps as an ordered list, because it is one: the
+     order is the meaning, and a screen reader should hear "1 of 3". -->
+<style>
+  .w-steps h2{ font-size:clamp(26px,3.4vw,40px); letter-spacing:-.02em }
+  .w-steps ol{ display:grid; gap:var(--gap); margin-top:clamp(28px,4vw,44px);
+               grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr)); counter-reset:s }
+  .w-steps li{ counter-increment:s; position:relative; padding-top:22px;
+               border-top:2px solid var(--line) }
+  .w-steps li::before{ content:counter(s); position:absolute; top:-15px; left:0;
+                       width:28px; height:28px; border-radius:50%; background:var(--accent);
+                       color:var(--accent-ink); font:700 14px/28px var(--mono); text-align:center }
+  .w-steps li:first-child{ border-top-color:var(--accent) }
+  .w-steps h3{ font-size:19px; margin-bottom:6px }
+  .w-steps p{ color:var(--muted); font-size:16px }
+</style>
+
+<section class="w-section w-steps">
+  <div class="w-wrap">
+    <p class="w-eyebrow">ขั้นตอน</p>
+    <h2>ใช้ยังไง</h2>
+    <ol>
+      <li><h3>ขั้นแรก</h3><p>สิ่งที่ผู้ใช้ทำ ไม่ใช่สิ่งที่ระบบทำ</p></li>
+      <li><h3>ขั้นสอง</h3><p>สิ่งที่ผู้ใช้ทำ</p></li>
+      <li><h3>ขั้นสาม</h3><p>ผลลัพธ์ที่เห็นได้</p></li>
+    </ol>
+  </div>
+</section>

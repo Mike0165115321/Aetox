@@ -38,6 +38,8 @@ Then review that plan against the brief before building: if any part of it reads
 
 When writing the code, be careful of structuring your CSS selector specificities. It's easy to generate CSS classes that cancel each other out (especially with a type-based selector like .section and a element-based selector like .cta). This can happen often with paddings/margins between sections.
 
+For the skeleton of a page, start from `aetox-web-templates` rather than from memory: twenty-one sections as real markup, from nav and hero through pricing and FAQ to a dashboard shell, a data table, a form, a 404, an article and a docs page. Every class in it is namespaced `w-` for exactly the reason named in the paragraph above, so two sections pasted into one page cannot reach into each other. It decides none of the look, which is this document's job; it only means the pricing table and the docs rail are not rebuilt from scratch every time.
+
 Try to do a lot of this planning and iteration in your thinking, and only show ideas to the user when you have higher confidence it'll delight them.
 
 ## Restraint and self-critique

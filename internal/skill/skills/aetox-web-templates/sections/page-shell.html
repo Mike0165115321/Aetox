@@ -1,0 +1,69 @@
+<!-- Page shell. The document every section below drops into: tokens, reset,
+     landmarks, light and dark. Paste this first, then sections into <main>.
+
+     Everything is in one file on purpose, the same reason a deck is: the page
+     opens from disk, from a USB stick, from an email attachment, with no build
+     step and no server. -->
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ชื่อหน้า</title>
+<meta name="description" content="ประโยคเดียวที่บอกว่าหน้านี้เกี่ยวกับอะไร">
+<style>
+  :root{
+    --bg:#ffffff; --surface:#f6f7f9; --text:#0d1117; --muted:#5b6472;
+    --line:#e3e6ea; --accent:#c8321f; --accent-ink:#ffffff;
+    --radius:14px; --maxw:1120px; --gap:clamp(16px,2.5vw,28px);
+    --pad:clamp(20px,5vw,48px);
+    --sans:"Prompt","Leelawadee UI",system-ui,-apple-system,Segoe UI,sans-serif;
+    --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --bg:#0c0e12; --surface:#14171d; --text:#f2f4f7; --muted:#98a1b0;
+           --line:#232830; --accent:#ff5a45; --accent-ink:#0c0e12 }
+  }
+  *,*::before,*::after{ box-sizing:border-box }
+  body,h1,h2,h3,h4,p,figure,blockquote,ul,ol,dl,dd{ margin:0 }
+  /* Lists inside a w- component are structure, not prose, so they lose their
+     markers. Scoped to the namespace rather than written as `ul[class]`: the
+     lists in these templates are plain <ul> inside a classed parent, and the
+     `ul[class]` idiom missed every one of them, which put bullet points down
+     the middle of the nav and the logo row the first time it was rendered. */
+  [class*="w-"] :where(ul,ol){ list-style:none; padding:0 }
+  /* Prose is the exception and asks for its markers back, because there a list
+     IS the content. */
+  .w-article .prose :where(ul,ol),.w-docs .body :where(ul,ol){
+    list-style:revert; padding-left:1.3em }
+  img,svg,video{ display:block; max-width:100%; height:auto }
+  body{ background:var(--bg); color:var(--text); font-family:var(--sans);
+        line-height:1.65; -webkit-font-smoothing:antialiased }
+  a{ color:inherit }
+  :where(a,button,input,textarea,select,summary):focus-visible{
+    outline:2px solid var(--accent); outline-offset:3px; border-radius:6px }
+  .w-wrap{ width:100%; max-width:var(--maxw); margin-inline:auto; padding-inline:var(--pad) }
+  .w-section{ padding-block:clamp(48px,8vw,104px) }
+  .w-eyebrow{ color:var(--accent); font-weight:600; letter-spacing:.1em;
+              text-transform:uppercase; font-size:13px }
+  .w-lede{ color:var(--muted); font-size:clamp(16px,1.6vw,19px); max-width:62ch }
+  .w-btn{ display:inline-flex; align-items:center; gap:8px; border:1px solid var(--accent);
+          background:var(--accent); color:var(--accent-ink); text-decoration:none;
+          font:600 16px/1 var(--sans); padding:14px 22px; border-radius:10px }
+  .w-btn--ghost{ background:transparent; color:var(--text); border-color:var(--line) }
+  .w-skip{ position:absolute; left:-9999px }
+  .w-skip:focus{ left:12px; top:12px; z-index:99; background:var(--bg); padding:10px 14px }
+  @media (prefers-reduced-motion:no-preference){
+    html{ scroll-behavior:smooth }
+  }
+</style>
+</head>
+<body>
+<a class="w-skip" href="#main">ข้ามไปเนื้อหา</a>
+<!-- nav.html here -->
+<main id="main">
+  <!-- sections here -->
+</main>
+<!-- footer.html here -->
+</body>
+</html>

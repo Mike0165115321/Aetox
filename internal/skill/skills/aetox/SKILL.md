@@ -121,6 +121,20 @@ Two sources on the shelf, and the second wins:
     finds real ones or draws them in SVG, and that changes the answer.
   - `aetox-design-system`, three-layer design tokens, component specs, and the
     tables that decide a deck's structure, layout, typography and charts.
+  - `aetox-slide-templates`, the markup those tables point at: sixteen slide
+    layouts as real files to copy, under the one-file deck contract. The tables
+    say which layout; this says what it looks like.
+  - `aetox-web-templates`, the same thing for pages: twenty-one sections from
+    nav and hero through pricing and FAQ to a dashboard shell, a data table, a
+    form, a 404, an article and a docs page. One self-contained file,
+    responsive, no framework.
+
+    Two template skills and not one, because the medium is the contract. A deck
+    is a fixed 1280x720 box an off-screen renderer prints; a page is resized,
+    zoomed and read aloud. A layout correct for one is wrong for the next, and
+    a template nobody can tell the medium of is a template that gets pasted
+    into the wrong file. Documents and sheets leave through `doc_write` and
+    `sheet_write` and are not HTML at all; Aetox produces no video.
   - `aetox-frontend-design`, building or reshaping a UI or web page so it reads
     as designed rather than templated: aesthetic direction, type pairing, and a
     plan → critique → build pass. Where `aetox-design-system` gives the tokens
@@ -429,6 +443,10 @@ A project is a folder: `<DataRoot>/project/<name>/`, with its context files in
 table of projects to fall out of step with the disk, so a folder made by hand
 is a project and a folder deleted is a deleted project.
 
+The room deletes one too (the ลบโปรเจกต์ button on the project's own page,
+beside เปิดโฟลเดอร์): it removes the folder and the context copies inside it,
+and leaves the chats alone, they stay in the history held outside every project.
+
 It groups chats and carries those context files into every session held in it.
 **It does not move the sandbox wall**, you still reach the machine exactly as
 you otherwise would. That is what separates it from the workshop door's
@@ -446,7 +464,10 @@ project, which roots the sandbox in a folder on disk and is a fence.
 - **Page screenshots** (`browser` action `capture`), always into
   `output/<session>` under the working root, *including* with a project focused.
   They are a byproduct of looking at a page rather than a file anyone asked for
-  by name, and the root of somebody's repository is not where one belongs.
+  by name, and the root of somebody's repository is not where one belongs. A
+  capture that comes back byte-for-byte identical to the tab's previous one
+  writes no file and sends no picture: it says so, and names the capture it
+  matches (DECISIONS §202).
 - Deleting a chat does not delete its output files. They are ordinary files
   with their own life on disk.
 

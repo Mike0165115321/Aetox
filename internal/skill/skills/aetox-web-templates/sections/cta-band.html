@@ -1,0 +1,23 @@
+<!-- CTA band. The mid-page and end-of-page conversion block: one action, stated
+     as the thing that happens when it is pressed.
+
+     "Save changes", never "Submit". The button keeps the same word through the
+     whole flow, so the control that says "เริ่มใช้งาน" leads to a screen that
+     says the same. -->
+<style>
+  .w-cta{ background:var(--surface); border-block:1px solid var(--line) }
+  .w-cta .box{ display:flex; flex-wrap:wrap; align-items:center; gap:var(--gap) }
+  .w-cta h2{ font-size:clamp(24px,3.2vw,38px); letter-spacing:-.02em; max-width:20ch; flex:1 1 340px }
+  .w-cta .side{ display:flex; flex-direction:column; gap:10px }
+  .w-cta .fine{ color:var(--muted); font-size:14px }
+</style>
+
+<section class="w-section w-cta" id="cta">
+  <div class="w-wrap box">
+    <h2>ประโยคเดียวที่ทำให้อยากกดปุ่มข้างๆ</h2>
+    <div class="side">
+      <a class="w-btn" href="#">เริ่มใช้งาน</a>
+      <p class="fine">ไม่ต้องใส่บัตร ยกเลิกได้ตลอด</p>
+    </div>
+  </div>
+</section>

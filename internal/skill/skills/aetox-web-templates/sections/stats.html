@@ -1,0 +1,21 @@
+<!-- Stats band. Every number carries where it came from. A statistic with no
+     source is what aetox-anti-slop calls an invented precise stat, and it is
+     worse than no number at all. -->
+<style>
+  .w-stats{ background:var(--surface); border-block:1px solid var(--line) }
+  .w-stats dl{ display:grid; gap:var(--gap);
+               grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr)) }
+  .w-stats dt{ font-size:clamp(34px,4.5vw,54px); font-weight:800; letter-spacing:-.04em; line-height:1 }
+  .w-stats dd{ color:var(--muted); font-size:15px; margin-top:8px; margin-left:0 }
+  .w-stats .src{ display:block; font-size:13px; opacity:.8; margin-top:4px }
+</style>
+
+<section class="w-section w-stats" aria-label="ตัวเลข">
+  <div class="w-wrap">
+    <dl>
+      <div><dt>92%</dt><dd>คำอธิบายว่าตัวเลขนี้คืออะไร<span class="src">ที่มา ปี</span></dd></div>
+      <div><dt>13</dt><dd>คำอธิบาย<span class="src">ที่มา ปี</span></dd></div>
+      <div><dt>2:00</dt><dd>คำอธิบาย<span class="src">ที่มา ปี</span></dd></div>
+    </dl>
+  </div>
+</section>

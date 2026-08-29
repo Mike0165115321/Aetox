@@ -1,0 +1,26 @@
+<!-- Empty state. The screen somebody sees first and most often on a new
+     account, which is why it is a template rather than an afterthought.
+
+     It says what goes here and hands over the one action that fills it. Not
+     "No data" over a shrugging illustration: an empty state that only reports
+     emptiness has wasted the one moment the person was ready to act. -->
+<style>
+  .w-empty{ border:1px dashed var(--line); border-radius:var(--radius);
+            padding:clamp(32px,6vw,56px); text-align:center; background:var(--surface) }
+  .w-empty h2{ font-size:21px; letter-spacing:-.01em }
+  .w-empty p{ color:var(--muted); font-size:16px; margin:10px auto 0; max-width:46ch }
+  .w-empty .acts{ display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-top:22px }
+  .w-empty .hint{ font-size:14px; margin-top:18px }
+  .w-empty code{ font-family:var(--mono); font-size:13px; background:var(--bg);
+                 border:1px solid var(--line); border-radius:6px; padding:2px 7px }
+</style>
+
+<div class="w-empty">
+  <h2>ยังไม่มีรายการที่นี่</h2>
+  <p>บอกว่าที่นี่จะเก็บอะไร และมันจะมีประโยชน์ยังไงเมื่อมีของ</p>
+  <div class="acts">
+    <a class="w-btn" href="#">สร้างรายการแรก</a>
+    <a class="w-btn w-btn--ghost" href="#">นำเข้าจากไฟล์</a>
+  </div>
+  <p class="hint">หรือใช้คำสั่ง <code>aetox new</code></p>
+</div>

@@ -1,0 +1,27 @@
+<!-- Error page. 404, 500, or anything that went wrong.
+
+     Three things, in this order: what happened in plain words, what the person
+     can do next, and a way out that always works. The status code is small and
+     last, because it is for whoever they report it to, not for them.
+
+     Never blame the visitor. A 404 is usually a link that rotted. -->
+<style>
+  .w-error{ min-height:70dvh; display:grid; place-items:center; text-align:center;
+            padding:var(--pad) }
+  .w-error h1{ font-size:clamp(28px,4vw,42px); letter-spacing:-.02em; max-width:20ch }
+  .w-error p{ color:var(--muted); font-size:17px; margin-top:14px; max-width:52ch }
+  .w-error .acts{ display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-top:26px }
+  .w-error .code{ margin-top:30px; font-family:var(--mono); font-size:13px; color:var(--muted) }
+</style>
+
+<main class="w-error">
+  <div>
+    <h1>ไม่พบหน้านี้</h1>
+    <p>ลิงก์อาจเปลี่ยนไปแล้วหรือพิมพ์ผิด ลองเริ่มจากหน้าแรก หรือค้นหาสิ่งที่ต้องการ</p>
+    <div class="acts">
+      <a class="w-btn" href="/">กลับหน้าแรก</a>
+      <a class="w-btn w-btn--ghost" href="#">ติดต่อเรา</a>
+    </div>
+    <p class="code">404</p>
+  </div>
+</main>

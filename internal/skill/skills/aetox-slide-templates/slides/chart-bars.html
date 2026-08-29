@@ -1,0 +1,22 @@
+<!-- Chart. Bars in CSS, no library: heights are percentages written into the
+     markup, so the chart is in the file rather than fetched. A chart drawn by a
+     CDN-fetched library prints blank in the export. -->
+<style>
+  .l-chart .plot{ display:flex; align-items:flex-end; gap:34px; height:330px; margin-top:38px;
+                  border-bottom:1px solid rgba(255,255,255,.14) }
+  .l-chart .bar{ flex:1; display:flex; flex-direction:column; justify-content:flex-end; height:100% }
+  .l-chart .bar i{ display:block; background:linear-gradient(180deg,var(--accent),rgba(255,59,48,.35));
+                   border-radius:7px 7px 0 0 }
+  .l-chart .bar b{ font-size:22px; margin-bottom:9px; font-weight:700 }
+  .l-chart .bar span{ margin-top:13px; color:var(--muted); font-size:16px }
+</style>
+
+<section class="slide l-chart">
+  <div class="kicker rise">ข้อมูล</div>
+  <h1 class="rise" style="font-size:56px">สิ่งที่กราฟนี้บอก</h1>
+  <div class="plot rise">
+    <div class="bar"><b>108</b><i style="height:100%"></i><span>ก่อน</span></div>
+    <div class="bar"><b>59</b><i style="height:55%"></i><span>ระหว่าง</span></div>
+    <div class="bar"><b>13</b><i style="height:12%"></i><span>หลัง</span></div>
+  </div>
+</section>

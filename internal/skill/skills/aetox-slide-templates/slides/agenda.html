@@ -1,0 +1,20 @@
+<!-- Agenda. What is coming, numbered. Five rows at most; six is two slides. -->
+<style>
+  .l-agenda ol{ list-style:none; counter-reset:a; margin-top:34px; max-width:900px }
+  .l-agenda li{ counter-increment:a; display:flex; gap:26px; align-items:baseline;
+                padding:17px 0; border-bottom:1px solid rgba(255,255,255,.08) }
+  .l-agenda li::before{ content:counter(a,decimal-leading-zero); color:var(--accent);
+                        font-weight:700; font-size:19px; min-width:44px }
+  .l-agenda li b{ font-size:27px; font-weight:600 }
+  .l-agenda li span{ margin-left:auto; color:var(--muted); font-size:16px }
+</style>
+
+<section class="slide l-agenda">
+  <div class="kicker rise">สารบัญ</div>
+  <h1 class="rise" style="font-size:60px">สิ่งที่จะพูดถึง</h1>
+  <ol class="rise">
+    <li><b>หัวข้อแรก</b><span>2 นาที</span></li>
+    <li><b>หัวข้อที่สอง</b><span>5 นาที</span></li>
+    <li><b>หัวข้อที่สาม</b><span>3 นาที</span></li>
+  </ol>
+</section>

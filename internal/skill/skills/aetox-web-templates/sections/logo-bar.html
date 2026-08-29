@@ -1,0 +1,21 @@
+<!-- Logo bar. Social proof that names names. An unnamed logo row is decoration;
+     if the logos cannot be named, cut the section rather than blur them. -->
+<style>
+  .w-logos{ padding-block:clamp(24px,4vw,44px); border-block:1px solid var(--line) }
+  .w-logos p{ text-align:center; color:var(--muted); font-size:14px }
+  .w-logos ul{ display:flex; flex-wrap:wrap; justify-content:center; align-items:center;
+               gap:clamp(24px,5vw,56px); margin-top:20px }
+  .w-logos img{ height:26px; width:auto; opacity:.72 }
+  @media (prefers-color-scheme:dark){ .w-logos img{ filter:invert(1) brightness(1.6) } }
+</style>
+
+<section class="w-logos" aria-label="ใครใช้อยู่บ้าง">
+  <div class="w-wrap">
+    <p>ใช้อยู่ที่</p>
+    <ul>
+      <li><img src="imgs/logo-a.svg" alt="ชื่อบริษัท ก"></li>
+      <li><img src="imgs/logo-b.svg" alt="ชื่อบริษัท ข"></li>
+      <li><img src="imgs/logo-c.svg" alt="ชื่อบริษัท ค"></li>
+    </ul>
+  </div>
+</section>

@@ -1,0 +1,44 @@
+<!-- Footer. Closure and the alternative paths: the links somebody looks for
+     when the page did not answer them. Columns collapse to a stack with no
+     media query, because auto-fit already knows how. -->
+<style>
+  .w-footer{ border-top:1px solid var(--line); padding-block:clamp(36px,5vw,64px) 28px }
+  .w-footer .cols{ display:grid; gap:var(--gap);
+                   grid-template-columns:repeat(auto-fit,minmax(min(190px,100%),1fr)) }
+  .w-footer h3{ font-size:14px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted);
+                margin-bottom:12px }
+  .w-footer ul{ display:grid; gap:9px }
+  .w-footer a{ text-decoration:none; color:var(--text); font-size:15px }
+  .w-footer a:hover{ text-decoration:underline }
+  .w-footer .mark{ font-weight:700; font-size:19px; letter-spacing:-.02em }
+  .w-footer .base{ display:flex; flex-wrap:wrap; gap:12px; justify-content:space-between;
+                   align-items:center; margin-top:clamp(28px,4vw,48px); padding-top:20px;
+                   border-top:1px solid var(--line); color:var(--muted); font-size:14px }
+</style>
+
+<footer class="w-footer">
+  <div class="w-wrap">
+    <div class="cols">
+      <div>
+        <p class="mark">แบรนด์</p>
+        <p style="color:var(--muted);font-size:15px;margin-top:8px">ประโยคเดียวว่าทำอะไร</p>
+      </div>
+      <div>
+        <h3>ผลิตภัณฑ์</h3>
+        <ul><li><a href="#features">ความสามารถ</a></li><li><a href="#pricing">ราคา</a></li></ul>
+      </div>
+      <div>
+        <h3>ช่วยเหลือ</h3>
+        <ul><li><a href="#faq">คำถามที่พบบ่อย</a></li><li><a href="#">ติดต่อ</a></li></ul>
+      </div>
+      <div>
+        <h3>บริษัท</h3>
+        <ul><li><a href="#">เกี่ยวกับเรา</a></li><li><a href="#">ความเป็นส่วนตัว</a></li></ul>
+      </div>
+    </div>
+    <div class="base">
+      <span>&copy; 2569 ชื่อบริษัท</span>
+      <span>ทำที่ประเทศไทย</span>
+    </div>
+  </div>
+</footer>

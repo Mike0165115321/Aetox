@@ -1,0 +1,25 @@
+<!-- Before after. Two states of one thing. Keep both columns the same shape so
+     only the content differs; the divider does the work. -->
+<style>
+  /* stretch, not a fixed height: the rule is as tall as the taller column and
+     no taller. Given a height of its own it hangs past the content on a short
+     slide, which is what it did the first time it was drawn. */
+  .l-ba .pair{ display:grid; grid-template-columns:1fr 1px 1fr; gap:44px; margin-top:40px; align-items:stretch }
+  .l-ba .rule{ background:rgba(255,255,255,.12) }
+  .l-ba h3{ font-size:19px; letter-spacing:.1em; text-transform:uppercase; margin-bottom:18px }
+  .l-ba .before h3{ color:var(--muted) }
+  .l-ba .after h3{ color:var(--accent) }
+  .l-ba ul{ list-style:none }
+  .l-ba li{ font-size:20px; line-height:1.75; color:var(--body) }
+  .l-ba .after li{ color:var(--text) }
+</style>
+
+<section class="slide l-ba">
+  <div class="kicker rise">เปลี่ยนอะไรไป</div>
+  <h1 class="rise" style="font-size:56px">ก่อนและหลัง</h1>
+  <div class="pair rise">
+    <div class="before"><h3>ก่อน</h3><ul><li>ข้อเท็จจริงเดิม</li><li>ข้อเท็จจริงเดิม</li></ul></div>
+    <div class="rule"></div>
+    <div class="after"><h3>หลัง</h3><ul><li>ข้อเท็จจริงใหม่</li><li>ข้อเท็จจริงใหม่</li></ul></div>
+  </div>
+</section>

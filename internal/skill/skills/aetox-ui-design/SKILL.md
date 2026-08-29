@@ -13,6 +13,13 @@ Nine implementation guides, one per problem, the how-to-build layer.
 tokens; these turn that into code. Open the one the task is actually about;
 each file carries its source skill's own reference material inline.
 
+**For the skeleton of a page, do not start from memory.** `aetox-web-templates`
+ships twenty-one sections as real markup, nav and hero through pricing and FAQ
+to a dashboard shell, a data table, a form, a 404, an article and a docs page.
+Every guide here describes how a thing should behave; that skill is the thing
+itself, ready to paste, and starting from it leaves this reading for the part
+that is actually particular to the job.
+
 **On the web**
 
 - `references/design-system-patterns.md`, design tokens, theming and
