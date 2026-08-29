@@ -462,6 +462,16 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 				"What working in "+filepath.Base(sandboxRoot)+" has settled, and the user approved")
 		}
 	}
+	// The repository as it stood when this session opened (Claude Code's move,
+	// adopted 30 ส.ค.): branch, what is uncommitted, the last few commits.
+	// Measured reason: `git` ran 54 times in one week largely re-asking what
+	// the host could have said once. BEFORE the project rules on purpose, for
+	// both of this file's laws at once — what the user wrote outranks machine
+	// state by coming later, and the cache ratchet demands that a layer which
+	// varies (this one) only ever push layers below it, never above.
+	if !scope.Open && sandboxRoot != "" {
+		b.WriteString(gitLayer(sandboxRoot))
+	}
 	if path := ProjectContextFile(sandboxRoot); path != "" {
 		if content := readCapped(path); content != "" {
 			b.WriteString(layer("Project rules", filepath.Base(path), content))

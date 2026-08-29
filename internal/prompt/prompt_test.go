@@ -2,6 +2,7 @@ package prompt
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1100,5 +1101,98 @@ func TestTheRangedReadLineFollowsTheShell(t *testing.T) {
 		Desk{Name: "plan", Direction: "Planning.", Carries: func(name string) bool { return name != "shell" }})
 	if strings.Contains(without, want) {
 		t.Error("a desk with no shell was told to read with one")
+	}
+}
+
+// The cache ratchet (docs/aider-study/EXECUTION.md ระดับ 4). A provider caches
+// the longest prefix that did not move, so the prompt's contract is: what
+// varies between sessions of the same desk may only APPEND, never reorder what
+// stands above it. Adding project rules to a root must extend the prompt at
+// the bottom and leave every earlier byte where it was — the day this fails,
+// somebody moved a varying layer above a stable one, and every session that
+// differs in that layer stops sharing the engine block as a cached prefix.
+func TestVaryingLayersOnlyAppendBelowTheStableEngine(t *testing.T) {
+	dataRoot := t.TempDir()
+	t.Setenv("AETOX_DATA_ROOT", dataRoot)
+	root := t.TempDir()
+
+	bare := Build(SurfaceCLI, Scope{Root: root})
+	mustWrite(t, filepath.Join(root, "AETOX.md"), "always answer in haiku")
+	ruled := Build(SurfaceCLI, Scope{Root: root})
+
+	if !strings.HasPrefix(ruled, bare) {
+		i := 0
+		for i < len(bare) && i < len(ruled) && bare[i] == ruled[i] {
+			i++
+		}
+		t.Fatalf("project rules moved earlier bytes instead of appending: prompts diverge at byte %d of %d:\n...%q\nvs\n...%q",
+			i, len(bare), truncAt(bare, i), truncAt(ruled, i))
+	}
+	if !strings.Contains(ruled[len(bare):], "always answer in haiku") {
+		t.Fatal("the project layer should be inside the appended tail")
+	}
+}
+
+// identity() owns the opening bytes of every prompt, whatever desk or scope —
+// both because "who is speaking" reads first (§11) and because it is the one
+// prefix every session on this machine shares with every other.
+func TestIdentityOpensEveryPrompt(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	for _, desk := range []Desk{{}, {Name: "coding", Direction: "this session is coding work"}} {
+		text := BuildForDesk(SurfaceCLI, Scope{Root: t.TempDir()}, desk)
+		if !strings.HasPrefix(text, identity()) {
+			t.Fatalf("desk %q: prompt does not open with identity()", desk.Name)
+		}
+	}
+}
+
+func truncAt(s string, i int) string {
+	start := i - 40
+	if start < 0 {
+		start = 0
+	}
+	end := i + 40
+	if end > len(s) {
+		end = len(s)
+	}
+	return s[start:end]
+}
+
+// The git layer: present for a repository, absent for a plain folder, and
+// always ABOVE the project rules — the user's own words keep the last word,
+// and the ratchet (append-only) keeps holding because both prompts of a root
+// carry the same snapshot in the same place.
+func TestGitLayerSnapshotsTheRepository(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	plain := Build(SurfaceCLI, Scope{Root: t.TempDir()})
+	if strings.Contains(plain, "Git, as this session opened") {
+		t.Fatal("a folder with no repository must have no git layer")
+	}
+
+	root := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Skipf("git unavailable: %v %s", err, out)
+		}
+	}
+	git("init", "-b", "main")
+	mustWrite(t, filepath.Join(root, "a.txt"), "committed\n")
+	git("add", "a.txt")
+	git("commit", "-m", "first")
+	mustWrite(t, filepath.Join(root, "b.txt"), "dirty\n")
+	mustWrite(t, filepath.Join(root, "AETOX.md"), "answer in haiku")
+
+	text := Build(SurfaceCLI, Scope{Root: root})
+	for _, want := range []string{"Branch: main", "b.txt", "first"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("git layer is missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Index(text, "Branch: main") > strings.Index(text, "answer in haiku") {
+		t.Error("the user's project rules must come after (and so outrank) the machine's git state")
 	}
 }
