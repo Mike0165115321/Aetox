@@ -73,12 +73,22 @@ stage "vet" go vet ./...
 if command -v golangci-lint >/dev/null 2>&1; then
   stage "lint" golangci-lint run ./...
   # Reported, not gating — the same device ci.yml uses on the unix jobs. Most
-  # of gosec's 642 findings on this tree are the program doing its job (reading
+  # of gosec's 817 findings on this tree are the program doing its job (reading
   # files named by a variable, running commands built at runtime), so it is
   # worth reading and not worth blocking on.
-  golangci-lint run ./... --default=none --enable=gosec --issues-exit-code=0 >"$LOG_DIR/gosec.log" 2>&1 || true
-  printf '  %s
-' "· gosec (reported, not gating): $(tail -1 "$LOG_DIR/gosec.log")"
+  #
+  # --enable-only, not `--default=none --enable=gosec`: in golangci-lint v2
+  # --enable APPENDS to the enable list in .golangci.yml, so that form re-ran the
+  # thirteen gating linters as well and the summary line below printed their last
+  # bullet ("* wastedassign: 2") instead of a gosec count. --enable-only replaces
+  # the section and still honours the file's exclusions, so third_party stays
+  # out. Pinned by TestGosecReportIsGosecOnly; see docs/DECISIONS.md §141.5.
+  golangci-lint run ./... --enable-only=gosec --issues-exit-code=0 >"$LOG_DIR/gosec.log" 2>&1 || true
+  # An empty log printed after the colon reads as a pass nobody checked, which is
+  # the failure this stage exists to avoid. Say it out loud instead.
+  gosec_summary="$(tail -1 "$LOG_DIR/gosec.log")"
+  [ -n "$gosec_summary" ] || gosec_summary="no output — did gosec run?"
+  printf '  %s\n' "· gosec (reported, not gating): $gosec_summary"
 else
   skip "lint" "NOT CHECKED — golangci-lint is not on PATH. Install it: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"
   printf '  %s

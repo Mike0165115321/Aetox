@@ -32,12 +32,19 @@ import (
 func bootDeskApp(t *testing.T, desk string) *App {
 	t.Helper()
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	// The recorder goes in HERE rather than when a test asks for it: applyConfig
+	// below starts a goroutine that reads `emit` and `ctx`, so a later write to
+	// either is a data race the detector is right about. captureEvents finds this
+	// one through bootRecorders and empties it instead of installing a second.
+	rec := &recorder{}
 	a := seed(&App{
 		ctx:   context.Background(),
-		emit:  func(string, ...any) {},
+		emit:  func(name string, data ...any) { rec.add(emitted{name, data}) },
 		dbDir: t.TempDir(),
 	}, &conversation{id: newSessionID()})
+	bootRecorders.Store(a, rec)
 	t.Cleanup(func() {
+		bootRecorders.Delete(a)
 		if a.db != nil {
 			_ = a.db.Close()
 		}

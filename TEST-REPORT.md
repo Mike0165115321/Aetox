@@ -11,7 +11,11 @@
 > ```powershell
 > go test ./...                        # the whole suite
 > cd desktop/frontend; npx vitest run  # the UI suite
+> golangci-lint run ./...              # the linters that gate — see below
 > ```
+>
+> Or `bash ./verify.sh`, which runs all three plus vet, build, the race detector and
+> `svelte-check` in one pass and prints one summary line.
 >
 > **What it *is* for:** the seams that cannot be tested and why, and the conventions new
 > tests follow. That part does not go stale on its own and is not written down anywhere
@@ -40,6 +44,37 @@ while the real path is broken. Reference: `internal/subagent/spawn_demo_test.go`
 
 Hand-written stubs stay right for **provider edge cases** only — a truncated tool
 call, leaked DSML, a 401 — where the point is to produce one exact wire condition.
+
+---
+
+## Checks that are not tests — vet, lint, race (เขียน 2026-08-29 · decision 2026-08-18, [docs/DECISIONS.md §141](docs/DECISIONS.md))
+
+เทสไม่ใช่ทุกอย่างที่ต้องเขียวก่อน merge สามอย่างข้างล่างนี้รันคู่กับ `go test` เสมอ
+และแต่ละอันตอบคนละคำถาม — อันไหน **gate** (แดงแล้วหยุด) กับอันไหน **report**
+(อ่านทุก push แต่ไม่กั้น) เขียนไว้ตรงนี้เพราะเคยมี stage ที่ทุกคนเชื่อว่ารันอยู่แล้วไม่ได้รัน
+
+| Check | รันที่ไหน | Gate? |
+|---|---|---|
+| `go vet ./...` | `verify.sh` stage `vet` · ทั้งสาม job ใน [ci.yml](.github/workflows/ci.yml) | ✅ gate |
+| `golangci-lint run ./...` | `verify.sh` stage `lint` · job `windows` (gate) และ job `unix` (report ตาม `continue-on-error` ของ job) | ✅ gate บน Windows |
+| `golangci-lint ... --enable=gosec` | `verify.sh` (พิมพ์บรรทัดสรุป) · ทั้ง `windows` และ `unix` | ❌ report เท่านั้น |
+| `go test -race` | `verify.sh` stage `race` (ข้ามถ้าไม่มี C compiler) · job `ubuntu-latest` | ✅ ใน verify.sh · ❌ ใน CI (job `unix` เป็น report) |
+
+**ลินเตอร์ตัวไหนเปิด และตัวไหนยังไม่เปิดเพราะอะไร อยู่ที่ [DECISIONS.md §141](docs/DECISIONS.md) ที่เดียว**
+— ตัวไฟล์คอนฟิกคือ [`.golangci.yml`](.golangci.yml) ไม่ต้องคัดรายชื่อมาไว้ที่นี่อีกที่หนึ่ง
+(ที่สองที่ตอบคำถามเดียวกันคือหนี้) สั้นๆ คือ: gate เฉพาะชุดที่ **นับได้ศูนย์ในวันที่เปิด**
+เพราะ gate ที่แดงตั้งแต่วันแรกไม่ใช่ gate ส่วน `gosec` report อย่างเดียว เพราะโปรแกรมนี้
+อ่านไฟล์จากตัวแปรและรันคำสั่งที่ประกอบตอนรันเป็นงานปกติของมัน (G304/G204)
+
+**ถ้า `golangci-lint` ไม่ได้อยู่บนเครื่อง** `verify.sh` จะ skip แบบ **ดังๆ** พร้อมคำสั่งติดตั้ง —
+เจตนาเดียวกับ stage `race`: check ที่เชื่อว่ารันอยู่แต่ไม่ได้รัน แย่กว่า check ที่ไม่เคยมี
+
+```powershell
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+```
+
+การเพิ่ม/ปิดลินเตอร์ตัวใหม่แก้ที่ `.golangci.yml` แล้วบันทึกเหตุผลใน §141 ไม่ใช่โรย
+`//nolint` ไว้ตามไซต์ — ยี่สิบ annotation คือยี่สิบที่ที่ตอบคำถามซึ่งคอนฟิกถูกสร้างมาตอบ
 
 ---
 

@@ -18,7 +18,7 @@ const row = (over: Partial<Session> = {}): Session =>
 const parked = (over: Partial<ParkedTurn> = {}): ParkedTurn => ({
   chat: [], awaitingReply: true, agentStatus: '', toolSteps: [],
   turnFiles: [], turnProposals: [], streamingText: '', reasoningText: '',
-  ask: null, todos: [], turnSpend: emptyTurnSpend(), ...over,
+  ask: null, todos: [], turnSpend: emptyTurnSpend(), queued: [], ...over,
 })
 
 beforeEach(() => {

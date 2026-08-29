@@ -201,8 +201,7 @@ func (d *Dispatcher) ToolDefinitions() []model.ToolDefinition {
 		if !ok || s == nil {
 			continue
 		}
-		tool, ok := s.(Tool)
-		if !ok {
+		if _, ok := s.(Tool); !ok {
 			continue
 		}
 		// SourceSkill entries stay registered — the user's /skill-name command
@@ -217,7 +216,8 @@ func (d *Dispatcher) ToolDefinitions() []model.ToolDefinition {
 		if !ok {
 			continue
 		}
-		if tool, ok = cut.(Tool); !ok {
+		tool, ok := cut.(Tool)
+		if !ok {
 			continue
 		}
 		definitions = append(definitions, tool.ToolDefinition())

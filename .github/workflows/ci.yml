@@ -91,12 +91,17 @@ jobs:
       # its job: this is a tool that reads files named by a variable and runs
       # commands built at runtime, which is G304 and G204 by description. Worth
       # reading on every push, not worth holding a branch on.
+      #
+      # --enable-only, not `--default=none --enable=gosec`: v2's --enable appends to
+      # the enable list in .golangci.yml, so that form quietly re-ran the thirteen
+      # gating linters here too. --enable-only replaces the section and keeps the
+      # file's exclusions. Pinned by TestGosecReportIsGosecOnly (docs/DECISIONS.md §141.5).
       - name: Security scan (reported, not gating)
         continue-on-error: true
         uses: golangci/golangci-lint-action@v8
         with:
           version: v2.12.2
-          args: --default=none --enable=gosec
+          args: --enable-only=gosec
 
       - run: go test ./...
 

@@ -13,7 +13,7 @@
   // cards is not a question, it is a table — so the keyed providers live behind
   // the button that says you have a key, and open only for someone who does.
   import { onMount } from 'svelte'
-  import { t, setLocale, localeNames, i18n, type Locale } from './i18n.svelte'
+  import { t, setLocale, localeNames, i18n, type Locale, type TKey } from './i18n.svelte'
   import { theme, applyTheme, THEMES, type ThemeName } from './theme.svelte'
   import { readThemeSwatches, type Swatch } from './themeSwatches'
   import Logo from './Logo.svelte'
@@ -100,6 +100,19 @@
 
   const CAP_ICONS: Record<string, 'eye' | 'fileText' | 'clapperboard' | 'headphones'> = {
     image: 'eye', pdf: 'fileText', media: 'clapperboard', speech: 'headphones',
+  }
+
+  // The two strings each capability needs, as a table rather than as
+  // t(`cap.${id}`). Interpolating the id builds a key the compiler cannot check
+  // against TKey — it type-checked as `cap.${string}`, which is any string at
+  // all — so the day the manifest grows a capability nobody wrote words for, the
+  // screen would have drawn the raw key. Here that capability has no row, and
+  // the fallback below shows its id instead of pretending to have a name.
+  const CAP_TEXT: Record<string, { title: TKey; desc: TKey }> = {
+    image: { title: 'cap.image', desc: 'cap.imageDesc' },
+    pdf: { title: 'cap.pdf', desc: 'cap.pdfDesc' },
+    media: { title: 'cap.media', desc: 'cap.mediaDesc' },
+    speech: { title: 'cap.speech', desc: 'cap.speechDesc' },
   }
 
   // Rounded to whole megabytes: the number is here so someone can decide
@@ -512,6 +525,7 @@
                half of both shapes. -->
           <div class="ob-stack">
             {#each capsMissing as cap (cap.capability)}
+              {@const text = CAP_TEXT[cap.capability]}
               <button
                 class="ob-row" class:on={capsPickedSet.has(cap.capability)}
                 aria-pressed={capsPickedSet.has(cap.capability)}
@@ -519,8 +533,8 @@
               >
                 <span class="ic"><Icon name={CAP_ICONS[cap.capability] ?? 'package'} size={17} /></span>
                 <span class="txt">
-                  <span class="t">{t(`cap.${cap.capability}`)}</span>
-                  <span class="d">{t(`cap.${cap.capability}Desc`)}</span>
+                  <span class="t">{text ? t(text.title) : cap.capability}</span>
+                  <span class="d">{text ? t(text.desc) : ''}</span>
                 </span>
                 <!-- The size sits on the row it belongs to. A single total under
                      the button tells you what the set costs but not which one to

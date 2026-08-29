@@ -525,9 +525,11 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 		return Response{}, err
 	}
 
+	// The flag is not cleared here: this is the only place that reads it, the
+	// retry happens once, and the temperature check below never asks. Clearing
+	// it was a write nothing could observe, which reads as state being kept.
 	if documentPartRefused(httpResp.StatusCode, responseBody, sentDocuments) {
 		payload.Messages = convertMessagesToOpenAI(stripDocuments(req.Messages))
-		sentDocuments = false
 		if httpResp, err = send(); err != nil {
 			return Response{}, err
 		}
@@ -726,9 +728,10 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		}
 		// Safe to replay: the refusal arrives before the first SSE frame, so
 		// nothing has been streamed to the user to take back.
+		// Not cleared, for the reason the non-streaming path gives: one retry,
+		// and nothing below asks the flag again.
 		if documentPartRefused(httpResp.StatusCode, responseBody, sentDocuments) {
 			payload.Messages = convertMessagesToOpenAI(stripDocuments(req.Messages))
-			sentDocuments = false
 		} else {
 			p.rememberTemperatureRefusal(model)
 			payload.Temperature = 0

@@ -52,7 +52,10 @@ describe('a project door refused by the engine', () => {
   // opened perfectly well.
   it('clears the refusal once a project does open', async () => {
     cockpit.sessionError = busy
-    OpenProjectPath.mockResolvedValueOnce({ root: 'D:/work/app', name: 'app', focused: true })
+    OpenProjectPath.mockResolvedValueOnce({
+      name: 'app', path: 'D:/work/app', branch: '', focused: true,
+      governanceFile: '', governanceLoaded: false,
+    })
     await openProject('D:/work/app')
     expect(cockpit.sessionError).toBe('')
   })

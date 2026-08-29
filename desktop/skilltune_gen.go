@@ -36,17 +36,11 @@ func (a *App) generateSkillRefinements(ctx context.Context, drafter skillEditDra
 	if !learningEnabled() || drafter == nil {
 		return
 	}
-	db, err := a.database()
-	if err != nil {
-		return
-	}
-	names := map[string]bool{}
-	for _, d := range skill.ListDiscovered(skill.DefaultDiscoveryPaths()) {
-		if d.Name != "" {
-			names[d.Name] = true
-		}
-	}
-	for _, m := range detectSkillMisfires(db, names, skillMisfireMinBad) {
+	// Through skillMisfires, not detectSkillMisfires: the App reader already
+	// opens the database and supplies the live skill set, and this function
+	// having its own copy of both meant the two could drift apart on which
+	// names count as skills.
+	for _, m := range a.skillMisfires() {
 		if a.hasPendingSkillProposal(m.skill) {
 			continue
 		}
@@ -289,7 +283,7 @@ func draftSkillEditOnce(ctx context.Context, p model.Provider, req model.Request
 	if err != nil {
 		return "", "", "", "", err
 	}
-	raw := ""
+	var raw string
 	if len(resp.ToolCalls) > 0 {
 		raw = resp.ToolCalls[0].Function.Arguments
 	} else {

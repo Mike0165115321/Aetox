@@ -10,13 +10,15 @@ import (
 	"github.com/Mikedev115/Aetox/internal/update"
 )
 
-// captureEmit swaps the App's event seam for a recorder, and puts the real one
-// back when the test ends.
-func captureEmit(t *testing.T, a *App) *[]string {
+// captureEmit swaps the App's event seam for the same locked recorder
+// captureEvents uses (workbench_desk_test.go), read here as names only. It does
+// not set a.ctx: these tests assert on an emit that must not happen, and giving
+// the App a context would change what the code under test decides to fire.
+func captureEmit(t *testing.T, a *App) *recorder {
 	t.Helper()
-	var events []string
-	a.emit = func(event string, _ ...any) { events = append(events, event) }
-	return &events
+	rec := &recorder{}
+	a.emit = func(event string, _ ...any) { rec.add(emitted{Name: event}) }
+	return rec
 }
 
 // stubCheck replaces the package-level check for one test.
@@ -36,8 +38,8 @@ func TestAnnounceUpdateTellsTheFrontendWhenThereIsANewerBuild(t *testing.T) {
 
 	a.announceUpdate()
 
-	if len(*events) != 1 || (*events)[0] != "update:available" {
-		t.Errorf("events = %v, want exactly [update:available]", *events)
+	if events.len() != 1 || events.names()[0] != "update:available" {
+		t.Errorf("events = %v, want exactly [update:available]", events.names())
 	}
 }
 
@@ -97,8 +99,8 @@ func TestAnnounceUpdateSaysNothingWhenThereIsNothingToSay(t *testing.T) {
 
 			a.announceUpdate()
 
-			if len(*events) != 0 {
-				t.Errorf("events = %v, want none", *events)
+			if events.len() != 0 {
+				t.Errorf("events = %v, want none", events.names())
 			}
 		})
 	}
@@ -152,7 +154,7 @@ func TestWatchForUpdatesReturnsImmediatelyWhenSwitchedOff(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("watchForUpdates is still running with the check switched off")
 	}
-	if len(*events) != 0 {
-		t.Errorf("events = %v, want none", *events)
+	if events.len() != 0 {
+		t.Errorf("events = %v, want none", events.names())
 	}
 }

@@ -3,6 +3,7 @@
 // components need at mount (arrays/objects, not undefined) so any page can
 // render without per-test setup.
 import { vi } from 'vitest'
+import type { main } from '../../../wailsjs/go/models'
 
 // Variadic on purpose: the real bindings take arguments, and a zero-arg mock
 // types `mock.calls[0]` as an empty tuple — so a test asserting what was sent
@@ -301,7 +302,13 @@ export const SaveAgentProfile = noop()
 export const OpenSubagentsFolder = noop()
 export const OpenPromptsFolder = noop()
 export const OpenProjectFolder = noop()
-export const OpenProjectPath = noop()
+// The door answers with the project it opened — App.d.ts returns ProjectStatus,
+// and openProject does Object.assign(cockpit.project, answer). It resolves
+// undefined here, which Object.assign ignores, so a test about the door alone
+// does not also rewrite the store. The type still says what the binding really
+// returns: as a plain noop it was typed `undefined`, and a test overriding it
+// with a real status was a type error describing something true.
+export const OpenProjectPath = vi.fn(async (..._args: any[]): Promise<main.ProjectStatus | undefined> => undefined)
 export const PickAttachments = arr()
 export const PickAttachmentImage = str()
 export const ProjectTree = arr()

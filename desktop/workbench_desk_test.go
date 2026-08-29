@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/Mikedev115/Aetox/internal/safety"
@@ -25,16 +26,121 @@ type emitted struct {
 	Data []any
 }
 
-// captureEvents replaces the Wails emitter with a recorder. The real one calls
-// log.Fatalf when ctx is not Wails-bound, which is never in a unit test — see
-// the `emit` field's comment in app.go.
-func captureEvents(a *App) *[]emitted {
-	events := &[]emitted{}
+// recorder collects what the App emitted. It holds a lock because the App has
+// more than one goroutine that emits: applyConfig registers MCP servers in the
+// background and fires "skills:updated" when that finishes (app.go), so every
+// test that boots through bootDeskApp has a second writer it never declared.
+// The plain slice this replaced passed on every ordinary run and failed under
+// -race in TestNotifyFilesChangedAnnouncesThePlacedPath, which is the worst
+// shape for a test helper: correct-looking, and wrong only when it matters.
+type recorder struct {
+	mu     sync.Mutex
+	events []emitted
+}
+
+func (r *recorder) add(e emitted) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, e)
+}
+
+// all hands back a copy. A caller ranging over the recorder's own slice would
+// be reading it while a background emit appends — the lock here would then be
+// protecting the write and nothing else.
+func (r *recorder) all() []emitted {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]emitted(nil), r.events...)
+}
+
+func (r *recorder) len() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.events)
+}
+
+// reset drops what has been recorded so far without swapping the emitter out.
+// That distinction is the whole point of it: replacing `a.emit` on an App that
+// has already booted is a write to a field a background goroutine is reading,
+// and the events a boot emits are not what the test that calls captureEvents is
+// asking about.
+func (r *recorder) reset() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = nil
+}
+
+// names is the same recording read as event names only — what the tests that
+// assert on which events fired, rather than on their payloads, actually want.
+func (r *recorder) names() []string {
+	all := r.all()
+	out := make([]string, 0, len(all))
+	for _, e := range all {
+		out = append(out, e.Name)
+	}
+	return out
+}
+
+// bootRecorders holds the recorder bootDeskApp wired in while it was still
+// building the App, so a test can ask for it afterwards without writing to
+// `a.emit` and `a.ctx` a second time. Those two fields are read by the MCP
+// registration goroutine applyConfig starts (app.go), which is already running
+// by the time the test's first line has returned — and -race calls that what it
+// is. The recorder itself was made safe for that goroutine; the fields it is
+// reached through were not.
+var bootRecorders sync.Map // *App -> *recorder
+
+// captureEvents hands back the App's recorder, emptied. The real Wails emitter
+// calls log.Fatalf when ctx is not Wails-bound, which is never in a unit test —
+// see the `emit` field's comment in app.go — so an App that did not come from
+// bootDeskApp still gets one installed here, before anything of its own runs.
+func captureEvents(a *App) *recorder {
+	if v, ok := bootRecorders.Load(a); ok {
+		rec := v.(*recorder)
+		rec.reset()
+		return rec
+	}
+	rec := &recorder{}
 	a.emit = func(name string, data ...any) {
-		*events = append(*events, emitted{name, data})
+		rec.add(emitted{name, data})
 	}
 	a.ctx = context.Background()
-	return events
+	return rec
+}
+
+// Pins the recorder itself. The App emits from more than one goroutine —
+// applyConfig fires "skills:updated" when its background MCP registration
+// finishes — so the helper every test in this package reads through has to
+// survive that, and it did not: the plain slice it used passed everywhere until
+// -race caught it in one test that happened to boot a background writer.
+//
+// Reads run while the writers are still going, because the failure was on the
+// read side. Under -race this test fails on the old helper and passes on this
+// one; without -race it still catches a lost append.
+func TestRecorderTakesEmitsFromManyGoroutines(t *testing.T) {
+	a := &App{}
+	events := captureEvents(a)
+	const writers, each = 8, 25
+
+	var wg sync.WaitGroup
+	for range writers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range each {
+				a.emit("desk:test", nil)
+			}
+		}()
+	}
+	for range 50 {
+		_ = events.len()
+		_ = events.all()
+	}
+	wg.Wait()
+
+	if got := events.len(); got != writers*each {
+		t.Errorf("recorded %d events, want %d — an append was lost", got, writers*each)
+	}
 }
 
 func TestDeskOpenEmitsForAnExistingFile(t *testing.T) {
@@ -53,12 +159,12 @@ func TestDeskOpenEmitsForAnExistingFile(t *testing.T) {
 	if !out.Success {
 		t.Error("Success = false")
 	}
-	if len(*events) != 1 || (*events)[0].Name != "workbench:open-file" {
-		t.Fatalf("events = %+v, want one workbench:open-file", *events)
+	if events.len() != 1 || events.all()[0].Name != "workbench:open-file" {
+		t.Fatalf("events = %+v, want one workbench:open-file", events.all())
 	}
-	payload, ok := (*events)[0].Data[0].(map[string]string)
+	payload, ok := events.all()[0].Data[0].(map[string]string)
 	if !ok || payload["path"] != "report.pdf" || payload["name"] != "report.pdf" {
-		t.Errorf("payload = %+v", (*events)[0].Data[0])
+		t.Errorf("payload = %+v", events.all()[0].Data[0])
 	}
 }
 
@@ -85,8 +191,8 @@ func TestDeskOpenRefusesBeforeOpeningATab(t *testing.T) {
 			if _, err := (&deskOpenSkill{app: a, conv: a.cur()}).open(path); err == nil {
 				t.Error("err = nil, want a refusal")
 			}
-			if len(*events) != 0 {
-				t.Errorf("emitted %+v, want nothing", *events)
+			if events.len() != 0 {
+				t.Errorf("emitted %+v, want nothing", events.all())
 			}
 		})
 	}
@@ -211,9 +317,9 @@ func TestDeskOpenFindsWhatWriteJustPlacedInTheOutputFolder(t *testing.T) {
 	if !out.Success {
 		t.Fatalf("Success = false, content = %q", out.Content)
 	}
-	payload, ok := (*events)[0].Data[0].(map[string]string)
+	payload, ok := events.all()[0].Data[0].(map[string]string)
 	if !ok {
-		t.Fatalf("payload = %+v", (*events)[0].Data[0])
+		t.Fatalf("payload = %+v", events.all()[0].Data[0])
 	}
 	// The PLACED path travels on, because nothing downstream knows the rule:
 	// the tab, ReadFile and the file host all resolve straight off the root.
@@ -243,7 +349,7 @@ func TestDeskOpenPrefersTheLiteralPathOverTheOutputFolder(t *testing.T) {
 	if _, err := (&deskOpenSkill{app: a, conv: a.cur()}).open("notes.md"); err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	payload := (*events)[0].Data[0].(map[string]string)
+	payload := events.all()[0].Data[0].(map[string]string)
 	if payload["path"] != "notes.md" {
 		t.Errorf("path = %q, want the literal path to win", payload["path"])
 	}
@@ -287,8 +393,8 @@ func TestTheDeskIsOneToolWithThreeActionsInside(t *testing.T) {
 	if err != nil || !out.Success {
 		t.Fatalf("list: %v / %+v", err, out)
 	}
-	if len(*events) != 1 {
-		t.Errorf("events = %d, want one (the open) — list touches no window", len(*events))
+	if events.len() != 1 {
+		t.Errorf("events = %d, want one (the open) — list touches no window", events.len())
 	}
 }
 
@@ -345,16 +451,16 @@ func TestDeskCloseOnlyTakesBackWhatTheAgentPutThere(t *testing.T) {
 	if _, err := tool.close("gone.md"); err == nil {
 		t.Error("closed a file that is not on the desk")
 	}
-	if len(*events) != 0 {
-		t.Fatalf("events = %+v, want none — both calls were refused", *events)
+	if events.len() != 0 {
+		t.Fatalf("events = %+v, want none — both calls were refused", events.all())
 	}
 
 	out, err := tool.close("mine.md")
 	if err != nil || !out.Success {
 		t.Fatalf("close: %v / %+v", err, out)
 	}
-	if len(*events) != 1 || (*events)[0].Name != "workbench:close-file" {
-		t.Fatalf("events = %+v, want one workbench:close-file", *events)
+	if events.len() != 1 || events.all()[0].Name != "workbench:close-file" {
+		t.Fatalf("events = %+v, want one workbench:close-file", events.all())
 	}
 }
 

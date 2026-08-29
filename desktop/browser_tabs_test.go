@@ -182,7 +182,7 @@ func TestClosingATabTellsTheWindow(t *testing.T) {
 	app.closeTab("web-agent-1", closedByApp)
 
 	closed := []string{}
-	for _, ev := range *events {
+	for _, ev := range events.all() {
 		if ev.Name != "workbench:close-browser" {
 			continue
 		}
@@ -209,7 +209,7 @@ func TestClosingATabTwiceOnlyAnnouncesItOnce(t *testing.T) {
 	app.closeTab("web-agent-1", closedByApp)
 
 	n := 0
-	for _, ev := range *events {
+	for _, ev := range events.all() {
 		if ev.Name == "workbench:close-browser" {
 			n++
 		}

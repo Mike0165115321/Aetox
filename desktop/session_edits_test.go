@@ -239,7 +239,7 @@ func TestNotifyFilesChangedNamesWhatAWriteTouched(t *testing.T) {
 
 	a.notifyFilesChanged(a.cur(), turn.ToolRun{Name: "write", Args: `{"path":"post.md","content":"x"}`, OK: true})
 
-	if got := changedPaths(t, *events); len(got) != 1 || got[0] != "post.md" {
+	if got := changedPaths(t, events.all()); len(got) != 1 || got[0] != "post.md" {
 		t.Fatalf("want the written path announced, got %+v", got)
 	}
 }
@@ -257,7 +257,7 @@ func TestNotifyFilesChangedCoversEveryPathInAPatch(t *testing.T) {
 		{"path":"one.go","find":"a","replace":"b"},
 		{"path":"two.go","find":"c","replace":"d"}]}`})
 
-	if got := changedPaths(t, *events); len(got) != 2 {
+	if got := changedPaths(t, events.all()); len(got) != 2 {
 		t.Fatalf("want both files announced, got %+v", got)
 	}
 }
@@ -273,7 +273,7 @@ func TestNotifyFilesChangedStaysQuietWhenNothingChanged(t *testing.T) {
 	a.notifyFilesChanged(a.cur(), turn.ToolRun{Name: "read", Args: fmt.Sprintf(`{"path":%q}`, notes), OK: true})
 	a.notifyFilesChanged(a.cur(), turn.ToolRun{Name: "write", Args: `{"path":"refused.md","content":"x"}`, OK: false})
 
-	if got := changedPaths(t, *events); len(got) != 0 {
+	if got := changedPaths(t, events.all()); len(got) != 0 {
 		t.Fatalf("want silence, got %+v", got)
 	}
 }
@@ -289,7 +289,7 @@ func TestNotifyFilesChangedAnnouncesThePlacedPath(t *testing.T) {
 
 	a.notifyFilesChanged(a.cur(), turn.ToolRun{Name: "write", Args: `{"path":"post.md","content":"x"}`, OK: true})
 
-	got := changedPaths(t, *events)
+	got := changedPaths(t, events.all())
 	if want := "output/" + id + "/post.md"; len(got) != 1 || got[0] != want {
 		t.Fatalf("got %+v, want [%s]", got, want)
 	}

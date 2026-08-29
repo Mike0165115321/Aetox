@@ -43,10 +43,6 @@ import (
 	"github.com/Mikedev115/Aetox/internal/model"
 )
 
-// prReadLimit bounds one API response. A pull request's file list on a large
-// change is the biggest thing here and is still far under this.
-const prReadLimit = 4 << 20
-
 // maxPRList and maxPRFiles keep one answer readable. A repository with sixty
 // open pull requests does not need all sixty in a tool result, and the count
 // says how many were left.
