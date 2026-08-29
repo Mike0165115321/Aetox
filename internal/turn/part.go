@@ -11,12 +11,16 @@ package turn
 // interjection is not. Fifteen distinct places had to answer that question, and
 // none of them would exist if the turn were simply kept whole.
 //
-// TurnPart is the whole. Reply survives beside it as the concatenation of the
-// text parts — every existing caller reads that and keeps working — but the
-// parts are what the UI draws and what the store remembers, so narration lands
-// where it was said instead of in a separate panel, and a streamed fragment
-// belongs to a specific part rather than to a bubble that might later have to
-// take it back.
+// TurnPart is the whole. Reply survives beside it as the model's LAST sentence
+// — not the concatenation of the text parts, which is what this comment used to
+// claim and what TextOf below would have given it. Every caller that predates
+// parts still wants one closing answer (context, a sub-agent's return value, a
+// session title), and handing those the narration too would put four rounds of
+// "ขอไล่ดูก่อนครับ" into the next prompt.
+//
+// So the parts are the record and Reply is the conclusion. The UI draws the
+// parts, the store remembers them, and a streamed fragment belongs to a
+// specific part rather than to a bubble that might later have to take it back.
 
 // PartKind names what one piece of a turn is.
 type PartKind string
@@ -180,9 +184,14 @@ func (p *partList) all() []TurnPart {
 	return append([]TurnPart(nil), p.parts...)
 }
 
-// TextOf joins a part sequence back into the single string every caller that
-// predates parts still expects — context, persistence, a sub-agent's return
-// value. It is the definition of Reply, not an approximation of it.
+// TextOf joins a part sequence back into one string: every sentence the model
+// wrote, narration included.
+//
+// Deliberately more than Reply, which is the last sentence alone. Nothing in
+// the app asks for this today — it is what a reader wants when it wants the
+// turn as prose rather than as its conclusion (an export, a diff of two
+// answers), and part_test pins the difference so the two are not quietly
+// swapped for each other.
 func TextOf(parts []TurnPart) string {
 	var out []string
 	for _, part := range parts {

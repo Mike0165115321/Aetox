@@ -736,6 +736,26 @@ func toolCallSubject(args string) string {
 // against "click" should not be defeated by "Click". Empty when the arguments
 // will not parse or carry no action, which is the honest answer for an
 // unpacked tool and for a call whose JSON arrived broken.
+// unpackedName is the name a RECORD of this call should carry: the per-action
+// permission name for a packed tool, the tool's own for everything else.
+//
+// The same answer skill.Unpack gives the gates (executor.go's approval and
+// deadline paths), from the raw argument string a record has.
+//
+// It exists because tool_runs was keyed on what the MODEL called, and packing
+// made that one word stand for several acts: every read, write, edit and delete
+// through `change` would have been filed as "change", and the log this project
+// makes its decisions from would have stopped being able to tell them apart.
+// The ToolEvent beside it already carries Act for the live timeline; this is
+// the same fact for the record that outlives the session.
+func unpackedName(name, args string) string {
+	parsed, err := model.ParseToolArguments(args)
+	if err != nil {
+		return name
+	}
+	return skill.Unpack(name, parsed)
+}
+
 func packedActionOf(args string) string {
 	parsed, err := model.ParseToolArguments(args)
 	if err != nil {
@@ -821,10 +841,12 @@ func (e *Executor) execute(
 	debuglog.Info("parsed.IsSlash", fmt.Sprintf("%v", parsed.IsSlash))
 	debuglog.Info("parsed.IsMeta", fmt.Sprintf("%v", parsed.IsMeta))
 
-	// Explicit command (grammar-recognized skill token, e.g. "read foo.txt",
-	// "/time") → direct dispatch. Everything else is the model's call — there
-	// is deliberately no keyword/regex guessing between the user and the model
-	// (ARCHITECTURE.md §17).
+	// Explicit command (a slashed skill token, e.g. "/read foo.txt", "/time")
+	// → direct dispatch. Everything else is the model's call — there is
+	// deliberately no keyword/regex guessing between the user and the model
+	// (ARCHITECTURE.md §17). The slash is what makes that true rather than
+	// merely stated: until §201 a bare first word matching a skill name came
+	// down this path too, which took whole sentences away from the model.
 	if parsed.Kind == command.KindSkill {
 		debuglog.Msg("path: executeSkillTurn (explicit skill command)")
 		e.reportStatus("กำลังรันเครื่องมือ...")
@@ -1138,8 +1160,11 @@ func (e *Executor) executeAgentToolLoop(
 		}
 		e.reportToolResult(ev)
 		e.reportToolRun(ToolRun{
-			Ref:  call.ID,
-			Name: call.Function.Name,
+			Ref: call.ID,
+			// The act, not the packed name it was called by: a record read back
+			// months later has to be able to say whether it was a write or a
+			// delete. See unpackedName.
+			Name: unpackedName(call.Function.Name, call.Function.Arguments),
 			Args: call.Function.Arguments,
 			// Classified from the error value, which only exists here — by the
 			// time ev.Error is a string the answer is unrecoverable.

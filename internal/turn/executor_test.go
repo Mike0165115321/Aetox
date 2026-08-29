@@ -176,11 +176,13 @@ func TestExecute_PermissionDenyBlocksExplicitSkillCommandWithoutPrompting(t *tes
 		}},
 	})
 
-	intent := command.Parse("git status", command.ParseTokens, commandSet)
+	// Slashed, because that is now the only way a user runs a skill outright
+	// (§201) — and an explicit command is exactly what this test is about.
+	intent := command.Parse("/git status", command.ParseTokens, commandSet)
 	if intent.Kind != command.KindSkill {
 		t.Fatalf("fixture invalid: expected KindSkill intent, got %v", intent.Kind)
 	}
-	result, err := executor.Execute(context.Background(), "git status", intent, nil, nil, nil)
+	result, err := executor.Execute(context.Background(), "/git status", intent, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
