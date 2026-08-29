@@ -18,7 +18,9 @@ func newDispatcherWith(t *testing.T, skills ...Skill) *Dispatcher {
 
 func TestDispatcherExecuteRoutesToSkill(t *testing.T) {
 	d := newDispatcherWith(t, &echoSkill{})
-	out, handled, err := d.Execute(context.Background(), "echo hello")
+	// Slashed, because a bare first word is a sentence now (§201) and this
+	// door is fed the user's raw line.
+	out, handled, err := d.Execute(context.Background(), "/echo hello")
 	if err != nil {
 		t.Fatalf("Execute: unexpected error: %v", err)
 	}
@@ -32,7 +34,7 @@ func TestDispatcherExecuteRoutesToSkill(t *testing.T) {
 
 func TestDispatcherExecuteUnknownCommandNotHandled(t *testing.T) {
 	d := newDispatcherWith(t, &echoSkill{})
-	_, handled, err := d.Execute(context.Background(), "notregistered foo")
+	_, handled, err := d.Execute(context.Background(), "/notregistered foo")
 	if err != nil {
 		t.Fatalf("Execute: unexpected error: %v", err)
 	}

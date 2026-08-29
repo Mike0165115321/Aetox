@@ -165,15 +165,32 @@ func Parse(input string, split SplitFunc, knownCommands map[string]struct{}) Int
 		}
 	}
 
-	// 3. Known skill
-	if _, ok := knownCommands[commandName]; ok {
+	// 3. Known skill, and ONLY with the slash.
+	//
+	// This used to match a bare first word too: type "read foo.txt" and the
+	// skill ran. It read as a convenience and it is the one rule in this file
+	// that could take a sentence away from the model, because the test is a
+	// keyword — exactly what ARCHITECTURE.md §17 says does not sit between the
+	// user and the model.
+	//
+	// It came due on 2026-08-28 (§201). The owner typed "Aetox มันรองรับครับ
+	// แต่คุณคือ เอเจนใน Aetox..." — a question ABOUT Aetox, whose first word
+	// happens to be the name of a skill — and not one character of it reached
+	// the model: the aetox skill ran and its 37,000-character document came
+	// back as the answer. Nothing in the sentence was a command, and no reading
+	// of the words could have told the difference. Only a slash can.
+	//
+	// The slash is not a loss of a door, it is the door: the composer's palette
+	// has always inserted "/name ", and a model that can call every one of
+	// these skills itself is standing right behind the ones typed without it.
+	if _, ok := knownCommands[commandName]; ok && isSlash {
 		return Intent{
 			Kind:      KindSkill,
 			Raw:       raw,
 			Command:   commandName,
 			Args:      args,
 			Commanded: true,
-			IsSlash:   isSlash,
+			IsSlash:   true,
 		}
 	}
 

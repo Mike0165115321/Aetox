@@ -9,12 +9,12 @@
 | Seam | What it does |
 |---|---|
 | `Kind` (`KindConversation` / `KindSkill`) + `Intent` ([grammar.go](grammar.go)) | The classification result carried through the whole turn pipeline (`turn.Executor` branches on it — phases 1–4). `Intent` holds `Raw`, `Command`, `Args`, `IsSlash`, `IsMeta`. |
-| `Parse(input, split, knownCommands)` | The classifier: tokenizes (via `SplitFunc`, normally `ParseTokens`), matches against the known-command set, handles `/slash` and meta/colon commands. |
+| `Parse(input, split, knownCommands)` | The classifier: tokenizes (via `SplitFunc`, normally `ParseTokens`), matches against the known-command set, handles `/slash` and meta/colon commands. **A skill only matches with the slash** (§201) — a bare first word that happens to name a skill is a word in a sentence, and the sentence goes to the model. |
 | `BuildCommandSet(names)` | Skill names → the `knownCommands` set. Built from the dispatcher's registered skills (`app.buildCommandSetFromDispatcher`) — so what parses as a "command" tracks what's actually registered. |
 | Slash helpers (`SlashSuggestions`, `SlashSuggestionCandidates`, `IsMetaSlashCommand`, `SlashMetaDescription/Legend`) | Power the CLI REPL's autocomplete and `/help` legend. |
 
 ## Rules of thumb
 
 - Adding a skill does **not** require edits here — the command set is built from the registry at runtime.
-- Adding a new *meta* slash command (a `/command` that isn't a skill) does — the meta lists live in this file.
+- Adding a new *meta* slash command (a `/command` that isn't a skill) does — the meta lists live in this file. A meta name beats a skill of the same name (`/shell` is the shell picker, not the shell skill), so check the meta lists before naming a skill after one.
 - This layer runs before safety/approval; it must stay dumb-and-fast (string ops only, no I/O, no model calls).

@@ -65,13 +65,26 @@ func TestParse_ConversationAndSlash(t *testing.T) {
 			},
 		},
 		{
-			name:  "skill command is skill intent",
-			input: "git status",
+			name:  "slashed skill command is skill intent",
+			input: "/git status",
 			want: Intent{
 				Kind:      KindSkill,
-				Raw:       "git status",
+				Raw:       "/git status",
 				Command:   "git",
 				Args:      []string{"status"},
+				Commanded: true,
+				IsSlash:   true,
+			},
+		},
+		{
+			// Without the slash it is a sentence, and sentences go to the
+			// model (§201).
+			name:  "bare skill name is conversation",
+			input: "git status",
+			want: Intent{
+				Kind:      KindConversation,
+				Raw:       "git status",
+				Command:   "",
 				Commanded: true,
 				IsSlash:   false,
 			},

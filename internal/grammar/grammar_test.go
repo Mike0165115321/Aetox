@@ -301,57 +301,11 @@ func TestParse_ConversationAndSlash(t *testing.T) {
 			},
 		},
 
-		// Skill name matching
+		// Skill name matching — the slash is the whole test (§201). A first
+		// word that happens to name a skill is a word in a sentence, and the
+		// sentence belongs to the model.
 		{
-			name:  "git status is skill intent",
-			input: "git status",
-			want: Intent{
-				Kind:      KindSkill,
-				Raw:       "git status",
-				Command:   "git",
-				Args:      []string{"status"},
-				Commanded: true,
-				IsSlash:   false,
-			},
-		},
-		{
-			name:  "list is skill intent",
-			input: "list",
-			want: Intent{
-				Kind:      KindSkill,
-				Raw:       "list",
-				Command:   "list",
-				Args:      []string{},
-				Commanded: true,
-				IsSlash:   false,
-			},
-		},
-		{
-			name:  "list with path is skill intent",
-			input: "list /tmp",
-			want: Intent{
-				Kind:      KindSkill,
-				Raw:       "list /tmp",
-				Command:   "list",
-				Args:      []string{"/tmp"},
-				Commanded: true,
-				IsSlash:   false,
-			},
-		},
-		{
-			name:  "shell command is skill intent",
-			input: "shell echo hello",
-			want: Intent{
-				Kind:      KindSkill,
-				Raw:       "shell echo hello",
-				Command:   "shell",
-				Args:      []string{"echo", "hello"},
-				Commanded: true,
-				IsSlash:   false,
-			},
-		},
-		{
-			name:  "skill with slash is skill intent",
+			name:  "slashed git status is skill intent",
 			input: "/git status",
 			want: Intent{
 				Kind:      KindSkill,
@@ -360,6 +314,72 @@ func TestParse_ConversationAndSlash(t *testing.T) {
 				Args:      []string{"status"},
 				Commanded: true,
 				IsSlash:   true,
+			},
+		},
+		{
+			name:  "slashed list is skill intent",
+			input: "/list",
+			want: Intent{
+				Kind:      KindSkill,
+				Raw:       "/list",
+				Command:   "list",
+				Args:      []string{},
+				Commanded: true,
+				IsSlash:   true,
+			},
+		},
+		{
+			name:  "slashed list with path is skill intent",
+			input: "/list /tmp",
+			want: Intent{
+				Kind:      KindSkill,
+				Raw:       "/list /tmp",
+				Command:   "list",
+				Args:      []string{"/tmp"},
+				Commanded: true,
+				IsSlash:   true,
+			},
+		},
+		{
+			// A name collision that only became visible once the slash was
+			// required: /shell is the settings command for picking a shell
+			// (rule 1) and it wins over the skill of the same name. So the
+			// shell SKILL now has no user-typed form at all — the model calls
+			// it, which is where every other tool already lives.
+			name:  "slashed shell is the settings command, not the skill",
+			input: "/shell echo hello",
+			want: Intent{
+				Kind:      KindConversation,
+				Raw:       "/shell echo hello",
+				Command:   "shell",
+				Commanded: true,
+				IsSlash:   true,
+				IsMeta:    true,
+			},
+		},
+		{
+			name:  "bare skill name is conversation",
+			input: "git status",
+			want: Intent{
+				Kind:      KindConversation,
+				Raw:       "git status",
+				Command:   "",
+				Commanded: true,
+				IsSlash:   false,
+			},
+		},
+		{
+			// The report that ended the old rule: a question ABOUT Aetox,
+			// whose first word is the name of a skill. Under the old rule not
+			// one character of it reached the model.
+			name:  "a sentence beginning with a skill name is conversation",
+			input: "aetox มันรองรับครับ แต่คุณคือ เอเจนใน Aetox",
+			want: Intent{
+				Kind:      KindConversation,
+				Raw:       "aetox มันรองรับครับ แต่คุณคือ เอเจนใน Aetox",
+				Command:   "",
+				Commanded: true,
+				IsSlash:   false,
 			},
 		},
 
@@ -504,13 +524,24 @@ func TestParse_EmptyCommandSet(t *testing.T) {
 		want  Intent
 	}{
 		{
-			name:  "skill name maps to skill",
-			input: "list",
+			name:  "slashed skill name maps to skill",
+			input: "/list",
 			want: Intent{
 				Kind:      KindSkill,
-				Raw:       "list",
+				Raw:       "/list",
 				Command:   "list",
 				Args:      []string{},
+				Commanded: true,
+				IsSlash:   true,
+			},
+		},
+		{
+			name:  "bare skill name is conversation",
+			input: "list",
+			want: Intent{
+				Kind:      KindConversation,
+				Raw:       "list",
+				Command:   "",
 				Commanded: true,
 				IsSlash:   false,
 			},
