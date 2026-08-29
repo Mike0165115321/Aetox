@@ -220,9 +220,11 @@ describe('tool timeline collapsing', () => {
     expect(container.querySelector('.tool-step')).toBeNull()
   })
 
-  // The latest narration stays on screen while the turn runs — that line is
-  // what makes the agent read as working out loud instead of frozen (§59).
-  it('keeps the latest narration on screen mid-turn', () => {
+  // Every sentence stays on screen while the turn runs, not only the latest.
+  // Keeping one line was the old compromise (§59) and it cost the rest: prose
+  // the reader was already reading left the screen the moment the model said
+  // its next thing, and a table or a chart written mid-turn went with it.
+  it('keeps every sentence of the turn on screen, each with its own work', () => {
     const { container } = render(Chat, {
       ...baseProps, awaitingReply: true,
       messages: [{ role: 'user', text: 'go', time: '10:54' }] as any,
@@ -232,7 +234,13 @@ describe('tool timeline collapsing', () => {
         step('browser_read', 'run'),
       ] as any,
     })
-    expect(container.querySelector('.tool-note.headline')?.textContent).toBe('scanning the loop')
+    const said = [...container.querySelectorAll('.phase-say')].map((el) => el.textContent?.trim())
+    expect(said).toEqual(['first thought', 'scanning the loop'])
+    // The running row belongs to the sentence that announced it, not to a
+    // separate list at the bottom of the bubble.
+    const phases = container.querySelectorAll('.phase')
+    expect(phases[1].querySelector('.tool-step')?.textContent).toContain('browser_read')
+    expect(phases[0].querySelector('.tool-step')).toBeNull()
   })
 
   // In the finished timeline the narration and thinking rows render in place,
@@ -270,9 +278,11 @@ describe('tool timeline collapsing', () => {
         step('grep', 'run'),
       ] as any,
     })
-    const said = container.querySelector('.said-block')
+    const said = container.querySelector('.phase-say')
     expect(said?.querySelector('h2')?.textContent).toBe('สรุป')
-    // Not as a narration row, and never inside the tool timeline.
+    // Not as a narration row, and never inside the tool timeline. Every phase
+    // draws its prose this way now, so the answer needs no special case to
+    // keep its markdown — which is what the Demoted flag was working around.
     expect(container.querySelector('.tool-note')).toBeNull()
     expect(said?.closest('.tool-step')).toBeNull()
   })
@@ -333,7 +343,11 @@ describe('tool timeline collapsing', () => {
     expect(toggles.some((b) => b.textContent?.includes('Used 0'))).toBe(false)
   })
 
-  it('keeps only the running tool on screen mid-turn', () => {
+  // Finished rows used to be swept behind "Used N tools" the instant they
+  // finished, so the turn showed one row however much work it had done. They
+  // stay now: a row's own state is drawn on the row, which is where it was
+  // always readable, and folding only starts once a phase runs long.
+  it('keeps finished rows on screen beside the running one', () => {
     const { container } = render(Chat, {
       ...baseProps, awaitingReply: true,
       messages: [{ role: 'user', text: 'go', time: '10:54' }] as any,
@@ -341,9 +355,11 @@ describe('tool timeline collapsing', () => {
     })
 
     const steps = container.querySelectorAll('.tool-step')
-    expect(steps.length).toBe(1)
-    expect(steps[0].textContent).toContain('browser_read')
-    expect(container.querySelector('.meta-row .reasoning-toggle')?.textContent).toContain('Used 2 tools')
+    expect(steps.length).toBe(3)
+    expect(steps[2].textContent).toContain('browser_read')
+    // And no summary above them saying the same thing a second time.
+    const toggles = [...container.querySelectorAll('.meta-row .reasoning-toggle')]
+    expect(toggles.some((b) => b.textContent?.includes('Used'))).toBe(false)
   })
 })
 
@@ -656,13 +672,17 @@ describe('sub-agent tool events', () => {
       expect(card?.querySelector('.bgw-steps')).toBeTruthy()
     })
 
-    // A finished delegation collapses behind its count, so both readings below
-    // are taken after opening it — which is also the only place the number is
-    // ever read a second time.
+    // Finished work is folded away wherever it sits: behind the phase header in
+    // a turn that recorded its sequence, behind the "Agents" count in one
+    // stored before parts existed. Only what is still running shows itself. So
+    // both readings below open the fold first, whichever fold it is — the
+    // card's state is the same question in both layouts.
     const openFinished = async (container: Element) => {
       const toggle = [...container.querySelectorAll('.meta-row .reasoning-toggle')]
         .find((b) => b.textContent?.includes('Agents'))
-      await fireEvent.click(toggle!)
+      if (toggle) await fireEvent.click(toggle)
+      const head = container.querySelector('button.phase-head[aria-expanded="false"]')
+      if (head) await fireEvent.click(head)
       return container.querySelector('.tool-steps .bgw-card')
     }
 

@@ -1,7 +1,7 @@
 // A reopened answer used to come back with empty toggles: tool calls were never
-// written down anywhere a message could reach. The stored sequence is what fixed
-// that — folded back into the same collapsed timeline the bubble has always
-// drawn, because that layout reads better than the sequence drawn inline.
+// written down anywhere a message could reach. The stored sequence fixed that,
+// and since 29 ส.ค. it is also the layout — the turn is drawn as the stretches
+// of work it was made of, the closing answer among them rather than above them.
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { cockpit, selectSession } from '../lib/stores/cockpit.svelte'
 import { LoadSession } from './mocks/wailsApp'
@@ -40,8 +40,11 @@ describe('reopening a session', () => {
     expect(steps[1]).toMatchObject({ kind: 'thinking', secs: 4 })
     expect(steps[2]).toMatchObject({ label: 'read note.txt', state: 'done', secs: 2 })
     expect(steps[3]).toMatchObject({ label: 'grep battery', state: 'err', error: 'ไม่พบ' })
-    // The closing answer is the bubble, not a note — it must not appear twice.
-    expect(steps.filter((s) => s.label === 'เจอแล้วครับ อยู่บรรทัดที่ 12')).toHaveLength(0)
+    // The closing answer is in the sequence too, as the last row. Holding it
+    // back is what left a reopened turn unable to say where its own answer sat
+    // in the work — the bubble drew it from `text` and the phases could not.
+    expect(steps.at(-1)).toMatchObject({ kind: 'note', label: 'เจอแล้วครับ อยู่บรรทัดที่ 12' })
+    expect(steps.filter((s) => s.label === 'เจอแล้วครับ อยู่บรรทัดที่ 12')).toHaveLength(1)
   })
 
   // An interjection demotes a finished answer to a non-last text part. Read back

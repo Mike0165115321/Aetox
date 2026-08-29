@@ -33,6 +33,7 @@
     ListSpeechModels, SetSpeechModel, SpeechStatus, RevealSpeechModel, SpeechModelDirs, OpenSpeechModelDir,
     UsageStats, ListPromptPresets, OpenPromptsFolder,
     SavePromptPreset, DeletePromptPreset, PickPresetImage, RemovePresetImage,
+    ModelPriceSource,
     ListSubagentProfiles, ReadSubagentProfile, SaveSubagentProfile, SaveAgentProfile,
     DeleteSubagentProfile, SetSubagentModel, OpenAgentsFolder, ListChairs,
     AgentSkills, AgentNeeds, OpenAgentSkillsFolder,
@@ -217,6 +218,23 @@
     priced: boolean; free: boolean; context: number
   }
   let priced = $state<Record<string, ModelListing>>({})
+  // Where the price column came from, and when. A bare "$0.14 / $0.28" beside
+  // a model name is a claim Aetox is not in a position to make: the figures are
+  // models.dev's published list, copied verbatim, and on 2026-08-28 its
+  // DeepSeek rows disagreed with DeepSeek's own page by two to four times. The
+  // stats page has carried this qualification since it shipped; the picker,
+  // which is where the number is actually read, carried none.
+  let priceSource = $state<{ name: string; fetched: string }>({ name: '', fetched: '' })
+  const priceSourceLine = $derived(
+    priceSource.name && Object.values(priced).some((p) => p.priced)
+      ? t('settings.priceSource', {
+          source: priceSource.name,
+          date: new Date(priceSource.fetched).toLocaleDateString(undefined, {
+            year: 'numeric', month: 'short', day: 'numeric',
+          }),
+        })
+      : '',
+  )
 
   // Cheapest first once prices are known, because a price nobody can sort by is
   // a number to look at rather than one to decide with. Ties and unpriced rows
@@ -917,6 +935,9 @@
             priced = next
           })
           .catch(() => { priced = {} })
+        ModelPriceSource()
+          .then((src) => { priceSource = { name: src?.name ?? '', fetched: src?.fetched ?? '' } })
+          .catch(() => { priceSource = { name: '', fetched: '' } })
       }
       // Discovery just proved this endpoint answers. If the engine is still on
       // the fallback from a switch made while it was down, this is the moment
@@ -4615,6 +4636,9 @@
                     </div>
                   {/if}
                 {/each}
+              {/if}
+              {#if priceSourceLine}
+                <div class="mlist-source">{priceSourceLine}</div>
               {/if}
               <div class="mset-keyrow">
                 <input
