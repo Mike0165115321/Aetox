@@ -2,11 +2,10 @@ package subagent
 
 import "testing"
 
-// Naming a worker in your own sentence is what removes the paraphrase step, so
-// what counts as naming one has to be exact in both directions: it must catch
-// the way people actually write, and it must never send a message somewhere
-// nobody asked for.
-func TestMentionAddressesAWorkerByName(t *testing.T) {
+// Addressing a worker takes two keys: the name picked off the composer's
+// roster, and the `@name` token still standing in the message. What each one is
+// for is easiest to see in what it refuses on its own.
+func TestMentionNeedsBothTheChoiceAndTheToken(t *testing.T) {
 	isolate(t)
 
 	addressed := []string{
@@ -18,24 +17,51 @@ func TestMentionAddressesAWorkerByName(t *testing.T) {
 		"ping @doc, please",             // punctuation right after
 	}
 	for _, text := range addressed {
-		agent, ok := Mention(text)
+		agent, ok := Mention(text, "doc")
 		if !ok || agent != "doc" {
-			t.Errorf("Mention(%q) = %q,%v — want doc", text, agent, ok)
+			t.Errorf("Mention(%q, doc) = %q,%v — want doc", text, agent, ok)
 		}
 	}
 
-	notAddressed := []string{
-		"ปรึกษาเอเจนเอกสารหน่อย", // naming the job is not naming the worker
-		"doc ช่วยดูให้หน่อย",     // no @, so it is just a word
-		"@docker compose up",      // a longer word that starts the same
-		"@document this function", // ditto
-		"mail me at mike@doc",     // an address ends a token, it does not start one
-		"",                        //
-		"@nobody ช่วยหน่อย",       // nobody by that name is on the roster
+	notAddressed := []struct{ text, picked string }{
+		// Nothing was picked. This is every message anybody types or pastes, and
+		// it is the whole of the fix: the 8,486-character brief that went to
+		// `reviewer` on 30 ส.ค. is the first line here.
+		{"เรียกใช้ได้ด้วย `@reviewer`\n\nแนวคิดง่าย ๆ คือ", ""},
+		{"@doc ปรึกษาหน่อย", ""},
+		{"เขียนเอกสารที่มีคำว่า @doc อยู่ในนั้น", ""},
+		// Picked, then taken back out. Deleting the token is changing your mind.
+		{"เปลี่ยนใจแล้ว ถามเฉย ๆ", "doc"},
+		// The old near-misses, which still have to hold with a choice behind them:
+		// a longer word is a different word.
+		{"@docker compose up", "doc"},
+		{"@document this function", "doc"},
+		{"mail me at mike@doc", "doc"},
+		// Nobody by that name is on the roster, whatever the window sent.
+		{"@nobody ช่วยหน่อย", "nobody"},
+		{"", ""},
 	}
-	for _, text := range notAddressed {
-		if agent, ok := Mention(text); ok {
-			t.Errorf("Mention(%q) = %q — nobody was addressed", text, agent)
+	for _, c := range notAddressed {
+		if agent, ok := Mention(c.text, c.picked); ok {
+			t.Errorf("Mention(%q, %q) = %q — nobody was addressed", c.text, c.picked, agent)
+		}
+	}
+}
+
+// ซับเอเจนเรียกไม่ได้ (owner, 30 ส.ค.). A helper is the assistant's own hands and
+// takes work from an agent, never over the counter — so no amount of picking and
+// typing reaches one. Checked against the bundled set rather than one name,
+// because the rule is about the kind and a new helper must inherit it.
+func TestMentionRefusesEverySubAgent(t *testing.T) {
+	isolate(t)
+
+	helpers := Delegates()
+	if len(helpers) == 0 {
+		t.Fatal("no sub-agents bundled; this test would pass by having nothing to refuse")
+	}
+	for _, p := range helpers {
+		if agent, ok := Mention("@"+p.Name+" ช่วยดูให้หน่อย", p.Name); ok {
+			t.Errorf("Mention addressed the sub-agent %q as %q — helpers are not somebody you talk to", p.Name, agent)
 		}
 	}
 }
@@ -46,7 +72,7 @@ func TestMentionFollowsTheRosterRatherThanAList(t *testing.T) {
 	isolate(t)
 	writeProfile(t, AgentsDir, "ทีมขาย", "---\ndescription: ดูแลลูกค้า\n---\nคุณดูแลลูกค้า")
 
-	if agent, ok := Mention("@ทีมขาย ช่วยร่างอีเมลให้หน่อย"); !ok || agent != "ทีมขาย" {
+	if agent, ok := Mention("@ทีมขาย ช่วยร่างอีเมลให้หน่อย", "ทีมขาย"); !ok || agent != "ทีมขาย" {
 		t.Errorf("Mention of a user's own agent = %q,%v — want ทีมขาย", agent, ok)
 	}
 }

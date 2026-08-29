@@ -173,7 +173,7 @@ describe('two chats with turns in flight', () => {
     // Reopening A is the moment it goes out, as A's own turn.
     vi.mocked(SendMessage).mockResolvedValueOnce({ text: 'รับทราบ', parts: [] } as any)
     await selectSession({ id: A } as Session)
-    await vi.waitFor(() => expect(vi.mocked(SendMessage)).toHaveBeenLastCalledWith('ตามด้วยอันนี้'))
+    await vi.waitFor(() => expect(vi.mocked(SendMessage)).toHaveBeenLastCalledWith('ตามด้วยอันนี้', ''))
     expect(queuedMessages).toEqual([])
   })
 

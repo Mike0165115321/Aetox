@@ -67,7 +67,7 @@ func (a *App) RetryFailedTurn(text string) (TurnReply, error) {
 	}
 	a.dropFailedTail()
 	a.restoreContext(a.cur(), a.cur().transcript)
-	return a.SendMessage(text)
+	return a.SendMessage(text, "")
 }
 
 // dropFailedTail removes the turn that failed at the end of this session — the
@@ -140,7 +140,7 @@ func (a *App) RegenerateReply(revertFiles bool) (RegenerateResult, error) {
 	a.restoreContext(conv, conv.transcript[:len(conv.transcript)-2])
 	mark := a.maxToolRunID(conv)
 	started := time.Now()
-	_, agentMsg, err := a.runTurn(conv, question)
+	_, agentMsg, err := a.runTurn(conv, question, "")
 	if err != nil {
 		// The transcript was never touched, but the model's memory now holds a
 		// conversation one turn shorter than the one on screen. Put it back, or
@@ -199,7 +199,7 @@ func (a *App) ResendEdited(text string, revertFiles bool) (TurnReply, error) {
 	a.cur().transcript = a.cur().transcript[:len(a.cur().transcript)-2]
 	a.dropLastTurnRows()
 	a.restoreContext(a.cur(), a.cur().transcript)
-	return a.SendMessage(text)
+	return a.SendMessage(text, "")
 }
 
 // SwitchVariant makes one of the stored answers the live one.

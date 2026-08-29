@@ -58,7 +58,7 @@
     toolSteps: ToolStep[]
     streamingText: string
     reasoningText: string
-    onSend: (text: string) => void
+    onSend: (text: string, to?: string) => void
     onSwitchProvider: (provider: string) => Promise<void>
     onSwitchThinkLevel: (level: string) => Promise<void>
     onSwitchModel: (modelName: string) => Promise<void>
@@ -1417,8 +1417,11 @@
       return
     }
     if (!draft.trim() && !cockpit.pendingImages.length && !cockpit.pendingContexts.length && !cockpit.pendingFiles.length) return
-    onSend(draft)
+    onSend(draft, addressed)
     draft = ''
+    // The choice belongs to the message that carried it. The next one starts
+    // with nobody addressed, the same as the first.
+    mentionPicked = ''
   }
   function onKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1434,7 +1437,11 @@
     }
     // "@" opens the roster, wherever in the sentence it is typed. Only at a word
     // boundary, so an email address does not summon a menu.
-    if (e.key === '@' && (draft === '' || /\s$/.test(draft))) {
+    // Not while this chat is mid-turn: what is typed then goes INTO the running
+    // turn (Interject), which has no door to a worker. Offering the menu there
+    // would take a choice and drop it, which is the failure this whole change
+    // exists to stop.
+    if (e.key === '@' && !awaitingReply && (draft === '' || /\s$/.test(draft))) {
       mentionOpen = true
       if (officeChairs.length === 0) ListChairs().then((c) => (officeChairs = c)).catch(() => {})
     }
@@ -1469,15 +1476,26 @@
     onSend(t('chat.bgAnswerPrompt', { id, answer }))
   }
 
-  // Addressing a worker from the composer: `@name` sends the message to that
-  // worker as written, instead of to the assistant (subagent.Mention).
+  // Addressing a worker from the composer: `@name` sends this one message to
+  // that worker as written, instead of to the assistant (subagent.Mention).
   //
   // A menu rather than a thing you have to know: the names are filenames, and
   // the roster grows whenever a file is dropped in, so nobody can be expected to
   // have them memorised. It is not the picker beside it — that one moves you
   // into a worker's room for the rest of the session; this is one sentence,
   // said in the room you are already standing in.
+  //
+  // The menu lists agents only (ListChairs). Sub-agents are the assistant's own
+  // hands and take their work from an agent, so they are not on it and the
+  // engine refuses them besides (owner, 30 ส.ค.: ซับเอเจนเรียกไม่ได้).
   let mentionOpen = $state(false)
+  // Who was actually CHOSEN off the menu, which is the only thing that sends a
+  // message anywhere. Typing the characters `@doc` does not set this and never
+  // will: on 30 ส.ค. a pasted draft that merely quoted `@reviewer` in a code
+  // span took an 8,486-character brief out of this chat and gave it to a worker
+  // with four read-only tools, and the user watched 78 seconds of nothing. The
+  // engine now needs the choice as well as the token, and this is the choice.
+  let mentionPicked = $state('')
   // What has been typed since the "@" being completed, so the list narrows as
   // you go. Read off the draft rather than tracked separately: backspacing past
   // the "@" has to close the menu, and a counter would have to be told.
@@ -1491,10 +1509,55 @@
   const mentionMatches = $derived(
     mentionQuery === null ? [] : officeChairs.filter((c) => c.name.toLowerCase().includes(mentionQuery)),
   )
+  // The address as it stands right now: chosen, and the token still in the
+  // message. Derived rather than remembered so that deleting the `@doc` you
+  // just inserted takes the address with it — changing your mind is the same
+  // act as backspacing, and it should not need a second one.
+  const addressed = $derived(mentionPicked && stillNamed(draft, mentionPicked) ? mentionPicked : '')
+  // Mirrors subagent.mentions: the token has to stand on its own, so the `@doc`
+  // inside `@document` is a longer word and not an address. Kept in step with
+  // the Go side by shape rather than by a shared rule, because the two run on
+  // opposite sides of the wire — and the engine checks it again anyway, which
+  // is what makes this copy a courtesy to the eye rather than the gate.
+  // -1 when the name is not addressed in this text. An index rather than a
+  // boolean because taking the address back has to remove the exact token the
+  // menu put in, and a name can be a filename with characters a regexp reads as
+  // syntax — scanning for it is the version with nothing to escape.
+  function mentionAt(text: string, name: string): number {
+    const lower = text.toLowerCase()
+    const at = '@' + name.toLowerCase()
+    const wordish = /[a-z0-9_-]/
+    for (let i = 0; ; ) {
+      const found = lower.indexOf(at, i)
+      if (found < 0) return -1
+      const end = found + at.length
+      const before = found === 0 || !wordish.test(lower[found - 1])
+      const after = end === lower.length || !wordish.test(lower[end])
+      if (before && after) return found
+      i = end
+    }
+  }
+  function stillNamed(text: string, name: string): boolean {
+    return mentionAt(text, name) >= 0
+  }
   function insertMention(name: string) {
     const at = draft.lastIndexOf('@')
     draft = draft.slice(0, at) + '@' + name + ' '
+    mentionPicked = name
     mentionOpen = false
+    inputEl?.focus()
+  }
+  // Taking it back from the chip. The token goes too — leaving it behind would
+  // put the user in front of a message that still reads as addressed to
+  // somebody and is not.
+  function clearMention() {
+    const at = mentionPicked ? mentionAt(draft, mentionPicked) : -1
+    if (at >= 0) {
+      let end = at + mentionPicked.length + 1
+      if (draft[end] === ' ') end++ // the space the menu added goes with it
+      draft = draft.slice(0, at) + draft.slice(end)
+    }
+    mentionPicked = ''
     inputEl?.focus()
   }
 
@@ -3273,6 +3336,16 @@
               {#if preview}<pre class="attach-body">{preview}</pre>{/if}
             </div>
           {/each}
+        </div>
+      {/if}
+      <!-- Who this message is going to, said out loud. A turn that leaves this
+           room used to look exactly like one that did not, which is how 78
+           seconds of a worker reading files read as the app going quiet. -->
+      {#if addressed}
+        <div class="addressed" transition:unroll>
+          <span class="ic"><Icon name="bot" size={13} /></span>
+          <span class="who">{t('chat.addressedTo', { name: addressed })}</span>
+          <button class="attach-remove" aria-label={t('chat.addressedCancel')} onclick={clearMention}><Icon name="x" size={12} /></button>
         </div>
       {/if}
       <!-- The roster, while an "@" is being completed. Above the box because the

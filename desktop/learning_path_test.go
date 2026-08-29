@@ -59,7 +59,7 @@ func bootLearningApp(t *testing.T) *App {
 func TestALiveTurnRecordsTheWorkItDid(t *testing.T) {
 	a := bootLearningApp(t)
 
-	reply, err := a.SendMessage("memory: ทดสอบชั้นการเรียนรู้")
+	reply, err := a.SendMessage("memory: ทดสอบชั้นการเรียนรู้", "")
 	if err != nil {
 		t.Fatalf("turn failed: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestALiveTurnRecordsTheWorkItDid(t *testing.T) {
 func TestALiveTurnQueuesWhatItWantedToRememberAndWritesNothing(t *testing.T) {
 	a := bootLearningApp(t)
 
-	reply, err := a.SendMessage("memory: ทดสอบชั้นการเรียนรู้")
+	reply, err := a.SendMessage("memory: ทดสอบชั้นการเรียนรู้", "")
 	if err != nil {
 		t.Fatalf("turn failed: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestALiveTurnQueuesWhatItWantedToRememberAndWritesNothing(t *testing.T) {
 func TestRatingALiveTurnLandsOnItsJob(t *testing.T) {
 	a := bootLearningApp(t)
 
-	reply, err := a.SendMessage("memory: ทดสอบการให้คะแนน")
+	reply, err := a.SendMessage("memory: ทดสอบการให้คะแนน", "")
 	if err != nil {
 		t.Fatalf("turn failed: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestALiveTurnRecordsNothingWhenLearningIsOff(t *testing.T) {
 		t.Fatalf("save preference: %v", err)
 	}
 
-	reply, err := a.SendMessage("memory: ทดสอบตอนปิดสวิตช์")
+	reply, err := a.SendMessage("memory: ทดสอบตอนปิดสวิตช์", "")
 	if err != nil {
 		t.Fatalf("turn failed: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestADelegatesProposalIsFiledUnderTheDelegate(t *testing.T) {
 
 	// "general" picks the profile: it is the delegate with no tool allowlist,
 	// so it is handed a `memory` bound to its own name.
-	if _, err := a.SendMessage("subagent general memory: ให้ลูกจำอะไรสักอย่าง"); err != nil {
+	if _, err := a.SendMessage("subagent general memory: ให้ลูกจำอะไรสักอย่าง", ""); err != nil {
 		t.Fatalf("turn failed: %v", err)
 	}
 
@@ -220,7 +220,7 @@ func TestAReadOnlyDelegateIsNeverHandedMemory(t *testing.T) {
 
 	// No "general" in the brief, so `task` spawns explore — its allowlist is
 	// grep/glob/list/read.
-	if _, err := a.SendMessage("subagent memory: ลองให้ explore จำ"); err != nil {
+	if _, err := a.SendMessage("subagent memory: ลองให้ explore จำ", ""); err != nil {
 		t.Fatalf("turn failed: %v", err)
 	}
 	if n := a.PendingLearnedCount(); n != 0 {

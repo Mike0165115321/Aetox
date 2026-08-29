@@ -902,8 +902,8 @@ export function SearchSessionsForDoor(arg1, arg2) {
   return window['go']['main']['App']['SearchSessionsForDoor'](arg1, arg2);
 }
 
-export function SendMessage(arg1) {
-  return window['go']['main']['App']['SendMessage'](arg1);
+export function SendMessage(arg1, arg2) {
+  return window['go']['main']['App']['SendMessage'](arg1, arg2);
 }
 
 export function SessionAgent(arg1) {

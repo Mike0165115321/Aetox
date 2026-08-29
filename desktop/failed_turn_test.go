@@ -135,7 +135,7 @@ func TestAFailedTurnIsLeftOutOfTheModelsMemory(t *testing.T) {
 // That is a genuine failure taking the genuine path, which is the point.
 func TestSendMessageRecordsItsOwnFailureOnBothSides(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	if _, err := a.SendMessage("เทสๆ"); err == nil {
+	if _, err := a.SendMessage("เทสๆ", ""); err == nil {
 		t.Fatal("SendMessage succeeded with no model configured; this test needs the failing path")
 	}
 

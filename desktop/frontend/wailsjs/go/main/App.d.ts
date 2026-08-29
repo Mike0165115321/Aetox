@@ -465,7 +465,7 @@ export function SearchSessions(arg1:string):Promise<Array<main.SessionMeta>>;
 
 export function SearchSessionsForDoor(arg1:string,arg2:main.DeskFilter):Promise<Array<main.SessionMeta>>;
 
-export function SendMessage(arg1:string):Promise<main.TurnReply>;
+export function SendMessage(arg1:string,arg2:string):Promise<main.TurnReply>;
 
 export function SessionAgent(arg1:string):Promise<string>;
 

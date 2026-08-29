@@ -330,7 +330,7 @@ func TestAChairIsCappedByTheOfficeCeiling(t *testing.T) {
 func TestTheAssistantDeskHandsAJobToTheOfficeAndGetsAFileBack(t *testing.T) {
 	a := bootDeskApp(t, "assistant")
 
-	reply, err := a.SendMessage("subagent office: ทำเอกสารสรุปให้หน่อย")
+	reply, err := a.SendMessage("subagent office: ทำเอกสารสรุปให้หน่อย", "")
 	if err != nil {
 		t.Fatalf("turn failed: %v", err)
 	}

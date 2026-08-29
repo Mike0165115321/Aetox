@@ -64,7 +64,7 @@ func chunkRecorder(t *testing.T, modelName string) (*App, *[]chatChunk) {
 func TestAConversationTurnDeliversTheWholeAnswerExactlyOnce(t *testing.T) {
 	a, seen := chunkRecorder(t, "aetox-render:test")
 
-	reply, err := a.SendMessage("เทสๆ")
+	reply, err := a.SendMessage("เทสๆ", "")
 	if err != nil {
 		t.Fatalf("turn failed: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestAConversationTurnDeliversTheWholeAnswerExactlyOnce(t *testing.T) {
 func TestAToolTurnAlsoDeliversTheWholeAnswerExactlyOnce(t *testing.T) {
 	a, seen := chunkRecorder(t, "aetox-tools:test")
 
-	reply, err := a.SendMessage("memory: ทดสอบการส่งคำตอบ")
+	reply, err := a.SendMessage("memory: ทดสอบการส่งคำตอบ", "")
 	if err != nil {
 		t.Fatalf("turn failed: %v", err)
 	}

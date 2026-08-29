@@ -1375,7 +1375,12 @@ async function storedEndingFor(sentText: string, turn: LiveTurnRef): Promise<Cha
   }
 }
 
-export async function sendUserMessage(text: string, alreadyShown = false): Promise<void> {
+// `to` is the worker the user picked off the composer's roster for this one
+// message, '' for the ordinary case. It travels as its own argument rather than
+// being read back out of the text, because a name typed into a sentence and a
+// name chosen off a menu are the same characters and different acts — and only
+// this side of the wire knows which one happened (subagent.Mention).
+export async function sendUserMessage(text: string, alreadyShown = false, to = ''): Promise<void> {
   const trimmed = text.trim()
   const images = cockpit.pendingImages
   const contexts = cockpit.pendingContexts
@@ -1453,7 +1458,7 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
   }
   const ranTurn = await runLiveTurn(async (turn) => {
     try {
-      const reply = await SendMessage(sentText)
+      const reply = await SendMessage(sentText, to)
       // Into the turn's own transcript, wherever it is being drawn: the user
       // may have walked away mid-turn, and `cockpit.chat` is then the chat
       // they walked TO — an answer following the user out of the room.

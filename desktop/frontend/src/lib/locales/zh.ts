@@ -392,6 +392,8 @@ export const zh: Partial<Record<keyof typeof th, string>> = {
   'chat.inputToAgent': '给 {name} 发消息…',
   'chat.mainAgent': '主助手',
   'chat.agentSwitchNote': '切换总是会开一个新对话，这一个会留在历史里。',
+  'chat.addressedTo': '这条消息发给 @{name}',
+  'chat.addressedCancel': '改为发给助手',
   'chat.mentionNote': '@ 只把这一条消息发给它，对话仍然留在助手这边。',
   'chat.shellTitle': '用哪个 shell 执行智能体写的命令',
   'chat.shellNote': '按项目保存。下一条命令起生效，已经在跑的那条不会被搬走。',

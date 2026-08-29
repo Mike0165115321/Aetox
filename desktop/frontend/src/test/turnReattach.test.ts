@@ -144,7 +144,7 @@ describe('working in one chat while another one runs', () => {
 
     // A real turn in the chat on screen - not an interjection into the other
     // one, which is where this used to go.
-    expect(vi.mocked(SendMessage)).toHaveBeenCalledWith('พิมพ์ในแชทที่สอง')
+    expect(vi.mocked(SendMessage)).toHaveBeenCalledWith('พิมพ์ในแชทที่สอง', '')
     expect(vi.mocked(Interject)).not.toHaveBeenCalled()
     expect(cockpit.sessionError).toBe('')
     // The first chat is still working, untouched.

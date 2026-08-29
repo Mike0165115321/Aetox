@@ -476,7 +476,7 @@
         toolSteps={cockpit.toolSteps}
         streamingText={cockpit.streamingText}
         reasoningText={cockpit.reasoningText}
-        onSend={sendUserMessage}
+        onSend={(text, to) => sendUserMessage(text, false, to)}
         onSwitchProvider={switchProvider}
         onSwitchThinkLevel={switchThinkLevel}
         onSwitchModel={switchModel}

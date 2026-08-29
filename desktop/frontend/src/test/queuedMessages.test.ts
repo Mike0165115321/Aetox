@@ -57,7 +57,7 @@ describe('messages typed during a turn', () => {
     await inFlight
 
     expect(queuedMessages).toEqual([])
-    expect(SendMessage).toHaveBeenLastCalledWith('too late')
+    expect(SendMessage).toHaveBeenLastCalledWith('too late', '')
     // Its bubble was pushed when it was typed — sending it must not duplicate it.
     expect(cockpit.chat.filter((m) => m.role === 'user' && m.text === 'too late')).toHaveLength(1)
   })
