@@ -26,7 +26,13 @@ The reason it belongs in a program and not in a session: a number read once is a
 
 So the split is not organisational, it is structural. Spend lives in one table and waste lives in the other, and that is why they are two programs rather than one page with more tabs.
 
-## The four sections and how to read them
+## The six sections and how to read them
+
+> Four when written; **CACHE BREAKS** joined 2026-08-28 as ระดับ 1 of the Aider
+> adoption plan ([docs/aider-study/EXECUTION.md](docs/aider-study/EXECUTION.md)),
+> and **TRIAL** on 2026-08-30 — the seven-day follow-up on that plan's mechanics
+> (repo_map, symbol/references, rename, the read >=50KB pass line), baselines
+> inlined so one command answers the trial.
 
 ### REPEAT WASTE
 
@@ -51,6 +57,14 @@ Fresh input tokens per call, by model. Fresh means `prompt_tokens - cached_promp
 Ranked by fresh-per-call rather than by cache percentage on purpose: a big prompt at 90% can cost more real tokens per round than a small one at 60%, and it is the fresh tokens that are charged in full.
 
 Models whose provider reports no cache accounting at all are excluded. Counting their whole prompt as fresh would rank a provider that merely does not tell us below one that does.
+
+### CACHE BREAKS
+
+The moments CACHE HEALTH's averages are made of: calls where `cached_prompt_tokens` fell at least 2,000 tokens AND 5% below the previous call in the same session. CACHE HEALTH says a model averaged 77%; this says whether that is a steady dynamic tail (fix the prompt layout) or a good cache repeatedly broken (fix whatever moves).
+
+Each break is classified as far as `token_usage` can honestly see: **model switch** (the previous row ran a different model — the break was bought knowingly), **idle gap** (same model, >5 minutes quiet — the shortest provider TTL in play; this is "expired", not "invalidated"), and **prefix changed** — everything else, meaning something in the sent prefix moved mid-conversation. WHAT moved needs a prefix hash per call, an app change deliberately deferred until this SQL-only view proves insufficient.
+
+First run (2026-08-28, 7 days): 173 breaks, 4.69M tokens dropped — `qwen3.7-plus` alone lost 2.49M to "prefix changed" across 96 breaks, which reads that model's 77% cache as breakage, not as an incompressible tail.
 
 ### OUTPUT VOLUME
 

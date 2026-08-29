@@ -12,7 +12,7 @@
 // every tool call with the sha256 of its output, which is exactly enough to
 // tell a document read once from the same document read four times.
 //
-// Four sections, in the order they are worth acting on:
+// Six sections, in the order they are worth acting on:
 //
 //   - REPEAT WASTE — byte-identical tool output sent into one session more than
 //     once. A tool that returns a document already sitting in the conversation
@@ -25,6 +25,13 @@
 //     on the usage page; the ranking is not, and the ranking is the finding: on
 //     2026-08-20 one model carried 80% of all fresh input tokens ever from 34%
 //     of the calls, purely because its cache hit 46% where another hit 95%.
+//   - CACHE BREAKS — the moments cacheHealth's averages are made of: calls where
+//     the cached prefix shrank against the previous call in the same session.
+//     Each break is classified as far as this table can honestly see — a model
+//     switch mid-session, an idle gap long enough for a provider TTL, or "the
+//     prefix changed", which is everything the rest (a prompt or tool-block
+//     edit) and cannot be split further without the app recording a prefix
+//     hash per call, which it deliberately does not yet do.
 //   - OUTPUT VOLUME — bytes per tool. What actually fills a context, as opposed
 //     to what feels like it does.
 //
@@ -95,7 +102,61 @@ func main() {
 	repeatWaste(db, window)
 	delegationContainment(db, window)
 	cacheHealth(db, window)
+	cacheBreaks(db, window)
+	trialReport(db, window)
 	outputVolume(db, window)
+}
+
+// trialReport is the seven-day follow-up the owner asked to run after the
+// aider-plan mechanics landed (30 ส.ค.): are the new tools being used, do
+// they succeed, and is the number they were built to move actually moving.
+// The baselines are the measured 2026-08-28 figures from
+// docs/aider-study/BASELINE.md, inlined so one command answers the trial
+// without a second document open.
+func trialReport(db *sql.DB, window string) {
+	section("TRIAL — aider-plan mechanics vs their 28 ส.ค. baseline")
+
+	// The number repo_map exists to move: whole reads of 50KB or more.
+	// Baseline 18 per 7 days; the pass line in the plan is <= 10.
+	var bigReads, bigBytes int64
+	err := db.QueryRow(`SELECT count(*), coalesce(sum(output_bytes),0) FROM tool_runs
+	  WHERE tool='read' AND output_bytes >= 51200 AND `+window).Scan(&bigReads, &bigBytes)
+	if err == nil {
+		fmt.Printf("  reads >=50KB: %d (%d bytes) — baseline 18/7d, pass line <=10\n", bigReads, bigBytes)
+	}
+
+	// The new tools themselves: reached for at all, and working when reached.
+	// symbol's own baseline is the finding that started this: 0 calls ever.
+	rows, err := db.Query(`
+	  SELECT tool, count(*), sum(CASE WHEN ok=1 THEN 1 ELSE 0 END), avg(duration_ms)
+	  FROM tool_runs WHERE tool IN ('repo_map','symbol','rename','diagnostics') AND ` + window + `
+	  GROUP BY tool ORDER BY count(*) DESC`)
+	if err != nil {
+		fmt.Println("  unavailable:", err)
+		return
+	}
+	defer rows.Close()
+	fmt.Printf("  %-14s %7s %7s %10s\n", "tool", "calls", "ok", "avg ms")
+	any := false
+	for rows.Next() {
+		var tool string
+		var calls, ok int64
+		var avg float64
+		if err := rows.Scan(&tool, &calls, &ok, &avg); err != nil {
+			continue
+		}
+		any = true
+		fmt.Printf("  %-14s %7d %7d %10.0f\n", tool, calls, ok, avg)
+	}
+	stopEarly(rows)
+	if !any {
+		fmt.Println("  none of the new tools ran in this window — the trial has not started")
+	}
+	fmt.Println()
+	fmt.Println("  The other two trial numbers live above: qwen's fresh/call and cache% (CACHE")
+	fmt.Println("  HEALTH, baseline 10,962 at 77.1%) and its prefix-changed breaks (CACHE BREAKS,")
+	fmt.Println("  baseline 96 breaks / 2.49M tokens in 7 days).")
+	fmt.Println()
 }
 
 // repeatWaste is the section the usage page cannot have: identical bytes, same
@@ -236,6 +297,90 @@ func cacheHealth(db *sql.DB, window string) {
 		fmt.Println()
 		fmt.Println("  A model at the top of this list is the largest cost in the product, and no")
 		fmt.Println("  amount of tuning the tool loop reaches it. Changing it is one setting.")
+	}
+	fmt.Println()
+}
+
+// cacheBreaks finds the calls where the cached prefix went backwards.
+//
+// cacheHealth says a model averaged 77% cached; it cannot say whether that is
+// a steady 77% (an incompressible dynamic tail) or 95% punctuated by breaks
+// (something keeps invalidating the prefix). The distinction decides where the
+// fix lives — the first is prompt layout, the second is whatever moves — so
+// this section exists to tell them apart.
+//
+// A break is: within one session and one stretch of one model, this call's
+// cached_prompt_tokens fell at least 2,000 tokens AND at least 5% below the
+// previous call's. Both thresholds, not either: a big prompt jitters by
+// thousands of tokens at under 1%, and a tiny session crosses 5% on noise.
+//
+// Causes, by elimination — which is all token_usage supports:
+//   - model switch: the previous row in this session ran a different model.
+//     Cache is per model everywhere that matters, so this break was bought
+//     knowingly with the switch.
+//   - idle gap: same model, but more than 5 minutes since the previous call —
+//     the shortest provider TTL in play; a break after such a gap says
+//     "expired", not "invalidated".
+//   - prefix changed: same model, no gap. Something in the sent prefix moved.
+//     WHAT moved is not in this table (that needs a prefix hash per call, an
+//     app change deliberately deferred), so it is named honestly as the
+//     remainder rather than guessed at.
+//
+// Rows with an empty session_id (written before sessions were recorded) are
+// excluded: consecutive-call comparison inside "no particular session" would
+// manufacture breaks out of interleaved conversations.
+func cacheBreaks(db *sql.DB, window string) {
+	section("CACHE BREAKS — calls where the cached prefix shrank, by cause")
+	rows, err := db.Query(`
+	  WITH seq AS (
+	    SELECT session_id, model, time, prompt_tokens, cached_prompt_tokens,
+	           lag(model)                OVER w AS prev_model,
+	           lag(cached_prompt_tokens) OVER w AS prev_cached,
+	           lag(time)                 OVER w AS prev_time
+	    FROM token_usage
+	    WHERE session_id <> '' AND cached_prompt_tokens IS NOT NULL AND ` + window + `
+	    WINDOW w AS (PARTITION BY session_id ORDER BY id)),
+	  breaks AS (
+	    SELECT model,
+	           prev_cached - cached_prompt_tokens AS drop_tokens,
+	           CASE
+	             WHEN model <> prev_model THEN 'model switch'
+	             WHEN (julianday(time) - julianday(prev_time)) * 86400 > 300 THEN 'idle gap (TTL)'
+	             ELSE 'prefix changed'
+	           END AS cause
+	    FROM seq
+	    WHERE prev_cached IS NOT NULL
+	      AND prev_cached - cached_prompt_tokens >= 2000
+	      AND prev_cached - cached_prompt_tokens >= prev_cached / 20)
+	  SELECT cause, model, count(*), sum(drop_tokens)
+	  FROM breaks GROUP BY cause, model
+	  ORDER BY sum(drop_tokens) DESC LIMIT 15`)
+	if err != nil {
+		fmt.Println("  unavailable:", err)
+		return
+	}
+	defer rows.Close()
+	fmt.Printf("  %-16s %-26s %7s %14s\n", "cause", "model", "breaks", "tokens dropped")
+	var totalBreaks, totalDrop int64
+	for rows.Next() {
+		var cause, m string
+		var n, drop int64
+		if err := rows.Scan(&cause, &m, &n, &drop); err != nil {
+			continue
+		}
+		totalBreaks += n
+		totalDrop += drop
+		fmt.Printf("  %-16s %-26s %7d %14d\n", cause, m, n, drop)
+	}
+	stopEarly(rows)
+	if totalBreaks == 0 {
+		fmt.Println("  no cache breaks in this window")
+	} else {
+		fmt.Printf("  %-16s %-26s %7d %14d\n", "— total —", "", totalBreaks, totalDrop)
+		fmt.Println()
+		fmt.Println("  Every dropped token here was re-sent fresh at full price on the very next")
+		fmt.Println("  call. 'prefix changed' with no gap is the row worth chasing: something in")
+		fmt.Println("  the prompt or tool block moved mid-conversation.")
 	}
 	fmt.Println()
 }
