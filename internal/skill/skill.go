@@ -43,6 +43,21 @@ type Output struct {
 	// timeline's "+9 -0". Both zero on tools that touch no file.
 	LinesAdded   int
 	LinesRemoved int
+	// ResultCount and ResultRange are the reading tools' side of that readout:
+	// how much came back, and from where. Count is in the tool's natural unit —
+	// lines for read, matches for grep, paths for glob — and Range is read's
+	// 1-based line span ("77-136"), so a timeline row can say "this call opened
+	// THAT slice" instead of just naming the file. The unit is implied by the
+	// tool and named by the UI, which is what keeps this a number rather than a
+	// sentence in one hardcoded language. Zero/empty on tools where "how many"
+	// has no honest answer.
+	ResultCount int
+	ResultRange string
+	// Problems is how many ERRORS the language server reports in a file this
+	// call just changed (freshdiag.go) — the after-edit self-check's number,
+	// for the timeline's red "!N". Zero when the file is clean, the language
+	// has no installed server, or the tool touches no file.
+	Problems int
 	// Diff is those same lines, said in full: git-style unified hunks for what
 	// this call changed, empty on every tool that writes nothing. See hunk.go
 	// for the format and for why it is built here rather than asked of git.

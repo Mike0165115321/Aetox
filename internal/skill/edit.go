@@ -87,7 +87,7 @@ func (*editSkill) Guidance(map[string]any) string {
 		"re-reading will show the same bytes again."
 }
 
-func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
+func (s *editSkill) Execute(ctx context.Context, input Input) (Output, error) {
 	start := time.Now()
 	if s == nil {
 		err := errors.New("edit skill unavailable")
@@ -198,7 +198,7 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 		out := newToolOutput("edit", command, "edit done: appended to "+requestPath, start, false, nil)
 		out.LinesAdded, _ = LineDelta("", addition)
 		out.Diff = UnifiedDiff(content, updated)
-		return out, nil
+		return appendFreshDiagnostics(ctx, s.root, requestPath, out), nil
 	}
 	// What the file actually holds for what the caller asked for, and the
 	// replacement in the file's own line endings. See lineendings.go: on the
@@ -242,7 +242,9 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 	// all=true that changed eight call sites is eight hunks in the file and
 	// one pair of strings, and it is the eight the reader is owed.
 	out.Diff = UnifiedDiff(content, updated)
-	return out, nil
+	// The self-check rides the result out (freshdiag.go): fresh errors in the
+	// changed file arrive with the change, not three turns after it.
+	return appendFreshDiagnostics(ctx, s.root, requestPath, out), nil
 }
 
 func (s *editSkill) ExecuteTool(ctx context.Context, args map[string]any) (Output, error) {

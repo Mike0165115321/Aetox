@@ -100,7 +100,7 @@ func (s *editsSkill) Execute(ctx context.Context, input Input) (Output, error) {
 	return s.ExecuteTool(ctx, map[string]any{"edits": input["edits"]})
 }
 
-func (s *editsSkill) ExecuteTool(_ context.Context, args map[string]any) (Output, error) {
+func (s *editsSkill) ExecuteTool(ctx context.Context, args map[string]any) (Output, error) {
 	start := time.Now()
 	if s == nil {
 		err := errors.New("edits skill unavailable")
@@ -198,6 +198,15 @@ func (s *editsSkill) ExecuteTool(_ context.Context, args map[string]any) (Output
 		diffs = append(diffs, FileDiff(requested[targetPath], original[targetPath], staged[targetPath]))
 	}
 	out.Diff = JoinDiffs(diffs)
+	// The self-check, once per touched file, problems summed — one broken file
+	// out of three edited is exactly the answer this appendix exists to carry.
+	for _, targetPath := range order {
+		checked := appendFreshDiagnostics(ctx, s.root, requested[targetPath], Output{Success: true, Content: out.Content})
+		if checked.Problems > 0 {
+			out.Content = checked.Content
+			out.Problems += checked.Problems
+		}
+	}
 	return out, nil
 }
 

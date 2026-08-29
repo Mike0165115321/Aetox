@@ -78,6 +78,20 @@ func Configured(path string) bool {
 	return ok
 }
 
+// Installed reports whether the server for this file type is already on the
+// machine — and never tries to put it there. The automatic after-edit check
+// runs on this and not on Available, because an auto path that can spend
+// minutes installing gopls in the middle of somebody's edit is not a check,
+// it is a hang with a good excuse.
+func Installed(path string) bool {
+	s, ok := servers[strings.ToLower(filepath.Ext(path))]
+	if !ok {
+		return false
+	}
+	_, err := exec.LookPath(s.command)
+	return err == nil
+}
+
 // Available reports whether the server for this file type can actually run,
 // installing it if it is missing and the toolchain to install it is present.
 //
@@ -275,13 +289,32 @@ func (c *conn) close() {
 }
 
 // SymbolInfo is what a language server knows about one identifier: the type
-// signature and doc comment it would show on hover, and where it is declared.
+// signature and doc comment it would show on hover, where it is declared, and
+// every place that calls it.
 type SymbolInfo struct {
 	Hover      string
 	DefPath    string
 	DefLine    int
 	Occurrence int // 1-based line in the queried file where the name was found
+	// Refs is every use of the symbol the server knows about, declaration
+	// excluded — the blast radius of changing it. Capped at maxRefs where it
+	// is parsed; RefsTruncated says the cap bit, so "40 callers" and "40
+	// callers that we showed of who-knows-how-many" cannot read the same.
+	Refs          []Location
+	RefsTruncated bool
 }
+
+// Location is one place in the tree, the way a reference list needs it.
+type Location struct {
+	Path string
+	Line int // 1-based
+}
+
+// maxRefs bounds what one symbol query returns. A symbol with hundreds of
+// call sites (an error helper, a logger) would otherwise flood the answer,
+// and past a few dozen the model's question has changed anyway — from "who
+// calls this" to "this is everywhere".
+const maxRefs = 40
 
 // Symbol answers "what is this and where does it come from" for a name in a
 // file.
@@ -377,10 +410,174 @@ func (c *conn) symbol(ctx context.Context, abs, languageID, name string, timeout
 	if raw, err := c.call(ctx, "textDocument/definition", position, timeout); err == nil {
 		info.DefPath, info.DefLine = parseDefinition(raw)
 	}
-	if info.Hover == "" && info.DefPath == "" {
+	// The call-sites half (§ the owner's "รู้เลยว่าคลาสนี้ถูกเรียกที่ไหนบ้าง",
+	// 29 ส.ค.): the server has indexed every use already — this was the one
+	// request nobody had ever sent it. Declaration excluded, because "who
+	// calls X" answered with "X is declared at X" is a line of noise wearing
+	// the shape of an answer.
+	refParams := map[string]any{
+		"textDocument": map[string]any{"uri": uri},
+		"position":     map[string]any{"line": line, "character": character},
+		"context":      map[string]any{"includeDeclaration": false},
+	}
+	if raw, err := c.call(ctx, "textDocument/references", refParams, timeout); err == nil {
+		info.Refs, info.RefsTruncated = parseReferences(raw)
+	}
+	if info.Hover == "" && info.DefPath == "" && len(info.Refs) == 0 {
 		return nil, fmt.Errorf("the language server knows nothing about %q here", name)
 	}
 	return info, nil
+}
+
+// TextEdit is one replacement the server wants made: a half-open range in a
+// file, and what to put there. Positions are 0-based lines and UTF-16 code
+// units within the line — the protocol's unit, kept as the protocol's unit
+// all the way to the applier, which is the only place that may convert.
+type TextEdit struct {
+	StartLine, StartChar int
+	EndLine, EndChar     int
+	NewText              string
+}
+
+// Rename asks the server for the workspace-wide edit that renames the symbol
+// at name's first standalone occurrence in path. It returns the edit and does
+// NOT apply it: which files may be written is the sandbox's law, and the
+// sandbox lives a package above this one.
+func (c *Client) Rename(ctx context.Context, path, name, newName string, timeout time.Duration) (map[string][]TextEdit, error) {
+	spec, ok := servers[strings.ToLower(filepath.Ext(path))]
+	if !ok {
+		return nil, nil
+	}
+	if !ensureInstalled(ctx, spec.command) {
+		return nil, nil
+	}
+	cn, err := c.connFor(ctx, spec)
+	if err != nil {
+		debuglog.Msg("lsp: start %s: %v", spec.command, err)
+		return nil, nil
+	}
+	abs := path
+	if !filepath.IsAbs(abs) {
+		abs = filepath.Join(c.root, path)
+	}
+	text, err := readFileString(abs)
+	if err != nil {
+		return nil, err
+	}
+	line, character, found := findIdentifier(text, name)
+	if !found {
+		return nil, fmt.Errorf("%q does not appear in %s", name, filepath.Base(abs))
+	}
+	uri := pathToURI(abs)
+	cn.mu.Lock()
+	cn.nextID++
+	version := cn.nextID
+	cn.mu.Unlock()
+	if err := cn.notify("textDocument/didOpen", map[string]any{
+		"textDocument": map[string]any{"uri": uri, "languageId": spec.languageID, "version": version, "text": text},
+	}); err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = cn.notify("textDocument/didClose", map[string]any{"textDocument": map[string]any{"uri": uri}})
+	}()
+	raw, err := cn.call(ctx, "textDocument/rename", map[string]any{
+		"textDocument": map[string]any{"uri": uri},
+		"position":     map[string]any{"line": line, "character": character},
+		"newName":      newName,
+	}, timeout)
+	if err != nil {
+		return nil, err
+	}
+	edits := parseWorkspaceEdit(raw)
+	if len(edits) == 0 {
+		return nil, fmt.Errorf("the language server offered no edit for renaming %q", name)
+	}
+	return edits, nil
+}
+
+// parseWorkspaceEdit copes with both shapes the protocol allows: the classic
+// changes map, and the documentChanges list capable servers prefer.
+func parseWorkspaceEdit(raw json.RawMessage) map[string][]TextEdit {
+	type wireEdit struct {
+		Range struct {
+			Start struct {
+				Line      int `json:"line"`
+				Character int `json:"character"`
+			} `json:"start"`
+			End struct {
+				Line      int `json:"line"`
+				Character int `json:"character"`
+			} `json:"end"`
+		} `json:"range"`
+		NewText string `json:"newText"`
+	}
+	convert := func(in []wireEdit) []TextEdit {
+		out := make([]TextEdit, 0, len(in))
+		for _, e := range in {
+			out = append(out, TextEdit{
+				StartLine: e.Range.Start.Line, StartChar: e.Range.Start.Character,
+				EndLine: e.Range.End.Line, EndChar: e.Range.End.Character,
+				NewText: e.NewText,
+			})
+		}
+		return out
+	}
+	var wrapper struct {
+		Changes         map[string][]wireEdit `json:"changes"`
+		DocumentChanges []struct {
+			TextDocument struct {
+				URI string `json:"uri"`
+			} `json:"textDocument"`
+			Edits []wireEdit `json:"edits"`
+		} `json:"documentChanges"`
+	}
+	if json.Unmarshal(raw, &wrapper) != nil {
+		return nil
+	}
+	edits := make(map[string][]TextEdit)
+	for uri, es := range wrapper.Changes {
+		if len(es) > 0 {
+			edits[uriToPath(uri)] = append(edits[uriToPath(uri)], convert(es)...)
+		}
+	}
+	for _, dc := range wrapper.DocumentChanges {
+		if dc.TextDocument.URI != "" && len(dc.Edits) > 0 {
+			p := uriToPath(dc.TextDocument.URI)
+			edits[p] = append(edits[p], convert(dc.Edits)...)
+		}
+	}
+	return edits
+}
+
+// parseReferences reads the location list a references request answers with,
+// capped at maxRefs. Sorted as the server sent it — servers group by file,
+// which is the reading order a caller wants.
+func parseReferences(raw json.RawMessage) ([]Location, bool) {
+	type location struct {
+		URI   string `json:"uri"`
+		Range struct {
+			Start struct {
+				Line int `json:"line"`
+			} `json:"start"`
+		} `json:"range"`
+	}
+	var many []location
+	if json.Unmarshal(raw, &many) != nil || len(many) == 0 {
+		return nil, false
+	}
+	truncated := len(many) > maxRefs
+	if truncated {
+		many = many[:maxRefs]
+	}
+	refs := make([]Location, 0, len(many))
+	for _, l := range many {
+		if l.URI == "" {
+			continue
+		}
+		refs = append(refs, Location{Path: uriToPath(l.URI), Line: l.Range.Start.Line + 1})
+	}
+	return refs, truncated
 }
 
 // parseHover copes with all three shapes the protocol has carried: a MarkupContent

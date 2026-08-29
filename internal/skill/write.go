@@ -144,7 +144,7 @@ func (*writeSkill) Guidance(map[string]any) string {
 		"are the one unit you can count while writing."
 }
 
-func (s *writeSkill) Execute(_ context.Context, input Input) (Output, error) {
+func (s *writeSkill) Execute(ctx context.Context, input Input) (Output, error) {
 	start := time.Now()
 	if s == nil {
 		err := errors.New("write skill unavailable")
@@ -249,7 +249,9 @@ func (s *writeSkill) Execute(_ context.Context, input Input) (Output, error) {
 	// "replacing nearly all of it", and "nearly" is doing the work. The hunks
 	// are what separate the two cases for a reader.
 	out.Diff = UnifiedDiff(string(previous), content)
-	return out, nil
+	// The self-check rides the result out (freshdiag.go): a freshly written
+	// file that does not compile says so in the write's own receipt.
+	return appendFreshDiagnostics(ctx, s.root, requestPath, out), nil
 }
 
 func (s *writeSkill) ExecuteTool(ctx context.Context, args map[string]any) (Output, error) {

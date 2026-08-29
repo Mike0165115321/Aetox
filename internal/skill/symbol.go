@@ -57,9 +57,13 @@ func (*symbolSkill) ToolDefinition() model.ToolDefinition {
 		Type: "function",
 		Function: model.ToolFunction{
 			Name: "symbol",
-			Description: "Ask the language server what an identifier is: its type or signature, its doc comment, and the file and line where it is declared. " +
-				"Faster and more exact than grepping for a definition, and it picks the one actually in scope rather than the first name that matches. " +
-				"Needs a server for that language, the same ones diagnostics uses.",
+			// Rewritten when references landed, and deliberately shorter: the
+			// old text spent its tokens arguing against grep and was called
+			// zero times in the tool's whole life. What it IS: signature,
+			// declaration, and every call site — the blast radius before an
+			// edit — which no other tool answers exactly.
+			Description: "Ask the language server about an identifier: signature, doc, where it is declared, and every place that references it. " +
+				"Exact where grep guesses. Needs that language's server, same as diagnostics.",
 			Parameters: payload,
 		},
 	}
@@ -117,8 +121,26 @@ func (s *symbolSkill) ExecuteTool(ctx context.Context, args map[string]any) (Out
 	if info.Hover != "" {
 		b.WriteString("\n" + info.Hover)
 	}
+	// The blast radius, from the server's own index: every place that calls
+	// this, which is what a careful change wants to know BEFORE the edit. One
+	// line per site and a count up front, so the shape of the answer is
+	// readable even when the list is long.
+	if len(info.Refs) > 0 {
+		count := fmt.Sprintf("%d", len(info.Refs))
+		if info.RefsTruncated {
+			count = fmt.Sprintf("first %d of more", len(info.Refs))
+		}
+		fmt.Fprintf(&b, "\nreferenced from %s places:\n", count)
+		for _, r := range info.Refs {
+			fmt.Fprintf(&b, "  %s:%d\n", relativeToRoot(s.root, r.Path), r.Line)
+		}
+	}
 	out, truncated := limitLines(strings.TrimRight(b.String(), "\n"), defaultToolOutputLineLimit)
-	return newToolOutput("symbol", command, out, start, truncated, nil), nil
+	o := newToolOutput("symbol", command, out, start, truncated, nil)
+	// The timeline's readout (ToolEvent.Count): callers found, the number the
+	// question was really about.
+	o.ResultCount = len(info.Refs)
+	return o, nil
 }
 
 // relativeToRoot shortens a definition path that lies inside the project, and

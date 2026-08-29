@@ -3,6 +3,7 @@ package lsp
 import (
 	"context"
 	"os"
+	"strconv"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -102,5 +103,29 @@ func TestDiagnoseReportsRealErrorsFromGopls(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected the unused-variable error on line 4, got: %v", diags)
+	}
+}
+
+func TestParseReferencesCapsAndConverts(t *testing.T) {
+	mk := func(n int) []byte {
+		items := make([]string, n)
+		for i := range items {
+			items[i] = `{"uri":"file:///repo/a.go","range":{"start":{"line":` + strconv.Itoa(i) + `}}}`
+		}
+		return []byte("[" + strings.Join(items, ",") + "]")
+	}
+	refs, truncated := parseReferences(mk(3))
+	if len(refs) != 3 || truncated {
+		t.Fatalf("3 locations should come back whole, got %d truncated=%v", len(refs), truncated)
+	}
+	if refs[1].Line != 2 {
+		t.Errorf("LSP lines are 0-based and ours are 1-based, got %d", refs[1].Line)
+	}
+	refs, truncated = parseReferences(mk(maxRefs + 20))
+	if len(refs) != maxRefs || !truncated {
+		t.Fatalf("the cap must bite AND say so, got %d truncated=%v", len(refs), truncated)
+	}
+	if refs, _ := parseReferences([]byte("null")); refs != nil {
+		t.Error("a null answer is no references, not a panic")
 	}
 }
