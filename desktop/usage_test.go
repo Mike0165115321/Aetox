@@ -256,3 +256,63 @@ func TestSubscriptionUsageIsCountedButNotPriced(t *testing.T) {
 		t.Errorf("the headline counted subscription usage as spend: %+v", stats.Totals)
 	}
 }
+
+// Whose numbers those are, and how old.
+//
+// Owner, 28 ส.ค.: "ราคามันปลอม ทำไมเป็นแบบนี้เนี้ย" — the picker showed
+// deepseek-v4-flash at $0.14/$0.28. Aetox invented nothing; that is what
+// models.dev publishes, and DeepSeek's own page says $0.22/$0.66 off-peak and
+// $0.44/$1.32 peak. A figure copied from a third party has to say so, and it
+// has to say when — the stats page always did, the picker never did.
+func TestTheModelPriceSourceIsNamedAndDated(t *testing.T) {
+	isolateUserDirs(t)
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	a := seed(&App{cfg: config.Config{}, dbDir: t.TempDir()}, newConversation())
+	t.Cleanup(func() {
+		if a.db != nil {
+			_ = a.db.Close()
+		}
+	})
+	root, err := config.DataRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fetched := time.Date(2026, 8, 28, 16, 17, 22, 0, time.FixedZone("ICT", 7*3600))
+	if err := model.SaveModelCatalog(root, &model.ModelCatalog{
+		Fetched: fetched,
+		Source:  "https://models.dev/api.json",
+		Models: map[string]model.ModelFacts{
+			"deepseek/deepseek-v4-flash": {Price: model.ModelPrice{Input: 0.14, Output: 0.28}, Context: 1_000_000},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	src := a.ModelPriceSource()
+	// The host, not the API path: this is read by a person on a menu row, and
+	// "https://models.dev/api.json" is an implementation detail of the fetch.
+	if src.Name != "models.dev" {
+		t.Errorf("source name = %q; want the host", src.Name)
+	}
+	if got, want := src.Fetched, fetched.Format(time.RFC3339); got != want {
+		t.Errorf("fetched = %q; want %q", got, want)
+	}
+}
+
+// A machine that has never fetched the catalog must say nothing at all. A
+// source line about a catalog that does not exist would be the same unearned
+// confidence as the price it is there to qualify.
+func TestTheModelPriceSourceIsSilentWithoutACatalog(t *testing.T) {
+	isolateUserDirs(t)
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	a := seed(&App{cfg: config.Config{}, dbDir: t.TempDir()}, newConversation())
+	t.Cleanup(func() {
+		if a.db != nil {
+			_ = a.db.Close()
+		}
+	})
+
+	if src := a.ModelPriceSource(); src.Name != "" || src.Fetched != "" {
+		t.Errorf("with no catalog the picker was told %+v", src)
+	}
+}

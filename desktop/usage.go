@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"net/url"
 	"strings"
 	"time"
 
@@ -341,6 +342,47 @@ func (a *App) PriceModels(providerName string, models []string) []ModelListing {
 		out = append(out, row)
 	}
 	return out
+}
+
+// PriceSource is where the numbers beside the model names came from, and when.
+//
+// It exists because a bare "$0.14 / $0.28" on a menu row is a claim, and it is
+// not one Aetox is in a position to make. The figures are a third party's
+// published list, copied verbatim; the stats page has said so since the day it
+// shipped ("estimated from published list prices, not an invoice") and the
+// picker, which is where most people actually read a price, said nothing at
+// all.
+//
+// Measured 2026-08-28 and this is not hypothetical: models.dev prices
+// deepseek-v4-flash at $0.14/$0.28 while DeepSeek's own page states $0.22/$0.66
+// off-peak and $0.44/$1.32 peak. A number that cannot be checked is a number
+// that has to say whose it is.
+type PriceSource struct {
+	// Name is the host the catalog came from, e.g. "models.dev". Empty when
+	// nothing has been fetched, which the UI reads as "show no source line".
+	Name string `json:"name"`
+	// Fetched is RFC3339, formatted by the frontend in the user's own locale.
+	Fetched string `json:"fetched"`
+}
+
+// ModelPriceSource answers where the picker's price column came from.
+//
+// Nil catalog and zero time both come back as an empty struct rather than as
+// invented text: a source line about a catalog that was never fetched would be
+// the same kind of unearned confidence as the price it is meant to qualify.
+func (a *App) ModelPriceSource() PriceSource {
+	catalog := a.modelCatalog()
+	if catalog == nil || catalog.Fetched.IsZero() {
+		return PriceSource{}
+	}
+	name := strings.TrimSpace(catalog.Source)
+	if parsed, err := url.Parse(name); err == nil && parsed.Host != "" {
+		name = parsed.Host
+	}
+	if name == "" {
+		return PriceSource{}
+	}
+	return PriceSource{Name: name, Fetched: catalog.Fetched.Format(time.RFC3339)}
 }
 
 // lookupFacts prices a row by provider where the row knows one, and by model

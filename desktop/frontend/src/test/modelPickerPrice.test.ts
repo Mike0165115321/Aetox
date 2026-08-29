@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, waitFor, fireEvent } from '@testing-library/svelte'
 import Chat from '../lib/Chat.svelte'
 import { cockpit } from '../lib/stores/cockpit.svelte'
-import { ListModelsForProvider, PriceModels } from './mocks/wailsApp'
+import { ListModelsForProvider, PriceModels, ModelPriceSource } from './mocks/wailsApp'
 
 const baseProps = {
   task: { title: '', steps: [] } as never,
@@ -122,5 +122,67 @@ describe('the composer model picker', () => {
 
     await waitFor(() => expect(opts().filter((o) => o.querySelector('.t')).length).toBeGreaterThanOrEqual(3))
     expect(document.querySelectorAll('.updrop-opt .utag').length).toBe(0)
+  })
+})
+
+// Where the numbers come from, said on the menu that shows them.
+//
+// Owner, 28 ส.ค.: "ราคามันปลอม ทำไมเป็นแบบนี้เนี้ย". He was right, and Aetox
+// had not invented anything: models.dev prices deepseek-v4-flash at
+// $0.14/$0.28 while DeepSeek's own page states $0.22/$0.66 off-peak and
+// $0.44/$1.32 peak, with cache hits at $0.007. The catalog is wrong, we copy it
+// faithfully, and the row said nothing about either fact.
+//
+// The stats page has carried this qualification since it shipped ("estimated
+// from published list prices, not an invoice"). What is pinned here is that the
+// place the price is actually read carries it too — and, just as firmly, that
+// a machine with no catalog says nothing rather than a sentence about a source
+// it never had.
+describe('where the picker says its prices came from', () => {
+  it('names the source and the day it was fetched, under the priced rows', async () => {
+    vi.mocked(ModelPriceSource).mockResolvedValue({
+      name: 'models.dev', fetched: '2026-08-28T16:17:22+07:00',
+    } as never)
+    render(Chat, baseProps as never)
+    await openModelList()
+
+    await waitFor(() => {
+      const foot = document.querySelector('.updrop-foot')
+      expect(foot?.textContent).toContain('models.dev')
+      // The date is rendered in the viewer's own locale, which for this app's
+      // Thai users means the Buddhist year (28 ส.ค. 2569, not 2026). So the
+      // assertion is the day and the absence of the raw timestamp, rather than
+      // a format this test would have to duplicate and get wrong.
+      expect(foot?.textContent).toContain('28')
+      expect(foot?.textContent).not.toContain('T16:17')
+    })
+  })
+
+  it('says nothing when no catalog has ever been fetched', async () => {
+    vi.mocked(ModelPriceSource).mockResolvedValue({ name: '', fetched: '' } as never)
+    render(Chat, baseProps as never)
+    await openModelList()
+
+    await waitFor(() => expect(document.querySelectorAll('.updrop-opt').length).toBeGreaterThan(0))
+    expect(document.querySelector('.updrop-foot')).toBeNull()
+  })
+
+  // A source line over a list where nothing carries a price is a footnote to
+  // nothing — and on a provider Aetox cannot price at all it would be the only
+  // sentence about money on the screen.
+  it('says nothing when not one row could be priced', async () => {
+    vi.mocked(ModelPriceSource).mockResolvedValue({
+      name: 'models.dev', fetched: '2026-08-28T16:17:22+07:00',
+    } as never)
+    vi.mocked(PriceModels).mockResolvedValue([
+      listing('poolside/laguna-s-2.1'),
+      listing('poolside/laguna-s-2.1:free'),
+      listing('openrouter/pareto-code'),
+    ] as never)
+    render(Chat, baseProps as never)
+    await openModelList()
+
+    await waitFor(() => expect(document.querySelectorAll('.updrop-opt').length).toBeGreaterThan(0))
+    expect(document.querySelector('.updrop-foot')).toBeNull()
   })
 })
