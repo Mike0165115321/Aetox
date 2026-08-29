@@ -108,6 +108,13 @@ export interface ContextBreakdown {
    *  cache, at a fraction of full price. 0 when nothing hit or the provider
    *  does no cache accounting — the note is only shown when there is one. */
   cachedTokens: number
+  /** Reclaimed by the compaction layers this session: old tool outputs swept
+   *  (and the tokens they gave back) and history summaries. The sweep happens
+   *  invisibly mid-turn, and a meter whose number drops with no line saying
+   *  why reads as broken. Optional: absent from rounds before this shipped. */
+  sweptItems?: number
+  sweptTokens?: number
+  summaries?: number
 }
 
 export interface ChatMessage {
@@ -225,6 +232,9 @@ export interface ToolPartInfo {
   secs?: number
   added?: number
   removed?: number
+  /** The reading tools' readout — see ToolEvent.count/range. */
+  count?: number
+  range?: string
   /** Git-style unified hunks for what this call changed — the same format
    * `git diff` prints, built by the tool itself (internal/skill/hunk.go) rather
    * than asked of git, so a row expanded tomorrow still shows what THIS call
@@ -377,6 +387,19 @@ export interface ToolEvent {
   error?: string
   added?: number
   removed?: number
+  /** The reading tools' readout, result events only: how much came back in the
+   * tool's own unit (lines for read, matches for grep, files for glob), and
+   * for read the 1-based line span it returned ("77-136") — so a row can say
+   * WHICH slice was opened, not just which file. */
+  count?: number
+  range?: string
+  /** The touched file's one-letter git state (M/A/U/D/R), host-stamped on
+   * file-tool results. Absent for a clean file, outside a repo, and on tools
+   * that touch no file — the badge marks the noteworthy only. */
+  git?: string
+  /** Errors the language server sees in a file this call changed — the
+   * after-edit self-check's number, worn as a red "!N". */
+  problems?: number
   /** Git-style unified hunks for what this call changed — the same format
    * `git diff` prints, built by the tool itself (internal/skill/hunk.go) rather
    * than asked of git, so a row expanded tomorrow still shows what THIS call
@@ -441,6 +464,13 @@ export interface ToolStep {
   /** Lines a write or edit changed, for the "+9 -0" readout. */
   added?: number
   removed?: number
+  /** The reading tools' side of that readout — see ToolEvent.count/range. */
+  count?: number
+  range?: string
+  /** The touched file's git letter — see ToolEvent.git. */
+  git?: string
+  /** The self-check's error count — see ToolEvent.problems. */
+  problems?: number
   /** Git-style unified hunks for what this call changed — the same format
    * `git diff` prints, built by the tool itself (internal/skill/hunk.go) rather
    * than asked of git, so a row expanded tomorrow still shows what THIS call

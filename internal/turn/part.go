@@ -78,6 +78,15 @@ type ToolPart struct {
 	Secs       int    `json:"secs,omitempty"`
 	Added      int    `json:"added,omitempty"`
 	Removed    int    `json:"removed,omitempty"`
+	// Count/Range are ToolEvent.Count and Range written down — see the comment
+	// there. A reopened session rebuilds its rows from these parts alone, and
+	// "read gate.py 1-60" is exactly the kind of fact worth still being true
+	// tomorrow.
+	Count int    `json:"count,omitempty"`
+	Range string `json:"range,omitempty"`
+	// Problems is ToolEvent.Problems written down — the "!N" a reopened
+	// session still owes the reader about an edit that broke the file.
+	Problems int `json:"problems,omitempty"`
 	// Diff is ToolEvent.Diff written down, for the same reason Artifacts is one
 	// field below: this is the part that survives a restart. A change you can
 	// only inspect until the app closes is a change you have to take on trust

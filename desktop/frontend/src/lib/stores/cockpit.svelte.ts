@@ -423,6 +423,8 @@ function stepsFromParts(parts?: TurnPart[]): ToolStep[] | undefined {
       secs: tool.secs || undefined,
       added: tool.added || undefined,
       removed: tool.removed || undefined,
+      count: tool.count || undefined,
+      range: tool.range || undefined,
       diff: tool.diff || undefined,
       agent: tool.agent || undefined,
       brief: tool.brief || undefined,
@@ -2344,6 +2346,9 @@ export function applyToolEvent(stamped: SessionEvent<ToolEvent> | ToolEvent): vo
     const open = steps.find(running)
     if (open) {
       if (ev.added) open.added = ev.added
+      // The requested line span rides the executor's call event — the row born
+      // from streaming progress exists before the arguments finished parsing.
+      if (ev.range) open.range = ev.range
       // Let the row name itself once the subject shows up.
       if (ev.subject) open.label = label
       // Same rule for a delegation's facts. The row is usually born from the
@@ -2369,6 +2374,7 @@ export function applyToolEvent(stamped: SessionEvent<ToolEvent> | ToolEvent): vo
       agent: ev.agent || undefined, brief: ev.brief || undefined,
       agentKind: ev.agentKind || undefined, delegation: ev.delegation,
       state: 'run', startedAt: Date.now(), added: ev.added || undefined,
+      range: ev.range || undefined,
     })
     return
   }
@@ -2382,6 +2388,13 @@ export function applyToolEvent(stamped: SessionEvent<ToolEvent> | ToolEvent): vo
   // Only a write/edit carries these; everything else reports 0 and shows nothing.
   step.added = ev.added || undefined
   step.removed = ev.removed || undefined
+  // And the reading tools' counterpart: what came back, and from which lines.
+  step.count = ev.count || undefined
+  step.range = ev.range || undefined
+  // The touched file's git letter, stamped by the host on the result.
+  step.git = ev.git || undefined
+  // The after-edit self-check: errors now in the file this call changed.
+  step.problems = ev.problems || undefined
   // The change itself, for the โค้ด desk's fold-out. It arrives once, on the
   // result — the streaming call events know the path before they know the text.
   step.diff = ev.diff || undefined

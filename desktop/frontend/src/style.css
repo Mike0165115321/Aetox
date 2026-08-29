@@ -1047,6 +1047,20 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .tool-step .tool-stat { flex:0 0 auto; font-size:var(--fs-xs); font-variant-numeric:tabular-nums; }
 .tool-step .tool-stat .add { color:var(--status-success); }
 .tool-step .tool-stat .del { color:var(--status-danger); }
+/* A read's "77-136 (60 บรรทัด)": a fact about the row, not a change to any
+   file, so it stays in the muted ink the row's own seconds use. */
+.tool-step .tool-stat.got { color:var(--text-muted); }
+/* The file's git letter, in the palette every editor taught: modified amber,
+   new green, deleted red. A letter, not a word — the vocabulary is borrowed
+   precisely so it needs no translation. */
+.tool-step .git-badge { flex:0 0 auto; font-size:10px; font-weight:600; font-variant-numeric:tabular-nums; opacity:.9; }
+.tool-step .git-badge.g-M, .tool-step .git-badge.g-R, .tool-step .git-badge.g-T { color:var(--status-warning, #d29922); }
+.tool-step .git-badge.g-U, .tool-step .git-badge.g-A, .tool-step .git-badge.g-C { color:var(--status-success); }
+.tool-step .git-badge.g-D { color:var(--status-danger); }
+/* The self-check's "!N": an edit that left the file broken. Red and bold on
+   purpose — of everything on a tool row this is the one fact that changes
+   what the reader does next. */
+.tool-step .prob-badge { flex:0 0 auto; font-size:10px; font-weight:700; color:var(--status-danger); }
 /* A row with a diff behind it is a <button>, so it needs the button undone
    before it can look like the rows either side of it. width:100% and
    text-align:left are what keep it in the column the divs occupy. */

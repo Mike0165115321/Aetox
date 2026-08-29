@@ -20,7 +20,7 @@
     GitBranches, GitSwitchBranch, GitCreateBranch, GetProjectStatus,
   } from '../../wailsjs/go/main/App'
   import type { main, connect, subagent } from '../../wailsjs/go/models'
-  import { t, i18n } from './i18n.svelte'
+  import { t, i18n, type TKey } from './i18n.svelte'
   import { isShortcut, shortcutLabel } from './shortcuts'
   import { copyDrawing, saveDrawing } from './drawingExport'
   import { renderMarkdown, renderStreamingMarkdown } from './markdown'
@@ -965,6 +965,16 @@
     return Math.max(0, Math.round((now - s.startedAt) / 1000))
   }
 
+  // Which unit a reading row's count is in. The engine sends a bare number on
+  // purpose — the unit is implied by the tool, and naming it here is what
+  // keeps it translatable instead of baked into Go in one language.
+  function gotUnitKey(s: ToolStep): TKey {
+    const name = s.label.split(' ')[0]
+    if (name === 'grep') return 'chat.gotMatches'
+    if (name === 'glob' || name === 'list') return 'chat.gotFiles'
+    return 'chat.gotLines'
+  }
+
   // The thinking row counts, and it was the one live row that never did.
   //
   // A running tool has said "· 12s" for a long time; the finished bubble says
@@ -1896,6 +1906,17 @@
     <span class="tick"><Icon name={s.state === 'err' ? 'x' : 'check'} size={12} /></span>
   </span>
   <span class="lbl">{s.label}</span>
+  {#if s.git}
+    <!-- The file's git letter, the vocabulary every editor already taught:
+         M modified, U untracked, A added, D deleted. Only when there is one —
+         a clean file wears nothing. -->
+    <span class="git-badge g-{s.git}">{s.git}</span>
+  {/if}
+  {#if s.problems}
+    <!-- The self-check found the file broken after this change. The mark that
+         must not wait to be discovered inside the folded result. -->
+    <span class="prob-badge" title={t('chat.problemsAfter', { n: s.problems })}>!{s.problems}</span>
+  {/if}
   {#if s.state === 'run' && live}
     <span class="secs">· {liveSecs(s)}s</span>
   {:else if s.secs}
@@ -1907,6 +1928,15 @@
     <span class="tool-stat">
       <span class="add">+{s.added ?? 0}</span>
       {#if s.state !== 'run'}<span class="del">-{s.removed ?? 0}</span>{/if}
+    </span>
+  {:else if s.range || s.count}
+    <!-- The reading tools' counterpart to "+9 -0": which lines a read opened,
+         and how much came back, in the tool's own unit. "read gate.py · 1-60"
+         is the difference between knowing a file was touched and knowing which
+         slice of it the model is actually holding. -->
+    <span class="tool-stat got">
+      {#if s.range}{s.range}{/if}
+      {#if s.count}{s.range ? ' ' : ''}({t(gotUnitKey(s), { n: s.count ?? 0 })}){/if}
     </span>
   {/if}
 {/snippet}
@@ -3213,6 +3243,19 @@
                     <span class="pct">{slicePct(s.tokens)}</span>
                   </div>
                 {/each}
+                {#if (ctx.sweptItems ?? 0) > 0 || (ctx.summaries ?? 0) > 0}
+                  <!-- The layers that shrink the number above, named. Without
+                       this row a sweep reads as the meter miscounting: usage
+                       falls mid-turn and nothing says why. -->
+                  <div class="ctx-note ctx-reclaimed">
+                    {#if (ctx.sweptItems ?? 0) > 0}
+                      {t('chat.contextSwept', { n: ctx.sweptItems ?? 0, tokens: fmtTokens(ctx.sweptTokens ?? 0) })}
+                    {/if}
+                    {#if (ctx.summaries ?? 0) > 0}
+                      {t('chat.contextSummarized', { n: ctx.summaries ?? 0 })}
+                    {/if}
+                  </div>
+                {/if}
                 {#if !ctxKnown}
                   <!-- Says outright that the percentages above are shares of
                        this request, not of the window. Local runtimes have no

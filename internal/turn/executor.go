@@ -388,12 +388,30 @@ type ToolEvent struct {
 	// working *here*" are different sentences, and a panel that can only say the
 	// first has to light all five tab chips to say it. Empty for every tool that
 	// is not the browser, and for a browser call made before any tab exists.
-	Tab   string `json:"tab,omitempty"`
+	Tab string `json:"tab,omitempty"`
+	// Git is the touched file's one-letter git state (M/A/U/D/R), host-stamped
+	// on file-tool results the same way Tab is stamped on browser events —
+	// `turn` has never heard of git either. Empty for a clean tracked file, a
+	// session outside a repository, and every tool that touches no file: the
+	// badge exists to mark the noteworthy, and clean is the ground state.
+	Git   string `json:"git,omitempty"`
 	OK    bool   `json:"ok"`              // result only
 	Error string `json:"error,omitempty"` // result only, when !OK
 	// Added/Removed are the line counts of a write or edit, zero elsewhere.
 	Added   int `json:"added,omitempty"`
 	Removed int `json:"removed,omitempty"`
+	// Count/Range are the reading tools' readout (skill.Output.ResultCount and
+	// ResultRange): how much came back in the tool's own unit, and for read the
+	// 1-based line span it actually returned — the difference between a row
+	// saying "read gate.py" and one saying "read gate.py 1-60 of it". Result
+	// events only; zero/empty where the tool has no honest number.
+	Count int    `json:"count,omitempty"`
+	Range string `json:"range,omitempty"`
+	// Problems is the after-edit self-check's number (skill.Output.Problems):
+	// how many errors the language server sees in a file this call changed.
+	// The row wears it as a red "!N" — the one mark that must not wait to be
+	// discovered inside the folded result.
+	Problems int `json:"problems,omitempty"`
 	// Diff is what those counts are counting: git-style unified hunks for the
 	// change this call made (internal/skill/hunk.go), empty on every tool that
 	// writes no file. The โค้ด desk draws it under the row, folded shut.
@@ -611,8 +629,42 @@ func (e *Executor) reportToolCall(ref, name, args string) {
 			Act:   packedActionOf(args),
 			Agent: agent, Brief: brief, AgentKind: e.kindOf(isTask, agent),
 			Delegation: &isTask,
+			// The REQUESTED range, on the call event: a read's offset/limit are
+			// in the arguments, so "40-60" can sit on the row the whole time it
+			// runs instead of appearing only when the result closes it. The
+			// result then overwrites with what actually came back, which may be
+			// shorter — the file ended, or the page cap bit.
+			Range: requestedReadRange(name, args),
 		})
 	}
+}
+
+// requestedReadRange derives the line span a read call is asking for from its
+// own arguments — "40-60" for {offset:40, limit:21}, "40-" when only the start
+// is known, "" for any other tool or a whole-file read (a range of everything
+// says nothing).
+func requestedReadRange(name, args string) string {
+	if !strings.EqualFold(strings.TrimSpace(name), "read") {
+		return ""
+	}
+	var parsed struct {
+		Offset int `json:"offset"`
+		Limit  int `json:"limit"`
+	}
+	if json.Unmarshal([]byte(args), &parsed) != nil {
+		return ""
+	}
+	first := parsed.Offset
+	if first < 1 {
+		if parsed.Limit <= 0 {
+			return ""
+		}
+		first = 1
+	}
+	if parsed.Limit <= 0 {
+		return fmt.Sprintf("%d-", first)
+	}
+	return fmt.Sprintf("%d-%d", first, first+parsed.Limit-1)
 }
 
 // kindOf asks the injected resolver which pile a delegation's worker is in.
@@ -1070,6 +1122,9 @@ func (e *Executor) executeAgentToolLoop(
 			OK:         success,
 			Added:      output.LinesAdded,
 			Removed:    output.LinesRemoved,
+			Count:      output.ResultCount,
+			Range:      output.ResultRange,
+			Problems:   output.Problems,
 			Diff:       output.Diff,
 			Artifacts:  output.Artifacts,
 			ProposalID: output.ProposalID,
@@ -1113,6 +1168,9 @@ func (e *Executor) executeAgentToolLoop(
 			Secs:       int(elapsed.Round(time.Second) / time.Second),
 			Added:      output.LinesAdded,
 			Removed:    output.LinesRemoved,
+			Count:      output.ResultCount,
+			Range:      output.ResultRange,
+			Problems:   output.Problems,
 			Diff:       output.Diff,
 			Artifacts:  output.Artifacts,
 			ProposalID: output.ProposalID,

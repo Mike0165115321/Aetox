@@ -255,7 +255,9 @@ func (s *globSkill) Execute(ctx context.Context, input Input) (Output, error) {
 		output += "\n... (result cap reached, continue with offset=" + strconv.Itoa(skip+limit) + ")"
 		truncated = true
 	}
-	return newToolOutput("glob", command, output, start, truncated, nil), nil
+	out := newToolOutput("glob", command, output, start, truncated, nil)
+	out.ResultCount = len(paths)
+	return out, nil
 }
 
 // matchesPathGlob matches a slash-separated relative path against a pattern.

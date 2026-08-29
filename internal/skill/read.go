@@ -234,6 +234,12 @@ func (s *readSkill) Execute(_ context.Context, input Input) (Output, error) {
 	// "\r\n" not "\n": on Windows the last line would otherwise keep a stray
 	// carriage return that the old whole-blob TrimSpace used to remove.
 	content = strings.TrimRight(content, "\r\n")
+	// Counted before the placeholders and the truncation marker join in: those
+	// are messages about the read, not lines of the file.
+	returned := 0
+	if strings.TrimSpace(content) != "" {
+		returned = strings.Count(content, "\n") + 1
+	}
 	if strings.TrimSpace(content) == "" {
 		if offset > 1 {
 			content = fmt.Sprintf("(no lines at offset %d)", offset)
@@ -244,7 +250,16 @@ func (s *readSkill) Execute(_ context.Context, input Input) (Output, error) {
 	if next > 0 {
 		content += fmt.Sprintf("\n... (truncated, continue with offset=%d)", next)
 	}
-	return newToolOutput("read", command, content, start, next > 0, nil), nil
+	out := newToolOutput("read", command, content, start, next > 0, nil)
+	if returned > 0 {
+		first := offset
+		if first < 1 {
+			first = 1
+		}
+		out.ResultCount = returned
+		out.ResultRange = fmt.Sprintf("%d-%d", first, first+returned-1)
+	}
+	return out, nil
 }
 
 func (s *readSkill) ExecuteTool(ctx context.Context, args map[string]any) (Output, error) {

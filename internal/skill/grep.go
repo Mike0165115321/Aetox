@@ -410,7 +410,15 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 		truncated = true
 	}
 
-	return newToolOutput("grep", command, output, start, truncated, nil), nil
+	out := newToolOutput("grep", command, output, start, truncated, nil)
+	// Matches in content mode, files otherwise — the same unit the mode pages
+	// over, so the row's count and the tool's own cap always agree.
+	if mode == grepModeContent {
+		out.ResultCount = matches
+	} else {
+		out.ResultCount = len(perFile)
+	}
+	return out, nil
 }
 
 // maxGrepContext caps how much surrounding code one match may drag in.

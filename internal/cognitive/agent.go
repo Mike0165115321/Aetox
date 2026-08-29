@@ -1453,6 +1453,15 @@ func (a *Agent) ContextUsage() (messageCount int, usedChars int, maxChars int) {
 	return a.context.UsageStats()
 }
 
+// MaintenanceStats is memory.Context.MaintenanceStats through the same door
+// the meter already reads usage through.
+func (a *Agent) MaintenanceStats() (sweptItems, sweptChars, summaries int) {
+	if a == nil || a.context == nil {
+		return 0, 0, 0
+	}
+	return a.context.MaintenanceStats()
+}
+
 // ContextMessages returns a copy of the conversation as currently held in
 // memory (system prompt first) — for UI features like the context meter.
 func (a *Agent) ContextMessages() []model.Message {

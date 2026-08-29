@@ -273,6 +273,8 @@ func (a *App) recordToolAction(conv *conversation, ev turn.ToolEvent) {
 	if ev.Name == browserToolName {
 		ev.Tab = a.agentTabPeek()
 	}
+	// Same stamp, different fact: the touched file's git letter (git_badge.go).
+	a.stampGitBadge(conv, &ev)
 	// Relay every call/result live to the chat's tool timeline, stamped with the
 	// conversation it happened in — the window draws two chats at once now, and
 	// an unstamped event is one it has to guess the home of.
@@ -2542,6 +2544,14 @@ type ContextBreakdown struct {
 	// when nothing hit or the provider does no cache accounting; the UI shows
 	// the note only when there is something to say.
 	CachedTokens int `json:"cachedTokens"`
+	// What the compaction layers have reclaimed this session: SweptItems old
+	// tool outputs cleared (worth SweptTokens), Summaries times the history was
+	// folded into a summary. The sweep happens invisibly mid-turn, and a meter
+	// whose number drops with no line saying why reads as broken. All zero on
+	// a session under the pressure thresholds, and the UI says nothing then.
+	SweptItems  int `json:"sweptItems,omitempty"`
+	SweptTokens int `json:"sweptTokens,omitempty"`
+	Summaries   int `json:"summaries,omitempty"`
 }
 
 // GetContextBreakdown reports what is in the model's context window.
@@ -2648,6 +2658,10 @@ func (a *App) GetContextBreakdown() ContextBreakdown {
 		}
 		slices = append(slices, ContextSlice{Key: "free", Tokens: free})
 	}
+	sweptItems, sweptChars, summaries := 0, 0, 0
+	if a.cur().agent != nil {
+		sweptItems, sweptChars, summaries = a.cur().agent.MaintenanceStats()
+	}
 	return ContextBreakdown{
 		UsedTokens: used,
 		MaxTokens:  maxTokens,
@@ -2659,6 +2673,9 @@ func (a *App) GetContextBreakdown() ContextBreakdown {
 		Measured:     measured,
 		CachedTokens: cached,
 		Slices:       slices,
+		SweptItems:   sweptItems,
+		SweptTokens:  est(sweptChars),
+		Summaries:    summaries,
 	}
 }
 
