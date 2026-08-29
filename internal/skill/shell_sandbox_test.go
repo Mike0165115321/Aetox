@@ -349,3 +349,64 @@ func TestShellTellsWindowsSwitchesFromDriveRelativePaths(t *testing.T) {
 		t.Error("a drive-relative path walked out of the workspace")
 	}
 }
+
+// A regular expression is not a path, and on Windows the two can look alike.
+//
+// From a real session (2026-08-29): `git grep -E '\.Is\(|Produces\(|...'` was
+// refused twice. The pattern is one quoted token starting with a backslash, and
+// a leading backslash on Windows IS a path — the drive-relative form — so the
+// guard promoted it to `D:\.Is\(|...` and refused a command that touches
+// nothing. Windows forbids `|` in a file name, so a token holding one cannot be
+// a path there and is not read as one.
+func TestShellDoesNotReadARegexAsAPath(t *testing.T) {
+	root := t.TempDir()
+	windows := windowsGate()
+
+	for _, command := range []string{
+		`git grep -n -E '\.Is\(|Produces\(|\.Available\(|Mark\(' -- internal`,
+		`git grep -n -E "AgentMCPPath\(|ToolNames\(|PlanHeadings\("`,
+		`Select-String -Pattern '^(foo|bar)$' -Path README.md`,
+	} {
+		if err := guardCommandPaths(root, command, windows); err != nil {
+			t.Errorf("%s\n  refused: %v", command, err)
+		}
+	}
+}
+
+// ...and the rule it leans on does not open the door it was guarding. A real
+// drive-relative path has no pipe in it and is still caught.
+func TestShellStillCatchesADriveRelativePath(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("the drive-relative form is a Windows path")
+	}
+	root := t.TempDir()
+	windows := windowsGate()
+
+	if err := guardCommandPaths(root, `type \Users\me\.ssh\id_rsa`, windows); err == nil {
+		t.Error("a drive-relative path out of the workspace was allowed")
+	}
+}
+
+// On POSIX the shortcut must not apply: a pipe is a legal character in a
+// filename there, so skipping such a token would be a hole rather than a fact
+// about the platform.
+func TestThePipeRuleIsWindowsOnly(t *testing.T) {
+	if impossibleWindowsPath(`/etc/we|rd`, posixGate()) {
+		t.Error("a POSIX path with a pipe in it was dismissed as impossible")
+	}
+	if !impossibleWindowsPath(`\.Is\(|Produces\(`, windowsGate()) {
+		t.Error("a token with a pipe was still read as a Windows path")
+	}
+}
+
+// windowsGate is a PowerShell/cmd gate whose host-path translator changes
+// nothing — what gateFor builds for the native shell on Windows, written out so
+// these tests read the same on any machine that runs them.
+func windowsGate() shellGate {
+	return shellGate{posix: false, toHost: func(p string) (string, bool) { return p, true }}
+}
+
+// posixGate is its twin, for the one assertion about the other side.
+func posixGate() shellGate {
+	return shellGate{posix: true, toHost: func(p string) (string, bool) { return p, true }}
+}

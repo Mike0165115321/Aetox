@@ -374,7 +374,7 @@ func commandTargets(root, commandLine string, gate shellGate) (targets, guesses 
 // same rules to a token — the flag prefix, the variable expansion, the glob.
 func tokenTarget(root, token string, gate shellGate) (target string, opaque string) {
 	token = stripFlagPrefix(token)
-	if token == "" || isNullDevice(token) {
+	if token == "" || isNullDevice(token) || impossibleWindowsPath(token, gate) {
 		return "", ""
 	}
 	expanded, reason := expandToken(root, token, gate)
@@ -385,6 +385,35 @@ func tokenTarget(root, token string, gate shellGate) (target string, opaque stri
 	// can leave the workspace, and it is the part a wildcard cannot hide.
 	// `del D:\Other\*` is a path question about D:\Other.
 	return literalPathPrefix(expanded, gate), ""
+}
+
+// impossibleWindowsPath reports a token that CANNOT be a path on this shell, so
+// the scan below never tries to read it as one.
+//
+// The case it was written for, from a real session (2026-08-29): a POSIX regex
+// handed to `git grep -E`, quoted, so it arrives here as one token —
+//
+//	'\.Is\(|Produces\(|\.Available\(|Mark\('
+//
+// It begins with a backslash, and on Windows a leading backslash IS a path: the
+// drive-relative form, which expandToken correctly promotes to `D:\…`. So the
+// guard resolved a regular expression into a path on another drive and refused
+// the command. Twice, in one session, on a command that touches nothing.
+//
+// The rule is a fact about the platform rather than a guess about the text.
+// Windows forbids `< > | " ` in a file name outright, so a token holding one
+// cannot name a file there whatever else it looks like — no path is let through
+// by skipping it, because no such path can exist. `?` and `*` are deliberately
+// not in the set: those are globs, which literalPathPrefix already reads as
+// "this directory, plus a pattern".
+//
+// POSIX is untouched, and must be: `|` is a legal character in a filename
+// there, so the same shortcut would be a hole rather than a fact.
+func impossibleWindowsPath(token string, gate shellGate) bool {
+	if gate.posix {
+		return false
+	}
+	return strings.ContainsAny(token, `|<>"`)
 }
 
 // embeddedPathPatterns find a path by its shape anywhere in the line, quoted or
