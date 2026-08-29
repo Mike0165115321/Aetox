@@ -164,3 +164,28 @@ func TestClampHitRuneSafety(t *testing.T) {
 		t.Fatalf("truncation broke UTF-8: %q", got)
 	}
 }
+
+// A chat hit must carry the DAY, not the clock. messages.time is "15:04" (the
+// chat UI's format) while tool_runs.time is RFC3339, and running datePart over
+// both printed "[01:41]" where a date belonged — on the one tool whose whole
+// job is answering "เหมือนคราวที่แล้ว".
+func TestChatStampCarriesTheDay(t *testing.T) {
+	cases := []struct {
+		name    string
+		opened  string
+		message string
+		want    string
+	}{
+		{"clock plus session day", "2026-08-29T01:41:22+07:00", "01:41", "2026-08-29 01:41"},
+		{"full stamp is left alone", "2026-08-29T01:41:22+07:00", "2026-08-28T23:10:00+07:00", "2026-08-28"},
+		{"no session date falls back to the clock", "", "01:41", "01:41"},
+		{"no message time is still a day", "2026-08-29T01:41:22+07:00", "", "2026-08-29"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := chatStamp(c.opened, c.message); got != c.want {
+				t.Errorf("chatStamp(%q, %q) = %q, want %q", c.opened, c.message, got, c.want)
+			}
+		})
+	}
+}

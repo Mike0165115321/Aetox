@@ -129,15 +129,15 @@ func (s *sessionSearchSkill) ExecuteTool(_ context.Context, args map[string]any)
 func (s *sessionSearchSkill) searchChat(db *sql.DB, match string, b *strings.Builder) int {
 	n := 0
 	_ = eachRow(db, "session_search: chat", `
-		SELECT m.role, m.text, m.time, s.id, COALESCE(s.title, '')
+		SELECT m.role, m.text, m.time, s.id, COALESCE(s.title, ''), COALESCE(s.created_at, '')
 		FROM messages_fts f
 		JOIN messages m ON m.id = f.rowid
 		JOIN sessions s ON s.id = m.session_id
 		WHERE messages_fts MATCH ?
 		ORDER BY m.id DESC LIMIT ?`, []any{match, maxChatHits},
 		func(rows *sql.Rows) error {
-			var role, text, when, sessionID, title string
-			if err := rows.Scan(&role, &text, &when, &sessionID, &title); err != nil {
+			var role, text, when, sessionID, title, opened string
+			if err := rows.Scan(&role, &text, &when, &sessionID, &title, &opened); err != nil {
 				return err
 			}
 			if n == 0 {
@@ -145,7 +145,7 @@ func (s *sessionSearchSkill) searchChat(db *sql.DB, match string, b *strings.Bui
 			}
 			n++
 			fmt.Fprintf(b, "[%s] %s%s — %s: %s\n",
-				datePart(when), sessionLabel(title), s.currentMark(sessionID), role, clampHit(text))
+				chatStamp(opened, when), sessionLabel(title), s.currentMark(sessionID), role, clampHit(text))
 			return nil
 		})
 	if n > 0 {
@@ -205,6 +205,41 @@ func sessionLabel(title string) string {
 		return "(untitled)"
 	}
 	return `"` + clampTo(title, 60) + `"`
+}
+
+// chatStamp is when a chat hit happened, and it exists because the two tables
+// this tool searches do not agree about what a time is.
+//
+// `tool_runs.time` is a full RFC3339 stamp. `messages.time` is "15:04" — a
+// clock, written for the chat UI, which is the only thing that ever read it
+// (app.go's openTurn and its siblings). datePart was written for the first
+// shape and applied to both, so every chat result carried "[01:41]" where a
+// date belonged: a search whose entire purpose is answering "เหมือนคราวที่แล้ว"
+// could not say which day, and the clock read as a date to anyone skimming.
+//
+// The date comes from the session the message belongs to, since the message
+// row has no other. A conversation that runs past midnight therefore reports
+// the day it was opened, which is the day a person means by "that chat" —
+// and it is a far smaller error than the clock-as-date it replaces.
+//
+// Both shapes are handled rather than one, because rows written before this
+// (and any future writer that stores a full stamp) must not come out doubled.
+func chatStamp(sessionOpened, messageTime string) string {
+	messageTime = strings.TrimSpace(messageTime)
+	// Already a full stamp: it carries its own date, so nothing is added.
+	if len(messageTime) >= 10 {
+		return datePart(messageTime)
+	}
+	day := datePart(strings.TrimSpace(sessionOpened))
+	if len(day) < 10 {
+		// No session date either. The clock alone is thin, and saying so is
+		// better than dressing it up as a date.
+		return messageTime
+	}
+	if messageTime == "" {
+		return day
+	}
+	return day + " " + messageTime
 }
 
 func datePart(rfc3339 string) string {
