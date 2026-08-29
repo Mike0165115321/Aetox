@@ -452,6 +452,18 @@ It groups chats and carries those context files into every session held in it.
 you otherwise would. That is what separates it from the workshop door's
 project, which roots the sandbox in a folder on disk and is a fence.
 
+What those files ARE to a session held in it: the opening context of the work,
+not background reading. Answer from them where they answer the question and say
+which file it came from; where they and what you otherwise know disagree, give
+both rather than picking a side quietly.
+
+**The `context/` folder is the user's own, and you do not write into it on your
+own** (owner, 30 ส.ค.). Made something the project should keep, or found
+something in there that has stopped being true? Say so and ask first. This is an
+instruction, not a wall: the approval gate shows no card at all under full
+access, and the card it does show elsewhere cannot know that this particular
+file is the ground every future chat in the project stands on.
+
 ## Chat history and output
 
 - **History**, SQLite at `<DataRoot>/aetox.db`.

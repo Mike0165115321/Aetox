@@ -2229,7 +2229,14 @@ func (a *App) TurnInFlight() TurnStatus {
 
 // SendMessage runs one chat turn through the Aetox engine and returns the reply.
 // The turn is appended to the current session and persisted.
-func (a *App) SendMessage(text string) (TurnReply, error) {
+//
+// to is the worker the user picked off the composer's roster, or "" for the
+// ordinary case — the assistant. It is a parameter rather than something read
+// back out of text because a name in a message and a name chosen off a menu are
+// the same characters and different acts, and only the window knows which one
+// happened. See subagent.Mention for the paste that made that distinction cost
+// somebody 78 seconds and their answer.
+func (a *App) SendMessage(text, to string) (TurnReply, error) {
 	// The conversation, captured once here and carried for the rest of the turn.
 	// Not the id and not "the chat on screen": by the time this turn ends the
 	// user may be looking at something else, and every row this writes, every
@@ -2253,7 +2260,7 @@ func (a *App) SendMessage(text string) (TurnReply, error) {
 	// message that started it and the session with it (openTurn).
 	a.openTurn(conv, SessionMessage{Role: "user", Text: text, Time: time.Now().Format("15:04")})
 
-	userMsg, agentMsg, err := a.runTurn(conv, text)
+	userMsg, agentMsg, err := a.runTurn(conv, text, to)
 	if err != nil {
 		// The turn ends here, and it is written down. It used to end without a
 		// row: the question openTurn had already stored sat alone forever, and
@@ -2295,7 +2302,7 @@ func (a *App) SendMessage(text string) (TurnReply, error) {
 //
 // On failure the returned agent message still carries whatever text arrived
 // before the error, which is what the caller shows.
-func (a *App) runTurn(conv *conversation, text string) (SessionMessage, SessionMessage, error) {
+func (a *App) runTurn(conv *conversation, text, to string) (SessionMessage, SessionMessage, error) {
 	// Every caller must have marked the turn first (beginTurn): the stamp is
 	// what keeps its rows home, and the busy gate is what keeps its memory
 	// whole. A future entry point that forgets would run invisible to both —
@@ -2355,12 +2362,17 @@ func (a *App) runTurn(conv *conversation, text string) (SessionMessage, SessionM
 	// Before anything runs, so an undo has somewhere to go back to. The message
 	// labels the point, which is what makes a list of them choosable.
 	a.captureSnapshot(conv, text)
-	// A message that names a worker goes to that worker, in the words it was
+	// A message addressed to a worker goes to that worker, in the words it was
 	// written in. This is the same act the model performs with `task`, and the
 	// user gets to perform it directly (owner, 12 ส.ค.: one address for both) —
 	// the point being not convenience but that a step which cannot mistranslate
-	// is one that does not run. See subagent.Mention.
-	if agent, addressed := subagent.Mention(text); addressed {
+	// is one that does not run.
+	//
+	// Both halves are handed over: what was chosen and what was typed. Mention
+	// requires both to agree and refuses a sub-agent outright, so a message
+	// that merely quotes a name — a pasted draft, a doc about this very
+	// feature — cannot move itself out of this room. See subagent.Mention.
+	if agent, addressed := subagent.Mention(text, to); addressed {
 		return a.runAddressed(conv, ctx, agent, text)
 	}
 	// A worker left waiting on a decision gets the next thing said, unless that
@@ -3990,7 +4002,7 @@ func (a *App) applyConfig(conv *conversation, cfg config.Config) {
 		// manifest, so a file dropped into the folder is known to the next
 		// session without restarting anything.
 		Space:        conv.space,
-		SpaceContext: a.spaceContextForPrompt(),
+		SpaceContext: a.spaceContextForPrompt(conv),
 		// Which shell the agent's commands and the user's hooks run in. Read
 		// per call so the composer's picker takes effect on the next command
 		// rather than on the next restart.

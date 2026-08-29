@@ -435,14 +435,27 @@ func (a *App) CurrentSpace() string { return a.cur().space }
 // which is knowing they exist; it reads the ones a question needs with the tools
 // it already has. See prompt.workingIn for why the other design — pasting them
 // in — makes the assistant worse at everything else.
-func (a *App) spaceContextForPrompt() bootstrap.SpaceContext {
-	if a.cur().space == "" {
+//
+// It takes the conversation rather than reading a.cur(), which is what it did
+// until 30 ส.ค. and was wrong for the reason conversation.go states about cur()
+// in as many words: it is the chat the WINDOW is looking at, and the one thing
+// the turn path may not ask for. applyConfig is handed its conversation, and
+// endTurn calls applyConfig for a chat that is deliberately not the open one —
+// a config change parked mid-turn — so a project chat finishing its work in the
+// background was rebuilt with whichever project happened to be on screen, or
+// with none. Its prompt then named the wrong folder and the wrong files, or
+// dropped the project layer entirely, silently and only for background work.
+//
+// Nothing else read it, which is why nobody saw it: every other caller was on
+// screen, so cur() and the conversation were the same object.
+func (a *App) spaceContextForPrompt(conv *conversation) bootstrap.SpaceContext {
+	if conv == nil || conv.space == "" {
 		return bootstrap.SpaceContext{}
 	}
-	path, err := spacePath(a.cur().space)
+	path, err := spacePath(conv.space)
 	if err != nil {
 		return bootstrap.SpaceContext{}
 	}
-	space := a.describeSpace(path, a.cur().space, 0)
+	space := a.describeSpace(path, conv.space, 0)
 	return bootstrap.SpaceContext{Path: space.ContextPath, Files: space.ContextFiles}
 }

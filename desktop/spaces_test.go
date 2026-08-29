@@ -148,6 +148,74 @@ func TestTheAssistantIsToldWhichProjectItIsIn(t *testing.T) {
 	}
 }
 
+// What the material IS to the session, which is the half that was missing until
+// 30 ส.ค.: the files were named and nothing said what to do with them, so a
+// project chat ran on the assistant desk's direction and a list of filenames.
+// Owner's sentence: "ให้มันทำงานกับเนื้อหาในโปรเจกต์นั้น ๆ ข้อมูลที่เตรียมไว้คือ
+// บริบทของมัน".
+func TestThePreparedFilesAreNamedAsTheStartingContext(t *testing.T) {
+	root := t.TempDir()
+	got := prompt.Build(prompt.SurfaceDesktop, prompt.Scope{Root: root, Space: prompt.Space{
+		Name: "เปิดร้านกาแฟ", ContextPath: filepath.Join(root, "context"),
+		Files: []string{"สูตรกาแฟ.md"},
+	}})
+
+	// Start from it, and be able to point at where an answer came from.
+	if !strings.Contains(got, "opening context") || !strings.Contains(got, "say which file") {
+		t.Errorf("the prompt does not make the project's files the ground the work starts from:\n%s", got)
+	}
+	// A conflict is surfaced, not settled. The files were prepared by the user
+	// and outrank nothing quietly — both sides get shown.
+	if !strings.Contains(got, "rather than quietly choosing") {
+		t.Error("the prompt lets the model pick a side between the files and what it knows, without saying so")
+	}
+}
+
+// The context folder is the user's, and the agent may not file into it or edit
+// it on its own (owner, 30 ส.ค.: "ให้ถามก่อนว่าจะให้เก็บไหม... เวลาเนื้อหาอะไร
+// เปลี่ยนให้ถามก่อนว่าจะให้แก้ไหม").
+//
+// It is an instruction and not a gate on purpose, and the gate is why: under
+// full access no card is shown at all, and the card shown under the other modes
+// says "write this file" without knowing that this file is the ground every
+// future chat in the project stands on.
+func TestTheAgentAsksBeforeWritingIntoTheProjectsFolder(t *testing.T) {
+	root := t.TempDir()
+	got := prompt.Build(prompt.SurfaceDesktop, prompt.Scope{Root: root, Space: prompt.Space{
+		Name: "เปิดร้านกาแฟ", ContextPath: filepath.Join(root, "context"),
+		Files: []string{"สูตรกาแฟ.md"},
+	}})
+
+	if !strings.Contains(got, "do not add to it or change what is in it on your own") {
+		t.Errorf("the prompt does not keep the agent out of the user's own folder:\n%s", got)
+	}
+	if !strings.Contains(got, "say so and ask first") {
+		t.Error("the prompt refuses the folder without saying what to do instead, which is to ask")
+	}
+}
+
+// Direction, never a fence. Everything added above says how to USE the material;
+// none of it may start describing what the session can reach — that sentence is
+// the one thing in this layer that has always been load-bearing.
+func TestTheProjectDirectionNeverBecomesAPermission(t *testing.T) {
+	root := t.TempDir()
+	got := prompt.Build(prompt.SurfaceDesktop, prompt.Scope{Root: root, Space: prompt.Space{
+		Name: "เปิดร้านกาแฟ", ContextPath: filepath.Join(root, "context"),
+		Files: []string{"สูตรกาแฟ.md"},
+	}})
+
+	if !strings.Contains(got, "does not narrow what you can reach") {
+		t.Error("the project layer stopped saying it narrows nothing")
+	}
+	// "You are a project assistant" is the shape §44.0 deleted: a mode answers
+	// what the work is, never who the assistant is.
+	for _, banned := range []string{"You are a project", "you are working as"} {
+		if strings.Contains(got, banned) {
+			t.Errorf("the project layer describes who the assistant is (%q), not what the work is", banned)
+		}
+	}
+}
+
 // An empty context folder is a different fact from no folder, and the more
 // useful one: it is where the user's next file goes.
 func TestAnEmptyProjectStillSaysWhereItsFilesGo(t *testing.T) {
@@ -293,7 +361,7 @@ func TestAFileAddedNowIsInTheNextPromptBuild(t *testing.T) {
 	if _, err := a.NewSessionInSpace("บริบทสด"); err != nil {
 		t.Fatal(err)
 	}
-	if got := a.spaceContextForPrompt(); len(got.Files) != 0 {
+	if got := a.spaceContextForPrompt(a.cur()); len(got.Files) != 0 {
 		t.Fatalf("a new project already reports %v", got.Files)
 	}
 
@@ -301,9 +369,51 @@ func TestAFileAddedNowIsInTheNextPromptBuild(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := a.spaceContextForPrompt()
+	got := a.spaceContextForPrompt(a.cur())
 	if len(got.Files) != 1 || got.Files[0] != "โจทย์.md" {
 		t.Errorf("the prompt would be built with %v, want the file that is on the disk now", got.Files)
+	}
+}
+
+// The context is the CONVERSATION's, not the window's.
+//
+// spaceContextForPrompt read a.cur() until 30 ส.ค., and applyConfig — its only
+// caller — is handed a conversation precisely because it is not always the one
+// on screen: endTurn rebuilds a chat that finished its work in the background.
+// So a project chat working while the user watched a different one was rebuilt
+// with the wrong project's files, or with none, and its prompt named a folder
+// it was not being held in. Nothing else read the function, which is why it
+// went unseen for as long as it did.
+func TestTheProjectContextFollowsTheChatNotTheWindow(t *testing.T) {
+	a := spaceApp(t)
+	space, err := a.CreateSpace("งานหลังฉาก")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(space.Path, "context", "โจทย์.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.NewSessionInSpace("งานหลังฉาก"); err != nil {
+		t.Fatal(err)
+	}
+	background := a.cur()
+
+	// The window moves on. The chat above keeps running.
+	if _, err := a.NewSessionAt("assistant"); err != nil {
+		t.Fatal(err)
+	}
+	if a.cur() == background {
+		t.Fatal("the window did not move off the project chat")
+	}
+
+	got := a.spaceContextForPrompt(background)
+	if len(got.Files) != 1 || got.Files[0] != "โจทย์.md" {
+		t.Errorf("the background chat would be rebuilt with %+v, want its own project's files", got)
+	}
+	// And the chat that really is on screen still gets nothing, which is the
+	// half that would hide the bug if it broke the other way.
+	if on := a.spaceContextForPrompt(a.cur()); on.Path != "" || len(on.Files) != 0 {
+		t.Errorf("the on-screen chat is in no project but carries %+v", on)
 	}
 }
 
@@ -330,7 +440,7 @@ func TestAPlainNewChatIsInNoProject(t *testing.T) {
 	if a.cur().space != "" {
 		t.Errorf("a fresh chat is still in project %q — the room followed the user out of it", a.cur().space)
 	}
-	if got := a.spaceContextForPrompt(); got.Path != "" || len(got.Files) != 0 {
+	if got := a.spaceContextForPrompt(a.cur()); got.Path != "" || len(got.Files) != 0 {
 		t.Errorf("a fresh chat still carries the project's context: %+v", got)
 	}
 }

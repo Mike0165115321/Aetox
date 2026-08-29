@@ -1343,12 +1343,40 @@ const shellIsWalledIn = "This applies to shell as well: a command naming a path 
 // workingIn says which โปรเจกต์ this conversation is being held inside, and
 // where that project keeps its files.
 //
-// Written as a fact about the conversation rather than as an instruction,
-// because that is what it is: nothing here grants a right, moves the sandbox or
-// tells the assistant to do anything differently. The project is a folder of
-// conversations, not a fence (COMPANY.md §84), and a layer that read like a
-// permission would make it one in the model's understanding even though the
-// gate never moved.
+// It says two things, and the line between them is the whole design.
+//
+// The first is a fact about the conversation: which project it is filed in, and
+// where that project keeps its material. Nothing there grants a right or moves
+// the sandbox — the project is a folder of conversations, not a fence
+// (COMPANY.md §84), and a layer that read like a permission would make it one
+// in the model's understanding even though the gate never moved. The sentence
+// saying so out loud is load-bearing and stays.
+//
+// The second is direction, and it was NOT here until 30 ส.ค. This block used to
+// end by insisting that nothing in it "tells the assistant to do anything
+// differently", which was true and was the gap: a chat in a project ran on the
+// assistant desk's direction plus one paragraph of facts, so the material the
+// user had gone to the trouble of preparing was, to the model, a list of
+// filenames it might open. The owner's sentence for what it should be instead:
+// *"ให้มันทำงานกับเนื้อหาในโปรเจกต์นั้น ๆ ข้อมูลที่เตรียมไว้คือบริบทของมัน"*.
+//
+// The reversal is safe because of where the line falls. What was added directs
+// how to USE what is already there — start from it, say which file, surface a
+// conflict rather than resolving it silently, and ask before touching the
+// folder. It says nothing whatever about what the session can reach, which is
+// the thing the original paragraph was protecting.
+//
+// One principle from four sides, not a list of rules: the session already
+// carries the desk's direction, and a second block enumerating cases is the
+// hardcoding this prompt is written to avoid. The one reason underneath all
+// four is that this conversation is neither the first nor the only one.
+//
+// The folder is read-only to the agent BY INSTRUCTION, not by gate — asked for
+// directly (owner, 30 ส.ค.): "ให้ถามก่อนว่าจะให้เก็บไหม... เวลาเนื้อหาอะไรเปลี่ยน
+// ให้ถามก่อนว่าจะให้แก้ไหม". The approval gate cannot carry this: under full
+// access there is no card at all, and the card it does show says "write this
+// file" without knowing that this particular file is the ground every future
+// chat in the project stands on.
 //
 // The context files are named and not pasted. Naming them costs a line and buys
 // the only thing the assistant is missing — knowing they are there — after
@@ -1381,6 +1409,15 @@ func workingIn(space Space) string {
 	b.WriteString("They are named here, not included: read the ones a question actually needs. " +
 		"Do not read all of them at the start of a conversation to be thorough, that is the user's whole " +
 		"context window spent before they have asked anything.\n")
+	b.WriteString("The user put that material there so this work starts from it rather than from scratch: " +
+		"what is in those files is this work's opening context, not background reading. " +
+		"Where they answer the question, answer from them and say which file it came from; where they " +
+		"and what you otherwise know disagree, give both rather than quietly choosing. " +
+		"That folder is the user's own, so do not add to it or change what is in it on your own: when " +
+		"you have made something this project should keep, or you find something in it that has stopped " +
+		"being true, say so and ask first. " +
+		"The next conversation held here sees the folder and never sees this chat, which is why what " +
+		"goes into it is the user's call rather than yours.\n")
 	return b.String()
 }
 
