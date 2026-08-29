@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/Mikedev115/Aetox/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/Mikedev115/Aetox?color=2f81f7"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-proprietary%20%C2%B7%20source%20available-blue"></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-2%2C295%20Go%20%2B%20953%20UI-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-2%2C479%20Go%20%2B%201%2C054%20UI-brightgreen">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%2B-lightgrey">
 </p>
 
@@ -348,19 +348,21 @@ provider sees what its API normally sees, and nothing is routed through us.
 
 A tool count is not a reason to use anything, which is why this is down here.
 
-**35 tools reach the model on a fresh install**; a default assistant session carries fewer,
-because a desk narrows the set. They cost about 7,763 tokens on every request before you have
-typed anything, against a ceiling of 10,400 tokens and 48 tools that a test enforces.
+**28 tools reach the model on a fresh install**; a default assistant session carries fewer,
+because a desk narrows the set. They cost about 7,527 tokens on every request before you have
+typed anything, against a ceiling of 10,400 tokens and 48 tools that a test enforces. Ten of them
+are **packed** — one name in the block, several verbs behind it — which is why the list got
+shorter in v1.5.15 without anything being taken away.
 
 | Group | Tools |
 |:---|:---|
-| **Files** | `delete` `edit` `edits` `glob` `grep` `list` `read` `write` |
+| **Files** | `change` *(write · edit · append · batch · delete)* `read` `search` *(list · glob · grep)* |
 | **Running commands** | `desk_terminal` `git` `shell` *(run · output · kill · list)* |
 | **Handing back files** | `doc_write` `sheet_write` |
-| **Reading media** | `audio_transcribe` `image_ocr` `pdf_read` `video_ocr` |
+| **Reading media** | `media_read` *(image · video · audio)* `pdf_read` |
 | **Web and automation** | `browser` *(open · read · click · type · wait · back · scroll · capture · tabs · dialog · console · network)* `web_fetch` `web_search` |
-| **Code work** | `diagnostics` `github` *(search · repo_summary · list_files · read_file)* `symbol` |
-| **How the assistant works** | `ask_user` `calc` `desk` *(open · list · close)* `memory` `plugin_install` `session_search` `skill_view` `skills_list` `suggest_task` `task` *(start · collect · answer · plan)* `time` `todo_write` |
+| **Code work** | `codebase` *(errors · symbol · map)* `github` *(search · repo_summary · list_files · read_file)* `pr` *(list · read · checks · create · comment)* `rename` |
+| **How the assistant works** | `ask_user` `calc` `desk` *(open · list · close)* `memory` `plugin_install` `session_search` `skill_view` `skills_list` `task` *(start · collect · answer · plan)* `time` `todo_write` |
 
 That table is generated from the registry the model is actually handed
 (`go test ./desktop -run TestPrintReadmeToolTable -v`), because a hand-kept list of what a program
@@ -443,8 +445,8 @@ assembling a turn is from 2026-08-13, and the ⁽ᵈ⁾ rows from 2026-07-27 on 
 | What you download | 21.3 MB installer |
 | What ends up on disk | **48.5 MB**, one file |
 | Assembling a turn | 0.32 ms · 174.9 KB allocated |
-| Go tests | 2,295 across 42 packages, 0 failures |
-| Frontend tests | 953 across 91 files, 0 failures |
+| Go tests | 2,479 across 43 packages, 0 failures |
+| Frontend tests | 1,054 across 107 files, 0 failures |
 | First launch (cold) | 1.77 s ⁽ᵈ⁾ |
 | Every launch after | 0.53 s ⁽ᵈ⁾ |
 | RAM committed | 252 MB ⁽ᵈ⁾ |
@@ -504,22 +506,21 @@ date-stamped, because the rule above does not have an exception for numbers we w
 
 </details>
 
-## Status — v1.5.14
+## Status — v1.5.15
 
-The core is in place. [Release notes](docs/release-notes/v1.5.14.md) ·
+The core is in place. [Release notes](docs/release-notes/v1.5.15.md) ·
 [roadmap](ROADMAP.md) · [architecture](ARCHITECTURE.md).
 
 Three things it does today that are worth knowing about:
 
-- **Undo, and answer variants.** Every turn records the files it changed, so "Undo (3)" puts them
-  back, and regenerating an answer tells you exactly which files it will restore first. Old
-  answers are kept — arrows and "2 / 3" — and switching between them rewrites what the
-  conversation continues from.
-- **The model draws.** An SVG in an answer renders as a picture inside the reply, building itself
-  shape by shape as it streams, with Copy and Save that bake the live theme's colours onto a clone
-  and rasterise at 2×.
-- **You can talk into a running turn.** Typing turns Stop back into Send and hands your sentence to
-  the turn in flight; anything it could not fold in comes back as a queued bubble you can drop.
+- **It goes back to more than the last turn.** Every turn records the files it changed, so "Undo"
+  puts the last one back — and a second chip lists the earlier restore points by time and by what
+  you typed, naming the real files it would bring back before it does anything.
+- **It reads a project's shape before it reads its files.** A repo map walks the whole project,
+  ranks files by what depends on them and fits the result in about a thousand tokens; the same
+  analysis draws the graph tab, so the picture and the model's map cannot disagree.
+- **A turn is shown the way it happened.** Thinking, tools, thinking again — as separate stretches
+  with their own clocks, instead of one summed number sitting over one collapsed row.
 
 **Next** — agents working across turns rather than only inside one; a plan handed from the
 assistant door to the code door; a code-door team with defined roles.

@@ -205,7 +205,7 @@ bodies are never in your context until you ask, which is why a skill is the
 right home for knowledge like this, and a prompt layer is not.
 
 **A bundled skill has no folder on disk**, so it cannot be revealed or deleted
-from Settings, and `glob` and `shell` will never find it, but its own files do
+from Settings, and `search` and `shell` will never find it, but its own files do
 ship with it, and `skill_view` with a `path` serves them. The body lists what it
 carries at the end; anything not on that list is not there, including a file a
 table *inside* the document names. The two can disagree, because the table is
@@ -589,8 +589,8 @@ the folder the work needed so the user can add it and run again.
 
 ## Folders your own file tools always refuse
 
-`read`, `write`, `list`, `grep`, `glob` and the rest go through one gate, and
-these are refused in **every** mode, whatever folders the user added. Know this
+`read`, every action of `search` and of `change`, and the rest go through one
+gate, and these are refused in **every** mode, whatever folders the user added. Know this
 before you try, a refusal you walked into looks to the user like a broken tool.
 
 Home-relative, refused everywhere:
@@ -624,7 +624,7 @@ any mode, including that worker's own. That worker reaches them the same way
 anyone reaches the shared shelf, `skills_list` lists them beside it and
 `skill_view` opens one, and nobody else's `skills_list` shows them at all.
 Knowledge travels through the skill door or not at all, and a walk from a parent
-folder is not a second door: `grep` and `glob` refuse the same paths `read` does.
+folder is not a second door: `search` refuses the same paths `read` does.
 
 The rest of a worker's folder, `AGENT.md`, `MEMORY.md`, stays readable, so you
 can still explain the team and still write a new `AGENT.md` when the user asks
