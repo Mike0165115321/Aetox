@@ -27,6 +27,12 @@
   let open = $state<Record<number, boolean>>({})
   let files = $state<Record<number, github.PRFile[]>>({})
   let loading = $state<Record<number, boolean>>({})
+  // A second fold, under the first. Opening a pull request answers "which
+  // files", and that is the question the row was asked; every patch drawn at
+  // the same time answers a question nobody asked yet and buries the list that
+  // did. Keyed by number AND path, because two pull requests touching the same
+  // file are two different rows.
+  let openFile = $state<Record<string, boolean>>({})
   // Keyed by head SHA, not by number: the badge is about a commit, and a
   // pull request that gets pushed to is a different commit with the same number.
   let checks = $state<Record<string, github.CheckRun[]>>({})
@@ -78,6 +84,15 @@
   async function loadChecks(sha: string) {
     if (!sha || checks[sha]) return
     checks[sha] = await PullRequestChecks(sha)
+  }
+
+  function fileKey(n: number, path: string): string {
+    return n + ':' + path
+  }
+
+  function toggleFile(n: number, path: string) {
+    const k = fileKey(n, path)
+    openFile[k] = !openFile[k]
   }
 
   async function toggle(pr: github.PullRequest) {
@@ -194,18 +209,25 @@
             {:else}
               {#each files[pr.number] ?? [] as f (f.path)}
                 <div class="pr-file">
-                  <div class="pr-file-head">
+                  <button
+                    type="button" class="pr-file-head"
+                    aria-expanded={!!openFile[fileKey(pr.number, f.path)]}
+                    onclick={() => toggleFile(pr.number, f.path)}
+                  >
+                    <span class="chev"><Icon name={openFile[fileKey(pr.number, f.path)] ? 'chevronDown' : 'chevronRight'} size={12} /></span>
                     <span class="st">{f.status}</span>
                     <span class="path">{f.path}</span>
                     <span class="stat"><span class="add">+{f.additions}</span> <span class="del">-{f.deletions}</span></span>
-                  </div>
-                  <!-- No patch is not no change: GitHub omits it for a binary
-                       and for anything it judged too large, and an empty box
-                       would read as "this file is unchanged". -->
-                  {#if f.patch}
-                    <CodeDiff diff={f.patch} />
-                  {:else}
-                    <p class="pr-empty">{t('prPane.noPatch')}</p>
+                  </button>
+                  {#if openFile[fileKey(pr.number, f.path)]}
+                    <!-- No patch is not no change: GitHub omits it for a binary
+                         and for anything it judged too large, and an empty box
+                         would read as "this file is unchanged". -->
+                    {#if f.patch}
+                      <CodeDiff diff={f.patch} />
+                    {:else}
+                      <p class="pr-empty">{t('prPane.noPatch')}</p>
+                    {/if}
                   {/if}
                 </div>
               {/each}

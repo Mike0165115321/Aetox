@@ -2975,7 +2975,13 @@ button.phase-head:hover { color:var(--text-muted); }
 .pr-title .stat .del, .pr-file .stat .del { color:var(--status-danger); }
 .pr-branches { padding:0 12px 7px 32px; color:var(--text-dim); font-family:var(--mono); font-size:var(--fs-2xs); }
 .pr-file { padding:0 12px 10px 26px; }
-.pr-file-head { display:flex; align-items:center; gap:8px; padding:6px 0; font-size:var(--fs-xs); }
+.pr-file-head {
+  display:flex; align-items:center; gap:8px; width:100%; text-align:left;
+  padding:6px 0; font:inherit; font-size:var(--fs-xs); color:inherit;
+  background:none; border:0; cursor:pointer;
+}
+.pr-file-head:hover { background:var(--surface-row-hover); }
+.pr-file-head .chev { flex:0 0 auto; width:12px; display:inline-flex; justify-content:center; color:var(--text-dim); }
 .pr-file-head .st { color:var(--status-modified); font-weight:700; }
 .pr-file-head .path { min-width:0; flex:1; font-family:var(--mono); color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .pr-empty { padding:18px 12px; text-align:center; color:var(--text-muted); font-size:var(--fs-sm); }
