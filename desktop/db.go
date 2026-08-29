@@ -274,8 +274,8 @@ var migrations = []migration{
 				// column instead of a second table and a grouping key.
 				`ALTER TABLE messages ADD COLUMN variants TEXT NOT NULL DEFAULT ''`,
 				// The turn as it actually happened — prose, thinking segments and
-				// tool calls in order (turn.TurnPart). `text` is the concatenation
-				// of its prose, so every older reader is unaffected; this is what
+				// tool calls in order (turn.TurnPart). `text` stays the closing
+				// answer alone, so every older reader is unaffected; this is what
 				// lets a reopened session show the work rather than only the
 				// conclusion, which no amount of columns on `text` could.
 				`ALTER TABLE messages ADD COLUMN parts TEXT NOT NULL DEFAULT ''`,

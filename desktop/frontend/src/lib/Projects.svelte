@@ -18,11 +18,12 @@
   // The card carries what is already true: how many chats, how much context,
   // when it last changed.
   import { onMount } from 'svelte'
-  import { Spaces, CreateSpace, OpenSpaceFolder, SessionsInSpace, AddSpaceContext, RemoveSpaceContext } from '../../wailsjs/go/main/App'
+  import { Spaces, CreateSpace, DeleteSpace, OpenSpaceFolder, SessionsInSpace, AddSpaceContext, RemoveSpaceContext } from '../../wailsjs/go/main/App'
   import { main } from '../../wailsjs/go/models'
   import { agoLabel, newSpaceSession, selectGlobalSession, sessionWorking, setActiveView } from './stores/cockpit.svelte'
   import { t } from './i18n.svelte'
   import Icon from './Icon.svelte'
+  import ConfirmDialog from './ConfirmDialog.svelte'
   import { coverHue } from './coverHue'
 
   let { onClose }: { onClose: () => void } = $props()
@@ -38,6 +39,8 @@
   let error = $state('')
   let busy = $state('')
   let confirmFile = $state('')
+  // The project a delete has been asked for, held while the dialog is up.
+  let confirmProject = $state('')
 
   const open = $derived(projects.find((p) => p.name === openName))
   const shown = $derived(
@@ -111,6 +114,26 @@
 
   function applyContext(name: string, files: string[]) {
     projects = projects.map((p) => (p.name === name ? main.Space.createFrom({ ...p, contextFiles: files }) : p))
+  }
+
+  // Deleting a project is the one gesture here that cannot be walked back, so
+  // it goes through the app's one dialog rather than the arm-then-click gesture
+  // the context files use: a file can be added again from the original, a
+  // folder of them cannot. What survives is said in the dialog, not discovered
+  // afterwards — the chats stay, the originals stay, the copies do not.
+  async function deleteProject(name: string) {
+    confirmProject = ''
+    error = ''
+    busy = 'delete'
+    try {
+      await DeleteSpace(name)
+      openName = ''
+      chats = []
+      await refresh()
+    } catch (err) {
+      error = String(err)
+    }
+    busy = ''
   }
 
   async function openFolder(name: string) {
@@ -244,9 +267,14 @@
                 </ul>
               {/if}
 
-              <button class="linkish proj-rail-foot" onclick={() => openFolder(open.name)}>
-                {t('projects.openFolder')}
-              </button>
+              <div class="proj-rail-feet">
+                <button class="linkish proj-rail-foot" onclick={() => openFolder(open.name)}>
+                  {t('projects.openFolder')}
+                </button>
+                <button class="proj-del" disabled={busy === 'delete'} onclick={() => (confirmProject = open.name)}>
+                  {t('projects.delete')}
+                </button>
+              </div>
             </div>
           </aside>
         </div>
@@ -307,25 +335,40 @@
           {/if}
 
           {#each shown as p (p.name)}
-            <button class="pp-card proj-card" onclick={() => enter(p.name)} title={p.path}>
-              <span class="pp-cover" style="--h:{coverHue(p.name)}">
-                <span class="pp-mono">{p.name}</span>
-              </span>
-              <div class="pp-body">
-                <span class="pp-title">{p.name}</span>
-                <span class="pp-desc">
-                  {#if p.chats === 0 && p.contextFiles.length === 0}
-                    {t('projects.cardEmpty')}
-                  {:else}
-                    {[
-                      p.chats > 0 ? t('projects.chatCount', { n: p.chats }) : '',
-                      p.contextFiles.length > 0 ? t('projects.fileCount', { n: p.contextFiles.length }) : '',
-                    ].filter(Boolean).join(' · ')}
-                  {/if}
+            <!-- The delete is a sibling of the card, not a child: the card is
+                 itself a button, and a button inside a button is not markup a
+                 browser will honour. The wrapper is what the two share. -->
+            <div class="proj-cardwrap">
+              <button class="pp-card proj-card" onclick={() => enter(p.name)} title={p.path}>
+                <span class="pp-cover" style="--h:{coverHue(p.name)}">
+                  <span class="pp-mono">{p.name}</span>
                 </span>
-              </div>
-              <span class="proj-card-foot">{agoLabel(p.updatedAt)}</span>
-            </button>
+                <div class="pp-body">
+                  <span class="pp-title">{p.name}</span>
+                  <span class="pp-desc">
+                    {#if p.chats === 0 && p.contextFiles.length === 0}
+                      {t('projects.cardEmpty')}
+                    {:else}
+                      {[
+                        p.chats > 0 ? t('projects.chatCount', { n: p.chats }) : '',
+                        p.contextFiles.length > 0 ? t('projects.fileCount', { n: p.contextFiles.length }) : '',
+                      ].filter(Boolean).join(' · ')}
+                    {/if}
+                  </span>
+                </div>
+                <span class="proj-card-foot">{agoLabel(p.updatedAt)}</span>
+              </button>
+              <!-- Named per card rather than a row of identical "delete"
+                   buttons: this is the label a screen reader reads out, and
+                   "delete project" nine times over says nothing about which. -->
+              <button
+                class="proj-card-del"
+                aria-label={t('projects.deleteNamed', { name: p.name })}
+                title={t('projects.delete')}
+                disabled={busy === 'delete'}
+                onclick={() => (confirmProject = p.name)}
+              ><Icon name="x" size={13} /></button>
+            </div>
           {/each}
         </div>
 
@@ -342,3 +385,15 @@
     </div>
   </div>
 </div>
+
+{#if confirmProject}
+  {@const name = confirmProject}
+  <ConfirmDialog
+    title={t('projects.confirmDeleteTitle')}
+    message={t('projects.confirmDeleteMessage')}
+    detail={name}
+    confirmLabel={t('settings.confirmDeleteAction')}
+    onConfirm={() => deleteProject(name)}
+    onCancel={() => (confirmProject = '')}
+  />
+{/if}

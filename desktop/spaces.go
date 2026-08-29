@@ -225,6 +225,41 @@ func (a *App) CreateSpace(name string) (Space, error) {
 	return a.describeSpace(path, filepath.Base(path), 0), nil
 }
 
+// DeleteSpace removes a โปรเจกต์ by removing its folder — the folder is the
+// only record that the project exists, so there is nothing else to clean up
+// (see the type comment).
+//
+// What it takes with it is the context folder: those are copies Aetox made when
+// the files were added, so the originals the user picked from are untouched,
+// and the page says so before it asks.
+//
+// What it deliberately does NOT take is the chats. A session's row holds the
+// name of the space it was held in, and a name that no longer resolves already
+// means "held outside every project" (resolvedSpace) — so the conversations
+// stay readable in the sidebar and simply leave the room with it. Deleting a
+// folder of context must not be a way to lose work; ผลงาน and the chat history
+// are the only places anything dies (COMPANY.md §6.7).
+//
+// A project that is already gone is a success: the user asked for it not to be
+// there, and it is not there.
+func (a *App) DeleteSpace(name string) error {
+	path, err := spacePath(name)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("ชื่อนี้ไม่ใช่โฟลเดอร์ของโปรเจกต์")
+	}
+	return os.RemoveAll(path)
+}
+
 // OpenSpaceFolder shows the folder in the file manager — the answer to "where
 // do I put the files?", given rather than described.
 func (a *App) OpenSpaceFolder(name string) error {

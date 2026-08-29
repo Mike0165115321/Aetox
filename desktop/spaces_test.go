@@ -467,3 +467,67 @@ func TestChatsAreListedUnderTheProjectTheyWereHeldIn(t *testing.T) {
 		t.Errorf("a project that does not exist lists %d chats", len(got))
 	}
 }
+
+// The delete button on the project's own page: the folder goes, the chats do
+// not. Deleting a project is deleting a folder of context, and the room's
+// promise is that it holds no rights and owns no work — so losing a
+// conversation to it would be the room quietly becoming the thing it says it
+// is not.
+func TestDeletingAProjectTakesItsFolderAndLeavesItsChats(t *testing.T) {
+	a := spaceApp(t)
+	space, err := a.CreateSpace("ปิดร้าน")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := a.NewSessionInSpace("ปิดร้าน")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := a.DeleteSpace("ปิดร้าน"); err != nil {
+		t.Fatalf("DeleteSpace: %v", err)
+	}
+
+	if _, err := os.Stat(space.Path); !os.IsNotExist(err) {
+		t.Errorf("the project folder is still there: %v", err)
+	}
+	if len(a.Spaces()) != 0 {
+		t.Error("a deleted project is still listed")
+	}
+	if a.cur().id != id {
+		t.Fatalf("the test lost the session it made")
+	}
+	// The chat is still openable, and it is now held outside every project.
+	if got := a.resolvedSpace("ปิดร้าน"); got != "" {
+		t.Errorf("a deleted project still resolves to %q", got)
+	}
+}
+
+// Asking for a project that is already gone is a success: the user asked for it
+// not to be there, and it is not there. Anything else turns two clicks on a
+// stale page into an error about a project nobody can see.
+func TestDeletingAProjectThatIsAlreadyGoneSucceeds(t *testing.T) {
+	a := spaceApp(t)
+	if err := a.DeleteSpace("ไม่เคยมี"); err != nil {
+		t.Errorf("deleting a project that does not exist: %v", err)
+	}
+}
+
+// The name arrives from the frontend, so the gate is here. A name that walks
+// out of the projects root must be refused rather than resolved — this one
+// would be <DataRoot> itself.
+func TestDeletingAProjectRefusesANameThatEscapesTheProjectsFolder(t *testing.T) {
+	a := spaceApp(t)
+	root, _ := config.DataRoot()
+	keep := filepath.Join(root, "modes")
+	if err := os.MkdirAll(keep, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := a.DeleteSpace(filepath.Join("..", "modes")); err == nil {
+		t.Error("a name pointing outside the projects folder was accepted")
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Errorf("a folder outside the projects root was deleted: %v", err)
+	}
+}
