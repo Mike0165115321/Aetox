@@ -7154,3 +7154,241 @@ That is §196's rule applied one row over: the live thinking clock counts up to 
 **Nothing under a second is reported.** A turn whose tools all came back inside a second has no duration worth a reader's attention, and "0 วินาที" reads as broken rather than as fast. Same reasoning as the floor of 1 on the thinking clock, from the other end.
 
 Verified red first: three of four cases fail with the one line removed.
+
+## 199. Decision — A Room That Can Only Add Is a Room That Fills Up (2026-08-27)
+
+Reported from the โปรเจกต์ page itself: *"หน้าโปรเจคไม่มีปุ่มลบโปรเจคครับผม"*. The room could make a project, name it, fill it with context files and open chats inside it. The only way to get rid of one was to find `<DataRoot>/project/<name>` in Explorer and delete the folder by hand.
+
+The gap was not an oversight about a button. It came out of §84's own rule, read one step too far: **the folder is the truth**, so a folder deleted by hand is a project deleted, and `Spaces()` answers correctly the moment it happens. That is true, and it made "there is nothing to build" look like a finished thought. It is not one, because it answers what the app should *record* and says nothing about what the user can *reach*. Every other shelf in the app — ผลงาน, presets, skills, MCP servers, identity files — puts the door beside the thing it deletes.
+
+`DeleteSpace` is `os.RemoveAll` behind the same `spacePath` gate every other space binding uses, so a name that escapes the projects root is refused rather than resolved. Two behaviours are pinned because they are the ones a reader would otherwise have to guess at:
+
+- **A project that is already gone is a success.** The page can be stale; two clicks on a card whose folder was deleted in Explorer a minute ago must not produce an error about a project nobody can see.
+- **The chats do not go with it.** A session's row holds the *name* of the space it was held in, and `resolvedSpace` already turns a name that no longer resolves into "held outside every project" (that was pinned back when the folder could only be deleted by hand). So the conversations stay in the history and simply leave the room with it. Deleting a folder of context must not be a way to lose work — ผลงาน and the chat history are the only places anything dies (COMPANY.md §6.7).
+
+**It asks first, and the arm-then-click gesture was the wrong one to copy.** The context-file rows right above it use two clicks with no dialog, and that is right for them: a file removed can be added again from the original it was copied from. The project itself takes the whole context folder with it, so it goes through `ConfirmDialog` (§157's one dialog) — and the dialog says all three facts rather than leaving them to be discovered: the copies are gone for good, the chats stay, the originals on disk were never touched.
+
+The door lives on the project's own page, beside เปิดโฟลเดอร์, not on the card in the gallery. A gallery is a place you scan and click quickly; a delete that can be reached without opening the thing first is a delete that eventually happens by accident.
+
+## 200. Decision — The Answer Was Already on the Disk, Two Lines to the Right (2026-08-28)
+
+*"ทำไมเจ้านี้ขึ้นแค่ โมเดลตัวเดียวครับ"* — the Alibaba card in Settings offered one model, `qwen3.7-plus`.
+
+Nothing was wrong with Alibaba. Model Studio issues a key per region and each region has its own host, the owner's key and base URL disagreed, and live discovery got a 401. `ListModelsForProvider` then did what it was written to do: fall from live discovery straight onto `FallbackModel`, one hand-written name per provider. A shelf of one.
+
+**The catalog on that same disk described 54 models for that same provider**, and the price column two lines to the right of the model name was already reading it. The gap was not missing data, it was a chain with a rung missing — exactly the shape §105 found when `visionModelMarkers` was calling sighted models blind while `modalities` sat parsed and half-read in the same struct.
+
+So the chain is now live → catalog → static name, and the middle rung is `ModelCatalog.ModelsFor`. Three things it deliberately is not:
+
+- **Not a probe.** These ids are what models.dev publishes, not what this key can reach on this endpoint today. It sits strictly below live discovery and can never override it, and the card keeps its type-your-own-id field for the model a vendor renamed.
+- **Not a ranking.** Alphabetical. A menu that reorders itself by somebody's idea of "best" is a menu you cannot find anything in twice. Choosing is `DefaultFor`'s job and stays the other function.
+- **Not a second filter.** `ModelsFor` and `DefaultFor` share one `chatCandidates` pool, so "what counts as a chat model" is written once. A copy would drift, and the drift would show as a picker offering the speech recognizer that the default rule already knows to refuse — `qwen3-asr-flash` is a real row on that real shelf.
+
+The static name is folded in rather than replaced: it is the one entry Aetox vouches for, and a menu built out of a third party's table must not be able to drop it.
+
+**What this does not fix, and must not be read as fixing:** the 401 itself. The picker now shows a believable shelf while the key is still wrong for the host, and the provider card's own error is what says so. A fuller list is not a working connection.
+
+## 201. Decision — A Word Is Not a Command, and Only a Slash Can Say Which It Is (2026-08-28)
+
+The owner typed *"Aetox มันรองรับครับ แต่คุณคือ เอเจนใน Aetox ผมไม่เข้าใจว่า ทำไมคุณไม่รู้หรือผมพรอบไม่ดีเอง"* and got back 36,999 characters of `internal/skill/skills/aetox/SKILL.md`, headed "executed (done). command: aetox."
+
+Not one character of that sentence reached the model.
+
+`grammar.Parse` rule 3 took the first word of any line, lower-cased it, and looked it up in the set of registered skill names. `aetox` is a registered skill — the master document about Aetox itself — so the line was a command, the rest of the sentence was its arguments, and the skill's whole body came back as the answer. (A markdown skill's `Execute` returns its body; that part is correct and is how the model reads one.)
+
+**This is the rule that ARCHITECTURE.md §17 says does not exist.** "There is deliberately no keyword/regex guessing between the user and the model" was written in the executor's own comment, three lines above the branch that acted on a keyword. It never read as guessing because it was called a grammar — but a test on the first word is a keyword test, and no reading of "Aetox มันรองรับครับ" could ever have told a command from a sentence about the product this whole repository is named after.
+
+So rule 3 now requires the slash. `/read foo.txt` is a command; `read foo.txt` is a sentence, and sentences go to the model — which can call every one of these skills itself, and will say what it did.
+
+**What the slash costs, honestly:**
+
+- Bare `read foo.txt` in the CLI now goes to the model instead of straight to the tool. One model round-trip bought, and the ability to type a question that begins with the word "read" earned.
+- `/shell` is a *meta* command (the shell picker, rule 1) and beats the skill of the same name, so the shell skill lost its user-typed form entirely. That is acceptable — the model runs shell commands on request, which is where every other tool already lives — but it is a real consequence, pinned in a test so nobody rediscovers it as a bug.
+- The composer's palette has always inserted `/name `, so the UI needed no change at all. That is the tell: the slash was already the real door, and the bare form was a second one nobody had noticed was open.
+
+**Not fixed here, deliberately.** When the summary step fails, `fallbackToolSummary` still prints a tool's raw output verbatim, which is how a 37,000-character document became a chat message. With the parse fixed that can no longer be reached by accident — only by typing `/aetox`, where the document is what was asked for. The cap is a separate decision and is not this one.
+
+## 202. Decision — A Tool That Answers Correctly and Leaves Out the One Fact (2026-08-28)
+
+*"เช็ค log ตอน 17:36 หน่อยครับ ทำไมมัน วนลูปแบบนั้น"*
+
+The agent had been asked to fix a deck's opening slide and spent 83 tool calls over two turns on it: `edit` → `browser open` → `browser capture` → look → `edit` again, round after round. Nothing in the log is an error. Every tool answered correctly, and four separate times the answer left out the single fact that would have ended the round.
+
+**Three of the thirteen captures were byte-for-byte identical to the one before them.** `work/page-1.png`, `page-2.png` and `page-5.png` share a hash; so do `page-12.png` and `page-13.png`. A capture handed back a picture and nothing else, so two photographs of an unchanged page were two identical images with nothing marking them as identical — and a model reading the second one does not read it as "nothing changed", it reads it as "the edit did not land". The hero slide was rewritten four times over a page that had not moved. A tab now remembers its last capture: an identical one is reported as identical, named against the file it matches, and neither attached nor written a second time. The sum is of the PNG bytes, which can only ever miss a duplicate and never invent one — a false "nothing changed" would stop an agent verifying a fix that really had landed, and that is the direction that must stay impossible.
+
+**The same picture was opened in a second tab ten seconds after the first.** `newTab` minted one unconditionally, so `web-agent-2` and `web-agent-3` ended up on one file; the agent worked out what it had done four actions later — *"ผมมีแท็บรูปซ้ำกันแล้ว"* — and spent a fifth closing one. The ability to ask for a second tab was not what was wrong and is not what was taken away. Only opening the *same page* twice is refused, and the answer says so. Reuse also moves to that tab, because every browsing tool after `open` works whichever tab is current: pointing at a tab without going to it would answer with one page and then read another, which is worse than the duplicate it replaces.
+
+**Every round photographed the wrong renderer.** The complaint had been *"หน้าแรกพังครับ ตอนกดส่งออก"*. A deck is not exported by the tab it is being looked at in — `deck_render.go` opens it in a window of its own, off-screen at exactly 1280x720, and photographs one slide at a time. "It looks right on screen" and "it exports right" are two claims, and eight rounds of `capture` supported only the first. A capture of a deck now says which renderer it is not. A note and not a refusal: most of a deck does not care how wide the window is, and no new tool — §153 removed `deck_export` for costing 139 tokens in every request to save one click, and that decision stands.
+
+**And none of the answers said which tab.** Owner, reading the transcript back: *"เวลาเอเจนทำในแท็ปไหน มันควรระบุแท็ปด้วย"*. Every browser action named the page and none named the tab, which was harmless while there was only ever one of them and stopped being harmless the day there could be several. It is stamped once, at `browserSkill.run`, because that is the one door every browser action leaves through — the alternative is eleven places saying the same thing, which is exactly how the four spellings of "which page" that `browserPageRef` was written to end came about.
+
+**What this does not fix.** The loop had no ceiling and still has none: the log says `maxToolCalls = 0 (<=0 means unlimited)` on every turn, and Stop is the bound. That is §163's decision and it is not reopened here. What changes is that a round which learns nothing now says it learned nothing, which is the input a judgment about stopping was missing.
+
+## 203. Decision — A Price With No Provenance Is a Claim (2026-08-28)
+
+*"ราคามันปลอม ทำไมเป็นแบบนี้เนี้ย"* — the model picker showed `deepseek-v4-flash` at `$0.14 / $0.28`.
+
+He was right, and Aetox had invented nothing. `PriceModels` copies models.dev verbatim, by exact key match, and that catalog — fetched to his own disk that morning — carries exactly those numbers. Read against DeepSeek's own published page the same day:
+
+| | models.dev, i.e. what Aetox showed | DeepSeek's own page |
+|---|---|---|
+| v4-flash input | $0.14 | $0.22 off-peak, $0.44 peak |
+| v4-flash output | $0.28 | $0.66 off-peak, $1.32 peak |
+| v4-flash cache hit | $0.0028 | $0.007 off-peak, $0.014 peak |
+| v4-pro | $0.435 / $0.87 | $0.66 / $1.98 to $1.32 / $3.96 |
+
+Not one cell agrees. And even a corrected catalog could not be shown as one pair: DeepSeek's rate doubles at peak hours and its cache hits are thirty-one times cheaper than a miss, while `ModelPrice` holds a single input/output pair per model.
+
+**The fix here is not the number, it is the sentence around it.** The stats page has always said what its figures are ("estimated from published list prices, not an invoice") and how old they are (`PricesFetched`). The picker — where the price is actually read, at the moment of choosing — said nothing. So `ModelPriceSource` returns the catalog's host and fetch date, and both pickers carry one line under the priced rows.
+
+Three rules it keeps, each pinned by a test:
+
+- **Silent without a catalog.** A source line about a table that was never fetched is the same unearned confidence as the price it exists to qualify.
+- **Silent when nothing on the list could be priced.** A footnote to nothing — and on a provider Aetox cannot price at all, it would be the only sentence about money on the screen.
+- **The host, not the URL.** `models.dev`, because it is read by a person on a menu row; `https://models.dev/api.json` is a detail of the fetch.
+
+The date renders in the viewer's own locale, which for Thai means the Buddhist year (`28 ส.ค. 2569`). That is correct, and the test asserts around it rather than against it.
+
+**What is still open.** The catalog is wrong for DeepSeek and Aetox now merely admits whose wrongness it is. Two further moves were offered and not taken in this change: reporting the row upstream (models.dev is open data, and fixing it there fixes it for everyone without a hand-written price table in this repo — which `models_dev.go`'s first rule forbids), and a narrow vendor-verified override for the provider the owner actually spends on, admissible only with a link to the vendor's own page and a date. Until one of those lands, the usage page under-reports DeepSeek spend by two to four times, and that is the real cost of the wrong row.
+
+## 204. Decision — A Picture the Budget Could Not See (2026-08-29)
+
+*"แม่งมึงดู มัน ทำงานวนชิบหายวายวอด กุหงุดหงิดค่าใช้จ่ายพุงตายห่าหมด"*
+
+The run in that log took 108 tool calls, 59 of them the browser. What it did with them, from `aetox-20260828-230749.log`:
+
+```
+open เด็ค → capture → "สไลด์แรกแสดงผลถูกต้องแล้ว"
+scroll ลง 1 จอ → capture → "สไลด์ 2 แสดงผลถูกต้อง"
+scroll ลง 1 จอ → capture → "สไลด์ 3 แสดงผลถูกต้อง แต่ผมเห็นปัญหา..."
+```
+
+Seven slides, three times over: 23 scrolls, 22 captures, 9 re-opens of the same file, `full: true` used zero times. It was **reading a 17 KB HTML file by photographing it**, one screen at a time. Two unsplash tabs and four search calls before that produced a deck containing zero pictures.
+
+**The cost is not the 22 photographs, it is the 620.** A tool's picture is delivered as a follow-up user message, because an image block inside `tool_result` works on Anthropic and on neither of the other two wire formats. That message then stays. Counting per turn, capture N's image rides in every request after it: 22 pictures, 620 image-slots sent, somewhere near 800,000 image tokens for 22 distinct pictures.
+
+**And nothing could have stopped it, because the budget could not see a picture at all.** `totalChars` summed `len(message.Content)`. A message carrying a 130 KB screenshot was measured as its 45-character caption, so a conversation full of them never reached its limit and no screenshot was ever dropped for being old. Every safeguard in this file was working correctly on a number that was wrong by four orders of magnitude.
+
+Three changes, and only the first is a bug fix:
+
+- **`Image.CharCost`, priced by pixels.** `DecodeConfig` reads the header and never the pixels. Bytes would have been the wrong unit in both directions: a model charges for area, and a screenshot of a mostly-white page compresses to a tenth of a busy one without being a tenth of the cost. An unreadable header is priced as a browser capture rather than as zero, because a picture nobody can measure must not be free.
+- **The newest two pictures stay pictures; older tool ones lose their bytes.** Two is what a comparison needs: the shot just taken and the one it is being compared against. Past that a screenshot's worth is in what was said about it, which is in the transcript already. The message says so where the picture used to be, because the caption reads "the image returned by browser follows" and a caption promising a picture that is not attached is a message that lies about what the model is holding. What it frees is counted through the same pair `MicroCompact` reports on, so the context meter has one story rather than a third mechanism reclaiming space in silence.
+- **Only the agent's own pictures are forgotten.** `Message.ImagesFromTool` exists for exactly this. A picture the user attached is the subject of the conversation rather than a step in it, and a room that drops the photo somebody asked about to make space for its own screenshots has broken the job it was given. Without the flag the only thing separating the two is a caption.
+
+**The instruction that started it is two days old and it reversed the rule it replaced.** On 24 ส.ค. (`20f7b21`, the design-system upgrade from open source) the section was called "Checking a finished deck without a render tool" and said: *"verify by reading values, not by eyeballing an image that does not exist yet"*. On 26 ส.ค. 15:56 (`45e8c9e`) it became "Checking a finished deck before calling it done" and said to open the deck and capture before saying a deck is finished, with the two text checks demoted to "cheaper checks worth running even before that". That commit's real work was 212 lines about animation and onstage state in `aetox-slides` — where looking really is the only way to check — and 15 lines here that generalised it to every deck.
+
+**It is removed, not tuned.** The first attempt kept it and bounded it: read first, photograph once with `full: true`, never one per slide. The owner's answer was to take it out altogether, and on the evidence that is the better call. Every defect that run actually found was in the source, and the argument for keeping a capture was a list of things it *could* catch rather than things it *had* caught. A rule earns its place by the failures it has prevented, and this one had a measured cost and no measured catch.
+
+So the section is now four reading checks with the file's own numbers attached: line budgets against `slide-layouts.csv`, the 720px fold that `overflow:hidden` cuts in silence, the `css_implementation` route for every chart, and selectors. It ends by saying the `browser` tool is still there and that "I have not looked at it" is not a reason to withhold a deck that reads correctly, so the removal does not become a different superstition.
+
+Two other places said it in other words and are handled differently, because a rule is only removable where it is unearned. `aetox-anti-slop` said "open it in a real browser and look at it, before you call any UI done", and that one has evidence behind it: 4 of 10 React apps shipped as blank pages past every code-level check. It keeps its rule and gains a scope, a page whose content is built by code that has to run, which a deck is not. `aetox-frontend-design` still says to take screenshots as you build, is vendored, and was not read during the failing run; it is named here and left alone rather than edited in passing. Its "a picture is worth 1000 tokens" is now known to be wrong by a factor of thirty when a turn is long, which is the same finding from the other end.
+
+**What this does not fix.** Documents are still uncounted, which is the same hole for a PDF. It is left open rather than guessed at: an image's cost follows from its area and a document's does not follow from its bytes, so pricing one wrong would evict real conversation to make room for nothing.
+
+## 205. Decision — A Ban Is Not a Requirement (2026-08-29)
+
+*"เออ สไลด์อ่ะควรจะมีสรุปและปิดจบด้วยนะ มันขาด"*
+
+The deck in question ran "สร้างคีย์ → เปิดดู public key → ใส่ key บน GitHub → ทดสอบการเชื่อมต่อ → พร้อม push แล้ว" and stopped there, on a step. Seven slides, no synthesis, no close.
+
+Nothing was violated. `aetox-anti-slop` bans the "Thank you for your attention" slide and says to end on a real ask or a memorable line, and the model did not write one. It also did not write the alternative, because the rule was a ban and a ban has no positive form: avoid X, and a deck that never approaches X is compliant while ending nowhere. The structures in `slide-strategies.csv` all end deliberately (`10.Ask`, `9.Call to Action`, `9.Synthesis 10.Resources 11.Q&A`), and not one of the fifteen ends on the last item of its own middle, but that is data the model reads for a structure rather than a rule it reads for an obligation. It had also picked no structure at all: the closest match, Workshop Training, is 20-40 slides and the ask was for a short deck.
+
+So the requirement is now written beside the ban, in `aetox-design-system` where the deck is generated rather than in the anti-pattern notes where it was implied. The last two slides are a synthesis and a close: the synthesis says what the middle added up to in the deck's own terms, not the slide titles again; the close is the one thing to do, remember, or decide next. And it is checked, as a fifth reading check alongside line budgets and the fold, by reading the last two slides and asking what the deck concluded.
+
+**A short deck gets no exemption**, which is the clause most likely to be argued with. Two of seven is a heavier proportion than two of twenty, and that is the right proportion rather than a problem with it: the shorter the deck, the more of it the ending is.
+
+The general shape is worth keeping separately from decks. Every "never do X" in a skill should be read as a question about what is supposed to be there instead, and if that answer is not also written down, the rule is only half-installed.
+
+## 206. Decision — Descriptions Were Never the Missing Part (2026-08-29)
+
+*"แยกสกิลสิครับ อย่าลืม เรามีในส่วนของออกแบบอีก ถือว่าอัปเกรดสกิลไปในตัว"*
+
+`aetox-design-system` has described every layout a deck could want since 24 ส.ค.: `data/slide-layouts.csv`, twenty-five rows, each with content zones, visual weight, what to use it for and what to avoid it for. What it gives for the composition is one column, `css_structure`, holding one line:
+
+```
+display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center
+```
+
+The 29 ส.ค. run read `slide-strategies.csv` and `slide-layouts.csv` in its first five calls, before writing a line, and still produced seven ad-hoc slides that ended on a step. It had the tables. It had a fitting structure available too, Product Demo at 5-8 slides. What it did not have was a slide to copy: the whole composition had to be invented at write time, every time, which is why decks built from the same tables came out differently on every run and mostly came out as the one skeleton in `aetox-slides` with different words in it.
+
+So `aetox-slide-templates`: sixteen layouts, one file each, markup plus the CSS it adds, under the one-file deck contract.
+
+**Its own skill rather than a folder inside the design system**, which was the owner's correction and is right for two reasons that only became visible while building it. `trimListing` caps a skill's file listing at 40 entries; `aetox-design-system` already ships 23, so a folder of templates inside it would have pushed its own decision tables past the edge and hidden them with no error. And deciding and copying are two questions: "which layout does this slide want" is the tables, "what does that look like" is the templates. One home each, which is also what let the templates be one file per layout instead of one document, so a model opens the five it needs rather than reading sixteen.
+
+**Nothing was copied.** The inventory was cross-checked against `html-ppt-skill` by lewis (MIT), which catalogues 31 layouts and named four the table did not: Code, Terminal, Diff and Process Steps. Its markup could not have been taken: its slides are `100vw` by `100vh`, stacked with `position:absolute` and `opacity:0` for a runtime to switch between, and each layout file is a fragment depending on four external stylesheets and a script. Under our contract that deck exports as one slide followed by blank rectangles. Structure borrowed, ornament not, and no MIT notice is owed for a list of layout names when every line of markup is our own.
+
+**Verified by rendering, once, which is not a reversal of §204.** Sixteen compositions written for the first time have no prior render to compare against, and a broken template is not advice that ages badly, it is every deck built from it that day being wrong the same way. Headless Chrome measured all sixteen: each is exactly 1280x720 with no element past any edge, content bottoms between 423 and 720. Reading found none of what a look found: `before-after` had its divider given `height:280px` inside a row of ~120px, so it hung past the content on both sides. §204 removed a standing order to photograph decks the model writes from templates that are already known good. Authoring the templates is the other case, and it is a one-time cost paid here rather than in every deck.
+
+## 207. Decision — The .ico Knew Nine Sizes and the Store Package Shipped One (2026-08-29)
+
+Two copies of Aetox on one taskbar, the installed build and the Store build, and only the Store one had a frayed edge: *"ไอที่ขอบแดงๆพังๆอ่ะ คือโปรแกรมเราที่โหลด จาก ไมโครซอฟสโตร ครับ แต่พอโหลดของเราตรงๆกลับไม่เป็น"*.
+
+Same mark, same executable. What differed was who resized it.
+
+`icon.ico` carries nine hand-drawn frames — 16, 20, 24, 32, 40, 48, 64, 128, 256 — so the installed build hands Windows the exact pixel size the taskbar asks for and Windows resamples nothing. The MSIX shipped **one 44x44 PNG**. Every size the taskbar actually draws (24 and 32 logical; 30, 36, 40, 48 at the DPI scales people run) was Windows downscaling that 44 by a fractional factor, through a mark whose outline is about one pixel wide. That is the fringe, and it was in the package from the day the Store build was first assembled.
+
+**The second half is why adding files would not have been enough.** MSIX resolves qualified filenames — `targetsize-24`, `_altform-unplated`, `scale-150` — through `resources.pri`. With no PRI in the package, Windows ignores the qualifiers entirely and reads the literal path in the manifest. The release workflow ran `makeappx` and never `makepri`, so a folder full of correctly-named assets would have changed nothing at all. Both halves or neither.
+
+So:
+
+- **make-logos.ps1** now reads every frame out of the .ico rather than the largest one, and picks each output's source by nearest-larger. Where the .ico has a frame at exactly the output size it is **blitted, not resampled** — `DrawImage` at 1:1 still runs the interpolator over pixels somebody drew by hand. 61 files: the tiles at scale-100 through 400, and `targetsize-16` through `-256` with an `_altform-unplated` twin each, because the taskbar and Alt-Tab ask for the unplated form by name.
+- **priconfig.xml** is committed rather than generated by `makepri createconfig`, because createconfig's default carries `autoResourcePackage` entries that split the index into `resources.scale-125.pri` and friends. That is right for a `.msixbundle`; for the single `.msix` this repo ships it would leave the package holding scale-100 alone — a quieter version of the same bug.
+- **release.yml** runs makepri before makeappx, refuses a split index, and then opens the finished `.msix` as the zip it is to check that `resources.pri` and `Square44x44Logo.targetsize-24_altform-unplated.png` are actually inside. (`makeappx` has `pack` and `unpack` and nothing that lists.)
+
+**Two traps worth writing down.** makepri parses its config with something that is not an XML parser: an element name inside a *comment* is read as an element and the file fails with "resources node not found", a message about the one node that is unmistakably there. And an empty `<packaging>` node warns on every run, so there is none at all.
+
+The checks live in Go (`desktop/store_assets_test.go`), not only in the workflow: the workflow runs on a tag, which is the last moment anybody wants to find out the icons are wrong. Verified red first — rebuilding `targetsize-24` the old way, rescaled from the 256 frame, differs from the hand-drawn 24 frame in 348 of 576 pixels.
+
+**What this does not do.** Nothing here can be seen until a package built this way is uploaded to Partner Center and installed from the Store; the local proof is that the 24px asset is now byte-identical to the frame the installed build already uses, and that `makepri` + `makeappx` produce a package carrying it.
+
+**Named for its medium, one correction later.** It shipped as `aetox-templates`, and the owner asked the right question of that name: *"aetox-templates ของอะไรอ่ะ สไลด์ หรือเว็บ ไวท์ หรือ วิดีโอ"*. Aetox produces five kinds of thing and no two share a contract, a deck is one self-contained file at a fixed 1280x720 printed by an off-screen renderer, a web page is responsive in a browser somebody resizes, a document leaves through `doc_write` as OOXML, a sheet through `sheet_write`, a picture is SVG or a real photograph. It produces no video at all; `video_ocr` reads one. A name that covers all five promises four things the folder does not contain, and the failure it invites is a slide layout pasted into a web page. So `aetox-slide-templates`, and if web or documents ever earn templates they earn a skill each rather than a folder in here.
+
+## 208. Decision — The Same Hole, Four Times Wider (2026-08-29)
+
+*"มันมีเทมเพลต เว็บไซต์อีกไม่ใช่หรอ ทำไมไม่ทำด้วย"*
+
+Six skills describe web and UI work: `aetox-frontend-design` decides the look, `aetox-ui-design` carries nine implementation guides, `aetox-shadcn` and `aetox-radix-to-base` cover component libraries, `aetox-design-system` the tokens, `aetox-design` the pictures. Sixty-six files between them. Counted on 29 ส.ค., **not one was markup**: every file was prose, a CSV or a licence.
+
+That is §206's finding again, on a bigger surface. A description tells a model what a hero should be. It does not stop it building a different hero every time, which is what a page assembled from scratch on every run actually is.
+
+So `aetox-web-templates`: twenty-one sections, one file each. Nav, hero, logo bar, features, how-it-works, stats, testimonial, pricing, FAQ, CTA band, newsletter and footer for the visitor's own decision journey; dashboard shell, stat cards, data table, form card, empty state and error page for the app; article and docs page for the reading; and a page shell that carries the tokens, the reset, the landmarks and dark mode the other twenty assume.
+
+**A second template skill and not a folder in the first, because the medium is the contract, and here it is the opposite one.** A deck is a fixed 1280x720 box printed by an off-screen renderer and must never be sized in viewport units. A page is resized, zoomed, read aloud and opened on a phone, so a fixed pixel width is the defect instead. The test file says so in as many words, because getting that backwards is the one mistake most likely to be made by whoever adds the next template. The rest of the contract is shared: one self-contained file, no framework, no CDN, no build step.
+
+**No script where semantics will do.** The FAQ is `<details>` and `<summary>`; the mobile menu is a checkbox. Both are keyboard operable for free, both survive a JavaScript error, and the browser's own find-in-page can reach an open answer. Every scripted accordion is a reimplementation of that with fewer of those properties.
+
+**Namespaced `w-`, and tested for it.** `aetox-frontend-design` warns that generated CSS most often breaks when a class selector and an element selector fight over the same padding. Two templates pasted into one page must not be able to reach into each other, so every selector in the folder starts `.w-` and a test fails the ones that do not.
+
+**Rendered and measured, not read.** Assembled into a full landing page and a full app page, then measured in iframes at 360, 414, 768, 1024, 1280 and 1600: no horizontal scroll and nothing past the edge at any width. Two things came out of that which reading had not:
+
+- **Bullet points down the middle of the nav and the logo row.** The shell's reset used the `ul[class]` idiom, and every list in these templates is a plain `<ul>` inside a classed parent, so not one of them matched. Now scoped to the namespace, with prose asking for its markers back.
+- **The measurement itself was wrong before it was right.** Its first version flagged the dashboard sidebar and the data table as overflowing at narrow widths. Both sit inside deliberate horizontal scrollers and neither touches the document width, so the check now ignores anything clipped by a scrolling ancestor. A verification that cries wolf is one that gets ignored on the run where it matters.
+- And the test flagged `max-width:1280px` in the docs page as a pinned box. A max-width is a cap the page still shrinks below, which is the opposite of the defect, so the match is anchored to the start of a declaration rather than done on substrings.
+
+**What still has no templates, said plainly rather than left to be discovered:** documents and sheets, which leave through `doc_write` and `sheet_write` as OOXML and are not HTML at all. And video, which Aetox does not produce; `video_ocr` reads one. Each would earn its own skill on the §206 rule, not a folder in either of these.
+
+## 209. Decision — A Turn Is Read The Way It Happened (2026-08-29)
+
+*"ตอนนี้โมเดลทุกตัวมีพฤติกรรมแบบ ทำแล้ว ใช้ tool แล้ว ตอบกลับ เป็นช่วงๆใช่ไหม แต่ปัจจุบัน เรา แบบ เหลือไว้แสดงแค่คำตอบสุดท้าย"*
+
+He was right, and the part worth writing down is that the engine had been right since §59. `internal/turn/part.go` has recorded the sequence for a while and migration v4 has stored it. The window then threw the shape away twice over.
+
+**What it threw away.** `stepsFromParts` declared the last text part "the answer" and demoted every earlier one to a `note` row: `--fs-xs`, `--text-muted`, `white-space:pre-wrap` and no markdown at all, folded behind a toggle that is shut by default. A table, a heading or a chart the model wrote before calling a tool arrived as its own source. Live it was worse: the engine hands the prose over when a round closes (`discardAnswerPreview`, correctly, so it is not on screen twice) and the window kept only the LATEST note, so everything said before it left the screen. And both clocks were summed, which is the complaint he actually opened with: *"กำลังคิด 275 วินาที / ใช้ 36 เครื่องมือ · 272 วินาที มันยาวเกิน เพราะมันกระจุกอยู่ที่เดียว ทั้งที่โมเดล ทำหลายแอ็คชั่นมาก"*.
+
+**The one rule.** A sentence from the model starts a new phase (`turnPhases.ts`). Not a heuristic about paragraphs — it is the shape of the protocol, and `executor_test.go` already pins the order as thinking → note → call → result. One function serves both halves: the live block groups `cockpit.toolSteps` as events land, a reopened session groups what `stepsFromParts` folds out of the stored sequence. A turn drawn one way while it runs and another way after a reload is the app disagreeing with itself about what happened.
+
+**No new information anywhere in this.** 41+96+84+54 is the same 275; 9+14+8+5 is the same 36. A test pins that, because a split that does not add back up is a different measurement rather than the old one told honestly.
+
+**Flat, not tiered — his call, made against a mockup.** Two layouts were built and shown side by side before any of this was written: the closing answer given a raised ground and a label, or every phase at the same weight with the answer as simply the phase nothing ran after. *"ข · แบนเสมอกัน ครับตรงใจผม"*. So there is no `.final`, no cap, no card. The header is the only seam — a line of numbers in `--text-dim` — because a border between phases drew four hard strokes through what is one reply.
+
+**Move the layout, do not add to it.** The comment this replaces in `cockpit.svelte.ts` said an inline draw had been tried once and read worse. It had, and the reason was that it was drawn *in addition to* the toggles: the same thinking segment appeared twice, once as a summary and once between the paragraphs. So the four count toggles are gone. The one that survives opens the reasoning TEXT, which is a single blob for the whole turn and cannot be split between phases, and it drops the duration from its label since the seconds are on the headers now. The live clock keeps counting the whole turn, because a phase header cannot be written until its round closes and the wait before the first one is the longest wait in the product.
+
+**Rows stay at the height he dialled, and folded.** The first build showed every row and folded only past six. Looking at it: *"ชั้นที่มันคิดอ่ะ เหมือนกลับไปต่อ tool ที่มันรัน ควรจะ พับเป็นค่าเริ่มต้นสิครับ"* — and, of the fold row underneath, *"อันนี้เหมือนจะพับไม่ได้เลย"*. So the rows are closed by default and the header IS the control: it already says what was thought, how many tools ran and for how long, which is exactly what is behind it, and a separate "N more rows" row put the count in two places. The exception that keeps it honest is `openRows[key] ?? working` — a stretch with anything still running opens itself and closes again once the person has an opinion, the same `?? isRunningNode(node)` idiom the delegation cards already use. A closed phase therefore has nothing live inside it by construction.
+
+Delegations count on the header too. Not for symmetry: a stretch whose only work was a `task` call had zero tools, so no header, so no way to open the block that hires every sub-agent in the app.
+
+**The answer went missing, and a green suite said nothing.** Owner, by eye: *"คำตอบสุดท้ายมันหายไปไหน"*. The engine emits a `note` for the prose of every round followed by tool calls and deliberately **not** for the closing one (`if r.Final { return }`) — the old bubble took that from `Reply` and drew it separately, so nothing ever needed it in the event stream. Drawn from the sequence, a live step list without it is a turn whose answer is in it nowhere: the last phase never exists. `answeredBubble` now closes the list with that sentence, which also collapses the four identical object literals that finished a turn into one builder. What the window holds is then the same list `stepsFromParts` produces on reopen, which is the property the whole layout rests on. `turnAnswerPhase.test.ts` was written red first.
+
+**The engine was not touched.** The first plan named `app.go:342` as a file to change — stop erasing the live preview. Reading it again, the erase is what keeps the prose from being on screen twice: the same round emits `OnContentReset` and then the `note` carrying that text. The window was being handed the sentence and filing it away. Nothing in `internal/` needed to move.
+
+**Two comments were lying and are now not.** `part.go`'s header and `db.go`'s v4 migration both said `text` is the concatenation of the text parts. It is the last sentence alone — `TextOf` computes the concatenation and nothing in production calls it. Left as it was, the next reader would have assumed a reopened turn already had its narration in the bubble.
