@@ -546,6 +546,23 @@ func (p Profile) DenyRules() []safety.PermissionRule {
 	return out
 }
 
+// KeepsOwnMemory reports whether a chair session hands this agent a `memory`
+// tool bound to its own scope — the agent's own file, never the main
+// assistant's and never another agent's (learned.FileFor → AgentMemoryPath).
+//
+// One sentence, two readers, and that is the whole reason it exists as a
+// method. bootstrap builds the scoped tool for a real chair session; the office
+// roster has to say what that session WILL hold, and it works that out from a
+// filtered registry which does no such rebuild. While the rule lived only in
+// bootstrap, the roster reported every agent as missing `memory` — all five of
+// the bundled ones, on a page whose warnings are supposed to mean something
+// (30 ส.ค.).
+//
+// The proposer stays bootstrap's own condition: whether anything can put a
+// remembered line in front of the user is a fact about the host, not about the
+// profile, and a headless run legitimately has none.
+func (p Profile) KeepsOwnMemory() bool { return p.AllowsTool("memory") }
+
 // AllowsTool reports whether this sub-agent may be *handed* the named tool.
 // Distinct from the permission layer on purpose: a denied tool is still sent to
 // the model on every round of the loop and only blocked at execution, so

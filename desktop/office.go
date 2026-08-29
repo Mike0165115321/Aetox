@@ -13,6 +13,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/Mikedev115/Aetox/internal/config"
@@ -177,6 +178,15 @@ func (a *App) ListChairs() []Chair {
 		// that could drift from the one the delegate actually runs on.
 		if child := subagent.FilterRegistry(a.cur().registry, p, ceiling); child != nil {
 			c.Tools = child.Names()
+			// What a real chair session adds that this filtered copy cannot:
+			// `memory`, rebuilt bound to the agent's own scope at the moment the
+			// session is built (internal/bootstrap). FilterRegistry narrows the
+			// parent's registry and does no such rebuild, so every agent read as
+			// missing the one tool that makes it able to learn — which is also
+			// the tool all five bundled profiles ask for by name.
+			if p.KeepsOwnMemory() && !slices.Contains(c.Tools, "memory") {
+				c.Tools = append(c.Tools, "memory")
+			}
 			// Only when there was a registry to ask. A nil child means the engine
 			// is not up yet, and an empty held-list would report every tool the
 			// file names as missing — a page that cries wolf on every cold start.

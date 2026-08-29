@@ -636,7 +636,7 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		// task.go does for a delegate and for the same reason: the parent's
 		// instance writes the main agent's file, and there must be no scope an
 		// agent can name but its own.
-		if opts.Proposer != nil && opts.Chair.AllowsTool("memory") {
+		if opts.Proposer != nil && opts.Chair.KeepsOwnMemory() {
 			scoped := &learned.MemoryTool{Scope: opts.Chair.Name, Proposer: opts.Proposer}
 			if regErr := child.Register(scoped, skill.SourceBuiltin); regErr != nil {
 				debuglog.Msg("memory unavailable to chair %s: %v", opts.Chair.Name, regErr)

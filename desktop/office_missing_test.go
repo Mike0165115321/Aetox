@@ -92,3 +92,35 @@ func TestMissingToolsStillAccusesAnActionWhosePackIsAbsent(t *testing.T) {
 		t.Fatalf("missing = %v — grep comes with the search pack, write does not come with anything held", got)
 	}
 }
+
+// An office agent keeps a memory of its own — its own file, under its own
+// folder, which nothing else reads or writes (learned.FileFor →
+// AgentMemoryPath). A chair session is handed a `memory` tool bound to that
+// scope; the roster works out what a session WILL hold from a filtered
+// registry, which does no such rebuild, so it reported all five bundled agents
+// as unable to remember anything. Measured 30 ส.ค.: memory was the one name
+// left on every card once the packed-tool lie was fixed.
+func TestAnAgentThatAsksForMemoryIsNotReportedWithoutIt(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	p := subagent.Profile{Name: "doc", Tools: []string{"read", "memory"}}
+
+	if !p.KeepsOwnMemory() {
+		t.Fatal("a profile naming memory does not keep one")
+	}
+	// What FilterRegistry hands back: no memory, because the rebuild happens
+	// when the session is built and not before.
+	if got := missingTools(p, []string{"read", "memory"}); got != nil {
+		t.Fatalf("missing = %v, want nothing once the scoped tool is counted", got)
+	}
+}
+
+// And the profile that never asked for it is not handed one either, so the
+// roster keeps saying something when a profile really is short.
+func TestAnAgentThatNeverAskedForMemoryKeepsNone(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	p := subagent.Profile{Name: "quiet", Tools: []string{"read"}}
+
+	if p.KeepsOwnMemory() {
+		t.Error("a profile that never named memory was given one")
+	}
+}
