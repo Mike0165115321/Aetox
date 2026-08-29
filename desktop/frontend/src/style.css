@@ -904,6 +904,35 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    .msg.user keeps the cap on the row, which is what it always had — the row was
    only ever widened so a full-width rule could reach the edge. */
 .msg.user { align-self:flex-end; max-width:min(80%, 620px); }
+/* The answer's own measure, capped 30 ส.ค. Measured in the running app first:
+   at a 1400px window the chat column is 1097px and an assistant paragraph ran
+   1020px wide — 157 characters a line at 15.5px, where comfortable reading is
+   45–75 and even generous UI guidance stops near 90. On a wider monitor it only
+   gets worse, because nothing was holding it.
+   The asymmetry above is what gave it away: the user's own line, which is
+   usually short, has been capped at 620px for as long as it existed, while the
+   long text on the screen — the reply — was capped at nothing.
+   Set on the prose children rather than on .bubble, so the things that
+   genuinely want the room keep it: code blocks, tables, images, diagrams and
+   the cards a turn draws all sit outside this list and still span the column.
+   In `ch` rather than px so the cap follows the reader's font size, which is a
+   setting they can change (chatFont.svelte.ts).
+   60 and not the 70–75 the English-language guidance names, because `ch` is the
+   width of "0" — 9.78px in this face at 15.5px — while a Thai glyph averages
+   6.5px, measured on a real answer in the app. 74ch let 111 Thai characters
+   onto a line; 60ch lands at about 90 Thai and 75 English, which is the top of
+   the comfortable band in both. Thai also has no spaces for the eye to rest on,
+   so it earns the tighter end rather than the looser one. */
+.msg:not(.user) .bubble .markdown-body > p,
+.msg:not(.user) .bubble .markdown-body > ul,
+.msg:not(.user) .bubble .markdown-body > ol,
+.msg:not(.user) .bubble .markdown-body > blockquote,
+.msg:not(.user) .bubble .markdown-body > h1,
+.msg:not(.user) .bubble .markdown-body > h2,
+.msg:not(.user) .bubble .markdown-body > h3,
+.msg:not(.user) .bubble .markdown-body > h4,
+.msg:not(.user) .bubble .markdown-body > h5,
+.msg:not(.user) .bubble .markdown-body > h6 { max-width:60ch; }
 .msg.user > .bubble { flex:0 1 auto; }
 .bubble { border-radius:var(--r-lg); padding:11px 14px; min-width:0; overflow-wrap:break-word; word-break:break-word; }
 .msg.user .bubble { background:var(--surface-raised); border:1px solid var(--border-default); border-top-right-radius:4px; }
