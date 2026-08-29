@@ -47,6 +47,15 @@ const (
 	compactKeepRecent        = 6
 	compactSummaryMaxTokens  = 2048
 
+	// The micro sweep (Claude Code-style micro-compact) runs earlier, at 60%:
+	// old re-obtainable tool outputs are cleared in one batch, which often
+	// keeps the session from reaching 80% at all — a sweep costs nothing where
+	// a summary costs a model call and loses detail. One batch at a threshold
+	// rather than every turn, because each sweep breaks the provider's prompt
+	// cache from the first cleared message onward: pay that once per crossing,
+	// not per round (docs/aider-study/EXECUTION.md ระดับ 3).
+	microCompactThresholdFraction = 0.6
+
 	// How many times one turn may answer a provider's "too long" by summarizing
 	// and trying again.
 	//
@@ -930,11 +939,35 @@ func (a *Agent) compactIfNeeded(ctx context.Context) {
 	if a == nil || a.context == nil || a.provider == nil {
 		return
 	}
+	// Sweep before summarizing, and only summarize if sweeping was not enough:
+	// the sweep is free and lossless-in-practice (everything it clears can be
+	// re-run), the summary costs a model call and keeps only what the
+	// summarizer thought mattered.
+	if a.context.NeedsCompaction(microCompactThresholdFraction) {
+		if swept, freed := a.context.MicroCompact(compactKeepRecent, sweepableToolOutputs); swept > 0 {
+			debuglog.Info("micro-compacted", fmt.Sprintf("%d old tool outputs cleared, %d chars freed", swept, freed))
+		}
+	}
 	if !a.context.NeedsCompaction(compactThresholdFraction) {
 		return
 	}
 	a.compact(ctx)
 }
+
+// sweepableToolOutputs is every tool whose old output the micro sweep may
+// clear: the parallel-safe read tools (same judgement — somebody wrote the
+// name down knowing the tool only reads and can be called again), plus the
+// re-viewable documents and the repo map. Absent on purpose: `shell` — a
+// marker inviting the model to "run it again" on a command that mutated
+// something is an invitation to mutate it twice — and `browser`, whose output
+// is a page state that may no longer exist to re-fetch.
+var sweepableToolOutputs = func() map[string]bool {
+	m := map[string]bool{"skill_view": true, "skills_list": true, "repo_map": true}
+	for name := range parallelToolCalls {
+		m[name] = true
+	}
+	return m
+}()
 
 // compactNow summarizes whether or not the char budget asked for it, and says
 // whether anything actually moved.

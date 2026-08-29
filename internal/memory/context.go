@@ -13,6 +13,16 @@ type Context struct {
 	messages []model.Message
 	maxTurns int
 	maxChars int
+
+	// What the two compaction layers have reclaimed this session, kept for the
+	// context meter: the sweep happens invisibly inside a turn, and a meter
+	// that shows usage FALLING with no line saying why reads as a bug report
+	// against itself. Reset with the Context, which is per-agent — a model
+	// switch starts the count over, and that is honest: the new engine's
+	// window never held the swept bytes.
+	sweptItems int
+	sweptChars int
+	summaries  int
 }
 
 // NewContext builds conversation memory. maxTurns <= 0 means no
@@ -201,8 +211,21 @@ func (c *Context) NeedsCompaction(threshold float64) bool {
 // turn — so an assistant message is never separated from its tool results.
 // Returns nil, 0 when the conversation is too short to be worth compacting.
 func (c *Context) SplitForCompaction(keepRecent int) ([]model.Message, int) {
-	if c == nil || keepRecent < 1 || len(c.messages) < keepRecent+4 {
+	candidate := c.compactionBoundary(keepRecent)
+	if candidate == 0 {
 		return nil, 0
+	}
+	old := append([]model.Message(nil), c.messages[1:candidate]...)
+	return old, candidate
+}
+
+// compactionBoundary is where "old enough to compact" ends and the kept tail
+// begins — shared by the summarizing compaction and the micro sweep so the two
+// layers cannot disagree about what "recent" means. Returns 0 when the
+// conversation is too short to have an old part.
+func (c *Context) compactionBoundary(keepRecent int) int {
+	if c == nil || keepRecent < 1 || len(c.messages) < keepRecent+4 {
+		return 0
 	}
 	candidate := len(c.messages) - keepRecent
 	// prefer a clean turn boundary at or after the candidate...
@@ -217,10 +240,78 @@ func (c *Context) SplitForCompaction(keepRecent int) ([]model.Message, int) {
 		}
 	}
 	if candidate <= 1 || candidate >= len(c.messages) || c.messages[candidate].Role != model.RoleUser {
-		return nil, 0
+		return 0
 	}
-	old := append([]model.Message(nil), c.messages[1:candidate]...)
-	return old, candidate
+	return candidate
+}
+
+// microSweepMinChars is the floor under which sweeping is not worth the stub:
+// replacing a 200-char result with a 100-char marker saves nothing and still
+// costs the model the original text.
+const microSweepMinChars = 400
+
+// MicroCompact clears the BODIES of old tool results whose output can simply
+// be asked for again — the lighter layer under the summarizing compaction.
+// Where compact() spends a model call to preserve meaning, this spends nothing
+// to drop what never had meaning to preserve: a file read three turns ago is
+// still on disk, and the 30KB copy of it riding every later request is the
+// single biggest thing the token audit found in a context.
+//
+// The message itself stays — role, name and tool_call_id intact — because
+// providers reject a tool call whose result went missing; only the content is
+// replaced with a marker that says what was cleared and how to get it back.
+// Everything at or past the compaction boundary is untouched: the recent tail
+// is what the model is actively working from.
+//
+// One deliberate cost: the first request after a sweep breaks the provider's
+// prompt cache from the earliest swept message onward. That is why the caller
+// triggers this in one batch at a pressure threshold instead of sweeping each
+// turn — pay the break once, get the freed context for every round after
+// (docs/aider-study/EXECUTION.md ระดับ 3).
+func (c *Context) MicroCompact(keepRecent int, sweepable map[string]bool) (swept int, freed int) {
+	if c == nil || len(sweepable) == 0 {
+		return 0, 0
+	}
+	boundary := c.compactionBoundary(keepRecent)
+	if boundary == 0 {
+		return 0, 0
+	}
+	for i := 1; i < boundary; i++ {
+		m := c.messages[i]
+		if m.Role != model.RoleTool || !sweepable[strings.ToLower(m.Name)] {
+			continue
+		}
+		if len(m.Content) < microSweepMinChars || strings.HasPrefix(m.Content, sweptMarkerPrefix) {
+			continue
+		}
+		freed += len(m.Content)
+		c.messages[i].Content = sweptMarker(m.Name, len(m.Content))
+		freed -= len(c.messages[i].Content)
+		swept++
+	}
+	c.sweptItems += swept
+	c.sweptChars += freed
+	return swept, freed
+}
+
+// MaintenanceStats reports what the compaction layers have reclaimed so far:
+// tool outputs swept (and the chars they gave back) and how many times the
+// history was summarized. For the context meter — see the fields' comment.
+func (c *Context) MaintenanceStats() (sweptItems, sweptChars, summaries int) {
+	if c == nil {
+		return 0, 0, 0
+	}
+	return c.sweptItems, c.sweptChars, c.summaries
+}
+
+// sweptMarkerPrefix also guards re-sweeping: a marker is smaller than
+// microSweepMinChars today, but that is an accident of two constants and not a
+// contract worth relying on.
+const sweptMarkerPrefix = "[cleared to save context]"
+
+func sweptMarker(tool string, chars int) string {
+	return sweptMarkerPrefix + " " + tool + " output (" + strconv.Itoa(chars) +
+		" chars) was removed from this old turn — run the tool again if it is still needed"
 }
 
 // ReplaceWithSummary swaps the summarized span for a single summary message,
@@ -237,6 +328,7 @@ func (c *Context) ReplaceWithSummary(summary string, recentStart int) {
 	rebuilt = append(rebuilt, c.messages[0], summaryMessage)
 	rebuilt = append(rebuilt, c.messages[recentStart:]...)
 	c.messages = rebuilt
+	c.summaries++
 }
 
 func formatTurnCount(messages int) string {

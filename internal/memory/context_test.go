@@ -131,3 +131,73 @@ func TestContextExplicitTurnCapStillEnforced(t *testing.T) {
 		t.Fatalf("messages = %d, want <= 10 with explicit cap", got)
 	}
 }
+
+func TestMicroCompactSweepsOnlyOldReObtainableToolOutput(t *testing.T) {
+	c := NewContext("system", 0, 1_000_000)
+	big := strings.Repeat("x", 1000)
+	sweepable := map[string]bool{"read": true}
+
+	c.Add(model.RoleUser, "q1")
+	c.AddMessage(model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "t1"}}})
+	c.AddMessage(model.Message{Role: model.RoleTool, Name: "read", ToolCallID: "t1", Content: big})
+	c.AddMessage(model.Message{Role: model.RoleTool, Name: "shell", ToolCallID: "t2", Content: big})
+	c.AddMessage(model.Message{Role: model.RoleTool, Name: "read", ToolCallID: "t3", Content: "tiny"})
+	c.Add(model.RoleAssistant, "a1")
+	c.Add(model.RoleUser, "q2")
+	c.AddMessage(model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "t4"}}})
+	c.AddMessage(model.Message{Role: model.RoleTool, Name: "read", ToolCallID: "t4", Content: big})
+	c.Add(model.RoleAssistant, "a2")
+
+	swept, freed := c.MicroCompact(3, sweepable)
+	if swept != 1 {
+		t.Fatalf("swept = %d, want exactly the one old big read", swept)
+	}
+	if freed <= 0 || freed >= 1000 {
+		t.Errorf("freed = %d, want the content minus the marker", freed)
+	}
+
+	msgs := c.Messages()
+	find := func(id string) model.Message {
+		t.Helper()
+		for _, m := range msgs {
+			if m.ToolCallID == id {
+				return m
+			}
+		}
+		t.Fatalf("message %s vanished — MicroCompact must never remove a message", id)
+		return model.Message{}
+	}
+	if m := find("t1"); !strings.HasPrefix(m.Content, sweptMarkerPrefix) || m.Name != "read" {
+		t.Errorf("old big read should be a marker keeping name and id, got %.60q", m.Content)
+	}
+	if m := find("t2"); m.Content != big {
+		t.Error("shell output is not sweepable and must be untouched")
+	}
+	if m := find("t3"); m.Content != "tiny" {
+		t.Error("output under the minimum is not worth a marker")
+	}
+	if m := find("t4"); m.Content != big {
+		t.Error("the recent tail is what the model works from and must be untouched")
+	}
+}
+
+func TestMicroCompactDoesNotSweepTwice(t *testing.T) {
+	c := NewContext("system", 0, 1_000_000)
+	big := strings.Repeat("y", 800)
+	c.Add(model.RoleUser, "q1")
+	c.AddMessage(model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "t1"}}})
+	c.AddMessage(model.Message{Role: model.RoleTool, Name: "grep", ToolCallID: "t1", Content: big})
+	c.Add(model.RoleAssistant, "a1")
+	c.Add(model.RoleUser, "q2")
+	c.Add(model.RoleAssistant, "a2")
+	c.Add(model.RoleUser, "q3")
+	c.Add(model.RoleAssistant, "a3")
+
+	sweepable := map[string]bool{"grep": true}
+	if swept, _ := c.MicroCompact(3, sweepable); swept != 1 {
+		t.Fatalf("first sweep = %d, want 1", swept)
+	}
+	if swept, freed := c.MicroCompact(3, sweepable); swept != 0 || freed != 0 {
+		t.Fatalf("second sweep = %d/%d, a marker must not be re-swept", swept, freed)
+	}
+}
