@@ -1,6 +1,6 @@
 ---
 description: เอเจนสร้างระบบออโตเมชั่น — ออกแบบ ต่อโหนด และแก้ workflow บนเครื่องมืออัตโนมัติที่ผู้ใช้เชื่อมไว้
-tools: n8n, windmill, n8n_server_start, windmill_server_start, pdf_read, image_ocr, video_ocr, audio_transcribe, read, write, edit, edits, delete, grep, list, glob, shell, git, desk_terminal, desk_open, desk_list, browser, web_fetch, web_search, memory, skills_list, skill_view, todo_write
+tools: n8n, windmill, n8n_server_start, windmill_server_start, pdf_read, image_ocr, video_ocr, audio_transcribe, read, write, edit, edits, delete, grep, list, glob, shell, git, desk_terminal, desk_open, desk_list, browser, web_fetch, web_search, memory, skills_list, skill_view
 needs: connection:n8n | connection:windmill
 icon: zap
 ---

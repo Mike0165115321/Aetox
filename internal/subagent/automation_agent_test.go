@@ -106,10 +106,18 @@ func TestTheAutomationAgentIsReachableAndEquipped(t *testing.T) {
 	//     browser_tool.go). A profile that names it whole gets all four, which
 	//     is what this agent wants: pressing Execute on a manual test is work
 	//     only the editor can do.
+	//
+	//     `todo_write` was on this list until 30 ส.ค. and never should have
+	//     been: it is in forcedDenials, so no agent has ever held it and none
+	//     ever will — a chair does not get it back either, because a run
+	//     declared there would draw a second panel over the one the person is
+	//     already watching (packed_task.go). Naming it bought the profile
+	//     nothing and cost the roster a permanent warning about a tool the user
+	//     cannot grant. See TestNoBundledProfileAsksForAToolNoAgentMayHold.
 	for _, want := range []string{
 		"browser",
 		"n8n_server_start", "windmill_server_start",
-		"shell", "desk_terminal", "write", "todo_write", "memory",
+		"shell", "desk_terminal", "write", "memory",
 	} {
 		if !slices.Contains(p.Tools, want) {
 			t.Errorf("missing %s — the full-rank worker lost part of its workstation", want)
@@ -538,6 +546,32 @@ func TestTheAgentIsToldThatLearnedStartCommandsMustBeSaved(t *testing.T) {
 	} {
 		if !strings.Contains(flat(p.Prompt), must) {
 			t.Errorf("the prompt no longer says %q — the agent goes back to asking where n8n lives every single session", must)
+		}
+	}
+}
+
+// A bundled profile must not ask for a tool the mechanism can never hand over.
+//
+// forcedDenials is refused to every sub-agent whatever its file says, and a
+// chair chat gets back only `ask_user` and `task` (AttendedRegistry) — never
+// `todo_write` or `task_plan`, because a run declared there would draw a second
+// panel over the one the person is already watching. So a `tools:` line naming
+// one of them does nothing at all except make the roster warn, forever, about
+// something nobody can fix: the office page reported automation and research as
+// missing `todo_write` on 30 ส.ค., which was true and useless in the same
+// breath.
+//
+// Bundled files only. A profile the USER wrote naming one of these still earns
+// the warning — that one is actionable, because they can delete the line.
+func TestNoBundledProfileAsksForAToolNoAgentMayHold(t *testing.T) {
+	for _, p := range Chairs(mode.Office) {
+		if !p.Builtin {
+			continue
+		}
+		for _, denied := range forcedDenials {
+			if slices.Contains(p.Tools, denied) {
+				t.Errorf("%s asks for %q, which forcedDenials refuses to every agent — the line does nothing but make the roster warn about it", p.Name, denied)
+			}
 		}
 	}
 }
