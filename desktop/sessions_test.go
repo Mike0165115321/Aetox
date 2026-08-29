@@ -464,3 +464,42 @@ func TestTheQuestionIsStoredBeforeTheAnswerArrives(t *testing.T) {
 		t.Errorf("the transcript is out of order: %s then %s", messages[0].Role, messages[1].Role)
 	}
 }
+
+// A chat is named after the first thing the user said in it — and what the user
+// said is not the line the composer appended underneath it.
+//
+// Measured in the owner's own history on 30 ส.ค.: 7 of 200 chats were filed
+// under the attachment marker rather than under anything he wrote, because the
+// title is the first 40 runes of the raw message and both markers begin with
+// two newlines. A row reading "ทำไมอ่ะครับ [attachment: user-attached image…"
+// is a history that shows its plumbing.
+func TestASessionIsNamedAfterWhatTheUserWroteNotTheAttachmentLine(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"the composer's own spelling", "ทำไมอ่ะครับ\n\n[attachment: user-attached image — png] C:/x/shot.png", "ทำไมอ่ะครับ"},
+		// app.go rewrites the marker once the file is placed; both spellings are
+		// ours and both have to come out.
+		{"the rewritten spelling", "ไปดูที\n\n[attachment: user-attached image, included below] out/a.png", "ไปดูที"},
+		// Nothing but a file. The file's own name is the last true thing the
+		// message held — better than "(ว่าง)", which would claim the user handed
+		// over nothing when they handed over a document.
+		{"an attachment and no words", "\n\n[attachment: user-attached file — read it with pdf_read] C:/docs/สัญญา.pdf", "สัญญา.pdf"},
+		{"an ordinary message is untouched", "สรุปให้หน่อย", "สรุปให้หน่อย"},
+		{"genuinely empty", "   ", "(ว่าง)"},
+	} {
+		if got := sessionTitleFrom(c.in); got != c.want {
+			t.Errorf("%s: title = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// The title is drawn on one line everywhere it appears, so a line break in it
+// is a space the row cannot explain.
+func TestASessionTitleIsOneLine(t *testing.T) {
+	if got := sessionTitleFrom("บรรทัดแรก\nบรรทัดสอง"); got != "บรรทัดแรก บรรทัดสอง" {
+		t.Errorf("title = %q, want the two lines joined by a space", got)
+	}
+}

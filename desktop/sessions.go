@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -192,8 +193,44 @@ func newSessionID() string {
 	return fmt.Sprintf("%s-%d", stamp, sessionIDSeq)
 }
 
+// attachmentLineRe matches the line the composer appends when the user attaches
+// something — an image or a document, in either spelling: the one the composer
+// writes and the one app.go rewrites it into once the file has been placed.
+//
+// A format we own on both ends, not text being guessed at: the composer writes
+// it (cockpit.svelte.ts sendUserMessage) and the window parses it back out on
+// session restore. That is what makes it safe to cut here.
+var attachmentLineRe = regexp.MustCompile(`\n*\[attachment: [^\]]*\]\s*\S*`)
+
+// sessionTitleFrom names a chat after the first thing the user said in it.
+//
+// The plumbing comes out first. The composer appends a line naming the file
+// whenever something is attached, so a message like "ทำไมอ่ะครับ" plus a
+// screenshot arrived here with the marker glued to the end of it, and 40
+// runes of that is mostly bracket. Measured 30 ส.ค.: 7 of the 200 chats in
+// the owner's own history were named after the marker rather than after
+// anything he wrote.
+//
+// Newlines collapse for the same reason. The title is drawn on one line
+// everywhere it appears, so a line break in it is a space that the row cannot
+// explain — and both of the composer's markers begin with two of them.
+//
+// A message that was ONLY an attachment falls back to the file's own name,
+// which is the last real thing the message contained. "(ว่าง)" is kept for a
+// message that genuinely had nothing in it: a chat named after a file the user
+// did attach is a true title, and one named "(ว่าง)" when a picture was handed
+// over is not.
 func sessionTitleFrom(text string) string {
 	t := strings.TrimSpace(text)
+	if t == "" {
+		return "(ว่าง)"
+	}
+	if stripped := strings.TrimSpace(attachmentLineRe.ReplaceAllString(t, " ")); stripped != "" {
+		t = stripped
+	} else if last := lastAttachedName(text); last != "" {
+		t = last
+	}
+	t = strings.Join(strings.Fields(t), " ")
 	if t == "" {
 		return "(ว่าง)"
 	}
@@ -201,6 +238,20 @@ func sessionTitleFrom(text string) string {
 		return string(r[:40]) + "…"
 	}
 	return t
+}
+
+// lastAttachedName is the base name of the file the last attachment marker
+// points at, for a message that said nothing else.
+func lastAttachedName(text string) string {
+	all := attachmentLineRe.FindAllString(text, -1)
+	if len(all) == 0 {
+		return ""
+	}
+	fields := strings.Fields(all[len(all)-1])
+	if len(fields) == 0 {
+		return ""
+	}
+	return filepath.Base(fields[len(fields)-1])
 }
 
 // appendTurn persists one user/agent exchange into the current session.
