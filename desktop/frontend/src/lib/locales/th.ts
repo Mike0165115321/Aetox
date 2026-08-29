@@ -431,6 +431,8 @@ export const th = {
 
   'imagePane.actualSize': 'ดูขนาดจริง',
   'imagePane.fitToPane': 'ย่อให้พอดีแผง',
+  'imagePane.notADrawing': 'ไฟล์ .svg นี้ไม่มีภาพที่แผงนี้วาดได้',
+  'imagePane.drawingError': 'อ่านภาพไม่ได้: {err}',
   // แท็บเบราว์เซอร์ที่ยังไม่มี URL — ไม่ใช่กระดาษเปล่าของผู้ใช้ แต่เป็นที่ว่างบนโต๊ะของ AI
   'browserPane.blankTab': 'เบราว์เซอร์บนโต๊ะของ Aetox',
   'browserPane.blankTabSub': 'เวลา Aetox ต้องดูหน้าเว็บ มันจะเปิดขึ้นตรงนี้ หรือคุณพิมพ์ที่อยู่ในช่องด้านบนเองก็ได้',

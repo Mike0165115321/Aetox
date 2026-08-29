@@ -434,6 +434,8 @@ export const en: Record<keyof typeof th, string> = {
 
   'imagePane.actualSize': 'Show at actual size',
   'imagePane.fitToPane': 'Fit to panel',
+  'imagePane.notADrawing': 'This .svg holds no drawing this panel can show.',
+  'imagePane.drawingError': 'Could not read the drawing: {err}',
   'browserPane.blankTab': 'The browser on Aetox’s desk',
   'browserPane.blankTabSub': 'When Aetox needs to look at a page it opens one here, or type an address in the bar above yourself',
   'browserPane.agentBusy': 'Aetox is working, if it needs a page, one will appear here',

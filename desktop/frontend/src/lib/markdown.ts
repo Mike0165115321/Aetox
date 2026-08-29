@@ -532,7 +532,7 @@ function composedWidth(svg: Element): number {
   return 0
 }
 
-function confineDrawing(svg: Element, nth: number): void {
+function confineDrawing(svg: Element, key: string | number): void {
   const styles = Array.from(svg.querySelectorAll('style'))
   const identified = Array.from(svg.querySelectorAll('[id]'))
   if (styles.length === 0 && identified.length === 0) return
@@ -548,7 +548,7 @@ function confineDrawing(svg: Element, nth: number): void {
   // Position is what keeps two drawings apart when they open identically, which
   // is the collision the fingerprint exists for in the first place.
   const openTag = svg.outerHTML.slice(0, svg.outerHTML.indexOf('>') + 1)
-  const scope = fingerprint(`${nth}|${openTag}`)
+  const scope = fingerprint(`${key}|${openTag}`)
   svg.setAttribute('data-drawing', scope)
 
   const renamed = new Map<string, string>()
@@ -583,6 +583,39 @@ function confineDrawing(svg: Element, nth: number): void {
   for (const style of styles) {
     style.textContent = scopeCss(rename(style.textContent ?? '', renamed), `[data-drawing="${scope}"] `, anims)
   }
+}
+
+/** A whole .svg file, made safe to put in the app's own document.
+ *
+ * The file pane used to point an <img> at the file and call that showing it.
+ * Nothing about that works for the drawings this app asks for: internal/prompt
+ * teaches `width="100%"` and var(--surface-raised), and an <img> is a separate
+ * document, so the width resolved against nothing (0×0, an empty pane) and
+ * every var() resolved to black on black. A model doing exactly what it was
+ * told, written to a file, and shown as nothing (owner, 29 ส.ค.).
+ *
+ * Inlining is what gives it back both — the app's stylesheet and a real box —
+ * and it comes through the same door a drawing in an answer does, because the
+ * hazards are the same file: DOMPurify for scripts and handlers, confineDrawing
+ * for a <style> that would style the app and for ids that would collide with
+ * the next .svg opened beside it. `key` is the file's path rather than a
+ * position, so two files never share a scope and one file keeps its own across
+ * a re-read.
+ *
+ * Returns '' for anything with no <svg> in it, which is the pane's cue to say
+ * the file is not a drawing rather than to draw an empty box. */
+export function inlineDrawing(markup: string, key: string): string {
+  const host = document.createElement('div')
+  host.appendChild(DOMPurify.sanitize(markup, { RETURN_DOM_FRAGMENT: true }))
+  // Same rule as confine(): a stylesheet with a drawing to scope it to is
+  // scoped, one with nothing to scope it to is deleted.
+  for (const style of host.querySelectorAll('style')) {
+    if (!style.closest('svg')) style.remove()
+  }
+  const svg = host.querySelector('svg')
+  if (!svg) return ''
+  confineDrawing(svg, key)
+  return svg.outerHTML
 }
 
 // `url(#g)` in a fill or a stylesheet, and `#g` as a whole href — the two ways
