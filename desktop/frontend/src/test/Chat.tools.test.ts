@@ -343,23 +343,79 @@ describe('tool timeline collapsing', () => {
     expect(toggles.some((b) => b.textContent?.includes('Used 0'))).toBe(false)
   })
 
-  // Finished rows used to be swept behind "Used N tools" the instant they
-  // finished, so the turn showed one row however much work it had done. They
-  // stay now: a row's own state is drawn on the row, which is where it was
-  // always readable, and folding only starts once a phase runs long.
-  it('keeps finished rows on screen beside the running one', () => {
+  // Finished work folds; what is still going never does. Both halves matter and
+  // the second one is the one that was got wrong first: folding the phase whole
+  // and re-opening it while something ran looked identical until the person
+  // closed it themselves, and then buried a live row.
+  it('folds the finished rows and leaves the running one out', async () => {
     const { container } = render(Chat, {
       ...baseProps, awaitingReply: true,
       messages: [{ role: 'user', text: 'go', time: '10:54' }] as any,
       toolSteps: [step('web_fetch', 'done'), step('web_fetch', 'done'), step('browser_read', 'run')],
     })
 
-    const steps = container.querySelectorAll('.tool-step')
-    expect(steps.length).toBe(3)
-    expect(steps[2].textContent).toContain('browser_read')
-    // And no summary above them saying the same thing a second time.
+    const shown = container.querySelectorAll('.tool-step')
+    expect(shown.length).toBe(1)
+    expect(shown[0].textContent).toContain('browser_read')
+
+    // The header is the control, and it is the only one: no summary row above
+    // it saying the same thing a second time.
     const toggles = [...container.querySelectorAll('.meta-row .reasoning-toggle')]
     expect(toggles.some((b) => b.textContent?.includes('Used'))).toBe(false)
+
+    const head = container.querySelector('button.phase-head')
+    expect(head?.textContent).toContain('Used 3 tools')
+    await fireEvent.click(head!)
+    expect(container.querySelectorAll('.tool-step').length).toBe(3)
+  })
+
+  // Each number next to the thing it is about. The first version put both on
+  // one line above the phase, which left the count and a four-paragraph plan
+  // between the reader and the two rows being counted: by the time the eye
+  // reached them the summary had scrolled away (owner, 29 ส.ค., off his own
+  // screen). Thinking happens before the sentence, work after it.
+  it('puts the thinking above the sentence and the work below it', () => {
+    const { container } = render(Chat, {
+      ...baseProps, awaitingReply: true,
+      messages: [{ role: 'user', text: 'go', time: '10:54' }] as any,
+      toolSteps: [
+        { kind: 'thinking', label: '', secs: 8, state: 'done', startedAt: 0 },
+        { kind: 'note', label: 'ขั้นที่ 1 เก็บข้อมูลดิบก่อน', state: 'done', startedAt: 0 },
+        step('shell', 'done'),
+      ] as any,
+    })
+
+    const phase = container.querySelector('.phase')!
+    const order = [...phase.children]
+      .map((el) => [...el.classList].find((c) => c.startsWith('phase-')))
+      .filter(Boolean)
+    expect(order).toEqual(['phase-think', 'phase-say', 'phase-head'])
+    expect(phase.querySelector('.phase-think')?.textContent).toContain('8')
+    // And the thinking is a line, not a second control: one fold per phase, and
+    // it promises only what sits under it.
+    expect(phase.querySelectorAll('button').length).toBe(1)
+  })
+
+  // The half a person can lose work over. A delegate runs for minutes while the
+  // agent narrates on, and a fold must never be able to take it off the screen.
+  it('never folds a delegation that is still working', async () => {
+    cockpit.backgroundTasks = []
+    const { container } = render(Chat, {
+      ...baseProps, awaitingReply: true,
+      messages: [{ role: 'user', text: 'go', time: '10:54' }] as any,
+      toolSteps: [
+        step('read a.go', 'done'),
+        { label: 'task start', ref: 'call_9', delegation: true, agent: 'ผู้ช่วยค้นหา', state: 'run', startedAt: 0 },
+      ] as any,
+    })
+
+    expect(container.querySelector('.bgw-card')).toBeTruthy()
+    // Folded shut, and the card is still there: it was never inside the fold.
+    const head = container.querySelector('button.phase-head')
+    expect(head?.getAttribute('aria-expanded')).toBe('false')
+    await fireEvent.click(head!)
+    await fireEvent.click(head!)
+    expect(container.querySelector('.bgw-card')).toBeTruthy()
   })
 })
 

@@ -309,17 +309,23 @@
   }
 
   // The same sentence toolsLabel builds, for one stretch of work instead of for
-  // the whole turn. Deliberately the same three pieces in the same order and
-  // from the same keys: the split is meant to be the old lump told honestly,
-  // not a different measurement, and four headers that add up to the number the
-  // collapsed row used to show is the only way that stays checkable.
+  // the whole turn. Deliberately the same words in the same order and from the
+  // same keys: the split is meant to be the old lump told honestly, not a
+  // different measurement, and headers that add up to the number the collapsed
+  // row used to show is the only way that stays checkable.
   //
-  // Empty for a phase that neither thought nor ran anything, which is the
-  // ordinary shape of a closing answer — and an empty header is not drawn, so
-  // the answer arrives with nothing above it, as it should.
-  function phaseHead(ph: TurnPhase): string {
+  // The thinking is NOT in here, and that is the point of the split (owner, 29
+  // ส.ค., looking at his own screen: "ตำแหน่ง ไม่ค่อยโอเคเท่าไหร่"). A phase
+  // has two clocks that happen either side of the sentence — the model thinks,
+  // writes, then works — so one line carrying both has to sit on one side and
+  // be wrong about the other. Thinking is drawn above the prose, this below it,
+  // and each ends up next to the thing it is actually about.
+  //
+  // Empty for a phase that ran nothing, which is the ordinary shape of a
+  // closing answer: no line is drawn and the answer arrives with nothing under
+  // it, as it should.
+  function phaseWork(ph: TurnPhase): string {
     const bits: string[] = []
-    if (ph.thinkSecs) bits.push(t('chat.thoughtFor', { secs: ph.thinkSecs }))
     const tools = ownTools(ph.steps)
     if (tools.length) bits.push(t('chat.usedTools', { n: tools.length }))
     const secs = tools.reduce((sum, s) => sum + (s.secs ?? 0), 0)
@@ -339,11 +345,9 @@
     return bits.join(' · ')
   }
 
-  // Which phases the reader has opened, and which ones they have shut again.
-  // Undefined is not "closed" — it is "no opinion yet", which is why the read
-  // below is `?? working` rather than a boolean with a default: a stretch with
-  // a tool still running has to open itself, and has to stay shut once the
-  // person has closed it anyway.
+  // Which phases the reader has opened. Closed is the default and there is no
+  // exception to it, because there is nothing a fold can hide that matters:
+  // only finished work folds, and what is still running is drawn outside it.
   //
   // Keyed by message and phase rather than by phase alone, for the reason
   // openDiffs is keyed per row: a person who opened the second stretch is
@@ -2109,35 +2113,27 @@
      The rows are the ones this timeline has always drawn, at the height the
      owner dialled himself; a phase that ran more than six folds the rest away
      rather than taking the air back out (style.css says so at .tool-step). -->
-{#snippet phaseBlock(ph: TurnPhase, key: string, live: boolean, head: string)}
+{#snippet phaseBlock(ph: TurnPhase, key: string, live: boolean)}
   {@const own = ownSteps(ph.steps)}
   {@const subs = delegated(ph.steps)}
-  {@const work = own.length > 0 || subs.length > 0}
-  <!-- Still working, by the register's answer and not the row's (cardState) —
-       the same question isRunningNode asks everywhere else. It decides the
-       default below, and it is what makes folding safe: a phase that is closed
-       has nothing live inside it by construction, so nothing can be hidden
-       while it is still moving. -->
-  {@const working = own.some((s) => s.state === 'run') || subs.some(isRunningNode)}
-  {@const open = openRows[key] ?? working}
+  {@const workLine = phaseWork(ph)}
+  <!-- Running and finished, told apart by the register's answer and not the
+       row's (cardState / isRunningNode) — a `task` row calls itself done the
+       instant its worker is spawned, and folding on that would hide a delegate
+       on its twenty-seventh call. -->
+  {@const runSubs = subs.filter((n) => isRunningNode(n))}
+  {@const doneSubs = subs.filter((n) => !isRunningNode(n))}
+  {@const runOwn = own.filter((s) => s.state === 'run')}
+  {@const doneOwn = own.filter((s) => s.state !== 'run')}
+  {@const foldable = doneOwn.length > 0 || doneSubs.length > 0}
+  {@const open = openRows[key] ?? false}
   <div class="phase">
-    <!-- The header IS the control, because the header is already the summary:
-         it says what was thought, how many tools ran and for how long, which is
-         exactly what is behind it. A separate "N more rows" row underneath was
-         the first version and put the count in two places.
-
-         Closed by default (owner, 29 ส.ค.) — the sentence is what the turn is
-         for, and the calls under it are evidence you go and look at. The
-         `?? working` is the exception that keeps that honest: a stretch with
-         something still running opens itself, and closes again once the user
-         has an opinion, exactly as a delegation card's own rows do. -->
-    {#if head && work}
-      <button type="button" class="phase-head" aria-expanded={open} onclick={() => (openRows[key] = !open)}>
-        <span class="chev"><Icon name={open ? 'chevronDown' : 'chevronRight'} size={12} /></span>
-        {head}
-      </button>
-    {:else if head}
-      <div class="phase-head">{head}</div>
+    <!-- Above the sentence, because it happened before the sentence. It is a
+         line and not a control: what it could open is the reasoning text, and
+         that is one blob for the whole turn which no phase can hold a share
+         of — the toggle for it stays at the top of the reply. -->
+    {#if ph.thinkSecs}
+      <div class="phase-think">{t('chat.thoughtFor', { secs: ph.thinkSecs })}</div>
     {/if}
     {#if ph.say}
       {#if ph.streaming}
@@ -2149,13 +2145,52 @@
         <div class="markdown-body phase-say">{@html renderMarkdown(ph.say)}</div>
       {/if}
     {/if}
+    <!-- Below the sentence, because the work happened after it, and directly
+         above the rows it counts.
+         (owner, 29 ส.ค., pointing at his own screen: "ตำแหน่ง ไม่ค่อยโอเค
+         เท่าไหร่ มาคิดออกแบบกันใหม่")
+
+         It sat on top of the phase first, which put the count and a plan four
+         paragraphs long between the reader and the two rows being counted. By
+         the time the eye reached them the summary had scrolled away, and a
+         fold control was nowhere near the thing it folds. A summary belongs
+         against what it summarises; there is no altitude at which it does not.
+
+         The header IS that control, because it is already the summary. A
+         separate "N more rows" row underneath was the first version and put
+         the count in two places. -->
+    {#if workLine && foldable}
+      <button type="button" class="phase-head" aria-expanded={open} onclick={() => (openRows[key] = !open)}>
+        <span class="chev"><Icon name={open ? 'chevronDown' : 'chevronRight'} size={12} /></span>
+        {workLine}
+      </button>
+    {:else if workLine}
+      <div class="phase-head">{workLine}</div>
+    {/if}
+    <!-- What has finished folds. What is still going never does.
+         (owner, 29 ส.ค.: "ตอนอัปเดต UI ไปลืมคิดถึงตอนซับเอเจนหรือเอเจนกำลังทำงาน")
+
+         The first version folded the phase whole and opened it again while
+         anything inside was running, which looks the same right up until the
+         person closes it themselves: their click then outlived the reason for
+         it and buried a delegate that was still working, in the one product
+         where a delegate can work for twenty minutes. A fold is for what is
+         over. Nothing that is moving is ever a click away from being hidden. -->
     {#if open}
-      {#if own.length}
-        {@render toolTimeline(own, live)}
+      {#if doneOwn.length}
+        {@render toolTimeline(doneOwn, live)}
       {/if}
-      {#if subs.length}
-        {@render subagentTimeline(subs, live)}
+      {#if doneSubs.length}
+        {@render subagentTimeline(doneSubs, live)}
       {/if}
+    {/if}
+    <!-- Delegations first, as they have always been drawn: a sub-agent is the
+         slowest thing in a turn and the one the user most wants to see move. -->
+    {#if runSubs.length}
+      {@render subagentTimeline(runSubs, live)}
+    {/if}
+    {#if runOwn.length}
+      {@render toolTimeline(runOwn, live)}
     {/if}
   </div>
 {/snippet}
@@ -2388,7 +2423,7 @@
                 {/if}
               {/if}
               {#each phasesOf(m.steps ?? []) as ph, p}
-                {@render phaseBlock(ph, `${i}:${p}`, false, phaseHead(ph))}
+                {@render phaseBlock(ph, `${i}:${p}`, false)}
               {/each}
               {#if m.ending}
                 <!-- How the turn ended, under the last thing the model said.
@@ -2727,7 +2762,7 @@
                  being judged stranded by a turn that has not ended (cardState
                  skips that check only while live). -->
             {#each livePhases as ph, p}
-              {@render phaseBlock(ph, `live:${p}`, true, phaseHead(ph))}
+              {@render phaseBlock(ph, `live:${p}`, true)}
             {/each}
             {#if cockpit.ask}
               <div class="ask-panel">
