@@ -48,7 +48,7 @@ func TestMainAgentIsNotConfiguredByAProfile(t *testing.T) {
 			tools[strings.ToLower(s.Name)] = true
 		}
 	}
-	for _, name := range []string{"write", "edit", "shell", "read", "grep"} {
+	for _, name := range []string{"change", "shell", "read", "search"} {
 		if !tools[name] {
 			t.Errorf("the main agent lost %q", name)
 		}
@@ -72,17 +72,20 @@ func TestMainAgentIsNotConfiguredByAProfile(t *testing.T) {
 func TestSubagentProfileBindings(t *testing.T) {
 	a := newSubagentTestApp(t)
 
-	// Seven bundled: two helpers (explore, general) and five chairs — the
-	// office's four (doc, sheet, automation, research) plus github at the coding
-	// desk. The settings page lists both kinds; a chair is a sub-agent profile
-	// managed exactly like the others, and what makes it a chair is one line of
-	// its own frontmatter, not a separate store.
+	// Nine bundled: four helpers (explore, general, reviewer, tester) and five
+	// chairs — the office's four (doc, sheet, automation, research) plus github
+	// at the coding desk. The settings page lists both kinds; a chair is a
+	// sub-agent profile managed exactly like the others, and what makes it a
+	// chair is one line of its own frontmatter, not a separate store.
 	//
 	// It was eight until 2026-08-20, when the owner removed the `plan` helper:
-	// it was never reached for in practice.
+	// it was never reached for in practice. Seven until 2026-08-29, when the
+	// owner asked for the two the โค้ด door's direction document had named since
+	// it was written — reviewer and tester, both of which read and neither of
+	// which writes.
 	list := a.ListSubagentProfiles()
-	if len(list) != 7 {
-		t.Fatalf("ListSubagentProfiles() = %d, want 7 bundled", len(list))
+	if len(list) != 9 {
+		t.Fatalf("ListSubagentProfiles() = %d, want 9 bundled", len(list))
 	}
 
 	raw, err := a.ReadSubagentProfile("explore")

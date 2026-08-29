@@ -4,6 +4,15 @@
 
 export type GitStatus = 'M' | 'U' | null
 
+/** One state of the project this chat can be put back to (Go: main.RestorePoint).
+ *  The label is the message that opened the turn it precedes — a list of times
+ *  and tree hashes is a list nobody can pick from. */
+export interface RestorePoint {
+  id: string
+  at: string
+  label: string
+}
+
 export interface TreeNode {
   label: string
   path: string
@@ -183,6 +192,14 @@ export interface ChatMessage {
    * rather than a reconstruction of it. */
   failed?: boolean
   failedText?: string
+  /** How the failure is worded ("หยุดการทำงานแล้ว", the network sentence). It
+   * is also glued onto `text`, which is what every reader that predates the
+   * phase layout draws; a turn drawn from its own sequence needs it apart,
+   * because the prose in `text` is already in the sequence and re-drawing the
+   * whole string would say the model's last sentence twice. Composed, never
+   * stored — the store keeps the error and the window keeps the wording, so
+   * switching language re-words a failure that happened yesterday. */
+  ending?: string
   /** The turn ended because the user pressed Stop. A subset of `failed` — the
    * bubble and the retry chip are the same ones — but not the same event: the
    * app did exactly what it was told, and painting that in the danger colour
@@ -734,6 +751,11 @@ export interface CockpitState {
   /** Files the last turn changed, from PendingUndo. Empty when there is nothing
    *  to undo — no snapshot yet, not a git repo, or the turn touched no file. */
   undoFiles: string[]
+  /** Every point this chat can be taken back to, newest first, from
+   *  RestorePoints. Empty until a turn has run. Refreshed beside undoFiles:
+   *  they answer the same question at two depths, and a list that lagged one
+   *  turn behind the chip would offer a point that is already the present. */
+  restorePoints: RestorePoint[]
   /** Live turn-progress text from the Go engine's status reporter ("กำลังคิดคำตอบ...", etc), '' when idle. */
   agentStatus: string
   /** Tool calls of the turn in flight, appended live from agent:tool events. */
@@ -860,6 +882,7 @@ export function emptyCockpitState(): CockpitState {
     awaitingReply: false,
     turnSession: '',
     undoFiles: [],
+    restorePoints: [],
     agentStatus: '',
     toolSteps: [],
     backgroundSteps: [],

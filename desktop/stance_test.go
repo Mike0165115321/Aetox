@@ -10,6 +10,8 @@ package main
 // — and asks what the *model* would be sent.
 
 import (
+	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -200,12 +202,17 @@ func TestPlanSendsTheModelReadersAndNoWriters(t *testing.T) {
 		}
 		return false
 	}
-	for _, name := range []string{"read", "grep", "web_fetch"} {
+	// `search` rather than `grep`: list, glob and grep are one packed entry now
+	// (internal/skill/search_pack.go), and วางแผน keeps all three of its acts.
+	for _, name := range []string{"read", "search", "web_fetch"} {
 		if !has(name) {
 			t.Errorf("วางแผน should have sent %q; got %v", name, got)
 		}
 	}
-	for _, name := range []string{"write", "edit", "shell", "task", "doc_write"} {
+	// `change` rather than write/edit: those are acts of one packed entry now
+	// (internal/skill/change_pack.go), and naming a tool that is no longer
+	// registered would make this half of the assertion pass for free.
+	for _, name := range []string{"change", "shell", "task", "doc_write"} {
 		if has(name) {
 			t.Errorf("วางแผน sent %q — this stance changes nothing", name)
 		}
@@ -234,5 +241,83 @@ func TestPlanIsNotTaughtToUseTheToolsItWithheld(t *testing.T) {
 	// And it still gets the layers that are about looking, which it can do.
 	if !strings.Contains(p, "skills_list") {
 		t.Error("วางแผน lost capability() — it can still look things up")
+	}
+}
+
+// วางแผน and a packed tool: the payoff of the per-action filter, proved on the
+// session the app actually runs.
+//
+// Before it, `browser` was one name over twelve rights and this stance could
+// only take it whole — so a plan could not open a page at all, and the seven
+// actions of it that merely look went with the five that act. stance.go said so
+// itself and left it undone.
+func TestPlanCarriesTheBrowserWithItsReadingHalfOnly(t *testing.T) {
+	a := bootDeskApp(t, "assistant")
+	if _, err := a.SetStance(string(mode.StancePlan)); err != nil {
+		t.Fatalf("SetStance: %v", err)
+	}
+
+	var params []byte
+	for _, d := range a.deskTools().ToolDefinitions() {
+		if d.Function.Name == "browser" {
+			params = d.Function.Parameters
+		}
+	}
+	if params == nil {
+		t.Fatal("วางแผน carries no browser at all — the narrowing is not wired to this session")
+	}
+	var schema struct {
+		Properties struct {
+			Action struct {
+				Enum []string `json:"enum"`
+			} `json:"action"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(params, &schema); err != nil {
+		t.Fatalf("browser parameters do not parse: %v", err)
+	}
+	offered := map[string]bool{}
+	for _, a := range schema.Properties.Action.Enum {
+		offered[a] = true
+	}
+	// The actions, not the permission names: this is what the model is asked to
+	// choose between. `scroll` rides on browser_read (packed.go).
+	for _, action := range []string{"open", "read", "scroll", "wait", "back", "console", "network"} {
+		if !offered[action] {
+			t.Errorf("วางแผน was not offered browser %q, which only looks; offered %v", action, schema.Properties.Action.Enum)
+		}
+	}
+	for _, action := range []string{"click", "type", "tabs", "dialog", "capture"} {
+		if offered[action] {
+			t.Errorf("วางแผน was offered browser %q — this stance changes nothing", action)
+		}
+	}
+}
+
+// ...and the door agrees with the block. A narrowed definition that still
+// executed the withheld action would be worse than no narrowing: the model can
+// name an action it was never shown.
+//
+// The refusal is the TOOL's, not the dispatcher's, and that is the better half
+// of the answer: the call is handled and comes back saying which actions this
+// session may use, rather than coming back as an unknown name. A model told
+// "browser click is not available here, this session may use open, read, ..."
+// can do something with that; one told nothing tries again.
+func TestPlanRefusesABrowserActionItWasNotOffered(t *testing.T) {
+	a := bootDeskApp(t, "assistant")
+	if _, err := a.SetStance(string(mode.StancePlan)); err != nil {
+		t.Fatalf("SetStance: %v", err)
+	}
+	_, handled, err := a.deskTools().ExecuteTool(context.Background(), "browser", map[string]any{
+		"action": "click", "ref": "1",
+	})
+	if !handled {
+		t.Fatal("the browser was not reached at all; วางแผน should carry its reading half")
+	}
+	if err == nil {
+		t.Fatal("วางแผน ran browser click, which it was never offered")
+	}
+	if !strings.Contains(err.Error(), "not available here") {
+		t.Errorf("refusal was %q, want it to name what this session may use instead", err)
 	}
 }

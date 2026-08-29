@@ -177,6 +177,87 @@ export namespace connect {
 
 }
 
+export namespace github {
+	
+	export class CheckRun {
+	    name: string;
+	    status: string;
+	    conclusion: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CheckRun(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.status = source["status"];
+	        this.conclusion = source["conclusion"];
+	    }
+	}
+	export class PRFile {
+	    path: string;
+	    status: string;
+	    additions: number;
+	    deletions: number;
+	    patch: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PRFile(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.status = source["status"];
+	        this.additions = source["additions"];
+	        this.deletions = source["deletions"];
+	        this.patch = source["patch"];
+	    }
+	}
+	export class PullRequest {
+	    number: number;
+	    title: string;
+	    state: string;
+	    draft: boolean;
+	    body: string;
+	    author: string;
+	    headRef: string;
+	    headSHA: string;
+	    baseRef: string;
+	    mergeable?: boolean;
+	    mergeableState: string;
+	    additions: number;
+	    deletions: number;
+	    changedFiles: number;
+	    url: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PullRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.number = source["number"];
+	        this.title = source["title"];
+	        this.state = source["state"];
+	        this.draft = source["draft"];
+	        this.body = source["body"];
+	        this.author = source["author"];
+	        this.headRef = source["headRef"];
+	        this.headSHA = source["headSHA"];
+	        this.baseRef = source["baseRef"];
+	        this.mergeable = source["mergeable"];
+	        this.mergeableState = source["mergeableState"];
+	        this.additions = source["additions"];
+	        this.deletions = source["deletions"];
+	        this.changedFiles = source["changedFiles"];
+	        this.url = source["url"];
+	    }
+	}
+
+}
+
 export namespace main {
 	
 	export class AccountState {
@@ -1006,6 +1087,60 @@ export namespace main {
 	        this.context = source["context"];
 	    }
 	}
+	export class PRCreated {
+	    number: number;
+	    url: string;
+	    base: string;
+	    error: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PRCreated(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.number = source["number"];
+	        this.url = source["url"];
+	        this.base = source["base"];
+	        this.error = source["error"];
+	    }
+	}
+	export class PRRoom {
+	    repo: string;
+	    reason: string;
+	    connected: boolean;
+	    items: github.PullRequest[];
+	
+	    static createFrom(source: any = {}) {
+	        return new PRRoom(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.repo = source["repo"];
+	        this.reason = source["reason"];
+	        this.connected = source["connected"];
+	        this.items = this.convertValues(source["items"], github.PullRequest);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class PendingChange {
 	    id: number;
 	    kind: string;
@@ -1058,6 +1193,20 @@ export namespace main {
 	        this.name = source["name"];
 	        this.detail = source["detail"];
 	        this.kind = source["kind"];
+	    }
+	}
+	export class PriceSource {
+	    name: string;
+	    fetched: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PriceSource(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.fetched = source["fetched"];
 	    }
 	}
 	export class ProjectMeta {
@@ -1379,6 +1528,22 @@ export namespace main {
 		}
 	}
 	
+	export class RestorePoint {
+	    id: string;
+	    at: string;
+	    label: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RestorePoint(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.at = source["at"];
+	        this.label = source["label"];
+	    }
+	}
 	export class RunBlockResult {
 	    output: string;
 	    success: boolean;

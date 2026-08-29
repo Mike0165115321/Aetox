@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { BackgroundTask, ChatMessage, TaskState, ModelStatus, ToolStep, TimelineNode, ContextBreakdown } from './types'
   import { groupSteps, isDelegation } from './types'
+  import { phasesOf, type TurnPhase } from './turnPhases'
   import { streamedHtml } from './morph'
   import { toolGlide } from './toolGlide'
   import { fold, unroll } from './fold'
@@ -13,7 +14,7 @@
   import { shell } from './shell.svelte'
   import {
     EnabledProviders, SupportedThinkLevels,
-    ListModelsForProvider, PriceModels, RequiresAPIKey, AcceptsAPIKey, HasAPIKey, PickAttachments,
+    ListModelsForProvider, PriceModels, ModelPriceSource, RequiresAPIKey, AcceptsAPIKey, HasAPIKey, PickAttachments,
     GetContextBreakdown, GuideTopics, RunChatCommand, RunChatScript, ListChairs, ChairStarters, CurrentSessionID,
     DelegateSwitches, SetDelegateOff, SetAgentOff,
     Shells, CurrentShell, SetShell, EnginesFor, UseEngine, VerifyConnection,
@@ -30,7 +31,7 @@
     attachFileFromPath, clearPendingFile, fileKind, attachmentPreview,
     openProject, openFolder, clearProjectFocus, cancelTurn, answerAsk, queuedMessages,
     addProjectFolder, removeProjectFolder,
-    retryActiveProvider, undoLastTurn, switchApprovalMode,
+    retryActiveProvider, undoLastTurn, rewindTo, pendingRestore, switchApprovalMode,
     startTaskChip, dismissTaskChip,
     stopBackgroundTask, stopBackgroundRun,
     retryFailedTurn, editFailedTurn, regenerateReply, switchVariant, resendEdited, rateReply,
@@ -74,6 +75,21 @@
   // entry draws no tag rather than a wrong one.
   type ModelListing = { model: string; input: number; output: number; priced: boolean; free: boolean; context: number }
   let priced = $state<Record<string, ModelListing>>({})
+  // The price column's provenance. The menu is where a price is actually read,
+  // and until now it showed a bare "$0.14 / $0.28" with nothing saying whose
+  // number that is or how old — while the stats page, showing the same figures,
+  // has always said "estimated from published list prices, not an invoice".
+  let priceSource = $state<{ name: string; fetched: string }>({ name: '', fetched: '' })
+  const priceSourceLine = $derived(
+    priceSource.name && Object.values(priced).some((p) => p.priced)
+      ? t('settings.priceSource', {
+          source: priceSource.name,
+          date: new Date(priceSource.fetched).toLocaleDateString(undefined, {
+            year: 'numeric', month: 'short', day: 'numeric',
+          }),
+        })
+      : '',
+  )
   let needsApiKey = $state(false)
   let apiKeyDraft = $state('')
   // Thinking, the agent's own tools, and what it delegated are views of the
@@ -239,35 +255,18 @@
   // copy would be the one that goes stale when a chat is renamed.
   const spaceChatTitle = $derived(cockpit.spaceHistory.find((s) => s.active)?.title ?? '')
 
-  const liveDone = $derived(toolSteps.filter((s) => s.state !== 'run'))
   const liveRunning = $derived(toolSteps.filter((s) => s.state === 'run'))
-  // The model's latest narration stays on screen while it works — that line is
-  // the whole reason notes exist (§59). Older ones collapse into the timeline
-  // with everything else.
-  const liveNote = $derived([...toolSteps].reverse().find((s) => s.kind === 'note' && !s.parent))
-  // Two lists, deliberately: the panel shows every own step, narration
-  // included, because that is the model working out loud and it belongs in the
-  // timeline. The count beside the button is tools only — and so is what
-  // decides whether the button is drawn at all.
-  const doneOwn = $derived(ownSteps(toolSteps).filter((s) => s.state !== 'run'))
-  const doneOwnTools = $derived(ownTools(toolSteps).filter((s) => s.state !== 'run'))
-  const runningOwn = $derived(ownSteps(toolSteps).filter((s) => s.state === 'run'))
-  const doneAgents = $derived(delegatedAgents(toolSteps).filter((n) => !isRunningNode(n)))
-  const doneHelpers = $derived(delegatedHelpers(toolSteps).filter((n) => !isRunningNode(n)))
-  const doneUnknown = $derived(delegatedUnknown(toolSteps).filter((n) => !isRunningNode(n)))
-  // What is still running renders as one list, agents first — each block names
-  // its own worker, so the piles only need separating where they are counted.
-  // "Still running" is the register's answer (cardState), not the `task` row's:
-  // by the row's own account every delegation is finished from birth, which put
-  // a live worker behind the collapsed "used N agents" toggle the moment it
-  // started.
-  const runningSubs = $derived(
-    [
-      ...delegatedAgents(toolSteps),
-      ...delegatedHelpers(toolSteps),
-      ...delegatedUnknown(toolSteps),
-    ].filter(isRunningNode),
-  )
+  // The turn in flight, cut into the same stretches the finished one is read
+  // in. Nothing is held back and nothing is collapsed: a phase closes when the
+  // model writes its next sentence, so what is on screen at any moment is
+  // everything that has happened, with the running rows at the bottom of the
+  // last block.
+  //
+  // The done/running split that used to live here is gone with the panels it
+  // fed. It existed to answer "what goes behind the toggle and what stays
+  // out", and there is no toggle now — a row's own state is drawn on the row
+  // (stepFace), which is where it was always readable.
+  const livePhases = $derived(phasesOf(toolSteps, streamingText))
   // The engine's phase message is a fallback, not the headline. It says
   // "กำลังคิดคำตอบ..." for the whole tool loop — which duplicates the thinking
   // toggle right below it and stops being true the moment a tool starts.
@@ -307,6 +306,48 @@
     if (secs) parts.push(t('chat.runSeconds', { n: secs }))
     return parts.join(' · ')
   }
+
+  // The same sentence toolsLabel builds, for one stretch of work instead of for
+  // the whole turn. Deliberately the same three pieces in the same order and
+  // from the same keys: the split is meant to be the old lump told honestly,
+  // not a different measurement, and four headers that add up to the number the
+  // collapsed row used to show is the only way that stays checkable.
+  //
+  // Empty for a phase that neither thought nor ran anything, which is the
+  // ordinary shape of a closing answer — and an empty header is not drawn, so
+  // the answer arrives with nothing above it, as it should.
+  function phaseHead(ph: TurnPhase): string {
+    const bits: string[] = []
+    if (ph.thinkSecs) bits.push(t('chat.thoughtFor', { secs: ph.thinkSecs }))
+    const tools = ownTools(ph.steps)
+    if (tools.length) bits.push(t('chat.usedTools', { n: tools.length }))
+    const secs = tools.reduce((sum, s) => sum + (s.secs ?? 0), 0)
+    if (secs) bits.push(t('chat.runSeconds', { n: secs }))
+    // What was handed out counts here too, in the same words the old toggles
+    // used. Not for symmetry: a stretch whose only work was a delegation had a
+    // count of zero tools and so no header at all, which left the block that
+    // hires every sub-agent in the app with nothing to open it by.
+    const piles = [
+      [delegatedAgents(ph.steps), 'chat.usedAgents'],
+      [delegatedHelpers(ph.steps), 'chat.usedSubagents'],
+      [delegatedUnknown(ph.steps), 'chat.usedDelegations'],
+    ] as const
+    for (const [nodes, key] of piles) {
+      if (nodes.length) bits.push(delegationLabel(nodes, key))
+    }
+    return bits.join(' · ')
+  }
+
+  // Which phases the reader has opened, and which ones they have shut again.
+  // Undefined is not "closed" — it is "no opinion yet", which is why the read
+  // below is `?? working` rather than a boolean with a default: a stretch with
+  // a tool still running has to open itself, and has to stay shut once the
+  // person has closed it anyway.
+  //
+  // Keyed by message and phase rather than by phase alone, for the reason
+  // openDiffs is keyed per row: a person who opened the second stretch is
+  // reading the second stretch, and the next turn must not shut it.
+  let openRows = $state<Record<string, boolean>>({})
 
   // One label builder for both piles — same shape, different word and count.
   function delegationLabel(nodes: TimelineNode[], key: 'chat.usedAgents' | 'chat.usedSubagents' | 'chat.usedDelegations'): string {
@@ -349,6 +390,9 @@
           priced = next
         })
         .catch(() => { priced = {} })
+      ModelPriceSource()
+        .then((src) => { priceSource = { name: src?.name ?? '', fetched: src?.fetched ?? '' } })
+        .catch(() => { priceSource = { name: '', fetched: '' } })
     }
     // Same recovery as Settings: the list loading is proof the endpoint is up.
     if (models.length > 0 && model.warning) await retryActiveProvider()
@@ -486,6 +530,38 @@
   })
   let modelMenuOpen = $state(false)
   let focusMenuOpen = $state(false)
+  // The rewind list and the point the user is being asked about. Local rather
+  // than in the store: nothing outside this composer needs to know a menu is
+  // open, and the list itself lives in cockpit.restorePoints.
+  let rewindMenuOpen = $state(false)
+  let rewindAsking: { id: string; label: string; files: string[] } | null = $state(null)
+
+  // Opening a row asks what it would put back BEFORE anything happens. One git
+  // call, paid when somebody points at a row rather than twenty when the menu
+  // opens.
+  async function askRewind(id: string, label: string) {
+    rewindMenuOpen = false
+    rewindAsking = { id, label, files: await pendingRestore(id) }
+  }
+
+  async function rewindNow() {
+    const point = rewindAsking
+    rewindAsking = null
+    if (point) await rewindTo(point.id)
+  }
+
+  // A point taken after a rewind had no message behind it, so the row says what
+  // it is instead of showing an empty line.
+  function rewindLabel(p: { label: string }): string {
+    return p.label || t('chat.rewindAfterUndo')
+  }
+
+  // "14:32" out of an RFC3339 stamp, which is what a row needs — the date is
+  // the session's and every point on this list belongs to it.
+  function rewindTime(at: string): string {
+    const d = new Date(at)
+    return isNaN(d.getTime()) ? '' : d.toTimeString().slice(0, 5)
+  }
 
   // The who-am-I-talking-to picker (§85). Roster fetched when the menu opens,
   // not held: hiring is dropping a file, and a list read at mount would miss
@@ -869,6 +945,7 @@
     const el = e.target as HTMLElement
     if (modelMenuOpen && !el.closest('.model-pick')) { modelMenuOpen = false; openDropdown = '' }
     if (focusMenuOpen && !el.closest('.focus-pick')) { focusMenuOpen = false; folderError = '' }
+    if (rewindMenuOpen && !el.closest('.rewind-pick')) { rewindMenuOpen = false }
     if (ctxMenuOpen && !el.closest('.ctx-pick')) ctxMenuOpen = false
     if (stanceMenuOpen && !el.closest('.stance-pick')) stanceMenuOpen = false
     if (branchMenuOpen && !el.closest('.branch-pick')) branchMenuOpen = false
@@ -1802,6 +1879,11 @@
   options: { value: string; label: string; icon?: string; mark?: string; desc?: string; tag?: string; tagFree?: boolean }[],
   current: string,
   onPick: (value: string) => void,
+  // One line under the list, for a menu whose rows carry a number somebody
+  // could act on. Inside the dropdown rather than beside the trigger: it
+  // qualifies the tags, and a qualification that is not next to the thing it
+  // qualifies is decoration.
+  footer: string = '',
 )}
   {@const active = options.find((o) => o.value === current)}
   <div class="updrop">
@@ -1838,6 +1920,7 @@
             {#if opt.desc}<span class="d">{opt.desc}</span>{/if}
           </button>
         {/each}
+        {#if footer}<div class="updrop-foot">{footer}</div>{/if}
       </div>
     {/if}
   </div>
@@ -1949,6 +2032,67 @@
     {#each steps as s}
       {@render toolRow(s, live)}
     {/each}
+  </div>
+{/snippet}
+
+<!-- One stretch of the turn: what the model thought, what it then said, and what
+     ran under that sentence. Every phase is drawn the same — the closing answer
+     is the phase nothing ran after, not a different kind of thing (owner, 29
+     ส.ค., "แบนเสมอกัน"). The prose is markdown at body size wherever it sits,
+     which is what a mid-turn table or chart had been losing on its way into a
+     12px note row.
+
+     The rows are the ones this timeline has always drawn, at the height the
+     owner dialled himself; a phase that ran more than six folds the rest away
+     rather than taking the air back out (style.css says so at .tool-step). -->
+{#snippet phaseBlock(ph: TurnPhase, key: string, live: boolean, head: string)}
+  {@const own = ownSteps(ph.steps)}
+  {@const subs = delegated(ph.steps)}
+  {@const work = own.length > 0 || subs.length > 0}
+  <!-- Still working, by the register's answer and not the row's (cardState) —
+       the same question isRunningNode asks everywhere else. It decides the
+       default below, and it is what makes folding safe: a phase that is closed
+       has nothing live inside it by construction, so nothing can be hidden
+       while it is still moving. -->
+  {@const working = own.some((s) => s.state === 'run') || subs.some(isRunningNode)}
+  {@const open = openRows[key] ?? working}
+  <div class="phase">
+    <!-- The header IS the control, because the header is already the summary:
+         it says what was thought, how many tools ran and for how long, which is
+         exactly what is behind it. A separate "N more rows" row underneath was
+         the first version and put the count in two places.
+
+         Closed by default (owner, 29 ส.ค.) — the sentence is what the turn is
+         for, and the calls under it are evidence you go and look at. The
+         `?? working` is the exception that keeps that honest: a stretch with
+         something still running opens itself, and closes again once the user
+         has an opinion, exactly as a delegation card's own rows do. -->
+    {#if head && work}
+      <button type="button" class="phase-head" aria-expanded={open} onclick={() => (openRows[key] = !open)}>
+        <span class="chev"><Icon name={open ? 'chevronDown' : 'chevronRight'} size={12} /></span>
+        {head}
+      </button>
+    {:else if head}
+      <div class="phase-head">{head}</div>
+    {/if}
+    {#if ph.say}
+      {#if ph.streaming}
+        <!-- Morphed rather than re-assigned, for the reason the live bubble
+             always was: {@html} rebuilds the paragraph on every token, which
+             restarts any animation in it and drops a selection mid-drag. -->
+        <div class="markdown-body phase-say" use:streamedHtml={renderStreamingMarkdown(ph.say)}></div>
+      {:else}
+        <div class="markdown-body phase-say">{@html renderMarkdown(ph.say)}</div>
+      {/if}
+    {/if}
+    {#if open}
+      {#if own.length}
+        {@render toolTimeline(own, live)}
+      {/if}
+      {#if subs.length}
+        {@render subagentTimeline(subs, live)}
+      {/if}
+    {/if}
   </div>
 {/snippet}
 
@@ -2142,6 +2286,42 @@
                 {#if ctx.preview}<pre class="attach-body">{ctx.preview}</pre>{/if}
               </div>
             {/each}
+            <!-- A turn that recorded its own sequence is drawn as that
+                 sequence: the stretches of work it was made of, in the order
+                 they happened, the closing answer among them rather than above
+                 them. Everything before parts existed (migration v4) has no
+                 sequence to draw and keeps the layout it was written for —
+                 the answer, with the work summarised on collapsed toggles. -->
+            {#if m.parts?.length}
+              <!-- The one toggle that survives the move. The seconds are on the
+                   phase headers now, where they say something the sum could
+                   not; what this opens is the reasoning TEXT, which is one blob
+                   for the whole turn and cannot be split between them. So it
+                   drops the duration from its label and offers what it
+                   actually has. -->
+              {#if m.reasoning}
+                <div class="meta-row">
+                  <button class="reasoning-toggle" onclick={() => togglePanel(i, 'think')}>
+                    <span class="chev"><Icon name={openPanel[i] === 'think' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
+                    <span class="ic"><Icon name="brain" size={12} /></span>
+                    {t('chat.thoughtDone')}
+                  </button>
+                </div>
+                {#if openPanel[i] === 'think'}
+                  <div class="reasoning-body">{m.reasoning}</div>
+                {/if}
+              {/if}
+              {#each phasesOf(m.steps ?? []) as ph, p}
+                {@render phaseBlock(ph, `${i}:${p}`, false, phaseHead(ph))}
+              {/each}
+              {#if m.ending}
+                <!-- How the turn ended, under the last thing the model said.
+                     `m.text` carries it too, glued to the prose — drawing that
+                     whole string here would repeat the closing sentence, which
+                     is already the phase above. -->
+                <div class="markdown-body">{@html renderMarkdown(m.ending)}</div>
+              {/if}
+            {:else}
             <!-- Asked in the same terms as the buttons inside it. `m.steps`
                  alone drew the row for a turn whose only steps were narration,
                  and then had nothing to put in it. -->
@@ -2237,6 +2417,7 @@
               </div>
             {:else}
               <div class="markdown-body">{@html renderMarkdown(m.text)}</div>
+            {/if}
             {/if}
             {#if m.producedFiles?.length}
               <!-- The deliverable, offered where it was asked for. Before this
@@ -2430,72 +2611,23 @@
             {#if liveStatus}
               <div class="typing-row"><span class="typing-status">{liveStatus}</span></div>
             {/if}
-            {#if reasoningText || doneOwnTools.length || doneAgents.length || doneHelpers.length}
+            <!-- The one toggle left on a live turn, and the only clock that
+                 still counts the whole thing. The seconds live on the phase
+                 headers now, but a phase header cannot be written until its
+                 round closes, and the wait before the first one closes is the
+                 longest wait in the product: something has to be moving on it
+                 (the reason this number was added at all). It counts up here
+                 and lands on the split below, whose headers add up to it. -->
+            {#if reasoningText}
               <div class="meta-row">
-                <!-- The same marks the finished bubble's toggles carry
-                     (brain / wrench / userRound / bot). These are the identical
-                     rows one moment earlier, and without the marks the row
-                     visibly changed shape the instant the turn ended. -->
-                {#if reasoningText}
-                  <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'think' ? '' : 'think')}>
-                    <span class="chev"><Icon name={livePanel === 'think' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
-                    <span class="ic"><Icon name="brain" size={12} /></span>
-                    {thinkingLabel}
-                  </button>
-                {/if}
-                {#if doneOwnTools.length}
-                  <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'tools' ? '' : 'tools')}>
-                    <span class="chev"><Icon name={livePanel === 'tools' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
-                    <span class="ic"><Icon name="wrench" size={12} /></span>
-                    {toolsLabel(liveDone)}
-                  </button>
-                {/if}
-                {#if doneAgents.length}
-                  <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'agents' ? '' : 'agents')}>
-                    <span class="chev"><Icon name={livePanel === 'agents' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
-                    <span class="ic"><Icon name="userRound" size={12} /></span>
-                    {delegationLabel(doneAgents, 'chat.usedAgents')}
-                  </button>
-                {/if}
-                {#if doneHelpers.length}
-                  <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'subs' ? '' : 'subs')}>
-                    <span class="chev"><Icon name={livePanel === 'subs' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
-                    <span class="ic"><Icon name="bot" size={12} /></span>
-                    {delegationLabel(doneHelpers, 'chat.usedSubagents')}
-                  </button>
-                {/if}
-                <!-- Handed to nobody: a `task` call whose worker did not
-                     resolve, so the engine had no kind to stamp. Its own row
-                     rather than a share of either count, which is what made a
-                     failed call read as "ซับเอเจน 1 ตัว" on 2026-08-20.
-
-                     `circle` deliberately: not userRound and not bot, because
-                     wearing either kind's glyph is exactly the claim this row
-                     exists to stop making. An empty ring is what the app already
-                     draws for a node with nobody in it (TaskTimeline, the
-                     session strip's plan rows). -->
-                {#if doneUnknown.length}
-                  <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'gone' ? '' : 'gone')}>
-                    <span class="chev"><Icon name={livePanel === 'gone' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
-                    <span class="ic"><Icon name="circle" size={12} /></span>
-                    {delegationLabel(doneUnknown, 'chat.usedDelegations')}
-                  </button>
-                {/if}
+                <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'think' ? '' : 'think')}>
+                  <span class="chev"><Icon name={livePanel === 'think' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
+                  <span class="ic"><Icon name="brain" size={12} /></span>
+                  {thinkingLabel}
+                </button>
               </div>
-              {#if reasoningText && livePanel === 'think'}
+              {#if livePanel === 'think'}
                 <div class="reasoning-body">{reasoningText}</div>
-              {/if}
-              {#if doneOwn.length && livePanel === 'tools'}
-                {@render toolTimeline(doneOwn, false)}
-              {/if}
-              {#if doneAgents.length && livePanel === 'agents'}
-                {@render subagentTimeline(doneAgents, false)}
-              {/if}
-              {#if doneHelpers.length && livePanel === 'subs'}
-                {@render subagentTimeline(doneHelpers, false)}
-              {/if}
-              {#if doneUnknown.length && livePanel === 'gone'}
-                {@render subagentTimeline(doneUnknown, false)}
               {/if}
             {/if}
             <!-- The checklist used to be drawn here, inside the live block, and
@@ -2505,33 +2637,22 @@
                  now, under แผน, where it outlives the turn that wrote it. One
                  place only — drawing it here as well would put the same plan on
                  screen twice and make one of them go stale. -->
-            <!-- Stays on screen for the rest of the turn. The engine erases the
-                 preview the moment an interjection re-places an answer, so
-                 without this the reply the user was mid-way through reading
-                 simply vanished from under them. -->
-            {#each saidSteps(toolSteps) as s}
-              <div class="markdown-body said-block">{@html renderMarkdown(s.label)}</div>
+            <!-- The turn as it is happening, in the same blocks it will be
+                 read in tomorrow. What used to be here was one line: the LATEST
+                 note, with every earlier sentence already gone from the screen
+                 and the running tools underneath it. The engine still hands the
+                 prose over when a round closes (discardAnswerPreview, so it is
+                 not on screen twice); what changed is that the window keeps
+                 what it was handed instead of filing it away.
+
+                 Every phase is drawn `live`, not just the last one. A delegate
+                 hired three sentences ago is still working while the model
+                 narrates on, and its row has to keep counting up rather than
+                 being judged stranded by a turn that has not ended (cardState
+                 skips that check only while live). -->
+            {#each livePhases as ph, p}
+              {@render phaseBlock(ph, `live:${p}`, true, phaseHead(ph))}
             {/each}
-            {#if liveNote}
-              <div class="tool-note headline">{liveNote.label}</div>
-            {/if}
-            <!-- What is running stays on screen, delegations first: a sub-agent
-                 is the slowest thing in a turn and the one the user most wants
-                 to see moving. -->
-            {#if runningSubs.length > 0}
-              {@render subagentTimeline(runningSubs, true)}
-            {/if}
-            {#if runningOwn.length > 0}
-              {@render toolTimeline(runningOwn, true)}
-            {/if}
-            {#if streamingText}
-              <!-- Morphed rather than re-assigned. {@html} rebuilds the whole
-                   reply on every token, which restarts any animation inside it
-                   and drops a selection mid-drag; this keeps the nodes that are
-                   still the same nodes (morph.ts). The finished bubble above
-                   renders once, so it has nothing to keep and uses {@html}. -->
-              <div class="markdown-body" use:streamedHtml={renderStreamingMarkdown(streamingText)}></div>
-            {/if}
             {#if cockpit.ask}
               <div class="ask-panel">
                 <div class="ask-q">{cockpit.ask.question}</div>
@@ -2575,6 +2696,21 @@
       {/if}
     </div>
     </div>
+  {/if}
+
+  <!-- Named before it happens: the files are fetched when the row is opened,
+       so the question is "these twelve, yes?" rather than "trust me". -->
+  {#if rewindAsking}
+    <ConfirmDialog
+      title={t('chat.rewindTitle')}
+      message={rewindAsking.files.length > 0
+        ? t('chat.rewindMessage', { label: rewindAsking.label, count: String(rewindAsking.files.length) })
+        : t('chat.rewindNoFiles', { label: rewindAsking.label })}
+      detail={rewindAsking.files.join('\n')}
+      confirmLabel={t('chat.rewindConfirm')}
+      onConfirm={rewindNow}
+      onCancel={() => (rewindAsking = null)}
+    />
   {/if}
 
   {#if confirmRerun}
@@ -3059,6 +3195,36 @@
           onclick={() => undoLastTurn()}
         ><Icon name="undo2" size={13} /> {t('chat.undoTurn', { count: String(cockpit.undoFiles.length) })}</button>
       {/if}
+      <!-- One press undoes the last turn; this reaches further back. A separate
+           control on purpose: the chip above is about work the user just
+           watched happen, and this is a choice from a list they may have to
+           think about. Offered only once there is more than the one point the
+           chip already covers. -->
+      {#if cockpit.restorePoints.length > 1}
+        <div class="rewind-pick">
+          <button
+            type="button"
+            class="focus-chip"
+            onclick={() => (rewindMenuOpen = !rewindMenuOpen)}
+          ><Icon name="rotateCw" size={12} /> {t('chat.rewind')}
+            <span class="caret"><Icon name={rewindMenuOpen ? 'chevronUp' : 'chevronDown'} size={12} /></span>
+          </button>
+          {#if rewindMenuOpen}
+            <div class="focus-menu rewind-menu">
+              {#each cockpit.restorePoints as point (point.id)}
+                <button
+                  type="button"
+                  class="focus-item rewind-item"
+                  onclick={() => askRewind(point.id, rewindLabel(point))}
+                >
+                  <span class="rewind-when">{rewindTime(point.at)}</span>
+                  <span class="rewind-label">{rewindLabel(point)}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
     </div>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- drag/drop target for a workbench tab; the textarea/buttons inside remain the real interactive elements -->
@@ -3416,7 +3582,7 @@
                         ? t('settings.priceFree')
                         : priced[m]?.priced ? `$${priced[m].input} / $${priced[m].output}` : '',
                       tagFree: !!priced[m]?.free,
-                    })), model.modelName, handleModelChange)}
+                    })), model.modelName, handleModelChange, priceSourceLine)}
                   {:else}
                     <!-- No discoverable list — read-only; custom model ids are set in Settings -->
                     <span class="mm-static">{model.modelName || '—'}</span>

@@ -10,6 +10,7 @@ import {model} from '../models';
 import {skill} from '../models';
 import {mode} from '../models';
 import {command} from '../models';
+import {github} from '../models';
 import {ooxml} from '../models';
 import {config} from '../models';
 import {oauth} from '../models';
@@ -122,6 +123,8 @@ export function ConnectAccount(arg1:string,arg2:string,arg3:string,arg4:Array<st
 
 export function Connections():Promise<Array<connect.Status>>;
 
+export function CreatePullRequest(arg1:string,arg2:string,arg3:string,arg4:string,arg5:boolean):Promise<main.PRCreated>;
+
 export function CreateSpace(arg1:string):Promise<main.Space>;
 
 export function CurrentSessionID():Promise<string>;
@@ -147,6 +150,8 @@ export function DeleteIdentityFile(arg1:string):Promise<void>;
 export function DeletePromptPreset(arg1:string):Promise<void>;
 
 export function DeleteSession(arg1:string):Promise<void>;
+
+export function DeleteSpace(arg1:string):Promise<void>;
 
 export function DeleteSubagentProfile(arg1:string):Promise<void>;
 
@@ -282,6 +287,8 @@ export function MobileRemoteQR():Promise<string>;
 
 export function MobileRemoteStatus():Promise<main.RemoteStatus>;
 
+export function ModelPriceSource():Promise<main.PriceSource>;
+
 export function ModelStatus():Promise<string>;
 
 export function NewChairSession(arg1:string):Promise<string>;
@@ -328,6 +335,8 @@ export function PendingIssueCount():Promise<number>;
 
 export function PendingLearnedCount():Promise<number>;
 
+export function PendingRestore(arg1:string):Promise<Array<string>>;
+
 export function PendingSkillTuneCount():Promise<number>;
 
 export function PendingUndo():Promise<Array<string>>;
@@ -355,6 +364,12 @@ export function ProviderBaseURLIsCustom(arg1:string):Promise<boolean>;
 export function ProviderReady(arg1:string):Promise<boolean>;
 
 export function ProviderWireFormats(arg1:string):Promise<Array<string>>;
+
+export function PullRequestChecks(arg1:string):Promise<Array<github.CheckRun>>;
+
+export function PullRequestFiles(arg1:number):Promise<Array<github.PRFile>>;
+
+export function PullRequests():Promise<main.PRRoom>;
 
 export function RateTurn(arg1:number,arg2:string):Promise<void>;
 
@@ -402,6 +417,8 @@ export function ResolveAddress(arg1:string):Promise<main.Address>;
 
 export function RestartToUpdate():Promise<void>;
 
+export function RestorePoints():Promise<Array<main.RestorePoint>>;
+
 export function RetryActiveProvider():Promise<main.ModelInfo>;
 
 export function RetryFailedTurn(arg1:string):Promise<main.TurnReply>;
@@ -409,6 +426,8 @@ export function RetryFailedTurn(arg1:string):Promise<main.TurnReply>;
 export function RevealSpeechModel(arg1:string):Promise<void>;
 
 export function RevokeDevice(arg1:string):Promise<void>;
+
+export function RewindTo(arg1:string):Promise<main.UndoResult>;
 
 export function RunChatCommand(arg1:string):Promise<main.RunBlockResult>;
 

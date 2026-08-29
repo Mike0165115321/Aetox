@@ -14,6 +14,7 @@ import (
 	_ "image/png"
 	"io"
 	"mime"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -25,6 +26,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	aetoxapp "github.com/Mikedev115/Aetox/internal/app"
 	"github.com/Mikedev115/Aetox/internal/bootstrap"
@@ -171,7 +173,13 @@ type App struct {
 	// work — no git, or a project that is not a repository — and every use of
 	// it is written to carry on without it rather than refuse to run.
 	snapshotMu sync.Mutex
-	snapshots  *snapshot.Store
+
+	// Where the pull-request room's API lives, and the client it uses. Empty in
+	// every real build — the zero github.PRClient is github.com — and set only
+	// by a test pointing at a stub server (desktop/pr_room.go).
+	prAPI     string
+	prHTTP    *http.Client
+	snapshots *snapshot.Store
 
 	// askMu guards every conversation's askCh. One mutex rather than one per
 	// chat: the field is written at two moments (a question opening, an answer
@@ -1319,13 +1327,9 @@ type UndoResult struct {
 // purpose — a machine without git, or a folder that is not a repository, must
 // still be able to hold a conversation, and an error banner about a safety net
 // the user never asked for is worse than not having one.
-func (a *App) captureSnapshot(conv *conversation) {
+func (a *App) captureSnapshot(conv *conversation, label string) {
 	a.snapshotMu.Lock()
 	store := a.snapshots
-	// The window opens here: saves from now on are the ones an undo of the turn
-	// about to run must leave alone. Cleared even when there is no store to
-	// capture into, so a list cannot survive into a turn it does not describe.
-	conv.userSaves = nil
 	a.snapshotMu.Unlock()
 	if store == nil {
 		return
@@ -1338,6 +1342,62 @@ func (a *App) captureSnapshot(conv *conversation) {
 	a.snapshotMu.Lock()
 	conv.lastSnapshot = id
 	a.snapshotMu.Unlock()
+	a.recordPoint(conv, id, label)
+}
+
+// recordPoint puts a tree on this chat's list without touching lastSnapshot.
+//
+// The two are separate because a rewind needs one without the other: the state
+// it is about to leave has to become somewhere the user can come back to, and
+// must NOT become the thing "undo what it just did" goes to — that would turn
+// the second press into a redo of the thing they just undid.
+func (a *App) recordPoint(conv *conversation, id, label string) {
+	a.snapshotMu.Lock()
+	defer a.snapshotMu.Unlock()
+	// A tree identical to the newest point is not a new place to go back to.
+	// Two turns that changed nothing between them would otherwise put two
+	// indistinguishable rows in front of the user, and picking either does the
+	// same nothing.
+	if n := len(conv.restorePoints); n > 0 && conv.restorePoints[n-1].ID == id {
+		return
+	}
+	conv.restorePoints = append(conv.restorePoints, RestorePoint{
+		ID:    id,
+		At:    time.Now().Format(time.RFC3339),
+		Label: clampRestoreLabel(label),
+	})
+	// Oldest first out. The cap is about a list a person can read, not about
+	// storage: the trees are already in the shadow repository and cost nothing
+	// to keep, but a menu of eighty is a menu nobody uses.
+	if extra := len(conv.restorePoints) - maxRestorePoints; extra > 0 {
+		conv.restorePoints = append([]RestorePoint(nil), conv.restorePoints[extra:]...)
+		// Every remembered save moves with them, or a save recorded against
+		// point 30 would be read as "saved after point 30" in a list that now
+		// starts at 10 and would stop protecting the file.
+		for i := range conv.userSaves {
+			conv.userSaves[i].After -= extra
+		}
+	}
+}
+
+// maxRestorePoints is how far back the list reaches. Twenty turns is further
+// than anybody has asked to go and short enough to read.
+const maxRestorePoints = 20
+
+// maxRestoreLabel keeps one row to a line. The label exists so a person can
+// recognise the turn, which the first few words do.
+const maxRestoreLabel = 80
+
+func clampRestoreLabel(text string) string {
+	text = strings.Join(strings.Fields(text), " ")
+	if len(text) <= maxRestoreLabel {
+		return text
+	}
+	cut := maxRestoreLabel
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return text[:cut] + "..."
 }
 
 // noteUserSave records that the person saved a file from the editor, so no
@@ -1355,14 +1415,25 @@ func (a *App) noteUserSave(path string) {
 	a.snapshotMu.Lock()
 	defer a.snapshotMu.Unlock()
 	for _, conv := range a.convs.all() {
-		if !slices.Contains(conv.userSaves, path) {
-			conv.userSaves = append(conv.userSaves, path)
+		// Recorded once per point, not once per session: the same file saved
+		// again after a later point must be protected from a rewind that goes
+		// back past THAT point too.
+		after := len(conv.restorePoints)
+		seen := false
+		for _, saved := range conv.userSaves {
+			if saved.Path == path && saved.After == after {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			conv.userSaves = append(conv.userSaves, savedFile{Path: path, After: after})
 		}
 	}
 }
 
 // undoPlan is what an undo of this chat's last turn would do: the files it
-// would put back, and the ones it is leaving alone because the user типed in
+// would put back, and the ones it is leaving alone because the user typed in
 // them.
 type undoPlan struct {
 	restore []string
@@ -1375,7 +1446,7 @@ type undoPlan struct {
 // before — undo keeps its whole reach, because the list of things the agent can
 // change is not one this side can complete (see conversation.userSaves). What
 // comes out of it is only what the user is known to have saved.
-func (a *App) planUndo(conv *conversation, store *snapshot.Store, id string) (undoPlan, error) {
+func (a *App) planUndo(conv *conversation, store *snapshot.Store, id string, after int) (undoPlan, error) {
 	current, err := store.Capture(a.ctx)
 	if err != nil {
 		return undoPlan{}, err
@@ -1385,9 +1456,21 @@ func (a *App) planUndo(conv *conversation, store *snapshot.Store, id string) (un
 		return undoPlan{}, err
 	}
 	a.snapshotMu.Lock()
+	// Only the saves that happened after the point being gone back to was
+	// taken. A save carries the number of points that existed when it happened,
+	// so a save during turn j reads as After == j+1 and is protected from a
+	// rewind to point i exactly when j >= i — which is `After > i`.
+	//
+	// The strictness is the rule this file already had, generalised: a save
+	// from two turns ago is not a reason to spare a file the turn since then
+	// rewrote, because by now the user has seen that and moved on. What is new
+	// is only that "two turns ago" is measured against the point being gone
+	// back to rather than against the newest one.
 	mine := map[string]bool{}
-	for _, path := range conv.userSaves {
-		mine[path] = true
+	for _, saved := range conv.userSaves {
+		if saved.After > after {
+			mine[saved.Path] = true
+		}
 	}
 	a.snapshotMu.Unlock()
 
@@ -1428,7 +1511,51 @@ func (a *App) UndoLastTurn() (UndoResult, error) {
 	if id == "" {
 		return UndoResult{Reason: "nothing to undo yet"}, nil
 	}
-	plan, err := a.planUndo(conv, store, id)
+	return a.rewind(conv, store, id, a.pointIndex(conv, id), "the last turn changed no files")
+}
+
+// RewindTo puts the project back to one of this chat's earlier points.
+//
+// The same act UndoLastTurn performs, aimed further back. A separate binding
+// rather than a parameter on that one because they are different questions with
+// different risks: "undo what it just did" is one press about work the user
+// watched happen, and this is a choice from a list about work they may have to
+// think about. One control that quietly does either depending on an argument is
+// how the first becomes the second by accident.
+func (a *App) RewindTo(id string) (UndoResult, error) {
+	id = strings.TrimSpace(id)
+	conv := a.cur()
+	a.snapshotMu.Lock()
+	store := a.snapshots
+	index := -1
+	for i, p := range conv.restorePoints {
+		if p.ID == id {
+			index = i
+			break
+		}
+	}
+	a.snapshotMu.Unlock()
+
+	if store == nil {
+		return UndoResult{Reason: "rewinding needs git on this machine, and it was not found"}, nil
+	}
+	if index < 0 {
+		// Named rather than silently doing nothing: an id from a stale list is
+		// the one way this is reached, and the user has to learn that the list
+		// moved rather than that their choice did nothing.
+		return UndoResult{Reason: "that point is no longer on this chat's list"}, nil
+	}
+	return a.rewind(conv, store, id, index, "nothing has changed since that point")
+}
+
+// rewind is the one place a restore happens, so both doors carry the same
+// rules: the user's own saves are left alone, and the state being left behind
+// becomes a point of its own.
+func (a *App) rewind(conv *conversation, store *snapshot.Store, id string, index int, nothingChanged string) (UndoResult, error) {
+	if id == "" {
+		return UndoResult{Reason: "nothing to undo yet"}, nil
+	}
+	plan, err := a.planUndo(conv, store, id, index)
 	if err != nil {
 		return UndoResult{}, err
 	}
@@ -1439,20 +1566,90 @@ func (a *App) UndoLastTurn() (UndoResult, error) {
 			// is not there" to somebody who had just done it.
 			return UndoResult{Kept: plan.kept, Reason: "the only files that changed are ones you edited yourself, so nothing was put back"}, nil
 		}
-		return UndoResult{Reason: "the last turn changed no files"}, nil
+		return UndoResult{Reason: nothingChanged}, nil
+	}
+	// The way back, taken BEFORE anything is put back: a rewind somebody
+	// regrets has nowhere to return to otherwise, and after the restore this
+	// state no longer exists to be captured.
+	// Labelled by the window, not here: an empty label is the point that had no
+	// message behind it, and what that row should READ is a translated string
+	// (chat.rewindAfterUndo) rather than one language hardcoded in the engine.
+	if wayBack, capErr := store.Capture(a.ctx); capErr == nil {
+		a.recordPoint(conv, wayBack, "")
 	}
 	files, err := store.Restore(a.ctx, id, plan.restore)
 	if err != nil {
 		return UndoResult{}, err
 	}
 	if len(files) == 0 {
-		return UndoResult{Kept: plan.kept, Reason: "the last turn changed no files"}, nil
+		return UndoResult{Kept: plan.kept, Reason: nothingChanged}, nil
 	}
-	// The restore IS the new state, so undoing twice must not undo further —
-	// re-capturing here is what makes the second press a no-op instead of a
-	// second, silent step backwards.
-	a.captureSnapshot(conv)
+	// The restore IS the new state, so undoing twice must not undo further: the
+	// point just restored to becomes what "undo" goes back to, and a second
+	// press finds nothing changed. Set rather than re-captured, because the two
+	// are the same tree by construction and one git call is enough.
+	a.snapshotMu.Lock()
+	conv.lastSnapshot = id
+	a.snapshotMu.Unlock()
 	return UndoResult{Files: files, Kept: plan.kept}, nil
+}
+
+// pointIndex is where an id sits in this chat's list.
+//
+// An id that is not on it answers as the NEWEST point, which is the reading
+// both callers want: lastSnapshot is the newest by construction, and the one
+// way it can be missing from the list is a chat long enough to have had its
+// oldest points trimmed. Answering with the end of the list instead would make
+// every save look older than the point being gone back to, and undo would
+// quietly stop sparing the file somebody had just typed in.
+func (a *App) pointIndex(conv *conversation, id string) int {
+	a.snapshotMu.Lock()
+	defer a.snapshotMu.Unlock()
+	for i, p := range conv.restorePoints {
+		if p.ID == id {
+			return i
+		}
+	}
+	return len(conv.restorePoints) - 1
+}
+
+// RestorePoints is this chat's list, newest first, for the control that offers
+// them. It says nothing about what each one would restore: that is one git call
+// per point, and a list nobody has opened should not spend twenty of them.
+func (a *App) RestorePoints() []RestorePoint {
+	conv := a.cur()
+	a.snapshotMu.Lock()
+	defer a.snapshotMu.Unlock()
+	out := make([]RestorePoint, 0, len(conv.restorePoints)) // never nil: §34
+	for i := len(conv.restorePoints) - 1; i >= 0; i-- {
+		out = append(out, conv.restorePoints[i])
+	}
+	return out
+}
+
+// PendingRestore is what rewinding to one point would put back — for the moment
+// the user opens that row, before they commit to it.
+func (a *App) PendingRestore(id string) []string {
+	id = strings.TrimSpace(id)
+	conv := a.cur()
+	a.snapshotMu.Lock()
+	store := a.snapshots
+	index := -1
+	for i, p := range conv.restorePoints {
+		if p.ID == id {
+			index = i
+			break
+		}
+	}
+	a.snapshotMu.Unlock()
+	if store == nil || index < 0 {
+		return []string{}
+	}
+	plan, err := a.planUndo(conv, store, id, index)
+	if err != nil {
+		return []string{}
+	}
+	return plan.restore
 }
 
 // PendingUndo reports what an undo would touch right now, so the UI can offer
@@ -1469,7 +1666,7 @@ func (a *App) PendingUndo() []string {
 	// instead promised files undo now deliberately leaves alone — an offer of
 	// five where four would happen, on the one control in the app that writes to
 	// the user's disk.
-	plan, err := a.planUndo(conv, store, id)
+	plan, err := a.planUndo(conv, store, id, a.pointIndex(conv, id))
 	if err != nil {
 		return []string{} // never nil: §34, a nil slice crashes the frontend
 	}
@@ -2155,8 +2352,9 @@ func (a *App) runTurn(conv *conversation, text string) (SessionMessage, SessionM
 	// first case, and only the model sees the rewrite: the transcript below
 	// keeps what the user's composer actually sent. Chained, because one message
 	// can carry both.
-	// Before anything runs, so an undo has somewhere to go back to.
-	a.captureSnapshot(conv)
+	// Before anything runs, so an undo has somewhere to go back to. The message
+	// labels the point, which is what makes a list of them choosable.
+	a.captureSnapshot(conv, text)
 	// A message that names a worker goes to that worker, in the words it was
 	// written in. This is the same act the model performs with `task`, and the
 	// user gets to perform it directly (owner, 12 ส.ค.: one address for both) —
@@ -2871,10 +3069,23 @@ func (a *App) SetProviderEnabled(providerName string, enabled bool) ([]string, e
 	return next, nil
 }
 
-// ListModelsForProvider mirrors the CLI's model-selection discovery chain:
-// live API discovery first, falling back to the static recommended list.
-// An empty result means "no known models" — the frontend should offer a
+// ListModelsForProvider answers "what can I pick here": live API discovery
+// first, then the catalog already on this disk, then the static recommended
+// list. An empty result means "no known models" — the frontend should offer a
 // free-text input for a custom model id.
+//
+// The middle step is the one worth explaining. Asking the endpoint is the only
+// answer that is a fact, and it is also the step that fails for ordinary
+// reasons: a key issued for one region on another region's host (Alibaba's
+// Model Studio does exactly this, and answers 401), an offline laptop, a base
+// URL typed with a typo. The chain used to fall from that straight onto one
+// hard-coded name per provider, so the picker showed a shelf of ONE — while
+// model-catalog.json, sitting in the same data root and read by the price
+// column two lines away, described 54 models for that same provider.
+//
+// It stays below live discovery and can never override it: the catalog says
+// what models.dev publishes, not what this account is entitled to on this
+// endpoint today.
 func (a *App) ListModelsForProvider(providerName string) []string {
 	canonical := model.NormalizeProvider(providerName)
 	baseURL := resolveBaseURLForProvider(canonical)
@@ -2882,10 +3093,42 @@ func (a *App) ListModelsForProvider(providerName string) []string {
 	if choices, err := model.ModelChoicesWithEndpointAndAPIKey(canonical, baseURL, apiKey); err == nil && len(choices) > 0 {
 		return choices
 	}
+	if choices := a.catalogModelChoices(canonical); len(choices) > 0 {
+		return choices
+	}
 	if choices := model.ModelChoices(canonical); choices != nil {
 		return choices
 	}
 	return []string{}
+}
+
+// catalogModelChoices is a provider's shelf according to the cached catalog,
+// with the static fallback name folded in.
+//
+// Folded in rather than replaced: those are the names Aetox ships as
+// known-good for a cold start, and a catalog that happens not to carry one must
+// not be the reason it disappears out of the menu. Merged before the sort so
+// the list has one order and not "the catalog's, plus one".
+func (a *App) catalogModelChoices(canonical string) []string {
+	catalog := a.modelCatalog()
+	if catalog == nil {
+		return nil
+	}
+	known := catalog.ModelsFor(canonical)
+	if len(known) == 0 {
+		return nil
+	}
+	added := false
+	for _, name := range model.ModelChoices(canonical) {
+		if name = strings.TrimSpace(name); name != "" && !slices.Contains(known, name) {
+			known = append(known, name)
+			added = true
+		}
+	}
+	if added {
+		sort.Strings(known)
+	}
+	return known
 }
 
 // ProviderAccount is what Settings shows under a provider's name: what is left
@@ -3534,11 +3777,18 @@ func (a *App) retargetTemplate(opts config.ConfigOptions) {
 // would empty the model's tool block while this list went on showing every
 // tool the desk holds — the drift above, arriving through the newer door.
 func (a *App) deskTools() *skill.Dispatcher {
+	// Both cuts carry the per-action filter as well, and for the reason this
+	// whole function exists: the panel and the model must agree. A stance that
+	// leaves the model `browser` with four of its twelve actions must not be
+	// drawn here as the whole browser.
 	if p := a.chairProfile(); p != nil {
-		return skill.NewDispatcherFor(subagent.AttendedRegistry(a.cur().registry, *p, a.cur().desk), a.cur().stance.Carries)
+		return skill.NewDispatcherFor(subagent.AttendedRegistry(a.cur().registry, *p, a.cur().desk), a.cur().stance.Carries).
+			WithActions(func(tool, action string) bool { return a.cur().stance.AllowsAction(tool, action) })
 	}
 	return skill.NewDispatcherFor(a.cur().registry, func(name string, source skill.Source) bool {
 		return a.cur().desk.Carries(name, source) && a.cur().stance.Carries(name, source)
+	}).WithActions(func(tool, action string) bool {
+		return a.cur().desk.AllowsAction(tool, action) && a.cur().stance.AllowsAction(tool, action)
 	})
 }
 
@@ -3593,7 +3843,26 @@ func (a *App) workbenchSkills(conv *conversation, sandboxRoot string) []skill.Sk
 		&askUserSkill{app: a, conv: conv},
 		&todoWriteSkill{app: a, conv: conv},
 		&sessionSearchSkill{app: a},
-		&suggestTaskSkill{app: a, conv: conv},
+		// `suggest_task` is deliberately absent (owner's call, 2026-08-29), and
+		// this is a switch rather than a deletion — the same shape defaults.go
+		// uses for `notebook_edit`, and switching it back on is this one line.
+		//
+		// The measurement: 270 tokens in the tool block of EVERY request, on
+		// every desk, paid before the user types — and `tool_runs` records zero
+		// calls to it against 6,253 runs since it shipped on 2026-08-20. Nine
+		// days is long enough to tell "not reached for yet" from "not reached
+		// for"; `repo_map` and `symbol` are one day old and are not judged here
+		// for exactly that reason.
+		//
+		// Nothing else is removed. task_chips.go stays compiled in, the chip
+		// UI, the Wails bindings and DismissTaskChip all still work, so a chip
+		// raised any other way still lands where it always did. What stopped is
+		// the model being told it can raise one.
+		//
+		// If it comes back, it should come back cheaper: 270 tokens buys three
+		// long parameter descriptions, and the standard (block_standard_test.go)
+		// says a block entry carries what the tool IS and what to pass it, with
+		// the judgment in Guidance().
 		// The engines' power switches. Registered for every session like the
 		// rest of the workbench, and cut like a connection tool: each is owned
 		// by its vendor's catalog entry, so the placement lock (HomeAgent)

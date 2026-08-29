@@ -150,6 +150,26 @@ export const en: Record<keyof typeof th, string> = {
   // changed, in git's format. diffMore is the cut being honest about itself —
   // a long diff is capped where it is built, and a capped diff that says
   // nothing reads as the whole change.
+  'workbench.prTab': 'Pull requests',
+  'prPane.count': '{count} open',
+  'prPane.refresh': 'Refresh',
+  'prPane.scope': 'This panel is for the code door only.',
+  'prPane.loading': 'Loading...',
+  'prPane.none': 'No open pull requests.',
+  'prPane.draft': 'draft',
+  'prPane.connect': 'Connect one in Settings, Connections.',
+  'prPane.noPatch': 'GitHub sent no diff for this file (binary, or too large).',
+  'prPane.openOnGitHub': 'Open on GitHub',
+  'prPane.newTitle': 'Open a pull request',
+  'prPane.newTitleField': 'Title',
+  'prPane.newHead': 'branch with the work',
+  'prPane.newBase': 'base (default branch)',
+  'prPane.newBody': 'What this change is for, and why.',
+  'prPane.newDraft': 'Open as a draft',
+  'prPane.newCancel': 'Cancel',
+  'prPane.newConfirm': 'Open it',
+  'prPane.newOpening': 'Opening...',
+  'prPane.newPushFirst': 'The branch has to be pushed first — GitHub compares branches it has, not your working tree.',
   'workbench.gitTab': 'Git',
   // The working tree panel (§161.4) — โค้ด desk only, and it says so itself
   // rather than leaving a person to wonder where it went on the other desks.
@@ -174,6 +194,13 @@ export const en: Record<keyof typeof th, string> = {
   'chat.askOwnPlaceholder': 'Or type your own answer…',
   'chat.askOwnSend': 'Send answer',
   'chat.undoTurn': 'Undo ({count})',
+  'chat.rewind': 'Go back',
+  'chat.rewindTitle': 'Go back to an earlier point',
+  'chat.rewindMessage': 'Put the project back to before "{label}"? {count} file(s) change.',
+  'chat.rewindNoFiles': 'Nothing has changed since "{label}".',
+  'chat.rewindConfirm': 'Put it back',
+  'chat.rewindEmpty': 'No earlier point yet — one is kept before every turn.',
+  'chat.rewindAfterUndo': 'before going back',
   'chat.extraFolders': 'Added folders',
   'chat.addFolder': 'Add a folder',
   'chat.removeFolder': 'Remove {name}',
@@ -204,6 +231,7 @@ export const en: Record<keyof typeof th, string> = {
   'chat.editMessageBody': 'The previous answer is discarded, and the {count} file(s) that turn changed are put back first.',
   'chat.editConfirm': 'Restore files and resend',
   'cockpit.regenerateError': 'Could not answer again: {err}',
+  'cockpit.rewindDone': 'Went back. {count} file(s) put back:',
   'cockpit.undoDone': 'Undid the last turn. {count} file(s) put back:',
   // Said out loud: quietly sparing a file is as hard to trust as quietly eating one.
   'cockpit.undoKept': 'Left alone: {count} file(s) you edited yourself during this turn:',
@@ -322,6 +350,11 @@ export const en: Record<keyof typeof th, string> = {
   'workbench.spectator': 'The page is shown in the real app window. This one is a spectator.',
   'workbench.addTab': 'Add new tab',
   'workbench.terminalMenu': 'Terminal',
+  'workbench.repoMapTab': 'Code map',
+  'workbench.repoMapFiles': 'Showing {shown} of {total} files. Dot size = most depended on, lines = imports',
+  'workbench.repoMapEmpty': 'No project to map yet. Focus a project first',
+  'workbench.repoMapLoading': 'Walking the project',
+  'workbench.repoMapRefresh': 'Walk again',
   'workbench.browserMenu': 'Browser',
   'workbench.back': 'Back',
   'workbench.forward': 'Forward',
@@ -1405,6 +1438,10 @@ Check your own work before answering; say so plainly if unsure.
   'projects.addFiles': 'Add files',
   'projects.removeFile': 'Remove this file from the context',
   'projects.createHint': 'Makes a real folder on this machine, with a context folder ready for files.',
+  'projects.delete': 'Delete project',
+  'projects.deleteNamed': 'Delete project {name}',
+  'projects.confirmDeleteTitle': 'Delete this project?',
+  'projects.confirmDeleteMessage': 'Its folder and the context files copied into it are gone for good. The chats held here stay in your history, outside every project, and the files you added them from are untouched.',
 
   // ---------- self-update ----------
   // A separate set from settings.about*: those answer someone who walked over

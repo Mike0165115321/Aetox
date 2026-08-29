@@ -150,6 +150,26 @@ export const th = {
   // กล่องที่กางใต้แถวแก้ไฟล์ในโต๊ะโค้ด บอกว่าแก้บรรทัดไหนไปเป็นอะไร ในรูปแบบเดียวกับ git
   // diffMore คือการบอกตรง ๆ ว่าตัดตรงไหน diff ยาว ๆ ถูกจำกัดตั้งแต่ตอนสร้าง
   // และ diff ที่ถูกตัดแล้วไม่บอก จะอ่านเหมือนว่านั่นคือทั้งหมด
+  'workbench.prTab': 'Pull requests',
+  'prPane.count': 'เปิดอยู่ {count}',
+  'prPane.refresh': 'รีเฟรช',
+  'prPane.scope': 'แผงนี้แสดงเฉพาะหน้าโค้ดเท่านั้น',
+  'prPane.loading': 'กำลังโหลด...',
+  'prPane.none': 'ไม่มี pull request ที่เปิดอยู่',
+  'prPane.draft': 'ร่าง',
+  'prPane.connect': 'เชื่อมบัญชีได้ที่ ตั้งค่า → การเชื่อมต่อ',
+  'prPane.noPatch': 'GitHub ไม่ได้ส่ง diff ของไฟล์นี้มา (ไฟล์ไบนารีหรือใหญ่เกิน)',
+  'prPane.openOnGitHub': 'เปิดบน GitHub',
+  'prPane.newTitle': 'เปิด pull request',
+  'prPane.newTitleField': 'หัวข้อ',
+  'prPane.newHead': 'สาขาที่มีงาน',
+  'prPane.newBase': 'สาขาปลายทาง (ว่าง = สาขาหลัก)',
+  'prPane.newBody': 'การเปลี่ยนนี้ทำเพื่ออะไร และทำไม',
+  'prPane.newDraft': 'เปิดเป็นร่าง',
+  'prPane.newCancel': 'ยกเลิก',
+  'prPane.newConfirm': 'เปิดเลย',
+  'prPane.newOpening': 'กำลังเปิด...',
+  'prPane.newPushFirst': 'ต้อง push สาขาขึ้นไปก่อน GitHub เทียบสาขาที่มันมี ไม่ใช่ไฟล์ในเครื่อง',
   'workbench.gitTab': 'Git',
   // The working tree panel (§161.4) — โค้ด desk only, and it says so itself
   // rather than leaving a person to wonder where it went on the other desks.
@@ -174,6 +194,13 @@ export const th = {
   'chat.askOwnPlaceholder': 'หรือพิมพ์คำตอบเอง…',
   'chat.askOwnSend': 'ส่งคำตอบ',
   'chat.undoTurn': 'ย้อนกลับ ({count})',
+  'chat.rewind': 'ย้อนไปจุดก่อนหน้า',
+  'chat.rewindTitle': 'ย้อนไปจุดก่อนหน้า',
+  'chat.rewindMessage': 'ย้อนโปรเจกต์กลับไปก่อน "{label}" ไหม มีไฟล์เปลี่ยน {count} ไฟล์',
+  'chat.rewindNoFiles': 'ไม่มีอะไรเปลี่ยนตั้งแต่ "{label}"',
+  'chat.rewindConfirm': 'ย้อนกลับ',
+  'chat.rewindEmpty': 'ยังไม่มีจุดให้ย้อน จะเก็บให้ก่อนทุกเทิร์น',
+  'chat.rewindAfterUndo': 'ก่อนย้อนกลับ',
   'chat.extraFolders': 'โฟลเดอร์เพิ่มเติม',
   'chat.addFolder': 'เพิ่มโฟลเดอร์',
   'chat.removeFolder': 'เอา {name} ออก',
@@ -201,6 +228,7 @@ export const th = {
   'chat.editMessageBody': 'คำตอบเดิมจะถูกลบทิ้ง และไฟล์ {count} ไฟล์ที่เทิร์นนั้นแก้ไว้จะถูกย้อนคืนก่อน',
   'chat.editConfirm': 'ย้อนไฟล์แล้วส่งใหม่',
   'cockpit.regenerateError': 'ตอบใหม่ไม่สำเร็จ: {err}',
+  'cockpit.rewindDone': 'ย้อนกลับแล้ว คืนไฟล์ {count} ไฟล์:',
   'cockpit.undoDone': 'ย้อนเทิร์นล่าสุดแล้ว คืนไฟล์ {count} ไฟล์:',
   // ต้องบอกออกมา การเว้นไฟล์ไว้เงียบ ๆ เชื่อถือยากพอ ๆ กับการกลืนไฟล์เงียบ ๆ
   'cockpit.undoKept': 'ไม่ได้แตะ {count} ไฟล์ที่คุณแก้เองระหว่างเทิร์นนี้:',
@@ -316,6 +344,11 @@ export const th = {
   'workbench.spectator': 'หน้าเว็บแสดงอยู่ในหน้าต่างแอปจริง หน้าต่างนี้เป็นแค่ผู้ชม',
   'workbench.addTab': 'เพิ่มแท็บใหม่',
   'workbench.terminalMenu': 'เทอร์มินัล',
+  'workbench.repoMapTab': 'แผนที่โค้ด',
+  'workbench.repoMapFiles': 'แสดง {shown} จาก {total} ไฟล์ ขนาดจุด = ถูกพึ่งมาก เส้น = การ import',
+  'workbench.repoMapEmpty': 'ยังไม่มีโปรเจกต์ให้ทำแผนที่ โฟกัสโปรเจกต์ก่อน',
+  'workbench.repoMapLoading': 'กำลังเดินสำรวจโปรเจกต์',
+  'workbench.repoMapRefresh': 'สำรวจใหม่',
   'workbench.browserMenu': 'เบราว์เซอร์',
   'workbench.back': 'ย้อนกลับ',
   'workbench.forward': 'ไปหน้าถัดไป',
@@ -1420,6 +1453,10 @@ export const th = {
   'projects.addFiles': 'เพิ่มไฟล์',
   'projects.removeFile': 'เอาไฟล์นี้ออกจากบริบท',
   'projects.createHint': 'จะได้โฟลเดอร์จริงในเครื่อง พร้อมโฟลเดอร์ context ไว้วางไฟล์',
+  'projects.delete': 'ลบโปรเจกต์',
+  'projects.deleteNamed': 'ลบโปรเจกต์ {name}',
+  'projects.confirmDeleteTitle': 'ลบโปรเจกต์นี้?',
+  'projects.confirmDeleteMessage': 'โฟลเดอร์ของโปรเจกต์และไฟล์บริบทที่ก๊อปเข้ามาจะหายถาวร ส่วนแชทที่เคยอยู่ในนี้ยังอยู่ในประวัติเหมือนเดิม แค่ออกไปอยู่นอกโปรเจกต์ และไฟล์ต้นทางในเครื่องไม่ถูกแตะ',
 
   // ---------- อัปเดตตัวเอง ----------
   // คนละชุดกับ settings.about*: ฝั่งโน้นคือคำตอบของคนที่เดินไปกดถามเอง

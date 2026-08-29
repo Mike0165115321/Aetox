@@ -137,6 +137,25 @@ type conversation struct {
 	// back to. Guarded by App.snapshotMu with the store.
 	lastSnapshot string
 
+	// restorePoints is every point this chat can be taken back to, oldest
+	// first, one per turn that ran. lastSnapshot above is the last of them and
+	// stays because it is a different question with a different answer: "undo
+	// what it just did" is one press and must not become a menu.
+	//
+	// Owner's call, 29 ส.ค.: *"อยากให้ย้อนได้หลายจุด"*. One point was the honest
+	// shape while the reasoning behind it was "the question a user actually
+	// asks is undo what it just did, asked immediately" - true for a two-turn
+	// errand and false for the twenty-turn session this desk is for, where the
+	// turn that broke something is four turns back and the only way to it was
+	// the user's own git history.
+	//
+	// In memory, like lastSnapshot and for the same reason: the tree objects
+	// live in the shadow repository and survive anything, but a list of points
+	// belongs to a session that is open. Closing the window does not owe anybody
+	// a way back into a conversation they left.
+	restorePoints []RestorePoint
+
+
 	// userSaves is every file the PERSON saved from the editor since
 	// lastSnapshot was taken. An undo of this chat leaves them alone.
 	//
@@ -158,9 +177,14 @@ type conversation struct {
 	//
 	// Filled for every live conversation, not just the one on screen: a save is
 	// a fact about the tree, and the chat whose undo might eat it is often not
-	// the chat being looked at. Reset by captureSnapshot. Guarded by
-	// App.snapshotMu.
-	userSaves []string
+	// the chat being looked at. Guarded by App.snapshotMu.
+	//
+	// No longer cleared per turn, and that is what multi-point rewind needed:
+	// a save is protected from every rewind that goes back PAST it, not only
+	// from the next one. Each entry remembers how many points existed when it
+	// happened, so "saved after the point we are going back to" stays an
+	// answerable question however far back the user reaches.
+	userSaves []savedFile
 
 	// openTabs is what the window reports is open on THIS chat's workbench, so
 	// the agent can read its own desk (desk_list).
@@ -342,4 +366,29 @@ func (c *conversations) forget(id string) {
 type sessionEvent[T any] struct {
 	SessionID string `json:"sessionId"`
 	Data      T      `json:"data"`
+}
+
+// RestorePoint is one state of the project this chat can be put back to: the
+// shadow-git tree that was captured, when, and what the user had just asked
+// for. The label is what makes a list of them choosable - "12:04, tree abc123"
+// is a list nobody can pick from.
+type RestorePoint struct {
+	// ID is the shadow-git tree (internal/snapshot).
+	ID string `json:"id"`
+	// At is when it was taken, RFC3339.
+	At string `json:"at"`
+	// Label is the user message that opened the turn this point precedes,
+	// clamped. Empty for a point taken after a rewind, which had no message.
+	Label string `json:"label"`
+}
+
+// savedFile is one file the person saved from the editor, and the number of
+// restore points that existed when they did.
+//
+// The number is the whole mechanism: a rewind to point i must leave alone
+// every file saved at or after i, and drag back everything else. With one
+// point there was nothing to number and a bare path was enough.
+type savedFile struct {
+	Path  string
+	After int
 }

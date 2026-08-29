@@ -14,6 +14,7 @@ import {
   SaveChatImage, SaveChatImageData, SaveChatFile, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
   ListSessionsForDoor, SearchSessionsForDoor, LoadSessionAnyProject, ClearProjectFocus,
   AnswerUserQuestion, Interject, RetryActiveProvider, PendingUndo, UndoLastTurn,
+  RestorePoints, PendingRestore, RewindTo,
   CompleteSignIn, SignOut, ImportSignIn,
   ListTaskChips, DismissTaskChip,
   BackgroundTasks,
@@ -284,6 +285,7 @@ export function restoreTranscript(messages: main.SessionMessage[] | null | undef
     out[i].failed = true
     out[i].stopped = wasStopped(err)
     out[i].failedText = question?.role === 'user' ? question.text : undefined
+    out[i].ending = ending
     out[i].text = out[i].text.trim() ? `${out[i].text}\n\n${ending}` : ending
   }
   return out
@@ -338,20 +340,20 @@ function restoreAttachments(m: main.SessionMessage): ChatMessage {
 }
 
 /**
- * Fold a stored turn sequence back into the timeline rows the bubble draws.
+ * Fold a stored turn sequence back into the ordered rows the bubble draws.
  *
- * The layout is deliberately the one it has always been: the answer, and a row
- * of collapsed toggles above it. Drawing the sequence inline was tried and read
- * worse — the same thinking segment appeared twice, once as a toggle and once
- * between the paragraphs, and the answer stopped being the thing your eye lands
- * on. The sequence's job is to be recorded, not to be the layout.
+ * This used to hold the layout decision as well, and held the wrong one: the
+ * last text part was declared "the answer" and every earlier one demoted to a
+ * muted note behind the "ใช้ N เครื่องมือ" toggle. An inline draw had been
+ * tried once and read worse, but what made it read worse was drawing the
+ * sequence *in addition to* the toggles — the same thinking segment appearing
+ * twice, once as a summary and once between the paragraphs. The answer was to
+ * move the layout, not to add to it (owner, 29 ส.ค.).
  *
- * What it buys is that those toggles now work on a reopened session. Tool calls
- * were never written down anywhere a message could reach, so every restored
- * answer used to come back with an empty timeline.
- *
- * The last text part is the answer and is already the bubble; every earlier one
- * is narration and becomes a note row, exactly where it sat before.
+ * So this decides nothing now. It returns every part as a row, in order, and
+ * turnPhases.ts cuts that list into the stretches of work the turn was made of.
+ * The last text part is one of those stretches like any other; it stops being a
+ * special case here and becomes simply the phase nothing ran after.
  */
 /**
  * The files a stored turn produced, back out of the same parts.
@@ -394,15 +396,19 @@ function proposalsFromParts(parts?: TurnPart[]): number[] | undefined {
 
 function stepsFromParts(parts?: TurnPart[]): ToolStep[] | undefined {
   if (!parts?.length) return undefined
-  const lastTextAt = parts.map((p) => p.kind).lastIndexOf('text')
   const steps: ToolStep[] = []
-  parts.forEach((part, i) => {
+  parts.forEach((part) => {
     if (part.kind === 'text') {
-      if (i === lastTextAt || !part.text) return
-      // An answer an interjection re-placed comes back as the answer it was.
-      // As a note it came back at --fs-xs in --text-muted with its markdown
-      // showing as source, folded behind the "used N tools" toggle — a reply
-      // the user had read, filed away as a footnote to the tools.
+      if (!part.text) return
+      // Every sentence the model wrote, the closing one included. Holding the
+      // last one back is what made a reopened turn unable to say where its own
+      // answer sat in the sequence — the bubble drew it from `text` instead,
+      // and the work that led to it had to be pieced together from a panel.
+      //
+      // The kinds are kept because they still mean different things to the
+      // engine (Demoted marks an answer an interjection re-placed); the drawing
+      // no longer treats them differently, since both are prose the reader had
+      // in front of them and both keep their markdown now.
       steps.push({
         kind: part.demoted ? 'said' : 'note',
         label: part.text, state: 'done', startedAt: 0,
@@ -1108,6 +1114,52 @@ export async function refreshUndo(): Promise<void> {
   } catch {
     cockpit.undoFiles = []
   }
+  // The list behind the chip, refreshed in the same breath: they answer the
+  // same question at two depths, and a list one turn out of date would offer a
+  // point that is already the present.
+  try {
+    cockpit.restorePoints = (await RestorePoints()) ?? []
+  } catch {
+    cockpit.restorePoints = []
+  }
+}
+
+/**
+ * pendingRestore asks what rewinding to one point would put back, so the
+ * confirmation can name the files before the user commits to it. Silent on
+ * failure for the same reason refreshUndo is.
+ */
+export async function pendingRestore(id: string): Promise<string[]> {
+  try {
+    return (await PendingRestore(id)) ?? []
+  } catch {
+    return []
+  }
+}
+
+/**
+ * rewindTo puts the project back to an earlier point. Everything undoLastTurn
+ * does about reporting is done here too, and deliberately by the same words:
+ * the two are one act aimed at different distances, and a user who learned to
+ * read one result should not have to learn another.
+ */
+export async function rewindTo(id: string): Promise<void> {
+  try {
+    const result = await RewindTo(id)
+    const files = result?.files ?? []
+    const lines = files.length > 0
+      ? [t('cockpit.rewindDone', { count: String(files.length) }), ...files.map((f) => `- ${f}`)]
+      : [result?.reason || t('cockpit.undoNothing')]
+    const kept = result?.kept ?? []
+    if (kept.length > 0) {
+      lines.push('', t('cockpit.undoKept', { count: String(kept.length) }), ...kept.map((f) => `- ${f}`))
+    }
+    cockpit.chat.push({ role: 'agent', text: lines.join('\n'), time: nowLabel() })
+  } catch (err) {
+    cockpit.chat.push({ role: 'agent', text: t('cockpit.undoFailed', { err: String(err) }), time: nowLabel() })
+  }
+  await refreshUndo()
+  await refreshWorkspace()
 }
 
 /**
@@ -1200,6 +1252,7 @@ async function turnEndedBubble(err: unknown, sentText: string, turn: LiveTurnRef
   return {
     role: 'agent',
     text: partial ? `${partial}\n\n${endingFor(err)}` : endingFor(err),
+    ending: endingFor(err),
     time: nowLabel(), failed: true, stopped: wasStopped(err), failedText: sentText,
     ...live,
   }
@@ -1382,10 +1435,7 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
       // Into the turn's own transcript, wherever it is being drawn: the user
       // may have walked away mid-turn, and `cockpit.chat` is then the chat
       // they walked TO — an answer following the user out of the room.
-      turnChat(turn).push({
-        role: 'agent', text: reply.text, parts: reply.parts as TurnPart[] | undefined,
-        time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(turn),
-      })
+      turnChat(turn).push(answeredBubble(reply, turn))
     } catch (err) {
       // The engine persists nothing for a turn that failed, so the text it was
       // given rides on the bubble: it is the only copy left to retry with.
@@ -1591,6 +1641,46 @@ function turnArtifacts(turn: LiveTurnRef): Pick<ChatMessage, 'steps' | 'reasonin
   return { steps, reasoning, thinkSecs, producedFiles, proposals }
 }
 
+/**
+ * The bubble a turn that answered becomes.
+ *
+ * One builder for the four places that finish a turn (send, retry, edit-retry,
+ * resend), which were four copies of the same object literal. The reason it had
+ * to become a function is the line below it.
+ *
+ * **The live step list is missing the last thing the model said.** The engine
+ * emits a `note` for the prose of every round that is followed by tool calls
+ * and deliberately not for the closing one (`if r.Final { return }` in
+ * executor.go) — the old bubble took that from Reply and drew it separately, so
+ * nothing needed to send it twice. Now that the bubble is drawn from the
+ * sequence, a list without it is a turn whose answer is not in it: the last
+ * phase never exists and the reply is on screen nowhere at all.
+ *
+ * So the closing sentence is appended here, as the text part it is. What the
+ * window ends up holding is then the same list `stepsFromParts` produces when
+ * the session is reopened, which is the property the whole layout rests on.
+ *
+ * Skipped when the turn's last prose already IS that sentence: an interjection
+ * demotes an answer and the engine DOES send that one, as `said`.
+ */
+function answeredBubble(reply: main.TurnReply, turn: LiveTurnRef): ChatMessage {
+  const live = turnArtifacts(turn)
+  const steps = live.steps ?? []
+  const closing = (reply.text ?? '').trim()
+  const lastProse = [...steps].reverse().find((s) => s.kind === 'note' || s.kind === 'said')
+  return {
+    role: 'agent',
+    text: reply.text,
+    parts: reply.parts as TurnPart[] | undefined,
+    time: nowLabel(),
+    id: reply.messageId || undefined,
+    ...live,
+    steps: closing && lastProse?.label !== closing
+      ? [...steps, { kind: 'note', label: closing, state: 'done', startedAt: 0 }]
+      : live.steps,
+  }
+}
+
 /** The transcript the turn's reply belongs in — its own conversation's, wherever
  * that is being drawn right now. Falls back to the screen only when the window
  * holds nothing under the turn's name, which is the pre-stamp behaviour. */
@@ -1614,10 +1704,7 @@ export async function retryFailedTurn(index: number): Promise<void> {
   await runLiveTurn(async (turn) => {
     try {
       const reply = await RetryFailedTurn(text)
-      turnChat(turn).push({
-        role: 'agent', text: reply.text, parts: reply.parts as TurnPart[] | undefined,
-        time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(turn),
-      })
+      turnChat(turn).push(answeredBubble(reply, turn))
     } catch (err) {
       turnChat(turn).push(await turnEndedBubble(err, text, turn))
     }
@@ -1655,10 +1742,7 @@ export async function editFailedTurn(failedIndex: number, text: string): Promise
   await runLiveTurn(async (turn) => {
     try {
       const reply = await RetryFailedTurn(sent)
-      turnChat(turn).push({
-        role: 'agent', text: reply.text, parts: reply.parts as TurnPart[] | undefined,
-        time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(turn),
-      })
+      turnChat(turn).push(answeredBubble(reply, turn))
     } catch (err) {
       turnChat(turn).push(await turnEndedBubble(err, sent, turn))
     }
@@ -1744,10 +1828,7 @@ export async function resendEdited(text: string, revertFiles: boolean): Promise<
   await runLiveTurn(async (turn) => {
     try {
       const reply = await ResendEdited(sent, revertFiles)
-      turnChat(turn).push({
-        role: 'agent', text: reply.text, parts: reply.parts as TurnPart[] | undefined,
-        time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(turn),
-      })
+      turnChat(turn).push(answeredBubble(reply, turn))
     } catch (err) {
       turnChat(turn).push(await turnEndedBubble(err, sent, turn))
     }

@@ -47,6 +47,10 @@ func TestBindingsNeverReturnNilSlices(t *testing.T) {
 		"GitWorkingTree",
 		"ProjectTree",
 		"WorkspaceFolders",
+		// The rewind list. Empty is its ordinary state — a chat that has not
+		// run a turn has nowhere to go back to — which is exactly the case
+		// this test exists for.
+		"RestorePoints",
 	}
 	for _, name := range noArgs {
 		method := value.MethodByName(name)
@@ -66,6 +70,32 @@ func TestBindingsNeverReturnNilSlices(t *testing.T) {
 			continue
 		}
 		assertNonNilSlices(t, name, method.Call([]reflect.Value{reflect.ValueOf("deepseek")}))
+	}
+
+	// The pull-request room, whose ordinary state on a machine with no GitHub
+	// account is exactly the case this test exists for. PullRequests returns a
+	// struct, so its slice is checked through the struct.
+	if room := app.PullRequests(); room.Items == nil {
+		t.Error("PullRequests().Items is nil — §34, a nil slice crashes the frontend")
+	}
+
+	// Same rule again, for the ones that take an id. Something nobody has is
+	// the answer-nothing case, and nothing must still be [].
+	for _, name := range []string{"PendingRestore", "PullRequestChecks"} {
+		method := value.MethodByName(name)
+		if !method.IsValid() {
+			t.Errorf("binding %s no longer exists — update this list", name)
+			continue
+		}
+		assertNonNilSlices(t, name, method.Call([]reflect.Value{reflect.ValueOf("no-such-point")}))
+	}
+	for _, name := range []string{"PullRequestFiles"} {
+		method := value.MethodByName(name)
+		if !method.IsValid() {
+			t.Errorf("binding %s no longer exists — update this list", name)
+			continue
+		}
+		assertNonNilSlices(t, name, method.Call([]reflect.Value{reflect.ValueOf(0)}))
 	}
 
 	// Same rule, one count argument. RecentAgentPages is the browser tab's

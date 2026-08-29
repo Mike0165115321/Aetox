@@ -42,7 +42,7 @@ func TestUndoLastTurnPutsFilesBack(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	app.captureSnapshot(app.cur()) // what SendMessage does before a turn runs
+	app.captureSnapshot(app.cur(), "") // what SendMessage does before a turn runs
 	if err := os.WriteFile(filepath.Join(root, "code.go"), []byte("the agent broke it\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestUndoTwiceDoesNotStepFurtherBack(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("first\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	app.captureSnapshot(app.cur())
+	app.captureSnapshot(app.cur(), "")
 	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("second\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestUndoLeavesTheUserOwnSavesAlone(t *testing.T) {
 		}
 	}
 
-	app.captureSnapshot(app.cur())
+	app.captureSnapshot(app.cur(), "")
 	// The agent changes one file...
 	if err := os.WriteFile(filepath.Join(root, "code.go"), []byte("the agent broke it\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -183,7 +183,7 @@ func TestUndoSaysSoWhenOnlyTheUserFilesMoved(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	app.captureSnapshot(app.cur())
+	app.captureSnapshot(app.cur(), "")
 	if err := app.WriteFile("mine.md", "what I was writing\n"); err != nil {
 		t.Fatal(err)
 	}
@@ -213,12 +213,12 @@ func TestUserSavesDoNotOutliveTheirTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	app.captureSnapshot(app.cur())
+	app.captureSnapshot(app.cur(), "")
 	if err := app.WriteFile("notes.md", "mine\n"); err != nil {
 		t.Fatal(err)
 	}
 	// A second turn begins, and nobody has typed since.
-	app.captureSnapshot(app.cur())
+	app.captureSnapshot(app.cur(), "")
 	if err := os.WriteFile(filepath.Join(root, "notes.md"), []byte("the agent rewrote it\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +251,7 @@ func TestUserSaveIsRememberedByEveryLiveChat(t *testing.T) {
 	background := app.cur()
 	background.id = "20260824-000000.001"
 	app.convs.show(background)
-	app.captureSnapshot(background)
+	app.captureSnapshot(background, "")
 	// ...the window moves to another chat, and the person saves from there.
 	other := newConversation()
 	other.id = "20260824-000000.002"
@@ -262,7 +262,10 @@ func TestUserSaveIsRememberedByEveryLiveChat(t *testing.T) {
 	}
 
 	app.snapshotMu.Lock()
-	saves := append([]string(nil), background.userSaves...)
+	saves := make([]string, 0, len(background.userSaves))
+	for _, saved := range background.userSaves {
+		saves = append(saves, saved.Path)
+	}
 	app.snapshotMu.Unlock()
 	if len(saves) != 1 || saves[0] != "mine.md" {
 		t.Fatalf("the background chat did not hear about the save: %v", saves)

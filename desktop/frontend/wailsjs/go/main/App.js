@@ -218,6 +218,10 @@ export function Connections() {
   return window['go']['main']['App']['Connections']();
 }
 
+export function CreatePullRequest(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['CreatePullRequest'](arg1, arg2, arg3, arg4, arg5);
+}
+
 export function CreateSpace(arg1) {
   return window['go']['main']['App']['CreateSpace'](arg1);
 }
@@ -268,6 +272,10 @@ export function DeletePromptPreset(arg1) {
 
 export function DeleteSession(arg1) {
   return window['go']['main']['App']['DeleteSession'](arg1);
+}
+
+export function DeleteSpace(arg1) {
+  return window['go']['main']['App']['DeleteSpace'](arg1);
 }
 
 export function DeleteSubagentProfile(arg1) {
@@ -538,6 +546,10 @@ export function MobileRemoteStatus() {
   return window['go']['main']['App']['MobileRemoteStatus']();
 }
 
+export function ModelPriceSource() {
+  return window['go']['main']['App']['ModelPriceSource']();
+}
+
 export function ModelStatus() {
   return window['go']['main']['App']['ModelStatus']();
 }
@@ -630,6 +642,10 @@ export function PendingLearnedCount() {
   return window['go']['main']['App']['PendingLearnedCount']();
 }
 
+export function PendingRestore(arg1) {
+  return window['go']['main']['App']['PendingRestore'](arg1);
+}
+
 export function PendingSkillTuneCount() {
   return window['go']['main']['App']['PendingSkillTuneCount']();
 }
@@ -684,6 +700,18 @@ export function ProviderReady(arg1) {
 
 export function ProviderWireFormats(arg1) {
   return window['go']['main']['App']['ProviderWireFormats'](arg1);
+}
+
+export function PullRequestChecks(arg1) {
+  return window['go']['main']['App']['PullRequestChecks'](arg1);
+}
+
+export function PullRequestFiles(arg1) {
+  return window['go']['main']['App']['PullRequestFiles'](arg1);
+}
+
+export function PullRequests() {
+  return window['go']['main']['App']['PullRequests']();
 }
 
 export function RateTurn(arg1, arg2) {
@@ -778,6 +806,10 @@ export function RestartToUpdate() {
   return window['go']['main']['App']['RestartToUpdate']();
 }
 
+export function RestorePoints() {
+  return window['go']['main']['App']['RestorePoints']();
+}
+
 export function RetryActiveProvider() {
   return window['go']['main']['App']['RetryActiveProvider']();
 }
@@ -792,6 +824,10 @@ export function RevealSpeechModel(arg1) {
 
 export function RevokeDevice(arg1) {
   return window['go']['main']['App']['RevokeDevice'](arg1);
+}
+
+export function RewindTo(arg1) {
+  return window['go']['main']['App']['RewindTo'](arg1);
 }
 
 export function RunChatCommand(arg1) {
