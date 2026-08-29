@@ -264,6 +264,12 @@ kind**, nothing inside the file decides which it is.
   that worker stops to ask something back, the user's next message answers it.
   The name is whatever the roster says, so an agent the user added themselves is
   addressable the moment its folder exists.
+  **Addressing takes a choice, not a word** (30 ส.ค.): the `@` menu has to be
+  opened and the name picked off it, and the token has to still be in the
+  message when it is sent. Typing or pasting the characters does nothing — a
+  draft that merely quotes `@reviewer` in a code span is an ordinary message to
+  the assistant. **Only เอเจน can be addressed**, never ซับเอเจน: those are the
+  assistant's own hands and take their work from an agent.
 - **ซับเอเจน (helpers)**, your own hands, never chatted with, and part of
   the system: the bundled set is the whole set. A user file in
   `<DataRoot>/subagents` is **not loaded**, it is reported as a conflict so it
@@ -273,10 +279,16 @@ kind**, nothing inside the file decides which it is.
   Work handed to either of them **outlives the turn that handed it over**
   (§105): a delegate the assistant did not collect before answering keeps
   working, is collectable in a later turn by the same task id, and a question it
-  parked on can be answered then too. Four in flight at once is the cap. What
-  ends one early is the user: **Stop** in the composer ends every running
-  delegate, and the card below the conversation carries a **หยุด** button on
-  each delegate and on each declared run, which ends that one alone. Either way
+  parked on can be answered then too. **Four run at once; anything past that
+  waits its turn and starts on its own the moment a slot frees** (30 ส.ค.).
+  Nothing is refused, however wide the fan-out: twenty jobs asked for are twenty
+  jobs done, four at a time. A waiting one says **รอคิว** rather than spinning
+  over a clock, it has its id already, and it is collectable and stoppable like
+  any other. What ends one early is the user: **Stop** in the composer ends every
+  running delegate, **ยกเลิกทั้งคิว** ends the whole waiting line and leaves the
+  four that are working, and the card below the conversation — as well as the
+  card drawn in the transcript itself — carries a stop on each delegate and on
+  each declared run, which ends that one alone. Either way
   it is a statement about the work rather than about the turn.
 
   The user watches all of this on that card: each uncollected delegation, its

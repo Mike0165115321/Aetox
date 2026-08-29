@@ -524,21 +524,22 @@ date-stamped, because the rule above does not have an exception for numbers we w
 
 </details>
 
-## Status — v1.5.15
+## Status — v1.5.16
 
-The core is in place. [Release notes](docs/release-notes/v1.5.15.md) ·
+The core is in place. [Release notes](docs/release-notes/v1.5.16.md) ·
 [roadmap](ROADMAP.md) · [architecture](ARCHITECTURE.md).
 
 Three things it does today that are worth knowing about:
 
-- **It goes back to more than the last turn.** Every turn records the files it changed, so "Undo"
-  puts the last one back — and a second chip lists the earlier restore points by time and by what
-  you typed, naming the real files it would bring back before it does anything.
-- **It reads a project's shape before it reads its files.** A repo map walks the whole project,
-  ranks files by what depends on them and fits the result in about a thousand tokens; the same
-  analysis draws the graph tab, so the picture and the model's map cannot disagree.
-- **A turn is shown the way it happened.** Thinking, tools, thinking again — as separate stretches
-  with their own clocks, instead of one summed number sitting over one collapsed row.
+- **Ask for twenty jobs and get twenty.** Four delegates run at once and the rest wait their turn,
+  in the order they were asked, starting on their own the moment a slot frees. Nothing is refused,
+  the waiting line is on screen, and one press cancels all of it without touching the four working.
+- **Addressing a colleague takes a choice, not a word.** `@` opens the roster and the name has to
+  be picked off it, so a pasted document that happens to mention `@reviewer` is an ordinary message
+  and not a job handed to the wrong worker.
+- **A turn is shown the way it happened.** Thinking above the sentence, the work below it and next
+  to the rows it counts — separate stretches with their own clocks. Finished work folds away;
+  anything still running is drawn outside the fold and cannot be hidden by it.
 
 **Next** — agents working across turns rather than only inside one; a plan handed from the
 assistant door to the code door; a code-door team with defined roles.
