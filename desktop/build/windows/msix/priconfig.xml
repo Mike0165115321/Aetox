@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<resources targetOsVersion="10.0.0" majorVersion="1">
+
+	<!--
+	  How makepri indexes the Store package assets (DECISIONS §207).
+
+	  A committed file rather than `makepri createconfig` in CI, for one reason
+	  worth stating: createconfig writes a packaging block carrying
+	  autoResourcePackage entries for Language and Scale, which splits the output
+	  into resources.pri plus resources.scale-125.pri, resources.scale-150.pri and
+	  so on. That is right for a .msixbundle, where each of those becomes a
+	  resource package Windows fetches on demand. Aetox ships a single .msix, so
+	  the split would leave the shipped package holding scale-100 only and every
+	  asset above it in files nobody ever uploads: a quieter version of the exact
+	  bug this change is fixing.
+
+	  So there is no packaging block here at all. One resources.pri, everything
+	  in it. (An empty packaging block does the same thing and warns about being
+	  empty on every run, which is a warning nobody should have to learn to
+	  ignore.)
+
+	  Keep this comment free of angle brackets. makepri parses this file with
+	  something that is not an XML parser: an element name inside a comment is
+	  read as an element, and the whole file then fails with "resources node not
+	  found", which is a message about the one node that is unmistakably there.
+
+	  Everything else is createconfig own output for targetOsVersion 10.0.0,
+	  unedited. The defaults are the qualifier values Windows falls back to when
+	  nothing better matches; every file in Assets carries its own qualifiers in
+	  its name, which is what filenameAsQualifier reads.
+	-->
+
+	<index root="\" startIndexAt="\">
+		<default>
+			<qualifier name="Language" value="en-US"/>
+			<qualifier name="Contrast" value="standard"/>
+			<qualifier name="Scale" value="100"/>
+			<qualifier name="HomeRegion" value="001"/>
+			<qualifier name="TargetSize" value="256"/>
+			<qualifier name="LayoutDirection" value="LTR"/>
+			<qualifier name="Theme" value="dark"/>
+			<qualifier name="AlternateForm" value=""/>
+			<qualifier name="DXFeatureLevel" value="DX9"/>
+			<qualifier name="Configuration" value=""/>
+			<qualifier name="DeviceFamily" value="Universal"/>
+			<qualifier name="Custom" value=""/>
+		</default>
+		<indexer-config type="folder" foldernameAsQualifier="true" filenameAsQualifier="true" qualifierDelimiter="."/>
+		<indexer-config type="resw" convertDotsToSlashes="true" initialPath=""/>
+		<indexer-config type="resjson" initialPath=""/>
+		<indexer-config type="PRI"/>
+	</index>
+</resources>

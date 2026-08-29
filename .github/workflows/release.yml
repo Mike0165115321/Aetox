@@ -150,6 +150,28 @@ jobs:
           Copy-Item desktop/build/windows/msix/Assets/*.png "$stage\Assets"
           Set-Content "$stage\AppxManifest.xml" $xml -Encoding utf8
 
+          # The index that makes the Assets folder mean anything (DECISIONS
+          # §207). Without a resources.pri, Windows ignores every qualifier in
+          # those filenames and reads the one unqualified file the manifest
+          # names — so the taskbar got a 44x44 PNG rescaled to 24, 30, 32, 36,
+          # and the Store build wore a frayed icon the installer build never
+          # had. makepri is in the same SDK bin as makeappx.
+          $makepri = Join-Path (Split-Path $makeappx) "makepri.exe"
+          if (-not (Test-Path $makepri)) { throw "makepri.exe is missing beside makeappx.exe" }
+          & $makepri new /pr $stage /cf desktop/build/windows/msix/priconfig.xml `
+            /mn "$stage\AppxManifest.xml" /of "$stage\resources.pri" /o
+          if ($LASTEXITCODE -ne 0) { throw "makepri failed with exit $LASTEXITCODE" }
+
+          # makepri splits into resources.scale-*.pri when its config asks for
+          # resource packages, and those files are for a .msixbundle nobody
+          # here builds — the shipped .msix would then carry scale-100 alone.
+          # priconfig.xml has no packaging node so this cannot happen; the
+          # check is here because the failure is invisible until an icon looks
+          # wrong on somebody's 150% display.
+          $split = Get-ChildItem $stage -Filter "resources.*.pri" -ErrorAction SilentlyContinue
+          if ($split) { throw "makepri split the index into $($split.Name -join ', ') — the .msix would ship scale-100 only" }
+          if (-not (Test-Path "$stage\resources.pri")) { throw "no resources.pri was produced" }
+
           & $makeappx pack /d $stage /p aetox-windows-amd64.msix /o
           if ($LASTEXITCODE -ne 0) { throw "makeappx failed with exit $LASTEXITCODE" }
 
@@ -159,6 +181,23 @@ jobs:
           if (-not (Test-Path aetox-windows-amd64.msix)) { throw "no .msix was produced" }
           $mb = (Get-Item aetox-windows-amd64.msix).Length / 1MB
           if ($mb -lt 5) { throw "aetox-windows-amd64.msix is only $([math]::Round($mb,1)) MB — the app binary did not make it in" }
+
+          # The taskbar's own size, named outright. It is the one asset whose
+          # absence is invisible in every check above and visible on every
+          # machine that installs from the Store. An .msix is a zip, and
+          # reading it as one is the only way to ask what actually went in --
+          # makeappx has pack and unpack and nothing that lists.
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [IO.Compression.ZipFile]::OpenRead((Resolve-Path aetox-windows-amd64.msix))
+          try { $inside = $zip.Entries.FullName } finally { $zip.Dispose() }
+          foreach ($needed in @(
+            "resources.pri",
+            "Assets/Square44x44Logo.targetsize-24_altform-unplated.png",
+            "Assets/Square44x44Logo.targetsize-32.png"
+          )) {
+            if ($inside -notcontains $needed) { throw "the package is missing $needed" }
+          }
+
           "aetox-windows-amd64.msix  {0:N1} MB  (v$version.0)" -f $mb
 
       - name: Keep the Store package for Partner Center
