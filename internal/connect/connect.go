@@ -239,6 +239,11 @@ var catalog = []Provider{
 			"github",
 			"github_search", "github_repo_summary", "github_list_files",
 			"github_read_file", "plugin_install",
+			// Pull requests ride the same account (internal/skill/pr_pack.go).
+			// Both spellings, same reason as github's: a desk or a profile
+			// narrows with the action names.
+			"pr",
+			"pr_list", "pr_read", "pr_checks", "pr_create", "pr_comment",
 		},
 		// The agent whose whole trade this is. See Provider.DefaultAgents.
 		DefaultAgents: []string{"github"},

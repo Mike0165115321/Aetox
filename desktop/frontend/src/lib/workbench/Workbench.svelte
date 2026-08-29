@@ -12,12 +12,13 @@
   import SlidesPane from './SlidesPane.svelte'
   import DeckRoom from './DeckRoom.svelte'
   import GitPane from './GitPane.svelte'
+  import PRPane from './PRPane.svelte'
   import RepoMapPane from './RepoMapPane.svelte'
   import { fileURL } from '../fileUrl'
   import { cockpit } from '../stores/cockpit.svelte'
   import {
     workbench, activateTab, closeTab, removeTab,
-    openFilesTab, openBrowserTab, openTerminalTab, openDecksTab, openGitTab, openRepoMapTab, openFileTab, routeDeskEvent,
+    openFilesTab, openBrowserTab, openTerminalTab, openDecksTab, openGitTab, openPRTab, openRepoMapTab, openFileTab, routeDeskEvent,
     reportDeskTabs,
     openUrlInWorkbench, saveWorkbenchSnapshot, resolveAddressBarInput, labelForUrl,
     setTabDragPayload, TAB_DRAG_MIME,
@@ -352,6 +353,7 @@
                and the storefront has no project to report on (§161.4). -->
           {#if cockpit.desk === 'coding'}
             <button class="plus-menu-item" onclick={() => pick(openGitTab)}><span class="ic"><Icon name="gitBranch" size={14} /></span> {t('workbench.gitTab')}</button>
+            <button class="plus-menu-item" onclick={() => pick(openPRTab)}><span class="ic"><Icon name="gitBranch" size={14} /></span> {t('workbench.prTab')}</button>
             <button class="plus-menu-item" onclick={() => pick(openRepoMapTab)}><span class="ic"><Icon name="graph" size={14} /></span> {t('workbench.repoMapTab')}</button>
           {/if}
         </div>
@@ -453,6 +455,7 @@
         <button class="plus-menu-item" onclick={openDecksTab}><span class="ic"><Icon name="layoutList" size={14} /></span> {t('workbench.decksTab')}</button>
         {#if cockpit.desk === 'coding'}
           <button class="plus-menu-item" onclick={openGitTab}><span class="ic"><Icon name="gitBranch" size={14} /></span> {t('workbench.gitTab')}</button>
+          <button class="plus-menu-item" onclick={openPRTab}><span class="ic"><Icon name="gitBranch" size={14} /></span> {t('workbench.prTab')}</button>
           <button class="plus-menu-item" onclick={openRepoMapTab}><span class="ic"><Icon name="graph" size={14} /></span> {t('workbench.repoMapTab')}</button>
         {/if}
       </div>
@@ -475,6 +478,8 @@
           <FilesPane />
         {:else if tab.kind === 'decks'}
           <DeckRoom />
+        {:else if tab.kind === 'pr'}
+          <PRPane />
         {:else if tab.kind === 'git'}
           <GitPane />
         {:else if tab.kind === 'repomap'}

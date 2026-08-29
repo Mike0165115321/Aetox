@@ -148,3 +148,54 @@ func TestPermissionConfigResolve(t *testing.T) {
 		t.Errorf("empty config should never match, got (%q, %v)", action, matched)
 	}
 }
+
+// git through the shell is judged by the same rules the `git` tool is judged by.
+//
+// Found by reading a session log (2026-08-29): an agent ran `git stash push`
+// and `git stash pop` on a working tree with fifty uncommitted files and
+// nothing recognised the act. The rules existed — assessGitCommand has always
+// known which verbs change a repository — but they were only reached for
+// skillName "git", a READ-ONLY tool that refuses every one of those verbs. All
+// of them lived on the door that cannot open, and the door that can had none.
+func TestShellGitIsJudgedLikeTheGitTool(t *testing.T) {
+	high := [][]string{
+		{"git", "stash", "push", "-m", "wip"},
+		{"git", "stash", "pop"},
+		{"git", "reset", "--hard", "HEAD~1"},
+		{"git", "checkout", "--", "."},
+		{"git", "clean", "-fd"},
+		{"git", "rebase", "main"},
+		{"git", "push", "origin", "main"},
+		// Global options before the verb must not hide it.
+		{"git", "-C", "/somewhere", "reset", "--hard"},
+		{"git", "--git-dir", "/x/.git", "checkout", "main"},
+	}
+	for _, args := range high {
+		got := AssessCommand("shell", args)
+		if got.Risk != RiskHigh {
+			t.Errorf("shell %v = %v, want RiskHigh", args, got.Risk)
+		}
+	}
+
+	// Reading the repository is not a change, and a prompt on every `git status`
+	// is how a user learns to approve without reading.
+	low := [][]string{
+		{"git", "status"},
+		{"git", "log", "--oneline", "-5"},
+		{"git", "diff", "HEAD"},
+		{"git", "show", "abc123"},
+		{"git", "branch"},
+	}
+	for _, args := range low {
+		got := AssessCommand("shell", args)
+		if got.Risk != RiskLow {
+			t.Errorf("shell %v = %v, want RiskLow", args, got.Risk)
+		}
+	}
+
+	// A verb nobody listed is high, which is the safe reading of a line this
+	// package could not place.
+	if got := AssessCommand("shell", []string{"git", "filter-branch"}); got.Risk != RiskHigh {
+		t.Errorf("an unrecognised git verb = %v, want RiskHigh", got.Risk)
+	}
+}

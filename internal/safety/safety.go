@@ -288,6 +288,19 @@ func AssessCommand(skillName string, args []string) Assessment {
 				Reason:    "delete can remove repository files",
 			}
 		}
+		// Two of `pr`'s five acts put something on a page other people read,
+		// under the user's own account. Neither touches the disk, so no
+		// workspace effect fits - what the gate is protecting here is the
+		// user's name, which is why they are named rather than left to the
+		// catch-all below (which answers RiskLow and would skip the prompt).
+		if skillName == "pr_create" || skillName == "pr_comment" {
+			return Assessment{
+				SkillName: skillName,
+				Risk:      RiskHigh,
+				Effects:   []Effect{EffectUseNetwork},
+				Reason:    "posts to GitHub as the connected account, where other people can see it",
+			}
+		}
 		if skillName == "plugin_install" {
 			return Assessment{
 				SkillName: "plugin_install",
@@ -373,6 +386,25 @@ func isShellHighRisk(cmd string, rest []string) bool {
 		return true
 	}
 
+	// git through the shell, judged by the same rules the `git` tool is judged
+	// by. Found 2026-08-29 by reading a session log: an agent ran
+	// `git stash push` and `git stash pop` on a working tree with fifty
+	// uncommitted files, and nothing here recognised the act.
+	//
+	// The hole was structural rather than an oversight. assessGitCommand knows
+	// exactly which verbs change a repository — it always has — but it is only
+	// reached for skillName "git", and that tool is READ-ONLY: it refuses every
+	// verb on that list before safety ever sees one. So every rule about
+	// mutating git lived on the door that cannot open it, and the door that can
+	// (`shell`) had none. `git reset --hard`, `git checkout -- .` and
+	// `git stash` all came through as low risk.
+	//
+	// Delegated rather than re-listed: two lists of destructive git verbs is
+	// how one of them silently stops matching the other.
+	if token == "git" || token == "git.exe" {
+		return assessGitCommand(gitSubcommand(rest)).Risk == RiskHigh
+	}
+
 	switch token {
 	case "rm", "del", "erase", "rmdir", "rd", "mv", "move", "rename", "ren", "format", "mkfs",
 		"shred", "sdelete", "takeown", "icacls", "attrib", "cacls", "chown", "chmod", "cd",
@@ -403,6 +435,29 @@ func isShellHighRisk(cmd string, rest []string) bool {
 	}
 
 	return false
+}
+
+// gitSubcommand strips the options that can sit between `git` and its verb, so
+// `git -C /somewhere reset --hard` is judged on `reset` rather than on `-C`.
+// An empty result answers as a missing action, which assessGitCommand already
+// treats as high risk — the safe reading for a line nobody could parse.
+func gitSubcommand(rest []string) []string {
+	for i := 0; i < len(rest); i++ {
+		arg := strings.TrimSpace(rest[i])
+		if arg == "" {
+			continue
+		}
+		if !strings.HasPrefix(arg, "-") {
+			return rest[i:]
+		}
+		// The few global options that take a value of their own; everything
+		// else is a flag standing alone.
+		switch strings.ToLower(arg) {
+		case "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path":
+			i++
+		}
+	}
+	return nil
 }
 
 func assessGitCommand(args []string) Assessment {

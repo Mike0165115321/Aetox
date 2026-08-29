@@ -10,7 +10,7 @@ import {
 import type { main, ooxml } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
 
-export type WorkbenchTabKind = 'terminal' | 'browser' | 'files' | 'file' | 'decks' | 'git' | 'repomap'
+export type WorkbenchTabKind = 'terminal' | 'browser' | 'files' | 'file' | 'decks' | 'git' | 'repomap' | 'pr'
 
 export type WorkbenchTab = {
   id: string
@@ -171,6 +171,18 @@ export function openDecksTab(): void {
  * that desk is held inside, and the storefront deliberately has no project to
  * report on. The pane says so itself rather than leaving the absence to be
  * discovered. */
+/** Singleton tab: the project's pull requests (desktop/pr_room.go).
+ *
+ * โค้ด desk only, same gate and same reason as Git below: it is the focused
+ * repository's own pull requests, and the storefront has no repository. The
+ * pane says why it is empty rather than leaving the absence to be discovered. */
+export function openPRTab(): void {
+  if (!workbench.tabs.some((t) => t.kind === 'pr')) {
+    workbench.tabs.push({ id: 'pr', kind: 'pr', name: t('workbench.prTab') })
+  }
+  workbench.activeId = 'pr'
+}
+
 export function openGitTab(): void {
   if (!workbench.tabs.some((t) => t.kind === 'git')) {
     workbench.tabs.push({ id: 'git', kind: 'git', name: t('workbench.gitTab') })
@@ -717,6 +729,7 @@ async function restoreWorkbench(sessionId: string): Promise<void> {
     if (s.kind === 'files') openFilesTab()
     else if (s.kind === 'decks') openDecksTab()
     else if (s.kind === 'git') openGitTab()
+    else if (s.kind === 'pr') openPRTab()
     else if (s.kind === 'repomap') openRepoMapTab()
     else if (s.kind === 'file' && s.path) await openFileTab(s.path, s.name, s.mine ?? false)
     else if (s.kind === 'browser') {
