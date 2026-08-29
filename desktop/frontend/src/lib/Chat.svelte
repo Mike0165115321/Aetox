@@ -2259,6 +2259,34 @@
             <span class="bgw-meta">
               {#if queued}{t('bgw.queuedNote')}{:else if secs !== undefined}{clockLabel(secs)}{/if}
             </span>
+            <!-- The brake, beside the clock, on the card that is actually on
+                 screen (owner, 30 ส.ค.: *"มีปุ่มหยุดเอเจนหลักทำไมไม่มีปุ่มหยุด
+                 ซับเอเจนหรือเอเจนครับ"*).
+                 
+                 The tray's card has had one since §163 and this one never did,
+                 which read as an oversight and was worse than that: a
+                 delegation drawn here is EXCLUDED from the tray by design
+                 (drawnDelegations — one delegation, one card), so for the whole
+                 of the turn that started it, this was the only card there was
+                 and it had no button on it. The composer's Stop is not the
+                 answer either: it ends the turn, and a delegate deliberately
+                 outlives its turn.
+                 
+                 Icon only. The tray's says "หยุด" in words because it is a card
+                 standing on its own with room for it; this one sits inside a
+                 transcript, where a labelled button on every delegation of a
+                 long conversation is the page shouting. Same rule the worker
+                 rows inside a run already follow. -->
+            {#if state === 'run' && node.step.task}
+              <button
+                class="bgw-stop bgw-stop-worker" type="button"
+                title={t('bgw.stopTask', { agent: node.step.agent ?? '' })}
+                aria-label={t('bgw.stopTask', { agent: node.step.agent ?? '' })}
+                onclick={() => stopBackgroundTask(node.step.task!)}
+              >
+                <Icon name="square" size={10} />
+              </button>
+            {/if}
           </div>
           <div class="bgw-brief">{node.step.label.replace(/^task\s*/, '')}</div>
           {#if node.step.brief}
