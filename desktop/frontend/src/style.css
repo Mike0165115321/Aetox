@@ -2251,9 +2251,11 @@ button.phase-head:hover { color:var(--text-muted); }
    left edge and loses its labels to the clip. Naming it as a container is what
    lets those menus be measured against it rather than against the screen.
    inline-size only: the composer's height is the prompt's business. */
-/* --composer-pad-x is read back by the popovers that hang off this box: they
-   align to its inner edge, and two places holding the same 14px is how they
-   drift apart. */
+/* --composer-pad-x was read back by the popovers hanging off this box, to align
+   them to its inner edge. They hang off .composer .tools now — which already
+   sits at that inner edge — so the variable is the padding's own name again.
+   Kept named rather than inlined: the row's comment states the alignment it
+   depends on, and a bare 14px there and here is how the two drift apart. */
 .composer .box { --composer-pad-x:14px; position:relative; container-type:inline-size; container-name:composer; border:1px solid var(--border-default); border-radius:var(--r-xl); background:var(--surface-raised); padding:12px var(--composer-pad-x); display:flex; flex-direction:column; gap:10px; }
 .composer .box:focus-within { border-color:var(--border-input-focus); box-shadow:0 0 0 3px var(--overlay-focus); }
 .composer .box.drag-over { border-color:var(--interactive); box-shadow:0 0 0 3px var(--overlay-focus); }
@@ -2261,7 +2263,17 @@ button.phase-head:hover { color:var(--text-muted); }
    be readable before sending, not squinted at through a 220px slot. */
 .composer .input { width:100%; resize:none; border:none; outline:none; background:none; color:var(--text-primary); font:inherit; font-size:var(--chat-font-size, 15.5px); line-height:1.5; max-height:50vh; overflow-y:auto; }
 .composer .input::placeholder { color:var(--text-dim); }
-.composer .tools { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+/* The anchor for the two popovers on this row that have no wrapper of their own
+   (.ctx-menu and .model-menu — see .model-pick). It used to be the box, which
+   was fine only while the box was one line tall: a composer holding two images
+   and a long paste is several hundred pixels of it, and a menu pinned 10px
+   above the TOP of that opened nowhere near the chip that opened it, on its way
+   off the ceiling entirely as the content grows (owner, 30 ส.ค.: "เนื้อหาหนัก
+   กว่านี้ มันไม่ล้นเพดานไปเลยหรอ"). The row is where the buttons are and the row
+   is what they hang off.
+   Horizontally nothing moves: this row sits inside the box's padding, so its
+   right edge is exactly where right:var(--composer-pad-x) measured to. */
+.composer .tools { position:relative; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .composer .ctrl { appearance:none; -webkit-appearance:none; background:var(--surface-sunken); border:1px solid var(--border-strong); border-radius:var(--r-sm); color:var(--text-secondary); font:inherit; font-size:var(--fs-md); padding:4px 6px; cursor:pointer; }
 .composer .ctrl:hover { border-color:var(--interactive); color:var(--text-primary); }
 .composer select.ctrl {
@@ -2388,16 +2400,21 @@ button.phase-head:hover { color:var(--text-muted); }
 .model-chip .lvl { flex:none; color:var(--text-dim); }
 .model-chip .caret { flex:none; color:var(--text-dim); font-size:var(--fs-2xs); }
 .model-menu {
-  /* Anchored to the composer BOX, not to the chip that opens it — which is why
-     .model-pick is not positioned. Bounding the width was not enough on its
-     own: the length was right and the origin was wrong. The chip sits a send
-     button's width in from the box's right edge, so a menu allowed a full
-     container width from THERE overflows the left edge by exactly that button.
-     Measured from the box, the same bound cannot overflow at all, and it stays
-     true the day another control lands beside the chip.
+  /* Anchored to the composer's button ROW, not to the chip that opens it —
+     which is why .model-pick is not positioned. Bounding the width was not
+     enough on its own: the length was right and the origin was wrong. The chip
+     sits a send button's width in from the row's right edge, so a menu allowed
+     a full container width from THERE overflows the left edge by exactly that
+     button. Measured from the row, the same bound cannot overflow at all, and
+     it stays true the day another control lands beside the chip.
+
+     The row and not the whole box, which is what this said until 30 ส.ค. — see
+     .composer .tools for the composer height that made the difference visible.
+     Width is still bounded by the box: 100cqi reads the container, which the
+     positioning ancestor does not change.
 
      280 is what the rows want, not what they get. */
-  position:absolute; bottom:calc(100% + 10px); right:var(--composer-pad-x); z-index:50;
+  position:absolute; bottom:calc(100% + 10px); right:0; z-index:50;
   min-width:min(280px, 100cqi); max-width:100cqi;
   display:flex; flex-direction:column; gap:8px; padding:10px;
   background:var(--surface-panel); border:1px solid var(--border-subtle); border-radius:var(--r-lg);
@@ -2550,8 +2567,8 @@ button.phase-head:hover { color:var(--text-muted); }
    left-hand controls (attach, mode, palette) open left, right-hand ones (the
    meter, the model picker) open right. */
 .ctx-menu {
-  /* Same anchor and same reason as .model-menu. */
-  position:absolute; bottom:calc(100% + 10px); right:var(--composer-pad-x); z-index:50;
+  /* Same anchor and same reason as .model-menu: the button row, not the box. */
+  position:absolute; bottom:calc(100% + 10px); right:0; z-index:50;
   min-width:min(270px, 100cqi); max-width:100cqi;
   display:flex; flex-direction:column; gap:8px; padding:12px;
   background:var(--surface-panel); border:1px solid var(--border-subtle); border-radius:var(--r-lg);

@@ -39,10 +39,27 @@ describe('the composer bounds its own popovers', () => {
 
   // Bounding the width was not enough on its own: measured from the chip, a
   // full container width still overflows the left edge by whatever sits
-  // between the chip and the box's right edge — the send button. The anchor
-  // has to be the box, which means the chip's wrapper must not be positioned.
-  it.each(['.model-menu', '.ctx-menu'])('%s is anchored to the composer box, not to its chip', (selector) => {
-    expect(rule(selector)).toContain('right:var(--composer-pad-x)')
+  // between the chip and the row's right edge — the send button. So the anchor
+  // is the ROW these chips sit on, which means their own wrappers must not be
+  // positioned (the test below) and the row must be (the one after it).
+  //
+  // The row, and not the whole box, since 30 ส.ค. The box was the anchor first
+  // and it was only ever right while the box was one line tall: a composer
+  // holding two images and a long paste is several hundred pixels of it, and
+  // `bottom:100%` of THAT opened the menu up by the composer's whole height,
+  // hundreds of pixels from the chip and heading off the top of the window as
+  // the content grows. Horizontally nothing changed — the row sits at the box's
+  // inner edge, which is exactly what var(--composer-pad-x) measured to.
+  it.each(['.model-menu', '.ctx-menu'])('%s is anchored to the button row, not to its chip', (selector) => {
+    expect(rule(selector)).toContain('right:0')
+    expect(rule(selector)).not.toContain('right:var(--composer-pad-x)')
+  })
+
+  // The other half of the same fact, and the one that silently undoes it:
+  // without this the menus fall back to .composer .box and the tall-composer
+  // bug returns with nothing else having changed.
+  it('makes the button row the anchor those menus hang off', () => {
+    expect(rule('.composer .tools')).toContain('position:relative')
   })
 
   it.each(['.model-pick', '.ctx-pick'])('%s does not become the anchor by being positioned', (selector) => {
