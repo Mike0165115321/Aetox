@@ -78,15 +78,17 @@ Windows 10 ขึ้นไป x64 **ไม่ต้องมี API key ก็�
 พร้อมโมเดลทดสอบห้าตัวที่เดินเครื่องจริงทุกส่วน (เรียกเครื่องมือจริง ส่งงานให้เอเจนจริง
 สตรีมความคิดยาว ๆ จริง) คุณจึงเห็นว่าแอปทำอะไรได้ก่อนจะไปสมัครอะไรกับใคร
 
-**Microsoft Store** — [apps.microsoft.com/detail/9N4KKBRRSCZZ](https://apps.microsoft.com/detail/9N4KKBRRSCZZ)
-
-ไมโครซอฟท์เป็นคนเซ็นแพ็กเกจให้ ช่องทางนี้จึงไม่มีอะไรให้กดผ่านเลย ไม่มีจอ SmartScreen
-ไม่มีคำเตือนจากแอนตี้ไวรัส และ Windows เป็นคนอัปเดตให้ ตัวอัปเดตในแอปจะถอยให้เอง
-เพราะแอปแบบแพ็กเกจแก้ไฟล์ตัวเองไม่ได้ ถ้าถนัดพิมพ์คำสั่ง ได้ผลเหมือนกัน:
+**Microsoft Store** — ช่องทางเดียวที่ไม่มีอะไรให้กดผ่านเลย ไมโครซอฟท์เป็นคนเซ็นแพ็กเกจให้
+จึงไม่มีจอ SmartScreen ไม่มีคำเตือนจากแอนตี้ไวรัส และ Windows เป็นคนอัปเดตให้ต่อเอง
+บรรทัดเดียว ไม่ต้องผ่านหน้าเว็บไหนทั้งนั้น:
 
 ```powershell
 winget install --id=9N4KKBRRSCZZ --source=msstore
 ```
+
+ถนัดกดมากกว่าพิมพ์ ใช้ [apps.microsoft.com/detail/9N4KKBRRSCZZ](https://apps.microsoft.com/detail/9N4KKBRRSCZZ)
+หรือวาง `ms-windows-store://pdp/?productid=9N4KKBRRSCZZ` ลงในช่อง Run (Win+R)
+เพื่อเปิดแอป Store ขึ้นมาตรง ๆ โดยไม่ต้องผ่านหน้าเว็บ
 
 **ตัวติดตั้ง** — [aetox-amd64-installer.exe](https://github.com/Mikedev115/Aetox/releases/latest/download/aetox-amd64-installer.exe) (21.3 MB)
 

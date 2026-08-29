@@ -81,15 +81,17 @@ ships five test models that exercise the real machinery (real tool calls, a real
 sub-agent, a long reasoning stream), so you can see what the app does before signing up for
 anything.
 
-**Microsoft Store** — [apps.microsoft.com/detail/9N4KKBRRSCZZ](https://apps.microsoft.com/detail/9N4KKBRRSCZZ)
-
-Microsoft signs the package, so this is the one channel with nothing to click past: no SmartScreen
-prompt, no antivirus warning. Windows keeps it updated, and the app's own updater stands down
-because a packaged app cannot replace its own files. From a terminal, the same thing:
+**Microsoft Store** — the one channel with nothing to click past. Microsoft signs the package, so
+there is no SmartScreen prompt and no antivirus warning, and Windows keeps it updated afterwards.
+One line, no web page in the way:
 
 ```powershell
 winget install --id=9N4KKBRRSCZZ --source=msstore
 ```
+
+Prefer to click? [apps.microsoft.com/detail/9N4KKBRRSCZZ](https://apps.microsoft.com/detail/9N4KKBRRSCZZ),
+or paste `ms-windows-store://pdp/?productid=9N4KKBRRSCZZ` into Run (Win+R) to open the Store app
+straight away without the web page.
 
 **Installer** — [aetox-amd64-installer.exe](https://github.com/Mikedev115/Aetox/releases/latest/download/aetox-amd64-installer.exe) (21.3 MB)
 
