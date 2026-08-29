@@ -676,8 +676,12 @@
                 </span>
               </button>
               <div class="art-foot">
+                <!-- A mark, not a sentence — see the file card below for why. -->
                 {#if row.files[0].sessionId}
-                  <button class="linkish" onclick={() => openSource(row.files[0])}>{t('artifacts.fromChat')}</button>
+                  <button class="art-src tip-r" data-tip={t('artifacts.fromChat')}
+                    aria-label={t('artifacts.fromChat')} onclick={() => openSource(row.files[0])}>
+                    <Icon name="messageSquare" size={13} />
+                  </button>
                 {:else}
                   <span class="art-orphan">{t('artifacts.noChat')}</span>
                 {/if}
@@ -723,8 +727,24 @@
               <span class="art-meta">{size(f.size)} · {agoLabel(f.modified)}</span>
             </button>
             <div class="art-foot">
+              <!-- The way back to the conversation that produced this file, as a
+                   mark rather than a sentence since 30 ส.ค. It was the words
+                   "ไปที่แชทที่ทำไฟล์นี้" under every card — counted in the running
+                   app, 20 identical copies of the same 21 characters on one
+                   screen, which is a label that has stopped telling anyone
+                   anything and is still taking the room.
+                   
+                   An icon is right HERE and was wrong on the roster's chat
+                   button, and the difference is which action it is: opening the
+                   file is what this card is for and the card itself does that,
+                   so this is the errand you run occasionally — the same weight
+                   as the delete beside it, which has been a mark all along. The
+                   mark also denotes what it does, which `sparkles` never did. -->
               {#if f.sessionId}
-                <button class="linkish" onclick={() => openSource(f)}>{t('artifacts.fromChat')}</button>
+                <button class="art-src tip-r" data-tip={t('artifacts.fromChat')}
+                  aria-label={t('artifacts.fromChat')} onclick={() => openSource(f)}>
+                  <Icon name="messageSquare" size={13} />
+                </button>
               {:else}
                 <span class="art-orphan">{t('artifacts.noChat')}</span>
               {/if}

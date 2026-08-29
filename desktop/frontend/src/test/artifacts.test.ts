@@ -46,8 +46,12 @@ describe('the work gallery', () => {
     vi.mocked(LoadSessionAnyProject).mockResolvedValue([] as any)
     render(Artifacts, { onClose: () => {} })
 
-    await waitFor(() => expect(screen.getByText('ไปที่แชทที่ทำไฟล์นี้')).toBeTruthy())
-    await fireEvent.click(screen.getByText('ไปที่แชทที่ทำไฟล์นี้'))
+    // A mark with the sentence on its label since 30 ส.ค. — the words were
+    // under every card, 20 identical copies of them on one screen. Found by the
+    // accessible name, which is what a screen reader hears and what the tooltip
+    // shows; the visible text is deliberately gone.
+    await waitFor(() => expect(screen.getByLabelText('ไปที่แชทที่ทำไฟล์นี้')).toBeTruthy())
+    await fireEvent.click(screen.getByLabelText('ไปที่แชทที่ทำไฟล์นี้'))
 
     await waitFor(() => expect(vi.mocked(LoadSessionAnyProject).mock.calls[0][0]).toBe('20260805-090000.000'))
     expect(cockpit.activeView).toBe('chat')

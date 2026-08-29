@@ -3996,6 +3996,11 @@ button.phase-head:hover { color:var(--text-muted); }
 .art-meta { font-size:var(--fs-2xs); color:var(--text-dim); }
 .art-foot { display:flex; align-items:center; gap:8px; padding:7px 12px; border-top:1px solid var(--border-subtle); font-size:var(--fs-xs); }
 .art-orphan { color:var(--text-dim); }
+/* The way back to the chat that made this file. Same shape and weight as the
+   delete beside it: both are the card's occasional errands, and the card itself
+   is what opens the file. */
+.art-src { display:flex; align-items:center; color:var(--text-dim); padding:2px 6px; border-radius:var(--r-sm); cursor:pointer; }
+.art-src:hover { color:var(--interactive); background:var(--surface-row-hover); }
 .art-del { margin-left:auto; display:flex; align-items:center; color:var(--text-dim); padding:2px 6px; border-radius:var(--r-sm); cursor:pointer; }
 .art-del:hover { color:var(--status-danger); background:var(--surface-row-hover); }
 .art-del.confirm { color:var(--status-danger); font-size:var(--fs-2xs); font-weight:600; }
