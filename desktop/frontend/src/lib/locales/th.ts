@@ -685,6 +685,7 @@ export const th = {
   'settings.freeOnly': 'เฉพาะฟรี',
   'settings.noModelsMatch': 'ไม่มีโมเดลที่ตรงกับที่ค้นหา',
   'settings.priceFree': 'ฟรี',
+  'settings.priceSource': 'ราคาประกาศจาก {source} ดึงมา {date} ไม่ใช่ยอดที่ผู้ให้บริการเรียกเก็บ',
   'settings.pricePerMillion': 'ราคาเข้า/ออก ต่อโทเคนหนึ่งล้าน (ประมาณจากราคาที่ประกาศ)',
   'settings.modelList': 'Model list',
   'settings.loadingModels': 'กำลังโหลดรายชื่อโมเดล…',

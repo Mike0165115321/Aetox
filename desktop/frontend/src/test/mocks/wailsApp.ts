@@ -96,6 +96,7 @@ export const DeleteIdentityFile = noop()
 export const DeleteSession = noop()
 export const EnabledProviders = arr()
 export const GetContextBreakdown = vi.fn(async () => ({}))
+export const GetRepoMapGraph = vi.fn(async () => ({ focused: false, nodes: [], edges: [], totalFiles: 0 }))
 const modelInfo = () => ({
   provider: 'aetox', modelName: 'test', thinkLevel: '', approval: 'ask',
   providers: [], models: [], thinkLevels: [], hasKey: true, status: '', wireFormat: '',

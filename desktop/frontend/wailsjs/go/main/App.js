@@ -322,6 +322,10 @@ export function GetProjectStatus() {
   return window['go']['main']['App']['GetProjectStatus']();
 }
 
+export function GetRepoMapGraph() {
+  return window['go']['main']['App']['GetRepoMapGraph']();
+}
+
 export function GitBranches() {
   return window['go']['main']['App']['GitBranches']();
 }

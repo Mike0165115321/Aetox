@@ -10,7 +10,7 @@ import {
 import type { main, ooxml } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
 
-export type WorkbenchTabKind = 'terminal' | 'browser' | 'files' | 'file' | 'decks' | 'git'
+export type WorkbenchTabKind = 'terminal' | 'browser' | 'files' | 'file' | 'decks' | 'git' | 'repomap'
 
 export type WorkbenchTab = {
   id: string
@@ -176,6 +176,19 @@ export function openGitTab(): void {
     workbench.tabs.push({ id: 'git', kind: 'git', name: t('workbench.gitTab') })
   }
   workbench.activeId = 'git'
+}
+
+/** Singleton tab: แผนที่โค้ด — the project drawn as dots and lines (owner, 29 ส.ค.).
+ *
+ * โค้ด desk only, same gate and same reason as Git one function up: the map is
+ * of the focused project, and the storefront has none. The pane calls the same
+ * analysis the model's repo_map tool runs, so what the user sees and what the
+ * model saw cannot drift. */
+export function openRepoMapTab(): void {
+  if (!workbench.tabs.some((t) => t.kind === 'repomap')) {
+    workbench.tabs.push({ id: 'repomap', kind: 'repomap', name: t('workbench.repoMapTab') })
+  }
+  workbench.activeId = 'repomap'
 }
 
 export function openBrowserTab(): string {
@@ -698,12 +711,13 @@ async function restoreWorkbench(sessionId: string): Promise<void> {
     //
     // Every singleton room the snapshot admits has to be named here. The save
     // filter takes everything that is not a terminal, so a room added later and
-    // not added to this list is saved and then silently dropped — the deck room
+    // not added to this list is saved and then silently dropped — the code map
     // or the working tree, open when you left a chat and gone when you came
     // back to it.
     if (s.kind === 'files') openFilesTab()
     else if (s.kind === 'decks') openDecksTab()
     else if (s.kind === 'git') openGitTab()
+    else if (s.kind === 'repomap') openRepoMapTab()
     else if (s.kind === 'file' && s.path) await openFileTab(s.path, s.name, s.mine ?? false)
     else if (s.kind === 'browser') {
       const id = openBrowserTab()

@@ -557,6 +557,9 @@ export namespace main {
 	    slices: ContextSlice[];
 	    measured: boolean;
 	    cachedTokens: number;
+	    sweptItems?: number;
+	    sweptTokens?: number;
+	    summaries?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new ContextBreakdown(source);
@@ -569,6 +572,9 @@ export namespace main {
 	        this.slices = this.convertValues(source["slices"], ContextSlice);
 	        this.measured = source["measured"];
 	        this.cachedTokens = source["cachedTokens"];
+	        this.sweptItems = source["sweptItems"];
+	        this.sweptTokens = source["sweptTokens"];
+	        this.summaries = source["summaries"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -1300,6 +1306,79 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class RepoMapEdge {
+	    from: number;
+	    to: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new RepoMapEdge(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.from = source["from"];
+	        this.to = source["to"];
+	    }
+	}
+	export class RepoMapNode {
+	    path: string;
+	    dir: string;
+	    refs: number;
+	    symbols: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new RepoMapNode(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.dir = source["dir"];
+	        this.refs = source["refs"];
+	        this.symbols = source["symbols"];
+	    }
+	}
+	export class RepoMapGraph {
+	    focused: boolean;
+	    root?: string;
+	    nodes: RepoMapNode[];
+	    edges: RepoMapEdge[];
+	    totalFiles: number;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RepoMapGraph(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.focused = source["focused"];
+	        this.root = source["root"];
+	        this.nodes = this.convertValues(source["nodes"], RepoMapNode);
+	        this.edges = this.convertValues(source["edges"], RepoMapEdge);
+	        this.totalFiles = source["totalFiles"];
+	        this.error = source["error"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class RunBlockResult {
 	    output: string;
 	    success: boolean;
@@ -2272,6 +2351,9 @@ export namespace turn {
 	    secs?: number;
 	    added?: number;
 	    removed?: number;
+	    count?: number;
+	    range?: string;
+	    problems?: number;
 	    diff?: string;
 	    artifacts?: string[];
 	    proposalId?: number;
@@ -2294,6 +2376,9 @@ export namespace turn {
 	        this.secs = source["secs"];
 	        this.added = source["added"];
 	        this.removed = source["removed"];
+	        this.count = source["count"];
+	        this.range = source["range"];
+	        this.problems = source["problems"];
 	        this.diff = source["diff"];
 	        this.artifacts = source["artifacts"];
 	        this.proposalId = source["proposalId"];

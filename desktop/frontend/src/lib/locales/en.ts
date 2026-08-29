@@ -682,6 +682,7 @@ export const en: Record<keyof typeof th, string> = {
   'settings.freeOnly': 'free only',
   'settings.noModelsMatch': 'No model matches that search',
   'settings.priceFree': 'free',
+  'settings.priceSource': 'List prices from {source}, {date}. Not what your provider bills.',
   'settings.pricePerMillion': 'input/output per million tokens (estimated from published prices)',
   'settings.modelList': 'Model list',
   'settings.loadingModels': 'Loading model list…',

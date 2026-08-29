@@ -12,11 +12,12 @@
   import SlidesPane from './SlidesPane.svelte'
   import DeckRoom from './DeckRoom.svelte'
   import GitPane from './GitPane.svelte'
+  import RepoMapPane from './RepoMapPane.svelte'
   import { fileURL } from '../fileUrl'
   import { cockpit } from '../stores/cockpit.svelte'
   import {
     workbench, activateTab, closeTab, removeTab,
-    openFilesTab, openBrowserTab, openTerminalTab, openDecksTab, openGitTab, openFileTab, routeDeskEvent,
+    openFilesTab, openBrowserTab, openTerminalTab, openDecksTab, openGitTab, openRepoMapTab, openFileTab, routeDeskEvent,
     reportDeskTabs,
     openUrlInWorkbench, saveWorkbenchSnapshot, resolveAddressBarInput, labelForUrl,
     setTabDragPayload, TAB_DRAG_MIME,
@@ -351,6 +352,7 @@
                and the storefront has no project to report on (§161.4). -->
           {#if cockpit.desk === 'coding'}
             <button class="plus-menu-item" onclick={() => pick(openGitTab)}><span class="ic"><Icon name="gitBranch" size={14} /></span> {t('workbench.gitTab')}</button>
+            <button class="plus-menu-item" onclick={() => pick(openRepoMapTab)}><span class="ic"><Icon name="graph" size={14} /></span> {t('workbench.repoMapTab')}</button>
           {/if}
         </div>
       {/if}
@@ -451,6 +453,7 @@
         <button class="plus-menu-item" onclick={openDecksTab}><span class="ic"><Icon name="layoutList" size={14} /></span> {t('workbench.decksTab')}</button>
         {#if cockpit.desk === 'coding'}
           <button class="plus-menu-item" onclick={openGitTab}><span class="ic"><Icon name="gitBranch" size={14} /></span> {t('workbench.gitTab')}</button>
+          <button class="plus-menu-item" onclick={openRepoMapTab}><span class="ic"><Icon name="graph" size={14} /></span> {t('workbench.repoMapTab')}</button>
         {/if}
       </div>
     {/if}
@@ -474,6 +477,8 @@
           <DeckRoom />
         {:else if tab.kind === 'git'}
           <GitPane />
+        {:else if tab.kind === 'repomap'}
+          <RepoMapPane />
         {:else if tab.kind === 'file'}
           <!-- Keyed on rev so a re-read actually lands on screen: FileEditor
                copies `content` into its own state once and this pane never

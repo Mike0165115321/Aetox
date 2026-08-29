@@ -174,6 +174,8 @@ export function GetModelInfo():Promise<main.ModelInfo>;
 
 export function GetProjectStatus():Promise<main.ProjectStatus>;
 
+export function GetRepoMapGraph():Promise<main.RepoMapGraph>;
+
 export function GitBranches():Promise<Array<main.GitBranch>>;
 
 export function GitChangedFiles():Promise<Array<main.ChangedFile>>;
