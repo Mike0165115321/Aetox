@@ -41,7 +41,7 @@ func isolate(t *testing.T) string {
 func TestBundledProfilesAreUsable(t *testing.T) {
 	isolate(t)
 	got := List()
-	want := []string{"automation", "doc", "explore", "general", "github", "research", "sheet"}
+	want := []string{"automation", "doc", "explore", "general", "github", "research", "reviewer", "sheet", "tester"}
 	if len(got) != len(want) {
 		t.Fatalf("List() = %d profiles, want %d", len(got), len(want))
 	}
@@ -288,7 +288,7 @@ func TestHelperShadowIsIgnoredBundledWins(t *testing.T) {
 	}
 }
 
-// Nor can a user file add a NEW delegate: the bundled three are the whole set.
+// Nor can a user file add a NEW delegate: the bundled files are the whole set.
 func TestHelperHomeCannotAddADelegate(t *testing.T) {
 	dir := isolate(t)
 	if err := os.WriteFile(filepath.Join(dir, "backend.md"),
@@ -298,8 +298,8 @@ func TestHelperHomeCannotAddADelegate(t *testing.T) {
 	if _, ok := Load("backend"); ok {
 		t.Fatal("a helper-home user file loaded as a delegate")
 	}
-	if got := len(List()); got != 7 {
-		t.Fatalf("List() = %d, want the 7 bundled only", got)
+	if got := len(List()); got != 9 {
+		t.Fatalf("List() = %d, want the 9 bundled only", got)
 	}
 	if c, ok := findConflict(Conflicts(), "backend"); !ok || c.Reason == "" {
 		t.Fatal("the locked-out file is not reported with a reason")
@@ -396,6 +396,27 @@ func TestNoBundledAgentWritesItsOwnDesk(t *testing.T) {
 		}
 		if strings.Contains(raw, "\ndesk:") {
 			t.Errorf("%s writes desk: in its frontmatter — the agents home already gives it the office, and writing it can only ever get it wrong", p.Name)
+		}
+	}
+}
+
+// The half of a description before the dash is what the tool block carries on
+// every request (task.go's ForClause), and for the two helpers that exist to be
+// reached for at a MOMENT it has to name that moment.
+//
+// Measured, not argued: while those halves read "รีวิวโค้ด" and "รันเทสต์" —
+// job titles — three long sessions with both on the roster called `task` zero
+// times. A title says what somebody does and nothing about when to call them.
+func TestTheCheckingHelpersNameTheirMoment(t *testing.T) {
+	isolate(t)
+	for _, name := range []string{"reviewer", "tester"} {
+		p, ok := Load(name)
+		if !ok {
+			t.Fatalf("Load(%s) found nothing", name)
+		}
+		clause := ForClause(p.Description)
+		if !strings.Contains(clause, "ก่อนบอกว่างานเสร็จ") {
+			t.Errorf("%s: the block carries %q, which names no moment to reach for it", name, clause)
 		}
 	}
 }

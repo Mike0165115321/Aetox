@@ -17,7 +17,7 @@
 //     extensible kind: hiring is dropping one more file.
 //   - **Sub-agents** — the assistant's own hands, never chatted with, and
 //     **part of the system** (owner's call, 2026-08-06: ผูกซับเอเจนกับระบบ
-//     เพิ่มหรือแก้ไขไม่ได้): the bundled three in profiles/subagents are the
+//     เพิ่มหรือแก้ไขไม่ได้): the bundled files in profiles/subagents are the
 //     whole set. A user file in <DataRoot>/subagents is not read — it is
 //     reported as a Conflict so it never vanishes silently — and the write
 //     door (Save) refuses. What the user extends is the team, never the hands.

@@ -117,12 +117,27 @@ func (d *delegationTool) Description() string {
 	//
 	// REPEATED WORK IS ONE JOB moved to Guidance. It shapes a delegation that is
 	// already happening, and one over-fanned wave is visible in the result.
+	//
+	// **The second reason to delegate was missing until 2026-08-29, and the
+	// measurement is what found it.** Two long sessions on the owner's own
+	// machine — 47 tool calls and 95 — called `task` zero times, with `reviewer`
+	// and `tester` sitting on the roster the whole way. Nothing was broken: the
+	// rule below said delegation is for work that would POUR INTO this
+	// conversation, both examples were about bulk, and "anything you can already
+	// name" reads as a refusal of exactly the case a reviewer is for. The model
+	// followed the rule as written.
+	//
+	// So the rule gained the reason bulk cannot express: work whose worth is
+	// that somebody else did it. Checking your own change is not cheaper in a
+	// second context — it is more honest in one, because the context that made
+	// the change is the one least able to see what is wrong with it.
 	return "Sub-agents: hand a self-contained job to one, collect it, answer one that got stuck, " +
 		"and declare a run when the work takes more than one wave. See `action`. " +
 		"WHEN TO USE: work that would otherwise pour a lot into this conversation — a hunt through many " +
-		"files for something you cannot name yet, one mechanical change repeated across many places. " +
-		"WHEN NOT TO: anything you can already name. One read, one grep, one edit — do those yourself; " +
-		"a delegate costs a second system prompt and its own tool list on every round."
+		"files for something you cannot name yet, one mechanical change repeated across many places — and " +
+		"work whose worth is that YOU did not do it: checking a change you just made, running the suite over it. " +
+		"WHEN NOT TO: anything you can already name and would only be repeating. One read, one grep, one edit — " +
+		"do those yourself; a delegate costs a second system prompt and its own tool list on every round."
 }
 
 // actionLines are written per action and assembled from the permitted set, so a

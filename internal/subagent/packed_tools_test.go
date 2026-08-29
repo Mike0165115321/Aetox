@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Mikedev115/Aetox/internal/skill"
@@ -138,5 +139,35 @@ func TestAToolsLineNarrowsGithubTheSameWay(t *testing.T) {
 	got := actionsOffered(t, FilterRegistry(parent, p, nil), "github")
 	if !slices.Equal(got, []string{"list_files", "read_file"}) {
 		t.Errorf("the worker is offered %v, want the two it named, in the pack's own order", got)
+	}
+}
+
+// The two reasons to delegate, both in the block.
+//
+// The first was there from the start: bulk that would pour into this
+// conversation. The second was missing until 2026-08-29, and its absence was
+// measured rather than argued — two sessions of 47 and 95 tool calls, with
+// `reviewer` and `tester` on the roster the whole way, called `task` zero times.
+// The rule as written had no room for them: both its examples were about
+// volume, and "anything you can already name" reads as a refusal of exactly the
+// case a reviewer is for.
+//
+// Pinned here because it is the one piece of judgment this tool keeps in the
+// block (everything else moved to Guidance), and a compression pass that
+// trimmed it back to one reason would put the hole back without anybody
+// noticing until the next log was read.
+func TestTheBlockCarriesBothReasonsToDelegate(t *testing.T) {
+	description := (&delegationTool{}).Description()
+
+	if !strings.Contains(description, "pour a lot into this conversation") {
+		t.Error("the block lost the bulk reason — work that would flood this context")
+	}
+	if !strings.Contains(description, "YOU did not do it") {
+		t.Error("the block lost the independence reason — the one reviewer and tester exist for")
+	}
+	// And the refusal must not swallow the second reason again: reviewing IS
+	// something you can name, so the clause has to say what it really refuses.
+	if strings.Contains(description, "WHEN NOT TO: anything you can already name.") {
+		t.Error("WHEN NOT TO refuses anything nameable again, which refuses a review")
 	}
 }
