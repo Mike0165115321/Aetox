@@ -415,3 +415,88 @@ func TestDefaultForIsSilentWhenItKnowsNothing(t *testing.T) {
 		t.Errorf("an unknown provider answered %q", got)
 	}
 }
+
+// The shelf a picker shows when the endpoint could not be asked.
+//
+// The case this exists for is the owner's own: an Alibaba key issued for one
+// region against another region's host answers 401, discovery returns nothing,
+// and the picker used to fall onto the single hard-coded FallbackModel — while
+// this table, already on the same disk, described 54 models for that provider.
+func TestModelsForListsTheWholeChatShelfAlphabetically(t *testing.T) {
+	catalog := &ModelCatalog{Models: map[string]ModelFacts{
+		"acme/acme-max-2": {
+			Price: ModelPrice{Input: 9, Output: 30}, Context: 200_000,
+			ToolCall: true, Output: []string{"text"}, Released: "2026-08-01",
+		},
+		"acme/acme-flash-2": {
+			Price: ModelPrice{Input: 0.2, Output: 0.8}, Context: 200_000,
+			ToolCall: true, Output: []string{"text"}, Released: "2026-07-20",
+		},
+		// Two generations old, and still a model a person may deliberately
+		// want. DefaultFor is the function that refuses it; this one is a
+		// menu, not a recommendation.
+		"acme/acme-tiny-1": {
+			Price: ModelPrice{Input: 0.01, Output: 0.02}, Context: 8_000,
+			ToolCall: true, Output: []string{"text"}, Released: "2023-01-01",
+		},
+		// A speech recognizer and a classifier: real rows on a real shelf,
+		// neither able to hold a conversation.
+		"acme/acme-asr": {
+			Price: ModelPrice{Input: 0.03, Output: 0.03}, Context: 50_000,
+			ToolCall: false, Output: []string{"text"}, Released: "2026-07-25",
+		},
+		"acme/acme-embed": {
+			Price: ModelPrice{Input: 0.01}, Context: 8_000,
+			ToolCall: true, Output: []string{"text"}, Released: "2026-07-25",
+		},
+		// Another company's row, in the same table.
+		"other/other-1": {
+			Price: ModelPrice{Input: 1, Output: 2}, Context: 8_000,
+			ToolCall: true, Output: []string{"text"}, Released: "2026-07-25",
+		},
+	}}
+
+	got := catalog.ModelsFor("acme")
+	want := []string{"acme-flash-2", "acme-max-2", "acme-tiny-1"}
+	if !sameStrings(got, want) {
+		t.Errorf("ModelsFor = %v; want %v", got, want)
+	}
+
+	// The two functions read one filter. A default the menu does not offer
+	// would be a shelf disagreeing with the name written next to it.
+	if def := catalog.DefaultFor("acme"); !sameStrings(catalog.ModelsFor("acme"), want) || !contains(got, def) {
+		t.Errorf("DefaultFor = %q is not on the shelf ModelsFor lists: %v", def, got)
+	}
+}
+
+
+// Same concession DefaultFor makes: on a shelf where nothing calls tools,
+// insisting on it would empty the menu and send the caller back to one
+// hard-coded name.
+func TestModelsForRelaxesToolCallingWhenNobodyOffersIt(t *testing.T) {
+	catalog := &ModelCatalog{Models: map[string]ModelFacts{
+		"search-co/search-basic": {
+			Price: ModelPrice{Input: 1, Output: 1}, Context: 128_000,
+			ToolCall: false, Output: []string{"text"}, Released: "2026-05-01",
+		},
+		"search-co/search-deep": {
+			Price: ModelPrice{Input: 2, Output: 8}, Context: 128_000,
+			ToolCall: false, Output: []string{"text"}, Released: "2026-05-01",
+		},
+	}}
+	if got := catalog.ModelsFor("search-co"); !sameStrings(got, []string{"search-basic", "search-deep"}) {
+		t.Errorf("ModelsFor = %v; want both search models", got)
+	}
+}
+
+// A catalog that knows nothing must change nothing, so the caller falls through
+// to what it did before.
+func TestModelsForIsSilentWhenItKnowsNothing(t *testing.T) {
+	var absent *ModelCatalog
+	if got := absent.ModelsFor("acme"); got != nil {
+		t.Errorf("a nil catalog answered %v", got)
+	}
+	if got := (&ModelCatalog{}).ModelsFor("acme"); got != nil {
+		t.Errorf("an empty catalog answered %v", got)
+	}
+}

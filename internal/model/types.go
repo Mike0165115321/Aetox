@@ -1,10 +1,18 @@
 package model
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	// Registered for their headers alone: DecodeConfig needs a format to
+	// recognise the bytes, and Image.CharCost never decodes the pixels. PNG is
+	// every browser capture; the other two are what a user drags in.
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"regexp"
 	"strconv"
 	"strings"
@@ -64,6 +72,18 @@ type Message struct {
 	// charts, scanned pages) and completeness. desktop/app.go caps the size at
 	// which that trade stops being worth making.
 	Documents []Document `json:"-"`
+	// ImagesFromTool marks pictures a tool produced mid-turn rather than ones
+	// the user attached, and it exists so the first kind can be forgotten and
+	// the second never is.
+	//
+	// They are otherwise the same message — the agent delivers a tool's picture
+	// as a user message, because an image block inside a tool_result works on
+	// Anthropic and on neither of the other two wire formats. Without this flag
+	// the only thing separating "the screenshot the agent took nineteen actions
+	// ago" from "the photo I asked you about" is a caption, and a conversation
+	// that drops the second one to save room has broken the thing it was asked
+	// to do. See memory.Context.forgetOldImages.
+	ImagesFromTool bool `json:"-"`
 }
 
 // Image is one picture attached to a message, already decoded from whatever the
@@ -74,6 +94,50 @@ type Message struct {
 type Image struct {
 	MediaType string
 	Data      []byte
+}
+
+const (
+	// visionPixelsPerToken is roughly how much of a picture one token buys.
+	// Every vision model in the picker charges by area and they do not agree on
+	// the constant, so this is an estimate and is only ever used as one: the
+	// question it answers is "does this belong in the budget at all", where the
+	// answer was zero.
+	visionPixelsPerToken = 750
+	// charsPerToken converts that into the unit the conversation budget counts
+	// in. Four is the usual rule of thumb for English and is wrong for Thai in
+	// the safe direction, since it undercounts nothing.
+	charsPerToken = 4
+	// unknownImageChars is what a picture costs when its header will not parse
+	// — a format this binary has no decoder registered for, or bytes that are
+	// not an image at all. Priced as a browser capture, because that is what
+	// almost every picture in a conversation is, and because a picture nobody
+	// can measure must not be free.
+	unknownImageChars = 1280 * 720 / visionPixelsPerToken * charsPerToken
+)
+
+// CharCost is what this picture costs against the same budget the conversation's
+// text is measured with.
+//
+// It exists because that budget could not see a picture at all. memory.Context
+// measured a message by len(Content), so a message carrying a 130 KB screenshot
+// counted as its 45-character caption, no picture ever aged out, and on 28 ส.ค.
+// a single turn re-sent 22 screenshots 620 times between them (DECISIONS §204).
+// The pictures were not the problem; the accounting was blind.
+//
+// Priced by pixels and not by bytes, because bytes are the wrong unit by more
+// than an order of magnitude in both directions: a model charges for area, and
+// a screenshot of a mostly-white page compresses to a tenth of a busy one
+// without being a tenth of the cost. DecodeConfig reads the header only and
+// never the pixels, so this stays cheap enough to call on every message.
+func (i Image) CharCost() int {
+	if len(i.Data) == 0 {
+		return 0
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(i.Data))
+	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
+		return unknownImageChars
+	}
+	return cfg.Width * cfg.Height / visionPixelsPerToken * charsPerToken
 }
 
 // Document is one file attached for the model to read. Name is carried because

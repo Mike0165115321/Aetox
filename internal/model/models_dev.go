@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -281,6 +282,84 @@ func sameFacts(a, b ModelFacts) bool {
 		sameStrings(a.Input, b.Input) && sameStrings(a.Output, b.Output)
 }
 
+// candidate is one model the catalog knows, with the id as the provider's own
+// endpoint spells it.
+type candidate struct {
+	id    string
+	facts ModelFacts
+}
+
+// chatCandidates is every model on a provider's shelf that could hold a
+// conversation, plus the newest release date among them.
+//
+// One filter, two callers. DefaultFor narrows this further to pick a single
+// cold-start name; ModelsFor hands the whole shelf to a picker. Splitting it out
+// is the point: a second copy of "what counts as a chat model" would drift, and
+// the drift would show up as a picker offering a speech recognizer that the
+// default rule already knows to refuse.
+func (c *ModelCatalog) chatCandidates(providerName string) ([]candidate, string) {
+	if c == nil || len(c.Models) == 0 {
+		return nil, ""
+	}
+	prefix := modelsDevProvider(NormalizeProvider(providerName)) + "/"
+	var pool []candidate
+	newest := ""
+	for key, facts := range c.Models {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		if !facts.Produces("text") || facts.Price.Input <= 0 || facts.Price.Output <= 0 || facts.Context <= 0 {
+			continue
+		}
+		pool = append(pool, candidate{strings.TrimPrefix(key, prefix), facts})
+		if facts.Released > newest {
+			newest = facts.Released
+		}
+	}
+	return pool, newest
+}
+
+// ModelsFor is a provider's shelf as the catalog knows it, alphabetically.
+//
+// It answers the question a picker asks when the endpoint could not be asked
+// itself: a key that 401s, an offline laptop, a base URL pointed at the wrong
+// region. Before this the picker fell straight through to the one hard-coded
+// FallbackModel per provider, so a live Alibaba account with a Singapore key on
+// the Beijing host offered exactly one model while this table, already on the
+// user's disk, described 54.
+//
+// Two things it is not. It is not a probe: these ids are what models.dev
+// publishes, so a provider that renamed one serves a name this list still
+// carries, and the picker keeps its type-your-own field for exactly that. And
+// it is not a ranking - alphabetical, because a menu that reorders itself by
+// somebody's idea of "best" is a menu you cannot find anything in twice.
+// Choosing is DefaultFor's job and it is deliberately the other function.
+//
+// Tool calling is required only where the provider offers it at all, the same
+// concession DefaultFor makes for a shelf like Perplexity's where insisting
+// would return nothing.
+func (c *ModelCatalog) ModelsFor(providerName string) []string {
+	pool, _ := c.chatCandidates(providerName)
+	if len(pool) == 0 {
+		return nil
+	}
+	withTools := pool[:0:0]
+	for _, cand := range pool {
+		if cand.facts.ToolCall {
+			withTools = append(withTools, cand)
+		}
+	}
+	if len(withTools) > 0 {
+		pool = withTools
+	}
+	out := make([]string, 0, len(pool))
+	for _, cand := range pool {
+		out = append(out, cand.id)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // DefaultFor picks a provider's cold-start model out of the catalog.
 //
 // It exists so that no model name has to be written into Go. Every name that
@@ -322,26 +401,7 @@ func (c *ModelCatalog) DefaultFor(providerName string) string {
 	if c == nil || len(c.Models) == 0 {
 		return ""
 	}
-	prefix := modelsDevProvider(NormalizeProvider(providerName)) + "/"
-
-	type candidate struct {
-		id    string
-		facts ModelFacts
-	}
-	var pool []candidate
-	newest := ""
-	for key, facts := range c.Models {
-		if !strings.HasPrefix(key, prefix) {
-			continue
-		}
-		if !facts.Produces("text") || facts.Price.Input <= 0 || facts.Price.Output <= 0 || facts.Context <= 0 {
-			continue
-		}
-		pool = append(pool, candidate{strings.TrimPrefix(key, prefix), facts})
-		if facts.Released > newest {
-			newest = facts.Released
-		}
-	}
+	pool, newest := c.chatCandidates(providerName)
 	if len(pool) == 0 {
 		return ""
 	}
