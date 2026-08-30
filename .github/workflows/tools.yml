@@ -25,6 +25,44 @@ name: tools
 on:
   workflow_dispatch:
     inputs:
+      only:
+        # One dispatch used to mean all of them, which was fine while there were
+        # two and is not fine at six: fetching one new tool re-ran four builds
+        # that had not changed and re-published four tags that were already
+        # correct. A tag re-uploaded with identical bytes is not a disaster, but
+        # it is four release notifications and twenty minutes of runner for
+        # nothing, and it makes "run the tools workflow" a bigger thing to ask
+        # somebody than it should be.
+        description: which tool to build, or all of them
+        type: choice
+        default: all
+        options: [all, tesseract, ffmpeg, ffmpeg-gpl, kinocut, hyperframes, chrome-headless-shell]
+      kinocut_version:
+        description: kinocut version on PyPI to bundle
+        default: 1.15.0
+      python_embed_version:
+        description: python.org embeddable Windows build to bundle it with
+        default: 3.13.14
+      hyperframes_version:
+        description: hyperframes version on npm to bundle
+        default: 0.8.20
+      node_version:
+        # No default, for the same reason tessdata_commit has none: this one
+        # moves. Read the current LTS off nodejs.org. Below 22 there is nothing
+        # to test — bin/hyperframes.mjs checks process.versions.node and exits
+        # before it loads a line of the CLI.
+        # Not `required`, for the reason tessdata_commit is not: it belongs to
+        # one job, and demanding it on a dispatch of a different tool is asking
+        # somebody for a version number nothing is going to read. The job that
+        # reads it refuses to start without one.
+        description: nodejs.org Windows LTS to bundle it with, e.g. 24.20.0
+      chrome_headless_shell_build:
+        # Read out of hyperframes' own bundle rather than chosen: dist/cli.js
+        # carries this build number, and its fast capture path
+        # (HeadlessExperimental.beginFrame) exists only in the headless shell.
+        # A normal Chrome or Edge falls back to screenshot mode and says so.
+        description: the chrome-headless-shell build hyperframes pins
+        default: 152.0.7977.30
       tesseract_tag:
         description: UB-Mannheim release tag
         default: v5.4.0.20240606
@@ -37,14 +75,22 @@ on:
       ffmpeg_asset:
         description: the win64 LGPL shared zip in that release
         default: ffmpeg-n9.0.1-6-g9d4ca21220-win64-lgpl-shared-9.0.zip
+      ffmpeg_gpl_asset:
+        description: the win64 GPL shared zip in that same release, for the video editor
+        default: ffmpeg-n9.0.1-6-g9d4ca21220-win64-gpl-shared-9.0.zip
       tessdata_commit:
         # A commit, not "main". project.nsi fetches tha.traineddata from
         # tessdata's main branch against a fixed SHA256 — so the day upstream
         # rebuilds that file, the checksum stops matching, and the installer's
         # own error path quietly skips Thai rather than failing. A pinned URL
         # cannot drift out from under its pin.
+        #
+        # No longer `required`, since `only` arrived: it is the tesseract job's
+        # input and nothing else's, and leaving it required made every dispatch
+        # of any other tool demand a commit hash for a build that was not going
+        # to run. The pin is still enforced — by the job that uses it, below,
+        # which refuses to start without one.
         description: tesseract-ocr/tessdata commit to take tha.traineddata from
-        required: true
 
 permissions:
   contents: write
@@ -52,7 +98,19 @@ permissions:
 jobs:
   tesseract:
     runs-on: windows-latest
+    if: inputs.only == 'all' || inputs.only == 'tesseract'
     steps:
+      - name: Refuse to build without the tessdata pin
+        shell: pwsh
+        run: |
+          # The input stopped being `required` when `only` arrived, so the guard
+          # moved here — to the one job that reads it. A blank commit would
+          # otherwise resolve to a URL that 404s three steps later, or worse,
+          # silently take whatever main happens to hold today.
+          if (-not "${{ inputs.tessdata_commit }}".Trim()) {
+            throw 'tessdata_commit is empty — this job pins a commit rather than following main'
+          }
+
       - name: Download the official installer and prove it is the pinned one
         shell: pwsh
         run: |
@@ -157,6 +215,7 @@ jobs:
   # onto a release we own is what makes "immutable" true rather than hoped for.
   ffmpeg:
     runs-on: windows-latest
+    if: inputs.only == 'all' || inputs.only == 'ffmpeg'
     steps:
       - name: Take the LGPL shared build, keep only bin/
         shell: pwsh
@@ -203,6 +262,456 @@ jobs:
             Mirrored because BtbN prunes its autobuild tags after a few days,
             so a pin against one stops resolving. Not an Aetox release.
           files: ffmpeg-win64-lgpl.zip
+          # See the Tesseract job above: this is the release that took the
+          # Latest badge and broke the update check for every install.
+          prerelease: true
+
+  # kinocut is bundled for a reason neither of the two above have: it is a
+  # Python package, and Aetox has no Python.
+  #
+  # The editor the video agents run on ships only to PyPI — its v1.15.0 GitHub
+  # release carries no binary asset at all (checked 2026-08-30) — so the choice
+  # was between telling every user to install Python and pip themselves, or
+  # putting the interpreter in the archive beside it. internal/capability's
+  # whole contract is that Aetox fetches one pinned, checksummed zip and runs
+  # what is inside it without an installer, without elevation and without
+  # touching PATH; a package manager invoked on the user's machine is the shape
+  # that got the NSIS installer flagged as Wacapew.C!ml in the first place.
+  #
+  # So the interpreter travels with it. python.org's embeddable build is made
+  # for exactly this: no installer, no registry, no PATH, ~11MB, and its own
+  # `._pth` file decides sys.path with nothing else consulted.
+  #
+  # The recipe below was proved on a real machine before it was written here
+  # (2026-08-30): 28.4MB zipped, MCP handshake and `doctor --format json` both
+  # answering, with no Python installed anywhere else. The three pywin32 lines
+  # in the ._pth are load-bearing — without them `import pywintypes` fails and
+  # the server dies at startup, which is the one failure this whole bundle
+  # exists to make impossible.
+  kinocut:
+    runs-on: windows-latest
+    if: inputs.only == 'all' || inputs.only == 'kinocut'
+    steps:
+      # The host interpreter must be the same minor as the embedded one: pip
+      # resolves wheels for the Python it is running under, and a cp312 wheel
+      # in a cp313 bundle is an ImportError on somebody else's computer.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Take python.org's embeddable build
+        shell: pwsh
+        run: |
+          $ver = "${{ inputs.python_embed_version }}"
+          $url = "https://www.python.org/ftp/python/$ver/python-$ver-embed-amd64.zip"
+          Invoke-WebRequest -Uri $url -OutFile py.zip
+          New-Item -ItemType Directory out | Out-Null
+          Expand-Archive py.zip -DestinationPath out
+          if (-not (Test-Path out/python.exe)) { throw 'no python.exe in the embeddable zip' }
+
+      - name: Point its sys.path at the library folder, pywin32 included
+        shell: pwsh
+        run: |
+          $pth = Get-ChildItem out -Filter 'python*._pth' | Select-Object -First 1
+          if (-not $pth) { throw 'no ._pth file — the embeddable layout changed' }
+          $zip = [IO.Path]::GetFileNameWithoutExtension($pth.Name) + '.zip'
+          # pywin32 loads pywintypes313.dll by walking sys.path itself, so the
+          # three folders it looks in have to be on it. Everything kinocut
+          # imports transitively depends on that one working.
+          @($zip, '.', 'lib', 'lib/win32', 'lib/win32/lib', 'lib/pywin32_system32') |
+            Set-Content -Path $pth.FullName -Encoding ascii
+
+      - name: Install kinocut into it, wheels only
+        shell: pwsh
+        run: |
+          # --only-binary so nothing is compiled on the runner: a source build
+          # here would produce an artifact tied to this machine's toolchain.
+          python -m pip install --disable-pip-version-check --no-compile `
+            --only-binary=:all: --target out/lib "kinocut==${{ inputs.kinocut_version }}"
+
+      - name: Drop what the server never imports
+        shell: pwsh
+        run: |
+          # pywin32's GUI and COM extras, which kinocut does not touch. The
+          # proof step below is what makes this safe to do: if a trim removes
+          # something real, the handshake fails and the job stops.
+          'pythonwin', 'PyWin32.chm', 'win32comext', 'adodbapi', 'isapi' | ForEach-Object {
+            Remove-Item "out/lib/$_" -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          Get-ChildItem out/lib -Recurse -Directory -Filter __pycache__ |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          "{0:N1} MB kept" -f ((Get-ChildItem out -Recurse -File | Measure-Object Length -Sum).Sum / 1MB)
+
+      - name: Prove it runs with no Python on the machine
+        shell: pwsh
+        run: |
+          # Not `--version`, which passes long before anything is wired up. The
+          # handshake is the thing Aetox actually does to this bundle, and the
+          # doctor is what the งานวิดีโอ room reads out of it.
+          $req = '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}'
+          $reply = $req | ./out/python.exe -m kinocut --mcp
+          if ($reply -notmatch '"serverInfo"') { throw "MCP handshake did not answer: $reply" }
+          $doctor = ./out/python.exe -m kinocut --format json doctor | ConvertFrom-Json
+          if (-not $doctor.summary) { throw 'doctor returned no summary' }
+          Write-Host "handshake ok, doctor ok"
+
+      - name: Zip it and say what to pin
+        id: pack
+        shell: pwsh
+        run: |
+          Compress-Archive -Path out/* -DestinationPath kinocut-win64.zip
+          $sha = (Get-FileHash kinocut-win64.zip -Algorithm SHA256).Hash.ToLower()
+          $tag = "tools-kinocut-${{ inputs.kinocut_version }}"
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          @"
+
+          Paste into Manifest() in internal/capability/capability.go:
+
+            URL:    "https://github.com/${{ github.repository }}/releases/download/$tag/kinocut-win64.zip",
+            SHA256: "$sha",
+            Marker: "kinocut-${{ inputs.kinocut_version }}.ok",
+
+          "@ | Write-Host
+
+      - name: Publish it as its own release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.pack.outputs.tag }}
+          name: ${{ steps.pack.outputs.tag }}
+          body: |
+            kinocut ${{ inputs.kinocut_version }} (Apache-2.0, KyaniteLabs) bundled
+            with python.org's ${{ inputs.python_embed_version }} embeddable build,
+            so Aetox can install it the way it installs every other tool: one
+            pinned zip, no installer, no elevation, no PATH, no package manager
+            on the user's machine.
+
+            Not an Aetox release.
+          files: kinocut-win64.zip
+          # See the Tesseract job above: this is the release that took the
+          # Latest badge and broke the update check for every install.
+          prerelease: true
+
+  # The second ffmpeg, and it is not a duplicate of the job above.
+  #
+  # That one mirrors the LGPL build, which is what Aetox itself runs to read a
+  # file — sampling frames for video_ocr, stripping audio for
+  # audio_transcribe — and neither of those encodes anything, so the GPL-only
+  # encoders were never needed and the safer licence was the right one to put
+  # on somebody's machine.
+  #
+  # kinocut is the opposite case. It writes `-c:v libx264` into 38 call sites
+  # (counted 2026-08-30), and libx264 is exactly what an LGPL build leaves out,
+  # so pointed at our own copy the editor fails almost every encode with
+  # "Unknown encoder". The editor gets a GPL build of its own instead, kept in
+  # its own folder and named to kinocut through KINOCUT_FFMPEG_EXECUTABLE.
+  # Neither copy is ever put on the machine's PATH.
+  #
+  # Mirrored for the same reason the LGPL one is: BtbN prunes its autobuild tags
+  # after a few days, so a pin against one stops resolving.
+  ffmpeg-gpl:
+    runs-on: windows-latest
+    if: inputs.only == 'all' || inputs.only == 'ffmpeg-gpl'
+    steps:
+      - name: Take the GPL shared build, keep only bin/
+        shell: pwsh
+        run: |
+          $tag = "${{ inputs.ffmpeg_tag }}"
+          $asset = "${{ inputs.ffmpeg_gpl_asset }}"
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/$tag/$asset"
+          Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath unpacked
+          $bin = Get-ChildItem unpacked -Recurse -Directory -Filter bin | Select-Object -First 1
+          if (-not $bin) { throw 'no bin/ directory inside the archive — its layout changed' }
+          if (-not (Test-Path (Join-Path $bin 'ffmpeg.exe'))) { throw 'bin/ has no ffmpeg.exe' }
+          if (-not (Test-Path (Join-Path $bin 'ffprobe.exe'))) { throw 'bin/ has no ffprobe.exe' }
+          New-Item -ItemType Directory out | Out-Null
+          Copy-Item "$bin/*" out/ -Recurse
+          "{0:N1} MB kept" -f ((Get-ChildItem out -Recurse -File | Measure-Object Length -Sum).Sum / 1MB)
+
+      - name: Prove it carries the encoder the editor asks for
+        shell: pwsh
+        run: |
+          # The whole reason this job exists. A build without libx264 is the
+          # LGPL one under a different name, and pinning it would put the
+          # "Unknown encoder" failure back on the user's machine.
+          $encoders = ./out/ffmpeg.exe -hide_banner -encoders 2>&1 | Out-String
+          if ($encoders -notmatch 'libx264') { throw 'this build has no libx264 — it is not the GPL asset' }
+          Write-Host "libx264 present"
+
+      - name: Zip it and say what to pin
+        id: pack
+        shell: pwsh
+        run: |
+          Compress-Archive -Path out/* -DestinationPath ffmpeg-win64-gpl.zip
+          $sha = (Get-FileHash ffmpeg-win64-gpl.zip -Algorithm SHA256).Hash.ToLower()
+          $ver = ([regex]::Match('${{ inputs.ffmpeg_gpl_asset }}', 'ffmpeg-(n[0-9][^-]*)')).Groups[1].Value
+          if (-not $ver) { throw 'could not read a version out of the asset name' }
+          $tag = "tools-ffmpeg-gpl-$ver"
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          @"
+
+          Paste into Manifest() in internal/capability/capability.go:
+
+            URL:    "https://github.com/${{ github.repository }}/releases/download/$tag/ffmpeg-win64-gpl.zip",
+            SHA256: "$sha",
+            Marker: "ffmpeg-gpl-$ver.ok",
+
+          "@ | Write-Host
+
+      - name: Publish it as its own release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.pack.outputs.tag }}
+          name: ${{ steps.pack.outputs.tag }}
+          body: |
+            ffmpeg, GPL shared build, mirrored from BtbN/FFmpeg-Builds
+            `${{ inputs.ffmpeg_tag }}` with only `bin/` kept.
+
+            Carried for the video editor, which needs libx264. Aetox's own
+            reading tools use the LGPL build in `tools-ffmpeg-*` instead.
+            Not an Aetox release.
+          files: ffmpeg-win64-gpl.zip
+          # See the Tesseract job above: this is the release that took the
+          # Latest badge and broke the update check for every install.
+          prerelease: true
+
+  # Hyperframes is the engine the video agent renders scenes on, and it is
+  # bundled for the same reason kinocut is, one language sideways: it is an npm
+  # package, and Aetox has no Node.
+  #
+  # **Nothing here is pre-installed with the app.** This job produces the zip
+  # that the งานวิดีโอ room offers to fetch when somebody presses the button on
+  # it — one pinned, checksummed archive into DataRoot, no installer, no
+  # elevation, nothing written to PATH, and no package manager run on the user's
+  # machine. Owner, 30 ส.ค.: *"ผมเปลี่ยนใจแล้วจะไม่ฝังอะไรเข้าไปในระบบ ถ้าเขาจะ
+  # ใช้งานโหมดนี้ให้กด เราทำให้เขาติดตั้งง่ายก็พอ"*.
+  #
+  # **npm has no partial form to ask for**, so the whole dependency tree travels.
+  # onnxruntime-node is 218MB of the 374MB by itself, and every reference to it
+  # in dist/cli.js is a dynamic import (3 of them, 0 static), so it could be
+  # dropped and background removal dropped with it. Kept, on the owner's call.
+  # If that is ever revisited, deleting node_modules/onnxruntime-node between the
+  # install and the proof below is the whole change — and the proof is what would
+  # catch a later version that started importing it eagerly.
+  #
+  # The layout of the zip is not cosmetic: desktop/videotooling.go's
+  # hyperframesCommand() looks for exactly `node/node.exe` and
+  # `node_modules/hyperframes/bin/hyperframes.mjs` inside it. A path to the .cmd
+  # shim npm writes would be shorter and would break, because that shim looks for
+  # `node` on PATH and the whole point of a portable bundle is that nothing has
+  # to be on PATH for it to work.
+  hyperframes:
+    runs-on: windows-latest
+    if: inputs.only == 'all' || inputs.only == 'hyperframes'
+    steps:
+      # The runner's npm resolves the tree that the bundled node will run, so
+      # the two have to be the same major — the same argument the kinocut job
+      # makes about cp313 wheels, for the same class of failure.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Refuse to build without a Node version
+        shell: pwsh
+        run: |
+          if (-not "${{ inputs.node_version }}".Trim()) {
+            throw 'node_version is empty — read the current LTS off nodejs.org and pass it'
+          }
+
+      - name: Take nodejs.org's Windows build
+        shell: pwsh
+        run: |
+          $ver = "${{ inputs.node_version }}"
+          $url = "https://nodejs.org/dist/v$ver/node-v$ver-win-x64.zip"
+          Invoke-WebRequest -Uri $url -OutFile node.zip
+          Expand-Archive node.zip -DestinationPath unpacked
+          $dir = Get-ChildItem unpacked -Directory | Select-Object -First 1
+          if (-not (Test-Path "$dir/node.exe")) { throw 'no node.exe in the nodejs.org zip' }
+          New-Item -ItemType Directory out/node -Force | Out-Null
+          # node.exe alone, not the whole distribution: npm, npx, corepack and
+          # the docs are 40MB of things nothing here ever runs. Aetox invokes
+          # one entry point with one interpreter and never installs anything.
+          Copy-Item "$dir/node.exe" out/node/
+
+      - name: Install hyperframes into it
+        shell: pwsh
+        run: |
+          Set-Content out/package.json '{ "name": "aetox-hyperframes-bundle", "private": true, "version": "0.0.0" }'
+          Push-Location out
+          npm install --omit=dev --no-audit --no-fund "hyperframes@${{ inputs.hyperframes_version }}"
+          Pop-Location
+          if (-not (Test-Path out/node_modules/hyperframes/bin/hyperframes.mjs)) {
+            throw 'the package layout changed — videotooling.go points at bin/hyperframes.mjs'
+          }
+          "{0:N1} MB kept" -f ((Get-ChildItem out -Recurse -File | Measure-Object Length -Sum).Sum / 1MB)
+
+      - name: Prove it runs with no Node on the machine
+        shell: pwsh
+        run: |
+          # PATH cut to the system directory first, which is the claim being
+          # tested: a user who has never installed Node still gets a working
+          # renderer. The kinocut job makes the same claim about Python.
+          $env:PATH = "$env:SystemRoot\system32;$env:SystemRoot"
+          # The three switches Aetox sets at runtime are set here too, so the
+          # thing that is proved is the thing that ships: no telemetry back to
+          # HeyGen, no update check of its own, and nothing installed behind our
+          # back — the last one matters most, because a tool that fetches its own
+          # dependencies is a second install mechanism next to internal/capability.
+          $env:HYPERFRAMES_NO_TELEMETRY = '1'
+          $env:HYPERFRAMES_NO_UPDATE_CHECK = '1'
+          $env:HYPERFRAMES_NO_AUTO_INSTALL = '1'
+          $cli = 'out/node_modules/hyperframes/bin/hyperframes.mjs'
+          $reported = (& ./out/node/node.exe $cli --version) -join ''
+          if ($reported -notmatch [regex]::Escape('${{ inputs.hyperframes_version }}')) {
+            throw "--version said '$reported', not ${{ inputs.hyperframes_version }}"
+          }
+          # doctor exits zero whatever it finds, so the payload is the gate — its
+          # own skill document says as much. A browser and an ffmpeg are both
+          # absent on this runner and are supposed to be: they arrive as their own
+          # pinned archives and are named through HYPERFRAMES_BROWSER_PATH and
+          # HYPERFRAMES_FFMPEG_PATH. What is being proved here is that the CLI
+          # loads, parses and answers at all.
+          $doctor = (& ./out/node/node.exe $cli doctor --json) -join '' | ConvertFrom-Json
+          if (-not $doctor) { throw 'doctor answered nothing that parses as JSON' }
+          Write-Host "version ok, doctor answers"
+
+      - name: Zip it and say what to pin
+        id: pack
+        shell: pwsh
+        run: |
+          Compress-Archive -Path out/* -DestinationPath hyperframes-win64.zip
+          $sha = (Get-FileHash hyperframes-win64.zip -Algorithm SHA256).Hash.ToLower()
+          $tag = "tools-hyperframes-${{ inputs.hyperframes_version }}"
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          @"
+
+          Paste into Manifest() in internal/capability/capability.go:
+
+            URL:    "https://github.com/${{ github.repository }}/releases/download/$tag/hyperframes-win64.zip",
+            SHA256: "$sha",
+            Marker: "hyperframes-${{ inputs.hyperframes_version }}.ok",
+            ApproxBytes: $((Get-Item hyperframes-win64.zip).Length),
+
+          "@ | Write-Host
+
+      - name: Publish it as its own release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.pack.outputs.tag }}
+          name: ${{ steps.pack.outputs.tag }}
+          body: |
+            hyperframes ${{ inputs.hyperframes_version }} (Apache-2.0, HeyGen)
+            bundled with nodejs.org's ${{ inputs.node_version }} Windows build,
+            so Aetox can install it the way it installs every other tool: one
+            pinned zip, no installer, no elevation, no PATH, no package manager
+            on the user's machine.
+
+            Not an Aetox release.
+          files: hyperframes-win64.zip
+          # See the Tesseract job above: this is the release that took the
+          # Latest badge and broke the update check for every install.
+          prerelease: true
+
+  # The browser hyperframes renders in, pinned by us rather than fetched by it.
+  #
+  # Left alone, puppeteer downloads this itself on the first render — which is a
+  # second install mechanism beside internal/capability, arriving without a
+  # checksum we chose, at a moment the user did not press anything, over a
+  # network that may not be there. Pinning it here is what closes that door;
+  # HYPERFRAMES_BROWSER_PATH then points at our copy and nothing is fetched.
+  #
+  # **The headless shell, not Chrome, and not Edge.** The build number is read
+  # out of hyperframes' own dist/cli.js rather than picked, because its fast
+  # capture path (HeadlessExperimental.beginFrame) exists only in this binary —
+  # the CLI says so itself when handed a normal Chrome, and falls back to
+  # screenshot-per-frame. Edge was measured on 30 ส.ค. and does answer CDP, so it
+  # would work; it is not used because it is the slow path and because a machine
+  # is allowed not to have it.
+  #
+  # WebView2, which Aetox already carries, cannot be used at all and the reason
+  # is worth writing down once: hyperframes launches its own browser process (8
+  # calls to puppeteer.launch, and not one connect/browserWSEndpoint/browserURL
+  # anywhere in the bundle), and msedgewebview2.exe is not a standalone browser —
+  # run directly with --remote-debugging-port it exits immediately, code 0, no
+  # port, no output. Our own deck export drives WebView2 through the other door,
+  # by holding the webview and speaking CDP into it.
+  chrome-headless-shell:
+    runs-on: windows-latest
+    if: inputs.only == 'all' || inputs.only == 'chrome-headless-shell'
+    steps:
+      - name: Take the pinned build from Chrome for Testing
+        shell: pwsh
+        run: |
+          $b = "${{ inputs.chrome_headless_shell_build }}"
+          $url = "https://storage.googleapis.com/chrome-for-testing-public/$b/win64/chrome-headless-shell-win64.zip"
+          Invoke-WebRequest -Uri $url -OutFile shell.zip
+          Expand-Archive shell.zip -DestinationPath unpacked
+          $dir = Get-ChildItem unpacked -Recurse -Directory -Filter 'chrome-headless-shell-win64' | Select-Object -First 1
+          if (-not $dir) { throw 'no chrome-headless-shell-win64 directory — the archive layout changed' }
+          if (-not (Test-Path "$dir/chrome-headless-shell.exe")) { throw 'no chrome-headless-shell.exe inside it' }
+          New-Item -ItemType Directory out | Out-Null
+          Copy-Item "$dir/*" out/ -Recurse
+          "{0:N1} MB kept" -f ((Get-ChildItem out -Recurse -File | Measure-Object Length -Sum).Sum / 1MB)
+
+      - name: Prove it starts and answers the protocol
+        shell: pwsh
+        run: |
+          # Finding the exe is not the answer, and this is the trap the ffmpeg
+          # jobs already learned: a browser that unpacks and will not start is a
+          # green tick in the readiness panel and a failed render an hour later.
+          # So it is started, asked who it is, and stopped.
+          $proc = Start-Process -FilePath ./out/chrome-headless-shell.exe -PassThru -ArgumentList `
+            '--headless=new','--remote-debugging-port=9333','--no-first-run','--user-data-dir=cdp-profile','about:blank'
+          try {
+            $answer = $null
+            foreach ($attempt in 1..15) {
+              Start-Sleep -Seconds 1
+              try { $answer = Invoke-RestMethod -Uri 'http://127.0.0.1:9333/json/version' -TimeoutSec 3 } catch { }
+              if ($answer) { break }
+            }
+            if (-not $answer) { throw 'the browser never opened its debugging port' }
+            Write-Host "answered as: $($answer.Browser)"
+            if ($answer.Browser -notmatch '${{ inputs.chrome_headless_shell_build }}'.Split('.')[0]) {
+              throw "the running browser reports '$($answer.Browser)', which is not the pinned build"
+            }
+          } finally {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Zip it and say what to pin
+        id: pack
+        shell: pwsh
+        run: |
+          Compress-Archive -Path out/* -DestinationPath chrome-headless-shell-win64.zip
+          $sha = (Get-FileHash chrome-headless-shell-win64.zip -Algorithm SHA256).Hash.ToLower()
+          $tag = "tools-chrome-headless-shell-${{ inputs.chrome_headless_shell_build }}"
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          @"
+
+          Paste into Manifest() in internal/capability/capability.go:
+
+            URL:    "https://github.com/${{ github.repository }}/releases/download/$tag/chrome-headless-shell-win64.zip",
+            SHA256: "$sha",
+            Marker: "chrome-headless-shell-${{ inputs.chrome_headless_shell_build }}.ok",
+            ApproxBytes: $((Get-Item chrome-headless-shell-win64.zip).Length),
+
+          "@ | Write-Host
+
+      - name: Publish it as its own release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.pack.outputs.tag }}
+          name: ${{ steps.pack.outputs.tag }}
+          body: |
+            chrome-headless-shell ${{ inputs.chrome_headless_shell_build }},
+            mirrored from Google's chrome-for-testing-public bucket.
+
+            Carried so that hyperframes never downloads a browser of its own on
+            somebody's machine. Aetox names this copy through
+            HYPERFRAMES_BROWSER_PATH.
+
+            Not an Aetox release.
+          files: chrome-headless-shell-win64.zip
           # See the Tesseract job above: this is the release that took the
           # Latest badge and broke the update check for every install.
           prerelease: true
