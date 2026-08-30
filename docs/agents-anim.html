@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ต้นแบบ: การ์ดตัวแทนทำงาน — คัดลอกจาก UI จริงของ Aetox</title>
+<style>
+/* ══ ทุกค่าคัดลอกจาก desktop/frontend/src/style.css (.bgw-*) + theme.css + palette.css ══ */
+:root{
+  --bg:#060607; --panel:#101216;
+  --border-subtle:rgba(255,255,255,.09);
+  --text-primary:#f3f4f6; --text-secondary:#c8cdd4; --text-muted:#9aa1ab; --text-dim:#767d88;
+  --interactive:#2f6bff; --interactive-bright:#3b78ff;
+  --status-success:#3fb950; --status-danger:#f85149; --status-modified:#d29922;
+  --r-lg:14px; --fs-xs:12px; --fs-2xs:10.5px; --fs-sm:13px;
+  --sans:"IBM Plex Sans Thai","Leelawadee UI","Segoe UI",Tahoma,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text-primary);font-family:var(--sans);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:28px}
+.wrap{width:min(640px,100%)}
+.cap{font-size:.78rem;color:var(--text-dim);text-align:center;margin-bottom:16px}
+/* ── ถาดการ์ด: แนวตั้ง gap 14px เหมือนของจริง (.bgw) ── */
+.bgw{display:flex;flex-direction:column;gap:14px;margin-bottom:12px}
+.bgw-item{animation:fold-in .35s ease both}
+@keyframes fold-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.bgw-card{position:relative;padding:9px 13px;border:1px solid var(--border-subtle);border-radius:var(--r-lg);background:transparent;font-size:var(--fs-xs)}
+/* ── แสงวิ่งรอบขอบ: ดาวหางสองดวง เหมือน .bgw-card.run ของจริง ── */
+@property --beam-phase{syntax:"<angle>";initial-value:0deg;inherits:true}
+@keyframes beam-phase{to{--beam-phase:360deg}}
+.bgw-card.run{animation:beam-phase 3s linear infinite}
+.bgw-card::before{content:"";position:absolute;inset:-1px;border-radius:15px;padding:1.5px;pointer-events:none;
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;
+  background:color-mix(in srgb,var(--interactive) 55%,transparent);
+  opacity:0;transition:opacity 750ms ease-in}
+.bgw-card.run::before{
+  background:conic-gradient(from var(--beam-phase),
+    transparent 0 18%,var(--interactive) 40%,var(--interactive-bright) 45%,
+    transparent 47% 68%,var(--interactive) 90%,var(--interactive-bright) 95%,transparent 97% 100%);
+  filter:drop-shadow(0 0 3px var(--interactive));
+  opacity:1;transition:opacity 160ms ease-out}
+/* ── หัวการ์ด ── */
+.bgw-head{display:flex;align-items:center;gap:8px}
+.bgw-mark{display:flex;color:var(--text-dim)}
+.bgw-mark.run{color:var(--interactive);animation:tool-spin 1.2s linear infinite}
+.bgw-mark.wait{color:var(--status-modified)}
+.bgw-mark.ok{color:var(--status-success)}
+@keyframes tool-spin{to{transform:rotate(360deg)}}
+.bgw-agent{color:var(--text-primary);font-weight:600}
+.bgw-badge{padding:1px 8px;border-radius:999px;font-size:var(--fs-2xs)}
+.bgw-badge.run{color:var(--interactive);border:1px solid var(--interactive)}
+.bgw-badge.wait{color:var(--status-modified);border:1px solid var(--status-modified)}
+.bgw-meta{margin-left:auto;color:var(--text-dim);white-space:nowrap;font-variant-numeric:tabular-nums}
+.bgw-stop{display:flex;align-items:center;gap:4px;font-family:inherit;font-size:var(--fs-2xs);color:var(--text-dim);
+  background:none;border:1px solid var(--border-subtle);border-radius:6px;padding:2px 7px;cursor:pointer}
+.bgw-stop:hover{color:var(--status-danger);border-color:var(--status-danger)}
+.bgw-brief{margin:2px 0 0 23px;color:var(--text-muted)}
+.bgw-done-note{color:var(--text-muted)}
+/* ── ขั้นตอน (.tool-step) ── */
+.bgw-steps{position:relative;display:flex;flex-direction:column;margin:4px 0 2px 23px}
+.tool-step{position:relative;display:flex;align-items:center;gap:8px;padding:5px 0;min-width:0;animation:row-in .3s ease both}
+@keyframes row-in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+.tool-step .glyph{display:flex;width:13px;height:13px;flex:none;color:var(--interactive)}
+.tool-step.done .glyph{color:var(--status-success)}
+.tool-step .lbl{color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tool-step.run .lbl{color:var(--text-primary)}
+/* ── คำถาม + ช่องตอบ (สถานะรอคำตอบ) ── */
+.bgw-question{margin:6px 0 8px 23px;color:var(--text-primary);font-size:var(--fs-sm);line-height:1.55}
+.bgw-answer{display:flex;gap:7px;margin-left:23px}
+.bgw-answer input{flex:1;min-width:0;font-family:inherit;font-size:var(--fs-xs);color:var(--text-primary);
+  background:var(--panel);border:1px solid var(--border-subtle);border-radius:8px;padding:6px 10px;outline:none}
+.bgw-answer input:focus{border-color:var(--interactive)}
+.bgw-answer button{font-family:inherit;font-size:var(--fs-xs);color:var(--text-primary);cursor:pointer;
+  background:var(--panel);border:1px solid var(--border-subtle);border-radius:8px;padding:6px 14px}
+.bgw-answer button:hover{border-color:var(--interactive);color:var(--interactive-bright)}
+/* ── แถบคุมเวที (เฉพาะต้นแบบ — หน้าจริงตัดออก) ── */
+.ctrl{display:flex;justify-content:center;gap:10px;margin-top:20px}
+.ctrl button{font-family:inherit;font-size:.8rem;padding:9px 18px;border-radius:9px;border:1px solid rgba(255,255,255,.2);background:var(--panel);color:var(--text-primary);cursor:pointer}
+.ctrl button:hover{background:#15181d}
+.ctrl .pri{background:var(--text-primary);color:#0a0b0d;border-color:var(--text-primary);font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="cap">ต้นแบบ: การ์ดตัวแทนแบบ UI จริงของ Aetox — กด "เล่น" แล้วลองพิมพ์ตอบฝ่ายตารางตอนมันถาม หรือกด "หยุด" ตัวไหนก็ได้</div>
+  <div class="bgw" id="tray"></div>
+  <div class="ctrl">
+    <button class="pri" id="play">เล่น</button>
+    <button id="reset">เริ่มใหม่</button>
+  </div>
+</div>
+<script>
+const ICON={
+  spin:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3a9 9 0 109 9"/></svg>',
+  check:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 7"/></svg>',
+  hand:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 00-4 0v5M14 10V4a2 2 0 00-4 0v6M10 10.5V6a2 2 0 00-4 0v8"/><path d="M18 8a2 2 0 114 0v6a8 8 0 01-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 012.83-2.82L7 15"/></svg>',
+  sq:'<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>',
+  tick:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 7"/></svg>',
+};
+// บทของแต่ละตัวแทน — ขั้นตอนและตัวเลขมาจากงาน CRM จริง (15 ส.ค. 2026)
+const SCRIPT={
+  research:{agent:'ฝ่ายวิจัย',brief:'หา CRM 20 เจ้าที่ SME ไทยเลือกใช้ได้จริง',spend:[18.2,4.1],
+    steps:['เปิดหน้าราคาของ Zoho','อ่านตารางราคา 14 แถว','หน้านี้ไม่มีตัวเลข — ขอใบเสนอราคาเท่านั้น','เขียนรายงานลง research.md','ส่งที่อยู่ไฟล์ต่อให้ฝ่ายตาราง']},
+  sheet:{agent:'ฝ่ายตาราง',brief:'ทำสเปรดชีตเทียบ 20 เจ้า เรียงราคาถูกไปแพง',spend:[9.6,2.3],
+    steps:['รอรายงานจากฝ่ายวิจัย…','ได้ไฟล์แล้ว — อ่าน 20 แถว'],ask:{
+      q:'เจ้าที่ไม่บอกราคาหน้าเว็บมี 6 เจ้า — จะเว้นช่องว่างไว้พร้อมเหตุผล หรือให้ผมไปขอใบเสนอราคาต่อดี?',
+      after:['เว้น 6 ช่องพร้อมเหตุผลกำกับ','เรียงราคาจากถูกไปแพง','เขียน comparison.xlsx เสร็จ']},
+  doc:{agent:'ฝ่ายเอกสาร',brief:'รวมผลงานเป็นสรุปฉบับเต็ม',spend:[6.8,3.5],
+    steps:['รวบรวมไฟล์จากสองฝ่าย','เรียงหัวข้อตามลำดับงาน','เขียนสรุปฉบับเต็ม','ส่งมอบ summary.docx']},
+};
+const tray=document.getElementById('tray');
+let timers=[],clock=null,agents={};
+function el(html){const d=document.createElement('div');d.innerHTML=html;return d.firstElementChild}
+function fmt(s){const m=Math.floor(s/60);return m>0?`${m}m ${String(s%60).padStart(2,'0')}s`:`${s}s`}
+function card(a){ // การ์ดขณะทำงาน
+  const c=el(`<div class="bgw-item"><div class="bgw-card run">
+    <div class="bgw-head">
+      <span class="bgw-mark run">${ICON.spin}</span>
+      <b class="bgw-agent">${a.agent}</b>
+      <span class="bgw-badge run">กำลังทำงาน</span>
+      <span class="bgw-meta"></span>
+      <button class="bgw-stop" title="หยุด ${a.agent}">${ICON.sq}<span>หยุด</span></button>
+    </div>
+    <div class="bgw-brief">${a.brief}</div>
+    <div class="bgw-steps"></div>
+  </div></div>`);
+  c.querySelector('.bgw-stop').onclick=()=>stopAgent(a.key);
+  return c;
+}
+function receipt(a,state){ // การ์ดเสร็จ/ถูกหยุด — ใบเสร็จบรรทัดเดียวเหมือนของจริง
+  const note=state==='stopped'?'คุณสั่งหยุดไว้':'เสร็จแล้ว กำลังให้เอเจนอ่านผล…';
+  const mark=state==='stopped'?`<span class="bgw-mark">${ICON.sq}</span>`:`<span class="bgw-mark ok">${ICON.check}</span>`;
+  return el(`<div class="bgw-item"><div class="bgw-card" style="display:flex;align-items:center;gap:8px">
+    ${mark}<b class="bgw-agent">${a.agent}</b>
+    <span class="bgw-done-note">${note}</span>
+    <span class="bgw-meta">${a.tools} เครื่องมือ · เข้า ${a.spend[0]}k · ออก ${a.spend[1]}k</span>
+  </div></div>`);
+}
+function stepRow(label,run){
+  return el(`<div class="tool-step${run?' run':' done'}">
+    <span class="glyph">${run?ICON.spin:ICON.tick}</span><span class="lbl">${label}</span></div>`);
+}
+function meta(a){return `${fmt(a.secs)} · ${a.tools} เครื่องมือ · เข้า ${a.spend[0]}k · ออก ${a.spend[1]}k`}
+function stopAgent(key){
+  const a=agents[key]; if(!a||a.done)return;
+  timers=timers.filter(t=>{if(t.key===key){clearTimeout(t.id);return false}return true});
+  a.done=true; a.node.replaceWith(receipt(a,'stopped'));
+}
+function runAgent(key,onEnd){
+  const s=SCRIPT[key],a={key,agent:s.agent,brief:s.brief,spend:s.spend,tools:0,secs:0,done:false};
+  agents[key]=a;
+  a.node=card(a); a.node.querySelector('.bgw-meta').textContent=meta(a);
+  tray.append(a.node);
+  const steps=a.node.querySelector('.bgw-steps'),rows=[];
+  const next=i=>{
+    if(a.done)return;
+    if(i>=s.steps.length){a.done=true;a.node.replaceWith(receipt(a));onEnd&&onEnd();return}
+    rows.forEach(r=>{r.className='tool-step done';r.querySelector('.glyph').innerHTML=ICON.tick});
+    const row=stepRow(s.steps[i],true);rows.push(row);steps.append(row);
+    a.tools++; a.node.querySelector('.bgw-meta').textContent=meta(a);
+    const t=setTimeout(()=>next(i+1),1500); t.key=key; timers.push(t);
+  };
+  next(0);
+}
+function askSheet(){ // ฝ่ายตารางหยุดถาม — จุดที่คนต้องตอบจริง
+  const a=agents.sheet; if(!a||a.done)return;
+  const inner=a.node.querySelector('.bgw-card');
+  inner.className='bgw-card';
+  inner.querySelector('.bgw-mark').className='bgw-mark wait';inner.querySelector('.bgw-mark').innerHTML=ICON.hand;
+  inner.querySelector('.bgw-badge').className='bgw-badge wait';inner.querySelector('.bgw-badge').textContent='รอคำตอบ';
+  inner.querySelector('.bgw-steps').remove();
+  inner.insertAdjacentHTML('beforeend',
+    `<div class="bgw-question">${SCRIPT.sheet.ask.q}</div>
+     <div class="bgw-answer"><input type="text" placeholder="พิมพ์คำตอบให้ฝ่ายตาราง…"><button>ส่ง</button></div>`);
+  const input=inner.querySelector('input'),btn=inner.querySelector('.bgw-answer button');
+  const answer=()=>{
+    if(!input.value.trim())return;
+    inner.querySelector('.bgw-question').remove();inner.querySelector('.bgw-answer').remove();
+    inner.className='bgw-card run';
+    inner.querySelector('.bgw-mark').className='bgw-mark run';inner.querySelector('.bgw-mark').innerHTML=ICON.spin;
+    inner.querySelector('.bgw-badge').className='bgw-badge run';inner.querySelector('.bgw-badge').textContent='กำลังทำงาน';
+    const steps=el('<div class="bgw-steps"></div>');inner.append(steps);
+    SCRIPT.sheet.after.forEach((lbl,i)=>setTimeout(()=>{
+      steps.querySelectorAll('.tool-step').forEach(r=>{r.className='tool-step done';r.querySelector('.glyph').innerHTML=ICON.tick});
+      steps.append(stepRow(lbl,true));a.tools++;
+      a.node.querySelector('.bgw-meta').textContent=meta(a);
+      if(i===SCRIPT.sheet.after.length-1)setTimeout(()=>{if(!a.done){a.done=true;a.node.replaceWith(receipt(a))}},1500);
+    },i*1500));
+  };
+  btn.onclick=answer;
+  input.addEventListener('keydown',e=>{if(e.key==='Enter')answer()});
+  input.focus();
+}
+function play(){
+  reset();
+  runAgent('research');
+  const t1=setTimeout(()=>runAgent('sheet'),1200);t1.key='sheet';timers.push(t1);
+  const t2=setTimeout(()=>runAgent('doc'),2600);t2.key='doc';timers.push(t2);
+  const t3=setTimeout(()=>askSheet(),8200);t3.key='sheet';timers.push(t3);
+  clock=setInterval(()=>{Object.values(agents).forEach(a=>{if(!a.done&&a.node.isConnected){a.secs++;a.node.querySelector('.bgw-meta').textContent=meta(a)}})},1000);
+}
+function reset(){
+  timers.forEach(t=>clearTimeout(t));timers=[];clearInterval(clock);
+  tray.innerHTML='';agents={};
+}
+document.getElementById('play').onclick=play;
+document.getElementById('reset').onclick=reset;
+</script>
+</body>
+</html>

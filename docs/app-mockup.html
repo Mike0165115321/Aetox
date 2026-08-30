@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>แบบจำลองหน้าแรก Aetox (ต้นแบบ)</title>
+<style>
+:root{
+  --bg:#0a0b0d; --panel:#101216; --panel2:#15181d; --line:rgba(255,255,255,.08);
+  --line-strong:rgba(255,255,255,.16); --text:#f3f4f6; --muted:#9aa1ab; --dim:#767d88;
+  --accent:#f3f4f6; --hover:rgba(255,255,255,.06);
+  --sans:"IBM Plex Sans Thai","Leelawadee UI","Segoe UI",Tahoma,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#060607;color:var(--text);font-family:var(--sans);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.win{width:min(960px,100%);height:min(620px,90vh);background:var(--bg);border:1px solid var(--line-strong);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 40px 80px -28px rgba(0,0,0,.85)}
+/* ── title bar ── */
+.bar{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+.bar .dots{display:flex;gap:6px}
+.bar .dots i{width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,.14)}
+.bar .name{font-size:.8rem;color:var(--muted);display:flex;align-items:center;gap:8px}
+.bar .name b{color:var(--text);font-weight:600}
+.bar .ver{margin-left:auto;font-size:.72rem;color:var(--dim)}
+/* ── body ── */
+.body{flex:1;display:flex;min-height:0}
+/* ── sidebar ── */
+.side{width:216px;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;padding:10px 8px;gap:2px}
+.side .lbl{font-size:.68rem;color:var(--dim);padding:8px 10px 6px;letter-spacing:.04em}
+.room{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;font-size:.85rem;color:var(--muted);cursor:pointer;border:none;background:none;text-align:left;font-family:inherit;width:100%}
+.room:hover{background:var(--hover);color:var(--text)}
+.room.on{background:var(--panel2);color:var(--text)}
+.room svg{width:15px;height:15px;flex:none;opacity:.8}
+.side .newchat{margin-top:auto;display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;font-size:.85rem;color:var(--muted);cursor:pointer}
+.side .newchat:hover{background:var(--hover);color:var(--text)}
+.side .newchat .draft{font-size:.68rem;color:var(--dim);margin-left:auto}
+/* ── chat ── */
+.chat{flex:1;display:flex;flex-direction:column;min-width:0}
+.chat-scroll{flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 32px;gap:22px}
+.headline{font-size:1.45rem;font-weight:600;text-align:center}
+.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;width:min(560px,100%)}
+.card{display:flex;align-items:center;gap:11px;padding:14px 15px;border:1px solid var(--line);border-radius:11px;background:var(--panel);cursor:pointer;font-family:inherit;color:var(--text);font-size:.88rem;text-align:left;transition:border-color .15s,transform .15s}
+.card:hover{border-color:var(--line-strong);transform:translateY(-1px)}
+.card svg{width:17px;height:17px;flex:none;color:var(--muted)}
+/* ── messages (หลังส่ง) ── */
+.msgs{display:none;flex-direction:column;gap:14px;width:min(620px,100%);margin:auto}
+.msg{display:flex;gap:10px;align-items:flex-start}
+.msg .who{width:26px;height:26px;border-radius:8px;flex:none;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700}
+.msg.user .who{background:var(--panel2);color:var(--muted)}
+.msg.agent .who{background:var(--accent);color:#0a0b0d}
+.msg .bubble{font-size:.88rem;line-height:1.65;color:var(--text)}
+.msg.user .bubble{color:var(--muted)}
+.steps{display:flex;flex-direction:column;gap:7px;margin-top:10px}
+.step{display:flex;align-items:center;gap:9px;font-size:.8rem;color:var(--muted);opacity:0;transform:translateY(4px);transition:opacity .3s,transform .3s}
+.step.show{opacity:1;transform:none}
+.step .tick{width:15px;height:15px;border-radius:50%;border:1.5px solid var(--line-strong);flex:none;display:flex;align-items:center;justify-content:center}
+.step.done .tick{background:var(--accent);border-color:var(--accent);color:#0a0b0d}
+.step .tick svg{width:9px;height:9px}
+.step .spin{width:13px;height:13px;border-radius:50%;border:1.5px solid var(--line-strong);border-top-color:var(--accent);animation:spin .7s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+.filecard{display:inline-flex;align-items:center;gap:10px;margin-top:12px;padding:10px 14px;border:1px solid var(--line-strong);border-radius:10px;background:var(--panel2);font-size:.82rem;cursor:pointer}
+.filecard:hover{border-color:var(--accent)}
+.filecard svg{width:16px;height:16px}
+.filecard small{color:var(--dim);display:block;font-size:.68rem}
+/* ── composer ── */
+.composer{padding:14px 18px;border-top:1px solid var(--line);background:var(--bg)}
+.composer .box{display:flex;align-items:center;gap:10px;border:1px solid var(--line-strong);border-radius:12px;padding:11px 14px;background:var(--panel);transition:border-color .15s}
+.composer .box:focus-within{border-color:rgba(255,255,255,.34)}
+.composer input{flex:1;background:none;border:none;outline:none;color:var(--text);font-family:inherit;font-size:.9rem}
+.composer input::placeholder{color:var(--dim)}
+.composer .send{width:30px;height:30px;border-radius:8px;border:none;background:var(--accent);color:#0a0b0d;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none;opacity:.35;transition:opacity .15s}
+.composer .send.ready{opacity:1}
+.composer .send svg{width:14px;height:14px}
+.hint{text-align:center;font-size:.7rem;color:var(--dim);margin-top:9px}
+</style>
+</head>
+<body>
+<div class="win">
+  <div class="bar">
+    <div class="dots"><i></i><i></i><i></i></div>
+    <div class="name"><b>Aetox</b><span>— ผู้ช่วย</span></div>
+    <div class="ver">v1.5.11 · Windows</div>
+  </div>
+  <div class="body">
+    <nav class="side" id="side">
+      <div class="lbl">ห้องต่าง ๆ</div>
+      <button class="room on" data-room="ผู้ช่วย"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg>ผู้ช่วย</button>
+      <button class="room" data-room="โปรเจกต์"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>โปรเจกต์</button>
+      <button class="room" data-room="เอเจนเฉพาะทาง"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M8 4h8M9 13h.01M15 13h.01"/></svg>เอเจนเฉพาะทาง</button>
+      <button class="room" data-room="ห้องทำงาน"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.5 6H15a3 3 0 010 6H9a3 3 0 000 6h6.5"/></svg>ห้องทำงาน</button>
+      <button class="room" data-room="ระบบออโตเมชั่น"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 4v5m0 6v5M4 12h5m6 0h5"/><circle cx="12" cy="12" r="2.5"/></svg>ระบบออโตเมชั่น</button>
+      <button class="room" data-room="ผลงาน"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8l3-3h10l3 3v10a1 1 0 01-1 1H5a1 1 0 01-1-1z"/><path d="M4 8h16M10 12h4"/></svg>ผลงาน</button>
+      <button class="room" data-room="โค้ด"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M13 4l-2 16"/></svg>โค้ด</button>
+      <div class="newchat"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>แชทใหม่ <span class="draft">ยังไม่ได้เริ่ม</span></div>
+    </nav>
+    <main class="chat">
+      <div class="chat-scroll" id="empty">
+        <div class="headline">วันนี้ให้ลงมือทำอะไรดี?</div>
+        <div class="cards" id="cards">
+          <button class="card" data-prompt="เทียบโมเดล AI ตัวไหนคุ้มที่สุดสำหรับงานเขียนโค้ดภาษาไทย ออกมาเป็นกราฟให้ดู"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>เทียบโมเดล AI ออกมาเป็นกราฟให้ดู</button>
+          <button class="card" data-prompt="ตรวจสุขภาพคอมพิวเตอร์ของฉัน แล้วสรุปว่าควรดูแลอะไรบ้าง"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>ตรวจสุขภาพคอมพิวเตอร์ของฉัน</button>
+          <button class="card" data-prompt="อ่านสลิปในโฟลเดอร์ Downloads แล้วบอกว่าเงินปีนี้หายไปกับอะไรบ้าง"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M17 6H9.5a3 3 0 000 6h5a3 3 0 010 6H6"/></svg>รู้ว่าเงินปีนี้หายไปกับอะไรบ้าง</button>
+          <button class="card" data-prompt="สร้างโปรแกรมเล็ก ๆ ของตัวเอง ติดตั้งบนเครื่องนี้ให้เลย"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13 4l-2 16"/></svg>ได้โปรแกรมของตัวเอง ติดตั้งบนเครื่องนี้</button>
+        </div>
+      </div>
+      <div class="msgs" id="msgs"></div>
+      <div class="composer">
+        <div class="box">
+          <input id="input" type="text" placeholder="พิมพ์คำขอของคุณ…" autocomplete="off">
+          <button class="send" id="send" aria-label="ส่ง"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button>
+        </div>
+        <div class="hint">นี่คือแบบจำลองหน้าแรกของโปรแกรมจริง — กดการ์ดงาน หรือพิมพ์แล้วส่งได้เลย</div>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+const input=document.getElementById('input'),send=document.getElementById('send'),
+      empty=document.getElementById('empty'),msgs=document.getElementById('msgs');
+// การ์ดเติมข้อความลงช่องพิมพ์ (เหมือนของจริง: เติม ไม่ส่ง)
+document.getElementById('cards').addEventListener('click',e=>{
+  const c=e.target.closest('.card'); if(!c)return;
+  input.value=c.dataset.prompt; input.focus(); send.classList.add('ready');
+});
+input.addEventListener('input',()=>send.classList.toggle('ready',!!input.value.trim()));
+// สลับห้องใน sidebar
+document.getElementById('side').addEventListener('click',e=>{
+  const r=e.target.closest('.room'); if(!r)return;
+  document.querySelectorAll('.room').forEach(x=>x.classList.remove('on'));
+  r.classList.add('on');
+});
+const STEPS=[
+  'แตกงานเป็นขั้น แล้ววางแผนก่อนลงมือ',
+  'หยิบเครื่องมือมาใช้ — ค้นเว็บ อ่านไฟล์ รันคำสั่ง',
+  'เขียนผลลัพธ์ออกมาเป็นไฟล์จริงบนเครื่องคุณ',
+];
+function run(){
+  const q=input.value.trim(); if(!q)return;
+  input.value=''; send.classList.remove('ready');
+  empty.style.display='none'; msgs.style.display='flex';
+  msgs.insertAdjacentHTML('beforeend',
+    `<div class="msg user"><div class="who">คุณ</div><div class="bubble"></div></div>`);
+  msgs.lastElementChild.querySelector('.bubble').textContent=q;
+  msgs.insertAdjacentHTML('beforeend',
+    `<div class="msg agent"><div class="who">A</div><div class="bubble">ลงมือเลยครับ<div class="steps">${
+      STEPS.map((s,i)=>`<div class="step" data-i="${i}"><span class="tick"></span>${s}</div>`).join('')
+    }</div><div class="filecard" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 3H6a1 1 0 00-1 1v16a1 1 0 001 1h12a1 1 0 001-1V8z"/><path d="M14 3v5h5"/></svg><span>ผลงานของคุณ<small>ไฟล์จริงบนเครื่องคุณ — ในโปรแกรมจริงกดเปิดได้ทันที</small></span></div></div></div>`);
+  msgs.scrollTop=msgs.scrollHeight;
+  const steps=[...msgs.querySelectorAll('.step')];
+  steps.forEach((s,i)=>{
+    setTimeout(()=>{ s.classList.add('show');
+      s.querySelector('.tick').innerHTML='<span class="spin"></span>';
+      setTimeout(()=>{ s.classList.add('done');
+        s.querySelector('.tick').innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 7"/></svg>';
+        if(i===steps.length-1){ const f=msgs.querySelector('.msg:last-child .filecard'); f.style.display='inline-flex'; msgs.scrollTop=msgs.scrollHeight; }
+      },900);
+    },500+i*1100);
+  });
+}
+send.addEventListener('click',run);
+input.addEventListener('keydown',e=>{ if(e.key==='Enter')run(); });
+</script>
+</body>
+</html>
