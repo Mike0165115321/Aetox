@@ -26,10 +26,17 @@ const (
 	// The rest of the mainstream languages ride one generic line scanner each,
 	// configured by a pattern pair (declRules below). Owner's call, 29 ส.ค.:
 	// "ทำให้รองรับทุกภาษาไปเลย" — and the honest version of "every language"
-	// without surrendering the pure-Go build or the installer's size is every
-	// language a declaration-shaped line scan can carry. What a scan misses is
-	// a line of the map; what tree-sitter's grammars would cost is megabytes
-	// in a binary whose size is a number the README competes on.
+	// without surrendering the pure-Go build is every language a
+	// declaration-shaped line scan can carry.
+	//
+	// The criterion that settled it is the owner's, same day: what this product
+	// sells is memory while it RUNS, not install size. Measured against that —
+	// mapping all 1,150 files of this repo costs 0.6s and ~78MB of transient
+	// churn that GC returns in full, with nothing resident afterwards; a WASM
+	// tree-sitter (EXECUTION.md ทาง ข) would instead hold megabytes of grammar
+	// resident per language. So a scan that misses an exotic definition costs
+	// one line of the map, and the upgrade only earns its RAM on a language a
+	// line scan genuinely cannot carry.
 	langJVM   // java, kotlin, scala, dart, c# — brace languages with class/interface and modifier-prefixed members
 	langRust  // rs — keyword-led declarations, pub is the visibility
 	langPHP   // php
