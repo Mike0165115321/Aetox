@@ -116,9 +116,18 @@ Do not relax it to make a new agent pass. If an agent seems to need another
 desk, the thing being asked for is a change to the dispatch star (COMPANY.md
 §3), and that is the owner's decision rather than a line in a profile.
 
-`tools:` is the other field a specialist must not omit. Absent means "everything
-this desk carries", which is the opposite of specialist and is paid for on every
-request the worker takes.
+`tools:` **was** the other field a specialist must not omit, on the reasoning
+that absent means "everything this desk carries", which is the opposite of
+specialist and is paid for on every request the worker takes.
+
+**That was reversed on 2026-08-31 (§212), and the field is now one no bundled
+agent writes.** The reasoning had already stopped being true: §145 widened the
+office's `chairs:` until every agent's `tools:` was a hand-copy of the ceiling
+above it, so the line bought no narrowing and cost a second list to keep in
+step. What makes a specialist a specialist is its prompt, the skills in its own
+folder, and the connections and servers the user points at it — never a tool
+list. A user's own agent may still write one and it still narrows; nothing that
+ships does.
 
 ## Frontmatter
 
@@ -257,8 +266,10 @@ Worth stating first, because it is most of the work and it is done:
 - **An agent already reads the machine's shared shelf.** `mergeShelf`
   ([progressive.go:76](../../internal/skill/progressive.go:76)) takes
   `DefaultDiscoveryPaths()` as the base and lays the worker's own skills in
-  front of it, own name winning. The gate is holding `skills_list` / `skill_view`
-  in `tools:`, which is exactly "as far as the system opens it".
+  front of it, own name winning. The gate was holding `skills_list` /
+  `skill_view` in `tools:`; since §212 no bundled agent writes that line and the
+  desk's own ceiling is the gate, which is exactly "as far as the system opens
+  it".
 - **An agent-only MCP server already waits for the agent.** `Deferred`
   ([client.go:52](../../internal/mcp/client.go:52)) keeps it out of the startup
   connect; `RegisterFor` brings it up at first use.
@@ -412,7 +423,7 @@ anything else is still skills. Before writing anything, a **preflight report** �
 a pure function over the staged archive — answers what the buyer is about to
 agree to: who wrote it, what it will be called locally, which servers it adds or
 reuses, which secrets it will ask for, which connections it needs, and which of
-its `tools:` this build does not know. The old open question — *does a dropped
+its `tools:` this build does not know, if it writes one at all (§212). The old open question — *does a dropped
 skill need approval before a worker uses it* — is what that screen will answer
 for anything arriving as a package: a package is software, and this is the
 moment it is installed. A folder copied in by hand still walks past it, and is
@@ -515,14 +526,16 @@ added is a sentence where somebody will read it.
   desk line is left exactly as the user typed it, because rewriting it would be
   the resolver overruling them.
 - **A folder naming a tool this build does not have** — `slides_write`, removed
-  in `2151be7`, or a typo — runs with what is left. The office roster now draws
-  `Chair.Missing`, which is the difference between two lists `ListChairs`
-  already computed: what `tools:` asked for, and what the child registry handed
-  over. Nothing new is looked up. MCP tools are skipped, because a deferred
-  server is legitimately not connected while the page is drawn.
+  in `2151be7`, or a typo — runs with what is left. The office roster drew a
+  `Chair.Missing` list for a while, the difference between what `tools:` asked
+  for and what the child registry handed over. **Both are gone as of §212**: no
+  shipped agent writes `tools:`, so the difference is empty by construction and
+  a warning that can only ever be silent is a warning nobody reads. The failure
+  it was written for — a tool leaving the build — is now a `deny:` naming
+  nothing, which costs the agent nothing.
 
-Two causes are folded into one list on purpose: a name this build never had and
-a name the office ceiling does not carry are different mistakes, and the
+The two causes it folded into one list were, on purpose: a name this build never
+had and a name the office ceiling does not carry are different mistakes, and the
 sentence a person needs is the same either way. Held by
 `TestDroppedFolderThatIsWrongSaysSo` and `desktop/office_missing_test.go`.
 

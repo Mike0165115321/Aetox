@@ -276,6 +276,15 @@ kind**, nothing inside the file decides which it is.
   never vanishes silently, and the save door refuses. If a user asks to add
   one, say the team is what extends, not the hands.
 
+  **Nothing you hand work to can touch the user's panel** (31 ส.ค.): `desk` and
+  `desk_terminal` are refused to every delegate, เอเจน included, because their
+  whole output is what the person is looking at and nobody is watching a
+  delegate's loop, while several run at once and would write over each other.
+  It costs them nothing — `shell` runs the same command and a file they wrote is
+  on disk — and an เอเจน gets both back the moment somebody opens a direct chat
+  with it. The browser is **not** in that group: a delegate browses in a tab of
+  its own, never the one on screen.
+
   Work handed to either of them **outlives the turn that handed it over**
   (§105): a delegate the assistant did not collect before answering keeps
   working, is collectable in a later turn by the same task id, and a question it
@@ -357,11 +366,11 @@ before you tell a user what they must write:
 |---|---|
 | `description` | Nothing tells the assistant what this worker is for. It is the **only** line about them in the `task` tool's list, so an empty or vague one means nobody is ever sent work |
 | `desk` | `specialized`, in the office, takes jobs, can be chatted with directly |
-| `tools` | Everything that desk carries. The field can only ever *narrow*, a worker cannot list its way to a tool the desk does not have |
-| `deny` | Nothing refused. `deny` is the safety gate; `tools` is only a token saving |
+| `tools` | Everything that desk carries, and **that is what every shipped agent does** (31 ส.ค.). The field can only ever *narrow*, never reach a tool the desk does not have, so the seven bundled ones ended up hand-copying the ceiling above them and the lines were deleted. A user's own agent may still write one. Do not add one to an agent you write for somebody: what makes a worker a specialist is its prompt, its `skills/`, and the connections and servers pointed at it |
+| `deny` | Nothing refused. `deny` is the safety gate and outranks any grant, which since 31 ส.ค. makes it the only per-agent tool decision left |
 | `steps` | No ceiling, a worker runs until the job is done. A positive number caps it and is honoured exactly; `unlimited` says the default out loud; a typo falls back to the default rather than to a number nobody wrote |
 | `model` | Whatever the session is running |
-| `icon` | Derived from what the worker produces |
+| `icon` | The generic mark. It used to be derived from the worker's writer tool, which stopped meaning anything when every agent started holding the same kit (31 ส.ค.), so name one |
 | `needs` | Nothing declared. Entries are `connection:<id>` or `mcp:<server>`, and `\|` between two of them means "either one satisfies this". A need **declares and never grants**: the grant is `for:` on the connection or the server. What it buys is that an agent missing one is told so, the fact and where the user switches it on, in its own prompt (§114), and a mark on its page in การตั้งค่า › เอเจน. What it does about it is its own call |
 | `publisher` `package` `version` `requires-app` | Nothing about where this worker came from. They are the **shipping label**, for a worker that was written somewhere else: who made it, what it is called wherever it came from, which release this is, and the oldest Aetox known to run it. Nothing in the resolver reads them, on purpose, the **local id is the folder name** and stays the folder name, so somebody who installs a worker may rename it and have `task`, `for: agent:<name>`, its memory file and its job history all keep working |
 
@@ -428,6 +437,31 @@ belongs to one worker. A name that matches a bundled agent is not an error: it
 replaces it, and the office card says so.
 
 ### Creating one
+
+**Body or skill, decided by scope and not by length.** What is true on *every*
+job this worker does stays in `AGENT.md`; what is true on *one kind* of job goes
+in a skill. A worker's skills are named in its own prompt with a one-line
+description each and opened with `skill_view`, so a document costs nothing until
+the job calls for it — but the body is not free, and moving something that every
+job needs behind that door charges a round trip to be told what it needed
+anyway.
+
+**What the body is for, and what it must not be.** Say who the worker is, what
+its subject is, and the judgments of that profession — the things that are true
+about the craft and that a model does not reliably arrive at on its own. Do not
+write a tool manual: which tool reads a PDF, which parameter right-aligns a
+column, which action opens a page are all in the tool block already, on every
+request, and a second copy of them is paid for twice and goes stale the day a
+tool changes. The test is one sentence at a time — *would this be equally true
+written in the tool's own description?* If yes it does not belong here.
+
+Swept out of all seven shipped agents on 31 ส.ค. after the owner named it:
+*"บทบาทของเอเจนแต่ละตัวบางตัวแม่งหนี้ทางเทคนิค ไม่ควรกรอกไปตรง ๆ แบบนั้นด้วยซ้ำ
+แบบไปจำกัดความคิดมันหมด แทนที่จะชี้ว่ามันคืออะไรและจะทำอะไรก็พอ"*. Two of the
+things it removed were not merely redundant: a list of three occasions to use
+the browser, which is a model told to do three things and not a fourth, and an
+instruction to use `todo_write`, which is in forcedDenials and no worker has
+ever held.
 
 There is no dedicated tool for it. What there is, is the ordinary `write`, and
 whether it reaches depends on the mode:
@@ -534,9 +568,11 @@ are. It is for the server that is two products in one box (§97.3).
 
 A `for:` entry may also be `agent:<name>`, which points the server at one เอเจน
 instead of a desk. That is not a narrower version of the same thing: a server
-pointed at an agent **skips that agent's `tools:` allow-list and reaches past
-its desk's ceiling**. It is the one way to give a single worker something the
-rest of the office does not have.
+pointed at an agent **reaches past its desk's ceiling** (and past any `tools:`
+line, which is why a hand-written one never blocked a server). It is the one way
+to give a single worker something the rest of the office does not have. A server
+pointed at the **desk** furnishes the room instead: everybody working there has
+it. Both are the user's own toggle and there is no third door.
 
 **You have no tool that adds, edits or removes an MCP server.** There is a
 binding the Settings page calls, and nothing in your tool list reaches it. When
