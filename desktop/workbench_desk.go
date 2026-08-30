@@ -247,7 +247,10 @@ func (a *App) openDeskTerminal(sessionID, command string) (shellName string, err
 	// browser's flow (there the frontend creates the window and Go polls for
 	// it). It is simpler this way round: the id is already real, so the frontend
 	// only has to mount a pane onto it, and there is nothing to wait for.
-	a.deskEvent(sessionID, "open-terminal", map[string]string{"id": id, "name": sh.Name})
+	// The path travels with the event, not only the name. The window saves the
+	// desk it is drawing, and a terminal it cannot start again is a tab that
+	// disappears when the app closes — which is what the whole panel used to do.
+	a.deskEvent(sessionID, "open-terminal", map[string]string{"id": id, "name": sh.Name, "path": sh.Path})
 
 	if command != "" {
 		// A newline is what makes it run. Given to the PTY exactly as a keypress

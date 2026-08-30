@@ -4,7 +4,7 @@
 // under lib/workbench/ render from this; nothing else mutates it directly.
 
 import {
-  TerminalStart, TerminalClose, BrowserClose, BrowserCloseForTeardown, ReadFile, ReadWorkbook,
+  TerminalStart, TerminalShells, TerminalClose, BrowserClose, BrowserCloseForTeardown, ReadFile, ReadWorkbook,
   RelativizePath, SaveChatFile, WorkbenchTabsChanged, ResolveAddress,
 } from '../../../wailsjs/go/main/App'
 import type { main, ooxml } from '../../../wailsjs/go/models'
@@ -41,6 +41,10 @@ export type WorkbenchTab = {
   // Bumped on every re-read (loadFileTab). The pane is keyed on it so a file
   // the agent rewrote actually reaches the screen — see loadFileTab.
   rev?: number
+  // Which shell this terminal was started from, as the path Go spawned. Kept
+  // so the tab can be started again: a PTY dies with the app, but "a PowerShell
+  // on this desk" is a fact about the desk and survives with it.
+  shell?: string
   // The agent opened this tab, rather than the user. Only `desk_list` reads it,
   // and only to decide what it is allowed to say: a page the agent opened it
   // may describe, a page the user opened it may not (§81's rule about the
@@ -265,7 +269,7 @@ export function openUrlInWorkbench(url: string): void {
 
 export async function openTerminalTab(shell: { name: string; path: string }): Promise<void> {
   const id = await TerminalStart(shell.path, 80, 24)
-  workbench.tabs.push({ id, kind: 'terminal', name: shell.name })
+  workbench.tabs.push({ id, kind: 'terminal', name: shell.name, shell: shell.path })
   workbench.activeId = id
 }
 
@@ -383,12 +387,14 @@ export function routeDeskEvent(kind: string, payload: Record<string, unknown>): 
       browserTabClosedByEngine(str('id'))
       return
     // The PTY already lives on the Go side; this only mounts a pane on it.
-    // Live for the same reason as the browser: a terminal is a native
-    // resource the saved layout deliberately does not restore.
+    // Live like the browser, because both are native resources that exist
+    // before the tab does. The shell it was started from rides along so the
+    // saved layout can start it again — the process cannot come back, and the
+    // terminal's place on the desk can.
     case 'open-terminal': {
       const id = str('id')
       if (!workbench.tabs.some((tab) => tab.id === id)) {
-        workbench.tabs.push({ id, kind: 'terminal', name: str('name'), mine: true })
+        workbench.tabs.push({ id, kind: 'terminal', name: str('name'), shell: str('path'), mine: true })
       }
       workbench.activeId = id
       return
@@ -631,16 +637,24 @@ export function recentVisits(): VisitedPage[] {
 
 // ---------- per-session persistence ----------
 // Each chat session remembers its workbench layout (browser URLs, file paths,
-// singleton panes) so switching back restores what was open. Terminals are
-// live processes and can't be restored — they're closed on switch and skipped
-// in snapshots. Stored in localStorage keyed by session id; the Go session
-// store never learns about UI layout.
+// singleton panes, terminals) so switching back — or closing the app and
+// opening it again — restores what was open. Stored in localStorage keyed by
+// session id; the Go session store never learns about UI layout.
+//
+// Terminals were the exception until 30 ส.ค., on the reasoning that a PTY is a
+// live process and cannot be restored. The process cannot; the terminal can.
+// What the exception actually produced was a panel that came back in pieces,
+// and the owner named that as the bug rather than as its own feature:
+// *"จริงๆมันก็ทั้งหมดนั่นแหละครับ และจริงๆมันไม่ควรแตกแยกอะไรแบบนี้ด้วย ผมถึงพูดว่าข้างขวา"*.
+// So a terminal comes back as a fresh shell of the same kind — the scrollback
+// and whatever was running are gone, which is what closing an app means, and
+// the desk is whole.
 
 // `mine` survives the round trip on purpose: it is the fact "the agent put
 // this here", and desk close's whole safety rule keys on it. Dropped in the
 // save (as it was until §187), an agent-opened tab came back as the user's
 // after one switch away, and the agent could no longer take back its own tab.
-type SavedTab = { kind: WorkbenchTabKind; name: string; url?: string; path?: string; mine?: boolean }
+type SavedTab = { kind: WorkbenchTabKind; name: string; url?: string; path?: string; shell?: string; mine?: boolean }
 
 let boundSessionId: string | null = null
 
@@ -677,14 +691,14 @@ export function reportDeskTabs(): void {
 }
 
 export function saveWorkbenchSnapshot(): void {
-  // "Restorable" has to mean what restoreWorkbench can actually rebuild, not
-  // just "not a terminal": a file tab with no path (a failed drop) is saved and
-  // then skipped on the way back, which shortens the list the saved index was
-  // counted against and restores focus to whatever slid into that slot.
-  const restorable = workbench.tabs.filter((t) => t.kind !== 'terminal' && (t.kind !== 'file' || !!t.path))
+  // "Restorable" has to mean what restoreWorkbench can actually rebuild: a file
+  // tab with no path (a failed drop) is saved and then skipped on the way back,
+  // which shortens the list the saved index was counted against and restores
+  // focus to whatever slid into that slot.
+  const restorable = workbench.tabs.filter((t) => t.kind !== 'file' || !!t.path)
   const activeIdx = restorable.findIndex((t) => t.id === workbench.activeId)
   if (!boundSessionId) return
-  const tabs: SavedTab[] = restorable.map(({ kind, name, url, path, mine }) => ({ kind, name, url, path, mine }))
+  const tabs: SavedTab[] = restorable.map(({ kind, name, url, path, shell, mine }) => ({ kind, name, url, path, shell, mine }))
   localStorage.setItem(wbKey(boundSessionId), JSON.stringify({ tabs, activeIdx }))
 }
 
@@ -732,6 +746,7 @@ async function restoreWorkbench(sessionId: string): Promise<void> {
     else if (s.kind === 'pr') openPRTab()
     else if (s.kind === 'repomap') openRepoMapTab()
     else if (s.kind === 'file' && s.path) await openFileTab(s.path, s.name, s.mine ?? false)
+    else if (s.kind === 'terminal') await restoreTerminalTab(s)
     else if (s.kind === 'browser') {
       const id = openBrowserTab()
       const tab = workbench.tabs.find((t) => t.id === id)
@@ -739,6 +754,35 @@ async function restoreWorkbench(sessionId: string): Promise<void> {
     }
   }
   workbench.activeId = workbench.tabs[saved.activeIdx]?.id ?? workbench.tabs.at(-1)?.id ?? ''
+}
+
+/** Start a terminal for a tab the saved layout is bringing back.
+ *
+ * A new shell, in this session's own folder — TerminalStart spawns into the
+ * sandbox root of whichever chat is current, so the restored terminal opens
+ * where the chat works rather than where the old one happened to be.
+ *
+ * The shell is chosen from what the machine actually has, in three steps: the
+ * exact path it was started from, then the same profile by name (an update
+ * moves pwsh.exe and the saved path stops existing), then whatever comes
+ * first. A layout written before terminals were saved has neither and lands on
+ * the third, which is the same shell the + menu opens by default.
+ *
+ * A failure is skipped rather than raised: one shell that will not start must
+ * not take the rest of the desk down with it.
+ */
+async function restoreTerminalTab(s: SavedTab): Promise<void> {
+  try {
+    const shells = await TerminalShells()
+    const path = shells.find((sh) => sh.path === s.shell)?.path
+      ?? shells.find((sh) => sh.name === s.name)?.path
+      ?? shells[0]?.path
+    if (!path) return
+    const id = await TerminalStart(path, 80, 24)
+    workbench.tabs.push({ id, kind: 'terminal', name: s.name, shell: path, mine: s.mine })
+  } catch {
+    // No shell, or the spawn failed. The tab is simply not there.
+  }
 }
 
 /** Explicit session switch (sidebar click, new session): save the old
