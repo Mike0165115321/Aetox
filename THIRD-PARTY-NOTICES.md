@@ -107,12 +107,14 @@ OFL and not be sold on their own, neither of which Aetox does.
 
 ## Bundled skills
 
-Skill documents compiled into the binary (`internal/skill/skills/`). These are
-prose and data — instructions the assistant reads, not code that runs — and
-each was written by someone else under a permissive licence. They were adapted
-for Aetox: renamed to the `aetox-` prefix, given Thai descriptions, and had the
-parts that depend on Python or Node scripts rewritten, because Aetox does not
-ship either runtime. The originals are unmodified in their own repositories.
+Skill documents compiled into the binary — the shared shelf at
+`internal/skill/skills/`, and the private shelf an agent carries in its own
+folder at `internal/subagent/profiles/agents/<name>/skills/`. These are prose
+and data — instructions the assistant reads, not code that runs — and each was
+written by someone else under a permissive licence. They were adapted for
+Aetox: renamed to the `aetox-` prefix, given Thai descriptions, and had the
+parts that assume a runtime or a host Aetox does not have rewritten. The
+originals are unmodified in their own repositories.
 
 | Skill | Adapted from | Author | Licence |
 |:---|:---|:---|:---|
@@ -120,6 +122,27 @@ ship either runtime. The originals are unmodified in their own repositories.
 | `aetox-brand` | brand | claudekit | MIT |
 | `aetox-design` | design | claudekit | MIT |
 | `aetox-design-system` | design-system | claudekit | MIT |
+| `aetox-audit-xls` (agent `sheet`) | audit-xls | Anthropic, PBC | Apache-2.0 |
+| `aetox-clean-data-xls` (agent `sheet`) | clean-data-xls | Anthropic, PBC | Apache-2.0 |
+| `aetox-roll-forward` (agent `sheet`) | roll-forward | Anthropic, PBC | Apache-2.0 |
+| `aetox-variance-commentary` (agent `sheet`) | variance-commentary | Anthropic, PBC | Apache-2.0 |
+| `aetox-gl-recon` (agent `sheet`) | gl-recon | Anthropic, PBC | Apache-2.0 |
+| `aetox-break-trace` (agent `sheet`) | break-trace | Anthropic, PBC | Apache-2.0 |
+| `aetox-contract-standards` (agent `doc`) | Standard Agreements | Common Paper | CC BY 4.0 |
+
+`aetox-contract-standards` is different in kind from the rest of this table: it
+carries **the licensed work itself**, not instructions adapted from one. The
+five agreement texts in its `templates/` folder are Common Paper's standard
+agreements, unmodified, each keeping the attribution line CC BY 4.0 requires at
+the foot of its own file. Three of the five did not carry that line upstream and
+it was added rather than assumed.
+
+The six on the `sheet` agent's shelf all come from
+[claude-for-financial-services](https://github.com/anthropics/financial-services-plugins).
+Each was rewritten around what Aetox actually has: the originals reach a ledger
+through an internal MCP server and edit a live workbook through Office JS, and
+Aetox has neither, so every one of them now works from the files the user hands
+over and writes a new workbook rather than editing theirs.
 
 The `aetox`, `aetox-mcp`, `aetox-prompts`, `aetox-skills` and `aetox-slides`
 skills are Aetox's own and are covered by [LICENSE](LICENSE), not by this
