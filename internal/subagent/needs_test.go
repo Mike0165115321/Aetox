@@ -273,15 +273,24 @@ func TestTheGitHubAgentShipsWhole(t *testing.T) {
 	if p.Desk != "specialized" {
 		t.Fatalf("desk = %q, want specialized", p.Desk)
 	}
-	// It must narrow. An agent that names no tools carries everything its desk
-	// has, and this one also brings ~90 more from its server.
-	if len(p.Tools) == 0 {
-		t.Fatal("the github agent names no tools, so it carries the whole desk")
+	// It must NOT narrow. Every agent holds the desk's own kit since 31 ส.ค.,
+	// so a `tools:` line here could only take this one below its colleagues.
+	//
+	// The worry that put the old line in — that it "also brings ~90 more from
+	// its server" — was never something the allowlist could answer: a server
+	// pointed at an agent skips the allowlist by design, because MCP tool names
+	// arrive from the server and no author can have listed them (Profile.Permits).
+	// What holds those ~90 back is the placement toggle, and it still does.
+	if len(p.Tools) != 0 {
+		t.Fatalf("tools = %v — the github agent narrows itself below the desk", p.Tools)
 	}
-	if len(p.Needs) != 2 {
-		t.Fatalf("needs = %v, want the account and the server", p.Needs)
+	// The account, and only the account. It needed `mcp:github` as well until
+	// this agent grew a `github` tool of its own — a need naming a server it no
+	// longer uses would put a fixable-looking warning on a card that works.
+	if len(p.Needs) != 1 {
+		t.Fatalf("needs = %v, want the account alone", p.Needs)
 	}
-	for _, want := range []string{"connection:github", "mcp:github"} {
+	for _, want := range []string{"connection:github"} {
 		found := false
 		for _, need := range p.Needs {
 			if need == want {

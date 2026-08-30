@@ -72,6 +72,35 @@ type MemoryTool struct {
 
 func (*MemoryTool) Name() string { return "memory" }
 
+// forWorker reports whether this instance belongs to one worker rather than to
+// the assistant, its desk or a project.
+//
+// It decides which words the model reads, and the words are the whole feature.
+// Measured 31 ส.ค. on the owner's own machine: 557 tool calls made by agents,
+// **none of them memory**, against 16 by the assistant — and no worker had a
+// MEMORY.md at all. The wiring was complete the whole time. What every worker
+// read was a description written for the assistant's job: "keep what you learn
+// about this user", "what they tell you about themselves", "a fact the user
+// states about themselves is already the evidence". A worker never speaks to
+// the user. It takes a brief and returns a result, so the tool as described had
+// no occasion to fire and correctly never fired — while the file it would have
+// written is headed "What you have learned doing this job before".
+//
+// One tool, two jobs, two descriptions. The bar underneath is the same in both
+// and always was: will this still be true, and still change what you do, on a
+// day nobody remembers this conversation.
+func (t *MemoryTool) forWorker() bool {
+	scope := strings.TrimSpace(t.Scope)
+	if scope == "" || scope == MainScope {
+		return false
+	}
+	if _, isDesk := SplitModeScope(scope); isDesk {
+		return false
+	}
+	_, isProject := SplitProjectScope(scope)
+	return !isProject
+}
+
 // Destinations the `where` parameter can name, in the order they are offered.
 // There is no desk destination: which file an unqualified line lands in is the
 // desk's own architecture (ProjectFirst), not a choice the model is offered.
@@ -113,7 +142,11 @@ func (t *MemoryTool) whereDescription() string {
 	return b.String()
 }
 
-func (*MemoryTool) Description() string {
+func (t *MemoryTool) Description() string {
+	if t.forWorker() {
+		return "Remember something durable this job taught you, or revise something already remembered. " +
+			"The user approves it before it takes effect."
+	}
 	return "Remember something durable about this user or machine, or revise something already remembered. " +
 		"The user approves it before it takes effect."
 }
@@ -180,22 +213,42 @@ func (t *MemoryTool) ToolDefinition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Type: "function",
 		Function: model.ToolFunction{
-			Name: "memory",
-			Description: "Keep what you learn about this user across sessions, so the next one starts knowing it. " +
-				"Worth keeping: what they tell you about themselves — who they are, what they are building, how " +
-				"they want to be worked with — and anything about their machine or their setup that will " +
-				"still be true next month and would change what you do: a convention they hold to, where " +
-				"something lives, a step that turned out to be necessary here. " +
-				"A fact the user states about themselves is already the evidence for it, so propose it when it " +
-				"is said rather than waiting to be told to. " +
-				"Not worth keeping: anything about the task in front of you, anything you could look up or " +
-				"search for when you need it, and a conclusion of your own you have not seen borne out. " +
-				"A remembered line costs context on every request this agent ever makes again, so a wrong or " +
-				"idle one is paid for forever. Nothing here takes effect until the user approves it, and it " +
-				"reaches you at the start of the next session, not this one.",
-			Parameters: payload,
+			Name:        "memory",
+			Description: t.definitionText(),
+			Parameters:  payload,
 		},
 	}
+}
+
+// definitionText is what the model reads about when to call this. Two texts,
+// one bar - see forWorker for the measurement that split them.
+func (t *MemoryTool) definitionText() string {
+	if t.forWorker() {
+		return "Keep what doing this job teaches you, so the next job of the same kind starts knowing it. " +
+			"Worth keeping: how this user's work actually turns out to be shaped — a convention their files " +
+			"hold to, a step that proved necessary here and is not written down anywhere, what a request of " +
+			"theirs reliably turns out to mean — anything that will still be true next month and would change " +
+			"how you do the same job again. " +
+			"Not worth keeping: anything about the job in front of you, anything you could read or search for " +
+			"at the moment you need it, and a conclusion of your own you have not seen borne out. " +
+			"This file is yours alone. Nobody else reads it, nothing you write reaches the assistant or another " +
+			"worker, and you are the one who will pay for it: a remembered line costs context on every job you " +
+			"are ever given again, so a wrong or idle one is paid for forever. " +
+			"Nothing takes effect until the user approves it, and it reaches you at the start of the next job, " +
+			"not this one."
+	}
+	return "Keep what you learn about this user across sessions, so the next one starts knowing it. " +
+		"Worth keeping: what they tell you about themselves — who they are, what they are building, how " +
+		"they want to be worked with — and anything about their machine or their setup that will " +
+		"still be true next month and would change what you do: a convention they hold to, where " +
+		"something lives, a step that turned out to be necessary here. " +
+		"A fact the user states about themselves is already the evidence for it, so propose it when it " +
+		"is said rather than waiting to be told to. " +
+		"Not worth keeping: anything about the task in front of you, anything you could look up or " +
+		"search for when you need it, and a conclusion of your own you have not seen borne out. " +
+		"A remembered line costs context on every request this agent ever makes again, so a wrong or " +
+		"idle one is paid for forever. Nothing here takes effect until the user approves it, and it " +
+		"reaches you at the start of the next session, not this one."
 }
 
 // Execute exists because skill.Skill requires it. Memory is model-only: a

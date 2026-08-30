@@ -244,11 +244,14 @@ func TestAUsersOwnCopyShadowsTheShippedSkill(t *testing.T) {
 	}
 }
 
-// The shipped profiles carry an explicit `tools:` allowlist, and a worker's own
-// skills must not be filtered by it — the allowlist names tools inherited from
-// the parent, and a worker's knowledge is not inherited. Asserted against the
-// profile that actually loads rather than a bare one, because a hand-built
-// Profile{} has no allowlist and would pass this even if the wiring were wrong.
+// A `tools:` allowlist must not filter a worker's own skills — the list names
+// tools inherited from the parent, and a worker's knowledge is not inherited.
+//
+// The narrowing is written into the profile here rather than read off a shipped
+// one. Every bundled agent's `tools:` line came off on 31 ส.ค., so reading one
+// would make this test pass by having nothing to filter with — the exact
+// vacuous pass its first version was written to avoid. A user's own agent may
+// still narrow itself, which is the case this protects.
 func TestAnAllowlistDoesNotSilenceAWorkersOwnKnowledge(t *testing.T) {
 	isolate(t)
 	parent := skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: t.TempDir()})
@@ -256,9 +259,7 @@ func TestAnAllowlistDoesNotSilenceAWorkersOwnKnowledge(t *testing.T) {
 	if !ok {
 		t.Fatal("the shipped doc profile did not load")
 	}
-	if len(doc.Tools) == 0 {
-		t.Fatal("doc no longer has an allowlist — this test is checking nothing")
-	}
+	doc.Tools = []string{"read", "write"} // a narrow worker, naming no skill of its own
 
 	if _, got := FilterRegistry(parent, doc, nil).Get("tax-invoice"); !got {
 		t.Errorf("doc's own tax-invoice skill was filtered out by its tools: %v", doc.Tools)

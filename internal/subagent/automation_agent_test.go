@@ -85,56 +85,69 @@ func TestTheAutomationAgentIsReachableAndEquipped(t *testing.T) {
 		t.Error("the automation agent is not on the office roster")
 	}
 
-	// 2. It has to carry the tools it was hired for. Without these it is a
-	//    conversation about automation rather than an agent that builds one.
+	// 2. It has to carry the tools it was hired for, and since 31 ส.ค. the way
+	//    it does that is by asking for nothing.
 	//
-	//    One name per engine since the packing (§99): `n8n` and `windmill` are
-	//    each one tool with the five engine actions inside, and a profile that
-	//    names the tool gets it whole.
-	for _, want := range []string{"n8n", "windmill"} {
-		if !slices.Contains(p.Tools, want) {
-			t.Errorf("missing %s — it cannot do the job it is named for: %v", want, p.Tools)
-		}
+	//    Every agent holds the desk's own kit now (`chairs:` on specialized),
+	//    so a `tools:` line can only ever narrow one below its colleagues. This
+	//    profile listed 25 names that were a hand-copy of the ceiling above it,
+	//    which is the second list answering a question the first already
+	//    answered. An empty one is the equipped state.
+	if len(p.Tools) != 0 {
+		t.Errorf("tools = %v — an agent that narrows itself gets less than the desk gives it", p.Tools)
 	}
 
 	// 2a. It is a full-rank worker (owner's call, 2026-08-10: "มันควรจะมียศ
 	//     เท่าเมน เพราะงานมันก็ไม่ใช่เล็ก ๆ"): it shows its work in the browser and
-	//     can act on the page, starts its own engine, and holds a real
-	//     workstation — shell, a visible terminal, files, notes, memory.
+	//     can act on the page, and holds a real workstation — shell, a visible
+	//     terminal, files, notes.
 	//
-	//     `browser` is one name for four actions since the packing (desktop/
-	//     browser_tool.go). A profile that names it whole gets all four, which
-	//     is what this agent wants: pressing Execute on a manual test is work
-	//     only the editor can do.
+	//     Asked of the ceiling rather than of the file, because that is where
+	//     the answer moved. A tool the office does not keep in the room for its
+	//     agents is one this agent does not have, however its file is written.
 	//
-	//     `todo_write` was on this list until 30 ส.ค. and never should have
-	//     been: it is in forcedDenials, so no agent has ever held it and none
-	//     ever will — a chair does not get it back either, because a run
-	//     declared there would draw a second panel over the one the person is
-	//     already watching (packed_task.go). Naming it bought the profile
-	//     nothing and cost the roster a permanent warning about a tool the user
-	//     cannot grant. See TestNoBundledProfileAsksForAToolNoAgentMayHold.
-	for _, want := range []string{
-		"browser",
-		"n8n_server_start", "windmill_server_start",
-		"shell", "desk_terminal", "write", "memory",
-	} {
-		if !slices.Contains(p.Tools, want) {
-			t.Errorf("missing %s — the full-rank worker lost part of its workstation", want)
+	//     `desk_terminal` is here even though forcedDenials takes the desk
+	//     surface from delegates: this asks what the room holds, and a direct
+	//     chat with this agent is exactly where it is handed back
+	//     (AttendedRegistry).
+	office, ok := mode.Load(mode.Office)
+	if !ok {
+		t.Fatal("the office desk did not load")
+	}
+	for _, want := range []string{"browser", "shell", "desk_terminal", "write", "memory"} {
+		if !office.CarriesForChair(want, skill.SourceBuiltin) {
+			t.Errorf("the office does not keep %s in the room — the full-rank worker lost part of its workstation", want)
 		}
 	}
 
-	// 2b. Every tool its own prompt tells it to call has to be in that list.
+	// 2b. The engines themselves come through the door the user opens, not
+	//     through a list in this file. `n8n` and `windmill` belong to
+	//     connections, so they reach this agent when the account is connected
+	//     and placed on it — which is precisely what `needs:` declares, and
+	//     what the roster draws when it is not true yet.
+	if len(p.Needs) == 0 {
+		t.Error("the automation agent declares no needs — nothing tells the user which engine to connect")
+	}
+
+	// 2c. Every tool its own prompt tells it to call has to be one the office
+	//     keeps in the room.
 	//
-	//     `tools:` is a whitelist, so an instruction naming a tool the profile
-	//     does not carry is an instruction to do something impossible — the
-	//     agent reads it, reaches for the tool, and finds nothing. It is the
-	//     same fault the desks were fixed for on 2026-08-09 (ffb58f8, "โต๊ะที่ไม่
-	//     มีเครื่องมือ ต้องไม่ถูกสั่งให้ใช้มัน") and it arrived here the moment the
-	//     prompt started pointing at the per-engine skills.
+	//     An instruction naming a tool the agent cannot have is an instruction
+	//     to do something impossible — it reads it, reaches for the tool, and
+	//     finds nothing. Same fault the desks were fixed for on 2026-08-09
+	//     (ffb58f8, "โต๊ะที่ไม่มีเครื่องมือ ต้องไม่ถูกสั่งให้ใช้มัน"). The
+	//     question used to be asked of `tools:`; with no such line it is asked
+	//     of the ceiling, which is what decides now.
+	//
+	//     Connection tools are skipped: the ceiling refuses them until the user
+	//     places the account, and the prompt naming one is the agent describing
+	//     its own job rather than reaching past a wall.
 	for _, named := range toolsNamedIn(p.Prompt, skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: t.TempDir()}).Names()) {
-		if !slices.Contains(p.Tools, named) {
-			t.Errorf("the prompt tells it to use %s, which is not in its tools: %v", named, p.Tools)
+		if _, owned := connect.ProviderOfTool(named); owned {
+			continue
+		}
+		if !office.CarriesForChair(named, skill.SourceBuiltin) {
+			t.Errorf("the prompt tells it to use %s, which the office does not keep in the room", named)
 		}
 	}
 
@@ -168,10 +181,15 @@ func TestTheAutomationPromptCarriesWhatTheAPICannotTell(t *testing.T) {
 	}
 	for _, must := range []string{
 		"no endpoint that returns node types", // no schema discovery
-		"`n8n` action `read`",                 // and what to do instead
-		"keyed by node *name*",                // not id
-		"replaces the whole workflow",         // no partial edit
-		"cannot be created already running",   // create, then activate
+		// The habit, not the call that performs it. This pinned "`n8n` action
+		// `read`" until 31 ส.ค., when the tool manual came out of every agent's
+		// prompt: naming the action here was the tool block's sentence written
+		// a second time, and a second copy of a name is a second thing to be
+		// wrong the day it changes. What must survive is the rule.
+		"Reading a workflow already using that node",
+		"keyed by node *name*",              // not id
+		"replaces the whole workflow",       // no partial edit
+		"cannot be created already running", // create, then activate
 	} {
 		if !strings.Contains(flat(p.Prompt), must) {
 			t.Errorf("the prompt no longer says %q — that rule is not discoverable at runtime", must)
@@ -471,8 +489,13 @@ func TestTheAgentIsToldToStartItsOwnEngineFirst(t *testing.T) {
 	}
 	for _, must := range []string{
 		"The first move of any job that needs the engine is to make the engine real",
-		"in a terminal on your desk",   // where the start happens
-		"open the engine's own editor", // and where the work goes next
+		// Both halves of the owner's sentence, pinned by what they promise
+		// rather than by the tools that keep the promise. They read "in a
+		// terminal on your desk" and "open the engine's own editor" until
+		// 31 ส.ค.; the first named a tool's own behaviour and the second sat in
+		// a paragraph that recited the browser's actions.
+		"where the user can watch it come up", // where the start happens
+		"work in the engine's own editor",     // and where the work goes next
 	} {
 		if !strings.Contains(flat(p.Prompt), must) {
 			t.Errorf("the prompt no longer says %q — the agent goes back to reporting a stopped server as a dead end", must)

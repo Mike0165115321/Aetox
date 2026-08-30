@@ -495,14 +495,20 @@ func TestAServerPointedAtAnAgentReachesOnlyThatAgent(t *testing.T) {
 	if got := toolsFor("sheet"); slices.Contains(got, "notion_search") {
 		t.Errorf("a server pointed at doc reached sheet as well: %v", got)
 	}
-	// A server pointed at the *desk* still goes through the profile's own
-	// allowlist, and doc's names only the tools its job needs. The two are
-	// different acts: pointing a server at the desk furnishes the room, and
-	// every agent there opting into all of it would put the whole office on
-	// every brief. Pointing one at an agent IS the opt-in, which is why that
-	// case skips the list.
-	if got := toolsFor("doc"); slices.Contains(got, "linear_issue") {
-		t.Errorf("a desk-wide server bypassed the agent's own allowlist: %v", got)
+	// A server pointed at the *desk* furnishes the room, so everybody working
+	// in it has it. The two placements are different acts and both are the
+	// user's: the desk is "anyone here may use this", the agent is "this one".
+	//
+	// It read the opposite until 31 ส.ค. — a desk-wide server was filtered by
+	// the agent's own `tools:` first — and that reading died with the
+	// allowlists. It could not have survived them anyway: an author cannot list
+	// tool names that arrive from a server months later, which is why an
+	// agent-pointed server already skipped the list (Profile.Permits). The one
+	// gate is the toggle the user can see, and it is the only one.
+	for _, who := range []string{"doc", "sheet"} {
+		if got := toolsFor(who); !slices.Contains(got, "linear_issue") {
+			t.Errorf("%s did not get the server pointed at its own desk: %v", who, got)
+		}
 	}
 	// A plain delegate is the caller's own hands, so it gets the desk's answer
 	// and nothing an agent was pointed at.

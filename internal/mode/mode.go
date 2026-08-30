@@ -432,6 +432,22 @@ func (m *Mode) CarriesForChair(name string, source skill.Source) bool {
 	if slices.Contains(m.Chairs, name) {
 		return true
 	}
+	// A category name in `chairs:` keeps that whole group in the room.
+	//
+	// The office's list was nine tool names, and it had to grow by one every
+	// time a tool joined a group its agents already held whole - a second list
+	// answering "what may an agent do", beside the desk's own `categories:`
+	// answering it for the assistant. `chairs: files, shell, deliverables` says
+	// the same thing in three words and stops growing: every agent at the
+	// office is kitted like the assistant is on its own desk, minus the
+	// developer group no desk here carries (owner, 31 ส.ค. - "เปิด tool เท่ากับ
+	// ตัวผู้ช่วยครับ ไม่ใช่เปิดหมดทุกอย่างขนาดนั้น").
+	//
+	// Asked after the tool's own name so a manifest that still spells out tools
+	// keeps meaning exactly what it said.
+	if slices.Contains(m.Chairs, skill.CategoryOf(name)) {
+		return true
+	}
 	// A `chairs:` list names actions as readily as tools - the office's says
 	// `edit, edits, delete`, which are three acts of one packed `change`. Kept
 	// in the room when any one of them is, the same rule Carries uses one

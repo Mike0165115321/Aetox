@@ -123,7 +123,36 @@ const stepsUnlimitedKeyword = "unlimited"
 // A delegate that needs a decision asks the main agent instead, with `ask_main`
 // (ask.go) — which is not listed here because it is never in the parent's
 // registry to filter out; it is injected into each child's own.
-var forcedDenials = []string{"task", "task_result", "task_answer", "task_plan", "help", "ask_user", "todo_write"}
+var forcedDenials = []string{
+	"task", "task_result", "task_answer", "task_plan", "help", "ask_user", "todo_write",
+	// The desk surface, for the same reason ask_user is here and not a
+	// different one (owner, 31 ส.ค.). `desk` and `desk_terminal` do not read
+	// or change anything - their whole output is *what the person is looking
+	// at*, on the one panel this app has. A delegate has nobody attached to
+	// its loop, so putting a file on that panel is writing over the screen of
+	// somebody watching the main agent's work instead, and several delegates
+	// run at once, so they would write over each other as well.
+	//
+	// It costs a delegate nothing: `shell` runs the same command
+	// `desk_terminal` does without touching the panel, and a file it produced
+	// is on disk for whoever collects the result.
+	//
+	// Both spellings, the pack and its actions, so a profile cannot ask for
+	// the surface one action at a time.
+	//
+	// `browser` is deliberately NOT here. It looks like a fourth panel tool
+	// and stopped being one at §127.1: agentTab() steers the agent's own
+	// `web-agent-` tab and never the user's. What it costs to take away is
+	// real - it is the only way to read a page that needs its scripts to run -
+	// and the one problem left, a single agent tab shared by everything at
+	// once, is a scope to fix rather than a right to remove.
+	"desk", "desk_open", "desk_list", "desk_close", "desk_terminal",
+}
+
+// deskSurface is the half of forcedDenials that comes back when somebody is
+// watching (AttendedRegistry). Listed once, here, so the taking away and the
+// giving back cannot drift apart.
+var deskSurface = []string{"desk", "desk_terminal"}
 
 // Profile is one sub-agent definition. JSON tags are for the settings page,
 // which renders exactly these fields as its row badges.
@@ -619,8 +648,16 @@ func (p Profile) Permits(name string) bool {
 // question to the person already sitting in the conversation is not a reach
 // into anything. A doc writer whose `tools:` names three writers would
 // otherwise have to list ask_user to be allowed to speak.
-func (p Profile) WantsToBeAsked() bool {
-	return !slices.Contains(p.Deny, "ask_user")
+func (p Profile) WantsToBeAsked() bool { return !p.Refuses("ask_user") }
+
+// Refuses reports whether this profile's own `deny:` names this tool.
+//
+// The half of Permits that survives when the mechanism is handing back
+// something forcedDenials took away: `deny:` is the file's own refusal and
+// outranks any grant (§44.0), while forcedDenials is a rule about delegates
+// that a watched conversation unmakes.
+func (p Profile) Refuses(name string) bool {
+	return slices.Contains(p.Deny, strings.ToLower(strings.TrimSpace(name)))
 }
 
 // WantsHands reports whether this profile is willing to run a helper of its own,
@@ -633,9 +670,7 @@ func (p Profile) WantsToBeAsked() bool {
 // room. And no author would think to list `task` in `tools:` to earn something
 // the mechanism removes from everybody, so reading that list would make the
 // grant unreachable in practice.
-func (p Profile) WantsHands() bool {
-	return !slices.Contains(p.Deny, "task")
-}
+func (p Profile) WantsHands() bool { return !p.Refuses("task") }
 
 // parse reads one profile file. The filename is the name, always: a `name:` key
 // in the frontmatter that disagreed with the file it lives in is the exact

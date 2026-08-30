@@ -14,19 +14,18 @@ func TestEveryAgentHasAFaceAndTheProfileCanChooseIt(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		profile subagent.Profile
-		tools   []string
 		want    string
 	}{
-		{"sheet chair", subagent.Profile{Name: "sheet"}, []string{"glob", "sheet_write", "read"}, "chartColumn"},
-		{"doc writer", subagent.Profile{Name: "doc"}, []string{"doc_write"}, "fileText"},
-		{"sheet writer", subagent.Profile{Name: "sheet"}, []string{"sheet_write"}, "chartColumn"},
-		// Nothing it writes says what it is — the honest answer is the generic
-		// mark, and this is exactly the profile whose author will want to pick.
-		{"no writer at all", subagent.Profile{Name: "researcher"}, []string{"web_search", "read"}, "bot"},
-		// And the file's own choice outranks everything derived.
-		{"profile chose one", subagent.Profile{Name: "doc", Icon: "palette"}, []string{"doc_write"}, "palette"},
+		// The mark is the file's own choice or the generic one. It was derived
+		// from the writer in the agent's tool list until 31 ส.ค., when every
+		// agent started holding the same kit — a derivation that answers
+		// "document" for all seven says nothing about any of them.
+		{"sheet chair, no icon named", subagent.Profile{Name: "sheet"}, "bot"},
+		{"nothing it writes says what it is", subagent.Profile{Name: "researcher"}, "bot"},
+		// And the file's own choice is the whole of it now.
+		{"profile chose one", subagent.Profile{Name: "doc", Icon: "palette"}, "palette"},
 	} {
-		if got := chairIcon(tc.profile, tc.tools); got != tc.want {
+		if got := chairIcon(tc.profile); got != tc.want {
 			t.Errorf("%s: chairIcon = %q, want %q", tc.name, got, tc.want)
 		}
 	}

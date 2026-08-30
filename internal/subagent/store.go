@@ -441,6 +441,35 @@ func AttendedRegistry(parent *skill.Registry, p Profile, ceiling *mode.Mode) *sk
 			_ = filtered.Register(packed.forChair(), source)
 		}
 	}
+	// The desk surface, back for the same reason ask_user is: forcedDenials
+	// takes it from delegates because nobody is watching their loop, and in a
+	// chair chat the person is sitting in the room looking at the panel. An
+	// agent that could not put what it made on the desk would have to tell the
+	// user a path and let them go find it.
+	//
+	// The ceiling is asked again rather than assumed. This hands back a tool
+	// the mechanism removed; it must not hand back one the desk never carried,
+	// or a manifest that dropped the terminal would find it restored here.
+	for _, name := range deskSurface {
+		if p.Refuses(name) {
+			continue
+		}
+		if _, held := filtered.Get(name); held {
+			continue
+		}
+		tool, ok := parent.Get(name)
+		if !ok {
+			continue
+		}
+		source, known := parent.SourceOf(name)
+		if !known {
+			source = skill.SourceWorkbench
+		}
+		if !ceiling.CarriesForChair(name, source) {
+			continue
+		}
+		_ = filtered.Register(tool, source)
+	}
 	return filtered
 }
 

@@ -243,7 +243,11 @@ func TestADeskAddsDirectionAndItsOwnMemory(t *testing.T) {
 // writes `tools: shell` into itself is the case this has to answer, because it
 // is the one a user can create by hand.
 func TestAChairIsCappedByTheOfficeCeiling(t *testing.T) {
-	a := bootDeskApp(t, "assistant")
+	// The coding desk, and it has to be: the office keeps every group the
+	// assistant desk holds since 31 ส.ค., so an assistant-desk caller has
+	// nothing left the office refuses and the carve-out could not be measured
+	// from there. The comment on `greedy` below predicted this move.
+	a := bootDeskApp(t, "coding")
 
 	root, err := config.DataRoot()
 	if err != nil {
@@ -263,15 +267,19 @@ func TestAChairIsCappedByTheOfficeCeiling(t *testing.T) {
 	// from the desk the job runs at, so inheriting the caller's would hand it
 	// over.
 	//
-	// It was `git` until 2026-08-19, when the whole of files and shell moved
-	// into the office's room (owner's call: the agents were walled off from
-	// work their own briefs told them to do). The room is now so nearly
-	// co-extensive with the assistant desk that `fs` is the only registered
-	// name left on the caller's side the office does not name — worth recording
-	// here, because the day the office names that too this test has to be
-	// re-pointed at a caller holding something it still refuses (the coding
-	// desk and its code group), never quietly deleted.
-	const greedy = "---\ndescription: เก้าอี้ทดสอบ\ndesk: specialized\ntools: doc_write, write, shell, fs\n---\nWrite the thing.\n"
+	// It was `git` until 2026-08-19 and `fs` until 31 ส.ค., each time because
+	// the office's room grew to hold the last thing that had been outside it.
+	// The second move was the one that ended the series: `chairs:` stopped
+	// naming tools and started naming groups, so the room is now exactly the
+	// assistant's kit and no registered name on an assistant-desk caller's
+	// side is refused here any more.
+	//
+	// So the caller is the coding desk and the tool is `repo_map`. The code
+	// group is what the office refuses on purpose (owner, 31 ส.ค.: "เปิด tool
+	// เท่ากับตัวผู้ช่วยครับ ไม่ใช่เปิดหมดทุกอย่างขนาดนั้น"), which makes it the
+	// carve-out this test is for — and if that ever changes, re-point this at
+	// whatever the office still refuses, never quietly delete it.
+	const greedy = "---\ndescription: เก้าอี้ทดสอบ\ndesk: specialized\ntools: doc_write, write, shell, repo_map\n---\nWrite the thing.\n"
 	if err := os.WriteFile(filepath.Join(dir, "greedy.md"), []byte(greedy), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +303,7 @@ func TestAChairIsCappedByTheOfficeCeiling(t *testing.T) {
 	}
 	// `write` is an act of `change` now, so the entry to look for is the pack -
 	// which reaches the chair because the office's `tools:` names write and its
-	// `chairs:` names edit, edits and delete (mode.CarriesForChair).
+	// `chairs:` keeps the whole files group in the room (mode.CarriesForChair).
 	if !slices.Contains(names, "change") {
 		t.Errorf("the chair lost a tool the office's own manifest names: %v", names)
 	}
@@ -308,11 +316,16 @@ func TestAChairIsCappedByTheOfficeCeiling(t *testing.T) {
 	// The caller has it and the chair asked for it. It is absent because the
 	// job runs on the office's manifest — the ceiling comes from the desk the
 	// work is done at, never from the desk that sent it.
-	if !a.cur().desk.AllowsTool("fs") {
-		t.Fatal("this test needs a caller that has fs for the ceiling to be worth asserting")
+	//
+	// `repo_map` and not `fs`, which is what this named until 31 ส.ค.: the
+	// office keeps the whole files group in the room now, so `fs` is carried
+	// and proves nothing. The developer group is what this desk still refuses,
+	// and refusing it is the whole of "เท่ากับตัวผู้ช่วย ไม่ใช่เปิดหมด".
+	if !a.cur().desk.AllowsTool("repo_map") {
+		t.Fatal("this test needs a caller that has repo_map for the ceiling to be worth asserting")
 	}
-	if slices.Contains(names, "fs") {
-		t.Errorf("a chair got fs from its caller's desk — the office ceiling is not being applied: %v", names)
+	if slices.Contains(names, "repo_map") {
+		t.Errorf("a chair got repo_map from its caller's desk — the office ceiling is not being applied: %v", names)
 	}
 	if slices.Contains(names, "task") {
 		t.Errorf("a chair can start its own delegates: %v", names)
@@ -631,8 +644,8 @@ func TestAServerReachesOnlyTheDesksThatNamedIt(t *testing.T) {
 func TestListChairsReportsTheRosterUnderTheCeiling(t *testing.T) {
 	a := bootDeskApp(t, "assistant")
 	chairs := a.ListChairs()
-	if len(chairs) != 5 {
-		t.Fatalf("ListChairs() = %d, want the five bundled chairs", len(chairs))
+	if len(chairs) != 7 {
+		t.Fatalf("ListChairs() = %d, want the seven bundled chairs", len(chairs))
 	}
 	byName := map[string]Chair{}
 	for _, c := range chairs {

@@ -17,9 +17,7 @@ import (
 	"strings"
 
 	"github.com/Mikedev115/Aetox/internal/config"
-	"github.com/Mikedev115/Aetox/internal/mcp"
 	"github.com/Mikedev115/Aetox/internal/mode"
-	"github.com/Mikedev115/Aetox/internal/skill"
 	"github.com/Mikedev115/Aetox/internal/subagent"
 )
 
@@ -57,98 +55,23 @@ type Chair struct {
 	// have to know which tool means which mark, and that is a fact about the
 	// engine's tools, not about a card.
 	Icon string `json:"icon"`
-	// Missing is what this agent's `tools:` asked for and did not get.
-	//
-	// It is the difference between the two lists this function already holds:
-	// what the file asked for, and what the child registry actually handed
-	// over. Nothing new is looked up to know it, and nothing changes because
-	// of it — the agent runs exactly as it did, with exactly the tools it had.
-	// The only thing that changes is that it stops being silent.
-	//
-	// The case that made it worth a field: a tool leaves the build (slides_write
-	// did, in 2151be7) and every agent naming it quietly gets one tool less,
-	// with no sentence anywhere. Same for a typo, and for a package written
-	// against a newer Aetox than this one.
-	//
-	// Two causes are folded into one list on purpose. A name this build has
-	// never heard of and a name the office ceiling does not carry are different
-	// mistakes, and telling them apart needs the desk manifest — while the
-	// sentence a person needs is the same either way: you asked for this and
-	// you do not have it.
-	Missing []string `json:"missing,omitempty"`
-}
-
-// missingTools is what `tools:` asked for and the registry did not hand over.
-//
-// An empty `tools:` asks for nothing by name — it means "whatever this desk
-// carries" — so it can never be missing anything, and saying so would put a
-// warning on every agent that never narrowed itself.
-//
-// MCP tools are skipped, and that is not a loophole. Their names arrive from
-// the server on connect, and a server placed on one agent is deliberately not
-// connected until that agent runs (mcp.Server.Deferred) — so at the moment this
-// page is drawn, a perfectly working MCP tool is legitimately absent from the
-// registry. mcp.ToolBelongsTo is asked rather than a prefix written here, for
-// the reason its own comment gives: two copies of the naming rule are two
-// chances to disagree with the one that does the naming.
-func missingTools(p subagent.Profile, held []string) []string {
-	if len(p.Tools) == 0 {
-		return nil
-	}
-	have := make(map[string]bool, len(held))
-	for _, name := range held {
-		name = strings.ToLower(strings.TrimSpace(name))
-		have[name] = true
-		// A packed tool arrives under the PACK's name, and every list a profile
-		// is written in speaks per-action names — `write`, `grep`, `image_ocr`
-		// — because those were the tool names before §99 packed them and every
-		// manifest, profile and permission rule still says them. Comparing the
-		// two flatly reported all of them missing.
-		//
-		// Measured 30 ส.ค., which is how it was found: `doc` held change,
-		// search, media_read and desk, and its card said it was without write,
-		// edit, edits, delete, grep, list, glob, image_ocr, video_ocr,
-		// audio_transcribe, desk_open and desk_list — 13 of the 14 names it
-		// listed. Every agent's card printed the same list, because the list
-		// was never about the agent. Reported as "อันนี้อ่ะจะมาแสดงทำไมว่ะ".
-		//
-		// PackedActions is asked rather than a table written here, for the
-		// reason mcp.ToolBelongsTo is asked below: a second copy of a naming
-		// rule is a second answer to the same question.
-		for _, action := range skill.PackedActions(name) {
-			have[action] = true
-		}
-	}
-	servers := config.MCPServersForAgent(p.Name)
-	var out []string
-	for _, want := range p.Tools {
-		if have[want] || mcp.ToolBelongsTo(want, servers) {
-			continue
-		}
-		out = append(out, want)
-	}
-	return out
 }
 
 // chairIcon is the face an agent wears when its profile does not choose one.
 //
-// Derived from the deliverable rather than from the name: what a person is
-// looking for on this page is who makes the thing they need, and the writers
-// are the one part of an office agent's tool list that differs between them
-// (the ceiling gives everyone else the same set). An agent with no writer at
-// all gets the generic mark — honest, and the case where the user is most
-// likely to want to choose one themselves.
-func chairIcon(p subagent.Profile, tools []string) string {
+// It used to be derived from the writer in the agent's tool list — doc_write
+// meant a document, sheet_write meant a workbook — which was true only while
+// agents differed by what they carried. They do not any more (31 ส.ค.): every
+// agent holds the same kit and differs by its skills and the servers pointed
+// at it, so that derivation would now answer "document" for all of them, which
+// is worse than answering nothing.
+//
+// So the generic mark, and `icon:` is how an agent gets its own. Every bundled
+// agent names one; an agent somebody writes and does not is a bot until they
+// do, which is honest and one line away from fixed.
+func chairIcon(p subagent.Profile) string {
 	if named := strings.TrimSpace(p.Icon); named != "" {
 		return named
-	}
-	for _, tool := range tools {
-		switch tool {
-		case "doc_write":
-			return "fileText"
-		case "sheet_write":
-			return "chartColumn"
-		}
 	}
 	return "bot"
 }
@@ -190,9 +113,8 @@ func (a *App) ListChairs() []Chair {
 			// Only when there was a registry to ask. A nil child means the engine
 			// is not up yet, and an empty held-list would report every tool the
 			// file names as missing — a page that cries wolf on every cold start.
-			c.Missing = missingTools(p, c.Tools)
 		}
-		c.Icon = chairIcon(p, c.Tools)
+		c.Icon = chairIcon(p)
 		if act, ok := used[p.Name]; ok {
 			c.Jobs, c.LastUsed = act.count, act.last
 		}

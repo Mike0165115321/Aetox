@@ -26,7 +26,7 @@ func (a *App) ListSubagentProfiles() []subagent.Profile {
 	// twice, or in TypeScript, is how the same agent ends up wearing two faces
 	// on two pages.
 	for i := range rows {
-		rows[i].Icon = chairIcon(rows[i], rows[i].Tools)
+		rows[i].Icon = chairIcon(rows[i])
 	}
 	return rows
 }
