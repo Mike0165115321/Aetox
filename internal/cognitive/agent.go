@@ -411,6 +411,9 @@ func (a *Agent) RespondWithTools(
 	overflowCompactions := 0
 	droppedConnections := 0
 	emptyCompletions := 0
+	// Once. The pictures are gone after the first one, so a second rejection is
+	// about something else and must be allowed to end the turn rather than loop.
+	strippedImages := false
 	// The pieces of an answer the output limit cut in half, waiting to be
 	// joined back together. Empty for every turn that fits in one round, which
 	// is nearly all of them. Held raw rather than trimmed: the limit cuts
@@ -537,6 +540,30 @@ func (a *Agent) RespondWithTools(
 				return "", anyToolUsed, fmt.Errorf(
 					"this conversation no longer fits %s's context window, and there is nothing older left to summarize: %w",
 					a.model, err)
+			}
+			// A picture in the history is why the request was refused, and
+			// unlike everything else in this list it does not fail only this
+			// turn: the bytes stay in the conversation, so the next turn the
+			// user types is refused before it reaches the model, and so is the
+			// one after that. Nothing the user can do from the outside clears
+			// it — retrying sends the same picture to the same refusal.
+			//
+			// So the pictures come out and the round is asked again. What is
+			// lost is a photograph the provider was never going to look at;
+			// what is kept is every tool result and every word of the turn
+			// around it. ForgetRejectedImages leaves a line in each message
+			// saying which is which, so the model is not left describing a
+			// picture it is no longer holding.
+			//
+			// i-- for the same reason the drop above does it: the round never
+			// happened.
+			if model.IsImageRejection(err) && !strippedImages {
+				if dropped := a.context.ForgetRejectedImages(); dropped > 0 {
+					strippedImages = true
+					debuglog.Msg("provider refused a picture, dropped %d from the conversation and asking again: %v", dropped, err)
+					i--
+					continue
+				}
 			}
 			// The second failure with a mechanical fix, and it is a much
 			// narrower one than it used to be. Asking again without tools helps

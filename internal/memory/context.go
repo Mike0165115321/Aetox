@@ -228,6 +228,51 @@ const imagesKept = 2
 // longer attached is a message that lies to the model about what it is holding.
 const imageForgotten = " (ภาพที่ว่าถูกถอดออกจากบทสนทนาแล้วเพื่อประหยัดที่ ไฟล์ยังอยู่ที่เดิม)"
 
+// imageRejected is said where a picture the provider refused used to be.
+//
+// A different sentence from imageForgotten because it is a different fact, and
+// the model is about to act on it: the picture is gone because it could not be
+// sent at all, not because the room needed the space, and the answer is to look
+// at the file again in a shape that fits rather than to carry on as if it had
+// been seen.
+const imageRejected = " (ผู้ให้บริการปฏิเสธภาพนี้ จึงถอดออกเพื่อให้บทสนทนาเดินต่อได้ ไฟล์ยังอยู่ที่เดิม)"
+
+// ForgetRejectedImages strips the bytes from every picture in the conversation
+// and answers with how many it removed.
+//
+// Called when a provider has refused the request because of a picture in it
+// (model.IsImageRejection). Every picture rather than the named one, and that
+// is the whole design: the provider points at a wire index, the wire is built
+// by four different converters and one of them merges messages, so the index it
+// names is not reliably a message here. Guessing wrong leaves the conversation
+// dead in exactly the way this exists to prevent.
+//
+// The cost of taking all of them is small and the alternative is not: the
+// pictures are already in the transcript as what was said about them, the files
+// are still on disk, and forgetOldImages has been leaving no more than the two
+// newest attached since it shipped.
+func (c *Context) ForgetRejectedImages() int {
+	if c == nil {
+		return 0
+	}
+	dropped := 0
+	for i := range c.messages {
+		if len(c.messages[i].Images) == 0 {
+			continue
+		}
+		freed := 0
+		for _, picture := range c.messages[i].Images {
+			freed += picture.CharCost()
+			dropped++
+		}
+		c.messages[i].Images = nil
+		c.messages[i].Content += imageRejected
+		c.sweptItems++
+		c.sweptChars += freed - len(imageRejected)
+	}
+	return dropped
+}
+
 // forgetOldImages strips the bytes from every tool-produced picture but the
 // newest imagesKept, newest first.
 //

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -130,5 +133,44 @@ func TestCaptureRefusesWithNoPageOpen(t *testing.T) {
 	}
 	if len(out.Images) != 0 {
 		t.Error("a failed capture still handed the model an image")
+	}
+}
+
+// pagePNG is a capture of a given shape. Only the header is ever read, so the
+// pixels are left as whatever image.NewRGBA starts with.
+func pagePNG(t *testing.T, w, h int) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, w, h))); err != nil {
+		t.Fatalf("encoding the test capture: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// A full-page capture of a fifteen-slide deck came back 1280 x 10800 on
+// 30 ส.ค. Every provider downsizes a picture before the model reads it, so a
+// column that shape arrives with nothing in it legible — and the model, told
+// nothing, reported on slides it could not see.
+func TestTallCaptureSaysItCannotBeRead(t *testing.T) {
+	note := tallStripNote(pagePNG(t, 1280, 10800))
+	if note == "" {
+		t.Fatal("a 1280x10800 capture must say the text in it will not be readable")
+	}
+	if !strings.Contains(note, "10800") || !strings.Contains(note, "1280") {
+		t.Errorf("the note should carry the measurements it is about, got %q", note)
+	}
+}
+
+// The ordinary capture says nothing extra. A note on every screenshot is a note
+// nobody reads.
+func TestOrdinaryCaptureCarriesNoStripNote(t *testing.T) {
+	if note := tallStripNote(pagePNG(t, 1280, 720)); note != "" {
+		t.Errorf("a viewport capture got %q, want no note", note)
+	}
+	if note := tallStripNote(pagePNG(t, 573, 871)); note != "" {
+		t.Errorf("a tall-ish page capture got %q, want no note", note)
+	}
+	if note := tallStripNote([]byte("not a png")); note != "" {
+		t.Errorf("unreadable bytes got %q, want no note", note)
 	}
 }

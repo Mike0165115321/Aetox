@@ -173,3 +173,40 @@ func TestForgettingAPictureIsIdempotent(t *testing.T) {
 		t.Errorf("the note appears more than once in one message: %q", got)
 	}
 }
+
+// A provider that refuses a picture refuses the whole request, so the picture
+// has to come out of the conversation or every turn after it fails the same way
+// (30 ส.ค.: the turn that followed one died in 2.3 seconds on the identical
+// 400). Every picture, including the user's own: a dead conversation is worse
+// than a photograph the provider was never going to look at.
+func TestForgetRejectedImagesEmptiesTheConversation(t *testing.T) {
+	c := NewContext("system", 0, 1_000_000)
+	c.AddMessage(toolShot(t, 1280, 720))
+	c.Add(model.RoleAssistant, "ผมเห็นภาพแล้ว")
+	c.AddMessage(model.Message{
+		Role:    model.RoleUser,
+		Content: "[attachment: user-attached image, included below] a.png",
+		Images:  []model.Image{shot(t, 640, 480)},
+	})
+
+	if dropped := c.ForgetRejectedImages(); dropped != 2 {
+		t.Fatalf("ForgetRejectedImages() = %d, want both pictures", dropped)
+	}
+	notes := 0
+	for _, m := range c.Messages() {
+		if len(m.Images) > 0 {
+			t.Fatal("a picture survived the sweep, so the next turn fails the same way")
+		}
+		if strings.Contains(m.Content, "ปฏิเสธภาพนี้") {
+			notes++
+		}
+	}
+	// Both captions promise a picture. Both have to say it is no longer there.
+	if notes != 2 {
+		t.Fatalf("%d messages say the picture was removed, want 2", notes)
+	}
+	// Nothing left to drop, so nothing is claimed and no note is doubled.
+	if again := c.ForgetRejectedImages(); again != 0 {
+		t.Fatalf("second sweep dropped %d, want 0", again)
+	}
+}

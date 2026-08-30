@@ -1220,11 +1220,18 @@ func (a *App) visionAttachments(text string) (string, []model.Image) {
 		if !strings.HasPrefix(mediaType, "image/") {
 			continue
 		}
-		images = append(images, model.Image{MediaType: mediaType, Data: data})
+		// A photograph off a phone is routinely wider than a provider accepts,
+		// so the same fit the tools use applies to what the user drops in. The
+		// file is untouched; only the copy on the wire is bounded.
+		fitted, fitNote := model.FitForWire(model.Image{MediaType: mediaType, Data: data})
+		images = append(images, fitted)
 		// The path stays in the text: the model still needs to know what the
 		// file is called to talk about it, or to edit it later.
-		rewritten = strings.Replace(rewritten, m[0],
-			"\n\n[attachment: user-attached image, included below] "+relPath, 1)
+		marker := "\n\n[attachment: user-attached image, included below] " + relPath
+		if fitNote != "" {
+			marker += " " + fitNote
+		}
+		rewritten = strings.Replace(rewritten, m[0], marker, 1)
 	}
 	if len(images) == 0 {
 		return text, nil

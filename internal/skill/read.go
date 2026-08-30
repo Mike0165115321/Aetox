@@ -298,8 +298,18 @@ func (s *readSkill) readImage(targetPath, shown, command, mediaType string, size
 	if err != nil {
 		return newToolOutput("read", command, "", start, false, err), err
 	}
-	out := newToolOutput("read", command, "image attached: "+shown, start, false, nil)
-	out.Images = []model.Image{{MediaType: mediaType, Data: data}}
+	// Bytes under readMaxImageBytes can still be pixels no provider will take —
+	// a 4 MB PNG of a page ten thousand pixels tall is well inside the byte cap
+	// and outside every per-side one. FitForWire is where that question is
+	// answered, here and at the two other places a picture is handed to a
+	// model.
+	fitted, fitNote := model.FitForWire(model.Image{MediaType: mediaType, Data: data})
+	content := "image attached: " + shown
+	if fitNote != "" {
+		content += "\n" + fitNote
+	}
+	out := newToolOutput("read", command, content, start, false, nil)
+	out.Images = []model.Image{fitted}
 	return out, nil
 }
 

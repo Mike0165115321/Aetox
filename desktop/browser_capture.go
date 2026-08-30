@@ -23,10 +23,15 @@ package main
 //     can check.
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"image"
+	// Registered for its header alone — a capture is always a PNG, and
+	// tallStripNote reads nothing but its width and height.
+	_ "image/png"
 	"os"
 	"path"
 	"path/filepath"
@@ -195,7 +200,18 @@ func (s *browserCaptureSkill) capture(ctx context.Context, full bool) (skill.Out
 	// attachment — one question, one answer, asked in both places by the same
 	// function.
 	if model.ResolveVision(a.cur().cfg.ModelProvider, a.cur().cfg.ModelName) {
-		out.Images = []model.Image{{MediaType: "image/png", Data: png}}
+		// The file that was just written is the full picture; what goes on the
+		// wire is whatever the provider will take of it. Fitted here rather
+		// than before the write, because the copy on disk is the one the user
+		// opens and it should be the photograph that was taken.
+		fitted, fitNote := model.FitForWire(model.Image{MediaType: "image/png", Data: png})
+		if fitNote != "" {
+			notes = append(notes, fitNote)
+		}
+		if strip := tallStripNote(png); strip != "" {
+			notes = append(notes, strip)
+		}
+		out.Images = []model.Image{fitted}
 		out.Content = fmt.Sprintf("ภาพของ %s อยู่ด้านล่าง และเก็บไว้ที่ %s", where, rel)
 	} else {
 		out.Content = fmt.Sprintf("เก็บภาพของ %s ไว้ที่ %s แล้ว ใช้ image_ocr กับไฟล์นี้เพื่ออ่านข้อความในภาพ", where, rel)
@@ -203,6 +219,36 @@ func (s *browserCaptureSkill) capture(ctx context.Context, full bool) (skill.Out
 	out.Content += captureNotes(notes)
 	out.RawOutput = out.Content
 	return out, nil
+}
+
+// tallStripRatio is how much taller than wide a picture has to be before it is
+// worth warning about. Four screens' worth of page in one column: past that,
+// no provider's downscale leaves the text readable.
+const tallStripRatio = 4
+
+// tallStripNote is what a very tall full-page picture is not: readable.
+//
+// Every provider resizes an image before the model looks at it, and to a budget
+// far below what it accepts — DeepSeek documents a downscale to roughly the
+// pixel count of an 800 x 800 image, Anthropic to a 1568 px long edge. A
+// 1280 x 10800 capture of a fifteen-slide deck therefore arrives as a column
+// about a hundred pixels wide in the model's eyes, which is a picture of a deck
+// with none of the deck legible in it.
+//
+// A note rather than a refusal, and rather than a crop, because the picture is
+// still the right answer to "is anything obviously broken down the page". It is
+// the wrong answer to "read slide 9", and until this said so the model had no
+// way to tell those two apart — it looked at a blur and reported on the slides
+// it could not see (30 ส.ค.).
+func tallStripNote(png []byte) string {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(png))
+	if err != nil || cfg.Width <= 0 || cfg.Height < cfg.Width*tallStripRatio {
+		return ""
+	}
+	return fmt.Sprintf(
+		"ภาพนี้สูง %d กว้าง %d โมเดลย่อภาพก่อนอ่านเสมอ ตัวหนังสือในภาพสูงขนาดนี้จึงเล็กเกินกว่าจะอ่านออก "+
+			"ใช้ดูภาพรวมได้ แต่ถ้าต้องอ่านรายละเอียดหรือตรวจทีละหน้า ให้เลื่อนแล้วถ่ายทีละหน้าจอแทน",
+		cfg.Height, cfg.Width)
 }
 
 // captureNotes is the tail of a capture's answer: each thing the picture is
