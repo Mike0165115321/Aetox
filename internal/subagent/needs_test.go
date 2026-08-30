@@ -52,7 +52,11 @@ func TestAnAgentThatNeedsNothingIsUnchanged(t *testing.T) {
 	if got := UnmetNeeds(p); len(got) != 0 {
 		t.Fatalf("UnmetNeeds = %v, want none", got)
 	}
-	if got := PromptFor(p); got != p.Prompt {
+	// Its own skills index is not a notice. Both are folded by PromptFor and
+	// only one of them is this test's subject, so the comparison is against
+	// the prompt plus the index rather than the prompt alone — otherwise every
+	// worker that ships a skill fails a test about `needs:`.
+	if got := PromptFor(p); got != p.Prompt+skillsIndex(p) {
 		t.Fatalf("PromptFor changed a prompt with no needs:\n%q", got)
 	}
 }
@@ -233,7 +237,7 @@ func TestTheNoticeGoesAwayOnceTheNeedIsMet(t *testing.T) {
 	}
 
 	p := githubAgent("connection:github")
-	if got := PromptFor(p); got != p.Prompt {
+	if got := PromptFor(p); got != p.Prompt+skillsIndex(p) {
 		t.Fatalf("a satisfied agent still carries a notice:\n%q", got)
 	}
 }

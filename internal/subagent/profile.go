@@ -539,11 +539,48 @@ func rawFor(name string) (string, bool) {
 // agent with nothing missing still gets its old prompt byte for byte and keeps
 // its prefix cache.
 func PromptFor(p Profile) string {
-	prompt := p.Prompt
+	prompt := p.Prompt + skillsIndex(p)
 	if memory := learned.Read(p.Name); memory != "" {
 		prompt += "\n\n---\n# What you have learned doing this job before\n" + memory + "\n"
 	}
 	return prompt + needsNotice(UnmetNeeds(p))
+}
+
+// skillsIndex names the worker's own skills in its own prompt, one line each.
+//
+// Level 1 of the progressive-loading standard, done where the worker can
+// actually see it. `skills_list` is the index the design intended, and it is a
+// tool the model has to decide to call before it knows whether anything is
+// behind it, so it calls it on a hunch or not at all. Measured 31 ส.ค. on the
+// owner's machine: automation opened a skill on 0 of 50 jobs and github on 0 of
+// 22, both of them carrying a paragraph in their own AGENT.md telling them to
+// open one before that kind of work. Only research did it with any regularity,
+// 8 opens across 15 jobs.
+//
+// So a worker's knowledge was reachable, documented, instructed, and unread.
+// Same shape as §213's memory finding one shelf over: a mechanism that works,
+// hanging off a decision nobody had a reason to make.
+//
+// Names and one-line descriptions only, so the bodies stay behind `skill_view`,
+// which is the whole point of the standard. A worker holds between zero and
+// four of these, so the index is a handful of lines and the saving it protects
+// is untouched.
+//
+// Empty for a worker with no skills, byte for byte: the common case must not
+// pay for the feature, and prefix caching keys on the leading bytes.
+func skillsIndex(p Profile) string {
+	own, _ := OwnSkills(p.Name)
+	if len(own) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\n---\n# What you know, in your own folder\n\n")
+	b.WriteString("Open one before doing the kind of work it covers. ")
+	b.WriteString("Answering from memory when the document is right there is how a general answer goes out under a specialist's name.\n\n")
+	for _, s := range own {
+		b.WriteString("- **" + s.Name + "** - " + strings.TrimSpace(s.Description) + "\n")
+	}
+	return b.String()
 }
 
 // MaxToolCalls is what cognitive.AgentConfig gets for this sub-agent.
