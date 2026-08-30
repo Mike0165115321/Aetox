@@ -386,7 +386,6 @@ shape that tends to come with navigation attached.
    `shell` downloads the bytes) and the rule about licences.
 3. `write` the `.html`; the receipt says where it landed. Reference the pictures
    relatively.
-4. `desk open` that path, so the user sees it in the room.
 
 The room's export bar writes `.pptx` (editable), `.pptx` as pictures, `.pdf`,
 and `.png`/`.jpg`/`.webp`. There is no tool for it: the user is already looking

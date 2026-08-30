@@ -621,6 +621,22 @@ func surfaceLayer(s Surface) string {
 // Derived rather than written down, because the accurate list already exists —
 // it is the desk's own `categories:` line, which AllowsTool answers from. A
 // second list here would be right today and wrong the week a desk changes.
+//
+// Nothing here tells the model to put what it made in front of the user, and
+// that is deliberate as of 2026-08-30. Three places used to, as a step: the
+// deck recipe's fourth line (aetox-slides), and "Put it on the desk" opening
+// the handover section of the video and editor profiles. None of them said
+// anything the glosses above do not already say on every turn, and what they
+// did instead was turn the last act of a job into a step — performed rather
+// than decided. The owner's report is that shape exactly: it opened things
+// because it had been told to, not because the work asked for it.
+//
+// The steps are gone and nothing replaced them, which is the part worth
+// writing down. A sentence here urging delivery would push back toward the
+// behaviour that was just removed, and it would be the fifth place answering
+// one question: these glosses, the desk tool's own description, its guidance
+// on first call, and the two profiles, which keep the reason a video has to be
+// watched because that is craft rather than a destination.
 func workbench(s Surface, d Desk) string {
 	if s != SurfaceDesktop {
 		return ""
