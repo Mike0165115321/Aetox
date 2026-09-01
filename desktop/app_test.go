@@ -243,7 +243,11 @@ func TestNormalizeWorkbenchURL(t *testing.T) {
 		{"http://example.com", "http://example.com"},
 		{"about:blank", "about:blank"},
 		{"example.com", "https://example.com"},
-		{"localhost:5173", "https://localhost:5173"},
+		// http, and this line is the case in miniature: 5173 is the Vite dev
+		// server, which has never spoken TLS in its life. Nothing can hold a
+		// certificate for `localhost`, so upgrading one is not caution, it is a
+		// guaranteed miss (address.go).
+		{"localhost:5173", "http://localhost:5173"},
 	}
 	for _, c := range cases {
 		got, query := normalizeWorkbenchURL(c.in, "", nil)
