@@ -62,7 +62,7 @@ func (w *whisperCPP) ModelPath() string { return w.modelPath }
 // would quietly stop the warning.
 func (w *whisperCPP) ModelCaution() string {
 	if strings.HasPrefix(strings.ToLower(filepath.Base(w.modelPath)), "ggml-tiny") {
-		return "(ถอดด้วยโมเดล tiny ซึ่งเล็กและแม่นน้อยที่สุด — ถ้าข้อความไม่ตรงกับที่ได้ยิน เปลี่ยนเป็นโมเดลใหญ่กว่าได้ที่ ตั้งค่า → เครื่องมือ → audio_transcribe)"
+		return "(ถอดด้วยโมเดล tiny ซึ่งเล็กและแม่นน้อยที่สุด — ถ้าข้อความไม่ตรงกับที่ได้ยิน เปลี่ยนเป็นโมเดลใหญ่กว่าได้ที่ ตั้งค่า → เสียง)"
 	}
 	return ""
 }
@@ -170,6 +170,20 @@ func findBinary(desc Descriptor) (string, error) {
 	}
 	if path := managedBinary(desc); path != "" {
 		return path, nil
+	}
+	// pip --user fills %APPDATA%\Python\<ver>\Scripts without putting it on
+	// PATH (measured 2026-09-01, same finding as tts.lookBinary) — a
+	// pip-installed engine like whisper-ctranslate2 lives there.
+	if appData := os.Getenv("APPDATA"); appData != "" {
+		for _, name := range desc.Binaries {
+			matches, _ := filepath.Glob(filepath.Join(appData, "Python", "*", "Scripts", name+".exe"))
+			sort.Sort(sort.Reverse(sort.StringSlice(matches))) // newest Python first
+			for _, match := range matches {
+				if isRegularFile(match) {
+					return match, nil
+				}
+			}
+		}
 	}
 	return "", missingBinaryError(desc)
 }

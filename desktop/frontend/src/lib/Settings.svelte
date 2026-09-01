@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount, untrack, tick } from 'svelte'
-  import { workerFace } from './workerFace'
   import { theme, applyTheme, THEMES, type ThemeName } from './theme.svelte'
   import { editorFont, applyEditorFontSize } from './editorFont.svelte'
   import { chatFont, applyChatFontSize } from './chatFont.svelte'
@@ -13,6 +12,7 @@
   import ConfirmDialog from './ConfirmDialog.svelte'
   import ProviderMark from './ProviderMark.svelte'
   import ProviderAccount from './ProviderAccount.svelte'
+  import AgentFace from './AgentFace.svelte'
   import Icon from './Icon.svelte'
   import { coverHue } from './coverHue'
   import { armFirstRunReplay } from './firstRun'
@@ -25,12 +25,16 @@
     ProviderWireFormats, TestProviderConnection,
     EnabledProviders, SetProviderEnabled,
     ListMCPServers, SaveMCPServer, RemoveMCPServer, TestMCPServer, ToggleMCPServer,
+    VideoEditorCommand, VideoEditorEnvironment, VideoEditorTools,
     DelegateSwitches, SetDelegateOff, SetAgentOff,
     PlacementTargets, SetMCPServerTargets,
     ListExternalSkills, ListTools, InstallSkillFromGitHub, RemoveExternalSkill, RefreshSkills,
     SkillsDir, SkillScanIssues, OpenSkillsFolder, InstallSkillFromZip,
     MCPConfigPath, OpenMCPFolder,
     ListSpeechModels, SetSpeechModel, SpeechStatus, RevealSpeechModel, SpeechModelDirs, OpenSpeechModelDir,
+    ListSpeechEngines, SetSpeechEngine, ListTTSEngines, SetTTSEngine, ListTTSVoices, SetTTSVoice, TTSStatus, SpeakText,
+    SetSpeechModelName, SetTTSModelName,
+    InstallVoiceEngine,
     UsageStats, ListPromptPresets, OpenPromptsFolder,
     SavePromptPreset, DeletePromptPreset, PickPresetImage, RemovePresetImage,
     ModelPriceSource,
@@ -49,7 +53,7 @@
     AccountStatus, StartAccountSignIn, CompleteAccountSignIn, CancelAccountSignIn,
     AccountSignOut, AccountRefresh,
   } from '../../wailsjs/go/main/App'
-  import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
+  import { BrowserOpenURL, EventsOn } from '../../wailsjs/runtime/runtime'
   // Deliberately alongside the issue button rather than instead of it: an issue
   // carries the version and the log, the group carries the half-formed question
   // that is not a bug report yet.
@@ -1359,7 +1363,21 @@
   // a user actually has in front of it — not "what is this" but "why is it
   // being recommended to me". An entry whose `why` cannot be written without
   // hedging is an entry that does not pass rule 1 and should not be here.
-  const mcpPresets: { name: string; desc: string; why: string; command?: string[]; url?: string; headers?: string[] }[] = [
+  const mcpPresets: { name: string; desc: string; why: string; command?: string[]; url?: string; headers?: string[]; tools?: string[] }[] = [
+    // The only local preset, and the only one that is a program rather than an
+    // endpoint: `kino --mcp` is a subprocess, so unlike the seven below it can
+    // be added while the thing it names is not installed. That is said on the
+    // card rather than hidden, and ห้องงานวิดีโอ has the install button — which
+    // writes this entry itself when the download lands (connectVideoEditor), so
+    // this card is for the person who removed it, or who wants to see what was
+    // written on their behalf.
+    //
+    // Its command, environment AND tool allowlist all come from Go
+    // (presetCommand / presetEnvironment / presetTools): the first two are
+    // absolute paths only Go knows, and the allowlist is the measured 54-tool
+    // bill (desktop/videotooling.go videoEditorTools) that must not exist
+    // twice.
+    { name: 'kinocut', desc: 'Cut, subtitle and render video, on this machine', why: 'Aetox reads video and produces none. This is the half that cuts and renders. Install it from ห้องงานวิดีโอ, which fetches it the same way ffmpeg and Tesseract are fetched; this entry is the connection.', command: [] },
     { name: 'github', desc: 'Repos, pull requests, issues, CI', why: "Aetox's own github tool only reads. This is the half that acts — opening a pull request, commenting, moving an issue.", url: 'https://api.githubcopilot.com/mcp/', headers: ['Authorization: Bearer ${connect:github}'] },
     // Second because it is the other one a bundled agent asks for by name — the
     // research agent ships `needs: mcp:firecrawl`, and the 12 ส.ค. half of the
@@ -1389,6 +1407,34 @@
   ]
 
   const presetTaken = (name: string) => mcpServers.some((s) => s.name.toLowerCase() === name.toLowerCase())
+
+  // What to spawn, for the one preset that is a program rather than an endpoint.
+  //
+  // The table above cannot spell it: it is an absolute path into this user's
+  // own data folder, which only Go knows. Every other preset keeps its literal,
+  // and an empty `command` on a stdio entry is what marks the one that has to
+  // ask (VideoEditorCommand answers where Aetox installs to even before the
+  // download has landed, so the order of installing and connecting does not
+  // matter).
+  const presetCommand = async (p: (typeof mcpPresets)[number]): Promise<string[]> =>
+    isLocalPreset(p) ? await VideoEditorCommand() : (p.command ?? [])
+
+  // The editor is told where its ffmpeg is, in its own vocabulary
+  // (KINOCUT_FFMPEG_EXECUTABLE), rather than by anything being put on the
+  // machine's PATH. Same reason the command is resolved in Go: these are
+  // absolute paths into this user's own data folder.
+  const presetEnvironment = async (p: (typeof mcpPresets)[number]): Promise<Record<string, string>> =>
+    isLocalPreset(p) ? await VideoEditorEnvironment() : {}
+
+  // And its allowlist, for the same reason: the measured bill lives in Go and
+  // nowhere else. Every other preset takes everything, and says so with [].
+  const presetTools = async (p: (typeof mcpPresets)[number]): Promise<string[]> =>
+    isLocalPreset(p) ? await VideoEditorTools() : (p.tools ?? [])
+
+  // A stdio preset with no command written in the table is the one that has to
+  // ask Go for both.
+  const isLocalPreset = (p: (typeof mcpPresets)[number]) =>
+    (p.command?.length ?? 0) === 0 && !p.url
 
   // Which agents declare they need this server, **read off their own files**
   // rather than written beside the preset.
@@ -1432,11 +1478,13 @@
       return
     }
     await SaveMCPServer('', new config.MCPServerConfig({
-      name: p.name, command: p.command ?? [], url: p.url ?? '',
+      name: p.name, command: await presetCommand(p), url: p.url ?? '',
+      environment: await presetEnvironment(p),
       headers: Object.fromEntries((p.headers ?? []).map((h) => {
         const at = h.indexOf(':')
         return [h.slice(0, at).trim(), h.slice(at + 1).trim()]
       })),
+      tools: await presetTools(p),
     }))
     await loadMCP()
   })
@@ -1469,11 +1517,13 @@
     const p = presetFor(o.id)
     if (!p) return
     await SaveMCPServer('', new config.MCPServerConfig({
-      name: p.name, command: p.command ?? [], url: p.url ?? '',
+      name: p.name, command: await presetCommand(p), url: p.url ?? '',
+      environment: await presetEnvironment(p),
       headers: Object.fromEntries((p.headers ?? []).map((h) => {
         const at = h.indexOf(':')
         return [h.slice(0, at).trim(), h.slice(at + 1).trim()]
       })),
+      tools: await presetTools(p),
     }))
     await loadMCP()
     // Placing it is the half that makes the need met — installing alone leaves
@@ -1589,6 +1639,128 @@
       speechError = String(err) // stays open so the reason is readable
     } finally {
       speechBusy = false
+    }
+  }
+
+  // ---------- Voice page (STT + TTS, both vendor-switchable) ----------
+  // Two catalogs rendered as two pickers: internal/stt for the mic and
+  // audio_transcribe, internal/tts for reading replies aloud. A new vendor is
+  // a catalog entry in Go — nothing on this page changes.
+  type EngineRow = { id: string; label: string; install: string; active: boolean; hasModels: boolean; installCommand: string[]; models: string[]; activeModel: string }
+  type TtsVoiceRow = { id: string; name: string; lang: string; gender: string; active: boolean }
+  let sttEngines = $state<EngineRow[]>([])
+  let ttsEngines = $state<EngineRow[]>([])
+  let ttsVoicesList = $state<TtsVoiceRow[]>([])
+  let ttsStatus = $state('') // TTS engine's own reason it cannot run; '' means ready
+  let voicePageBusy = $state(false)
+  let voicePageError = $state('')
+  let ttsPreviewing = $state(false)
+  let ttsPreviewAudio: HTMLAudioElement | null = null
+
+  const activeSttEngine = $derived(sttEngines.find((e) => e.active))
+  const activeTtsEngine = $derived(ttsEngines.find((e) => e.active))
+
+  async function loadVoicePage() {
+    sttEngines = await ListSpeechEngines()
+    ttsEngines = await ListTTSEngines()
+    ttsStatus = await TTSStatus()
+    await loadSpeech()
+    try {
+      ttsVoicesList = await ListTTSVoices()
+    } catch (err) {
+      // No voices is not a page failure — the status line already carries the
+      // engine's reason; keep whichever message is more specific.
+      ttsVoicesList = []
+      if (!ttsStatus) ttsStatus = String(err)
+    }
+  }
+
+  async function voiceAction(fn: () => Promise<void>) {
+    voicePageBusy = true
+    voicePageError = ''
+    try {
+      await fn()
+      await loadVoicePage()
+    } catch (err) {
+      voicePageError = String(err)
+    } finally {
+      voicePageBusy = false
+    }
+  }
+
+  const pickSttEngine = (id: string) => voiceAction(() => SetSpeechEngine(id))
+  const pickTtsEngine = (id: string) => voiceAction(() => SetTTSEngine(id))
+  const pickTtsVoice = (id: string) => voiceAction(() => SetTTSVoice(id))
+  const pickSttModelName = (name: string) => voiceAction(() => SetSpeechModelName(name))
+  const pickTtsModelName = (name: string) => voiceAction(() => SetTTSModelName(name))
+
+  // ---------- ติดตั้ง engine จากในแอป ----------
+  // The command on screen IS the command that runs: rows carry the catalog's
+  // own argv (VoiceEngineInfo.installCommand) for display, and the button
+  // sends back only (side, id) — InstallVoiceEngine re-reads the catalog, so
+  // the webview cannot compose a command. The tail is pip's latest line, one
+  // line tall on purpose: a chatty install must not move the page.
+  let voiceInstallBusy = $state<'' | 'stt' | 'tts'>('')
+  let voiceInstallTail = $state('')
+  let voiceInstallDone = $state<Record<string, string>>({}) // side -> label just installed
+  let voiceInstallFail = $state<Record<string, string>>({}) // side -> the verdict sentence
+
+  async function installVoiceEngine(side: 'stt' | 'tts', eng: EngineRow) {
+    voiceInstallBusy = side
+    voiceInstallTail = ''
+    voiceInstallDone = { ...voiceInstallDone, [side]: '' }
+    voiceInstallFail = { ...voiceInstallFail, [side]: '' }
+    const off = EventsOn('voice:install', (p: { side?: string; line?: string }) => {
+      if (p?.side === side && p.line) voiceInstallTail = p.line
+    })
+    try {
+      await InstallVoiceEngine(side, eng.id)
+      voiceInstallDone = { ...voiceInstallDone, [side]: eng.label }
+      // The page re-checks for itself — the green line below is the only
+      // celebration; the red status clearing is the proof.
+      await loadVoicePage()
+    } catch (err) {
+      voiceInstallFail = { ...voiceInstallFail, [side]: String(err) }
+    } finally {
+      off()
+      voiceInstallBusy = ''
+      voiceInstallTail = ''
+    }
+  }
+
+  let voiceCmdCopied = $state('')
+  async function copyVoiceCommand(side: string, argv: string[]) {
+    try {
+      await navigator.clipboard.writeText(argv.join(' '))
+      voiceCmdCopied = side
+      setTimeout(() => (voiceCmdCopied = ''), 1500)
+    } catch {
+      /* clipboard blocked — the command is on screen to be typed */
+    }
+  }
+
+  // ลองฟัง — one short sentence through the exact path the chat's ฟัง button
+  // takes, so what this proves is what the user will get.
+  async function previewTts() {
+    if (ttsPreviewing) {
+      ttsPreviewAudio?.pause()
+      ttsPreviewAudio = null
+      ttsPreviewing = false
+      return
+    }
+    voicePageError = ''
+    ttsPreviewing = true
+    try {
+      const url = await SpeakText(t('settings.ttsPreviewText'))
+      const audio = new Audio(url)
+      ttsPreviewAudio = audio
+      audio.onended = () => { ttsPreviewing = false; ttsPreviewAudio = null }
+      audio.onerror = () => { ttsPreviewing = false; ttsPreviewAudio = null }
+      await audio.play()
+    } catch (err) {
+      voicePageError = String(err)
+      ttsPreviewing = false
+      ttsPreviewAudio = null
     }
   }
 
@@ -2009,20 +2181,20 @@
   // Which profiles are agents — asked of ListChairs, the same answer the team
   // page draws, never re-derived from a file's fields here.
   let chairNames = $state(new Set<string>())
-  // What each office agent's `tools:` asked for and did not get, by agent name.
-  // The roster only says how many (Office.svelte); the names belong here,
-  // because this is the page where `tools:` can actually be changed. Same
-  // source as the count, so the two cannot disagree about what is missing.
-  let chairMissing = $state<Record<string, string[]>>({})
   // null = the list. Anything else = the editor on that profile's raw file.
   let agentEditing = $state<SubagentRow | null>(null)
   let agentDraftName = $state('')
   // The .md file is still `--- key: value ---` plus a role prompt underneath —
   // that has not changed, and SaveSubagentProfile still only ever receives
   // that same text. What changed is that the editor stopped asking a person to
-  // read and hand-edit it: each frontmatter key gets its own field below, and
-  // agentDraftModel is carried through untouched because the per-row dropdown
-  // (pinModel) already owns that one key.
+  // read and hand-edit it: each frontmatter key gets its own field below.
+  // agentDraftModel is one of those fields (ag-sec agentSecBrain) and has been
+  // since the editor grew its five sections. It was ALSO a dropdown repeated
+  // down the list until 31 ส.ค., which is the copy that went: inheriting is the
+  // rule and a pin is the exception, and a control drawn on every card made the
+  // one agent that is pinned look exactly like the six that are not. The list
+  // says so with a chip now, and the pin is set where the rest of what this
+  // agent thinks with already lives.
   let agentDraftDescription = $state('')
   let agentDraftModel = $state('')
   let agentDraftTools = $state<string[]>([])
@@ -2316,10 +2488,8 @@
     try {
       const roster = await ListChairs()
       chairNames = new Set(roster.map((c) => c.name))
-      chairMissing = Object.fromEntries(roster.filter((c) => c.missing?.length).map((c) => [c.name, c.missing ?? []]))
     } catch {
       chairNames = new Set() // engine not up: rows just carry no room label
-      chairMissing = {}
     }
     try {
       agentModels = await ListModelsForProvider(cockpit.model.provider)
@@ -2478,17 +2648,11 @@
     })
   }
 
-  // What the row says about tools has to be what the sub-agent actually gets: an
-  // empty list means the whole registry, not zero tools.
-  const toolBadge = (a: SubagentRow) =>
-    a.tools && a.tools.length > 0 ? t('settings.agentToolCount', { n: a.tools.length }) : t('settings.agentAllTools')
-
-  // A count alone ("2 denied") sends you to the .md file to find out which two.
-  // The names are already on the row — the badge just has to say them.
-  const toolBadgeTip = (a: SubagentRow) =>
-    a.tools && a.tools.length > 0
-      ? t('settings.agentToolsTip', { list: a.tools.join(', ') })
-      : t('settings.agentAllToolsTip')
+  // There is no tool badge on this row any more. It said "all tools" or a
+  // count, and after 31 ส.ค. every agent holds the same kit — so it was one
+  // word repeated down a column, saying nothing about the agent it sat on.
+  // What is left is the deny badge below, which appears only when this agent
+  // refuses something, because only a refusal tells you what it will not do.
 
   const denyTip = (a: SubagentRow) => t('settings.agentDenyTip', { list: (a.deny ?? []).join(', ') })
 
@@ -2592,70 +2756,17 @@
   }
 
   // ---------- Sub-agent tool permissions ----------
-  // The engine resolves one question per tool, not two lists
-  // (internal/subagent/profile.go AllowsTool): a forced denial always wins, then
-  // deny, then an empty allow-list means everything, then membership.
+  // There is no control here any more, and the engine's rule is the reason.
+  // It resolves one question per tool (internal/subagent/profile.go
+  // AllowsTool): a forced denial always wins, then `deny:`, then an empty
+  // allow-list means everything, then membership. On 31 ส.ค. every bundled
+  // agent's allow-list went away — an agent's kit is its desk's now — so the
+  // first half of that rule had nothing left to say on any screen, and `deny:`
+  // alone did not earn a seventy-row picker to reach it.
   //
-  // The editor used to draw those two lists as two identical 35-chip grids, so
-  // the user had to join them in their head to find out what a tool actually
-  // ended up as — and nothing stopped the same tool being ticked in both, a
-  // contradiction the engine silently resolves as denied. One row, one state.
-  type ToolState = 'default' | 'allow' | 'deny'
-
-  function toolStateOf(name: string): ToolState {
-    if (agentDraftDeny.includes(name)) return 'deny'
-    if (agentDraftTools.includes(name)) return 'allow'
-    return 'default'
-  }
-
-  function setToolState(name: string, state: ToolState) {
-    agentDraftDeny = agentDraftDeny.filter((n) => n !== name)
-    agentDraftTools = agentDraftTools.filter((n) => n !== name)
-    if (state === 'deny') agentDraftDeny = [...agentDraftDeny, name]
-    if (state === 'allow') agentDraftTools = [...agentDraftTools, name]
-  }
-
-  let toolPickerOpen = $state(false)
-  let toolQuery = $state('')
-
-  // Back to the default every profile starts on: no allow-list, no deny-list,
-  // which the engine reads as "whatever the registry has".
-  function resetAgentTools() {
-    agentDraftTools = []
-    agentDraftDeny = []
-  }
-
-  // Grouped by what the tool is for, same split the Tools page uses. Choosing
-  // what a delegate may be handed is exactly the "what is this for" question —
-  // "which of these did I install" never was, and it is the one the old
-  // source-based split answered.
-  const agentToolGroups = $derived.by(() => {
-    const q = toolQuery.trim().toLowerCase()
-    return TOOL_CATEGORIES
-      .map((key) => ({
-        key,
-        items: tools
-          .filter((s) => (s.category || 'agent') === key && (!q || s.name.toLowerCase().includes(q)))
-          .map((s) => ({ name: s.name, forced: AGENT_FORCED_DENIALS.includes(s.name) }))
-          .sort((a, b) => a.name.localeCompare(b.name)),
-      }))
-      .filter((g) => g.items.length > 0)
-  })
-
-  const toolMatchCount = $derived(agentToolGroups.reduce((n, g) => n + g.items.length, 0))
-
-  // Says what the profile actually does, not how many boxes are ticked. An
-  // empty allow-list is the common case and means "everything", which a bare
-  // "0 selected" reads as the opposite of.
-  const agentToolSummary = $derived(
-    agentDraftTools.length === 0 && agentDraftDeny.length === 0
-      ? t('settings.agentToolsAllOf')
-      : agentDraftTools.length === 0
-        ? t('settings.agentToolsAllExcept', { n: agentDraftDeny.length })
-        : agentDraftDeny.length === 0
-          ? t('settings.agentToolsOnly', { n: agentDraftTools.length })
-          : t('settings.agentToolsOnlyExcept', { n: agentDraftTools.length, d: agentDraftDeny.length }),
-  )
+  // `agentDraftDeny` and `agentDraftTools` survive as passthrough: parsed in,
+  // written back out unchanged, so an editor that no longer offers to write
+  // either line cannot silently eat one somebody wrote by hand.
 
   // ---------- Step limit ----------
   const agentStepsUnlimited = $derived(agentDraftSteps.trim().toLowerCase() === STEPS_UNLIMITED)
@@ -3014,6 +3125,7 @@
   $effect(() => {
     if (active === 'learning') void loadLearning()
     if (active === 'skilltune') void loadSkillTune()
+    if (active === 'voice') void loadVoicePage()
   })
 
   $effect(() => {
@@ -3085,6 +3197,8 @@
       // skill is a document telling it how. Sharing a page is what made them
       // read as one thing.
       { id: 'tools', label: t('settings.tools'), icon: 'wrench', terms: [SPEECH_TOOL] },
+      { id: 'voice', label: t('settings.voice'), icon: 'mic',
+        terms: ['TTS', 'STT', 'whisper', t('settings.sttHeading'), t('settings.ttsHeading'), t('settings.speechModel')] },
       { id: 'skills', label: t('settings.skills'), icon: 'puzzle', terms: [t('settings.skillInstall')] },
       { id: 'mcp', label: t('settings.mcpServers'), icon: 'plug', terms: [t('settings.mcpPresets'), t('settings.addServer')] },
       // Below MCP and not beside the model sign-ins: both pages here extend
@@ -3262,6 +3376,24 @@
   let active = $state(restoredSection())
   let query = $state('')
 
+  // Which memory group the learning page should take the reader to. Set only
+  // by a door that names one — the page itself lists every scope and marks
+  // none, which is right when you walked in through the sidebar and wrong when
+  // you arrived from one agent's card asking about that agent.
+  let memoryFocus = $state('')
+
+  // The learning page, landed on one scope. `scrollIntoView` rather than a
+  // filter: the reader came from a card about one agent and is owed that
+  // agent's lines, but hiding the others would make a page whose whole subject
+  // is "who learned what" answer for one worker and stay silent about the rest.
+  function openMemoryScope(scope: string) {
+    memoryFocus = scope
+    openSection('learning')
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-mem-scope="${CSS.escape(scope)}"]`)?.scrollIntoView({ block: 'center' })
+    })
+  }
+
   function openSection(id: string) {
     active = id
     try {
@@ -3329,6 +3461,33 @@
   </div>
 {/snippet}
 
+{#snippet voiceInstall(side: 'stt' | 'tts', eng: EngineRow | undefined, status: string)}
+  <!-- The ติดตั้ง row (อนุมัติ 1 ก.ย.): shown only while the engine's own
+       status says something is missing — a working engine needs no
+       instructions, so success is this row disappearing and one green line
+       standing in its place. -->
+  {#if eng?.installCommand?.length && status}
+    <div class="voice-install-row">
+      <code class="voice-install-cmd">$ {eng.installCommand.join(' ')}</code>
+      <button class="ctrl" disabled={voiceInstallBusy !== ''} onclick={() => copyVoiceCommand(side, eng.installCommand)}>
+        {voiceCmdCopied === side ? t('settings.voiceInstallCopied') : t('settings.voiceInstallCopy')}
+      </button>
+      <button class="ctrl ctrl-primary" disabled={voiceInstallBusy !== ''} onclick={() => installVoiceEngine(side, eng)}>
+        {voiceInstallBusy === side ? t('settings.installing') : t('settings.voiceInstallRun')}
+      </button>
+    </div>
+    {#if voiceInstallBusy === side && voiceInstallTail}
+      <div class="d voice-install-tail">{voiceInstallTail}</div>
+    {/if}
+  {/if}
+  {#if voiceInstallFail[side]}
+    <div class="d voice-install-fail">{voiceInstallFail[side]}</div>
+  {/if}
+  {#if voiceInstallDone[side]}
+    <div class="d voice-install-ok">{t('settings.voiceInstalled', { name: voiceInstallDone[side] })}</div>
+  {/if}
+{/snippet}
+
 {#snippet serverControls(row: ConnectionRow)}
   <!-- Its own bordered block, and the heading says which of the two questions
        this half answers. They were a run of fields under the address and the
@@ -3381,38 +3540,58 @@
      A helper is not picked at all — it is part of the system, nobody chooses
      one, and a row is the honest shape for an inventory you read and close. -->
 {#snippet profileRow(a: SubagentRow)}
-  <div class="set-row">
-    <!-- The same mark this profile wears everywhere else, resolved once in Go
-         so one profile cannot show two faces on two pages. Untinted: the
-         colour is an agent's own, and a helper does not have one.
-
-         The fallback is the KIND's mark, never a constant: `|| 'bot'` put the
-         ซับเอเจน glyph on three of the five bundled เอเจน, on the เอเจน page,
-         under a sidebar item wearing `userRound` (see workerFace). -->
-    <span class="ag-rowicon" style="--h:{coverHue(a.name)}">
-      <Icon name={workerFace(a.icon, chairNames.has(a.name))} size={15} />
-    </span>
-    <div class="set-txt">
-      <div class="t">
-        {a.name}
-        {#if a.model}<span class="tag">{a.model}</span>{/if}
-        <span class="tag" title={toolBadgeTip(a)}>{toolBadge(a)}</span>
-        {#if a.deny && a.deny.length > 0}<span class="tag ag-deny" title={denyTip(a)}>{t('settings.agentDenyCount', { n: a.deny.length })}</span>{/if}
-        <!-- 0 is an absent `steps:` and a negative is the keyword; both mean no
-             ceiling (§110). Only a positive number is a cap worth a badge. -->
-        <span class="tag" title={(a.steps ?? 0) > 0 ? t('settings.agentStepsTip', { n: a.steps ?? 0 }) : t('settings.agentStepsNoneTip')}>
-          {(a.steps ?? 0) > 0 ? t('settings.agentSteps', { n: a.steps ?? 0 }) : t('settings.agentStepsNone')}
-        </span>
+  <!-- A helper is the same card one weight lighter: smaller mark, no door of
+       its own, no chat. The set is fixed and the page reads (owner, 6 ส.ค.),
+       so what a teammate's foot holds, this one simply does not have — and the
+       difference in weight is what says which level of the company you are
+       looking at, without a sentence having to say it. -->
+  <div class="chair-card agc helper" class:off={reachOf(a.name) && !(reachOf(a.name)!.on && !reachOf(a.name)!.off)}>
+    <div class="chair-body">
+      <div class="chair-who">
+        <!-- The same face as an เอเจน, at the same size (owner, 1 ก.ย.:
+             *"อยากได้ UI เหมือนๆกัน"*). The mark here used to be one weight
+             lighter than a teammate's, on the reasoning that the difference in
+             weight said which level of the company you were looking at. The
+             owner's call is that the levels are said by the page you are on —
+             this one is headed ซับเอเจน and its rows carry no chat button —
+             and that a second visual language for the same kind of thing costs
+             more than it explains. -->
+        <AgentFace name={a.name} icon={a.icon} size={38} />
+        <span class="chair-name" title={a.path || 'built-in:' + a.name}>{a.name}</span>
+        {#if delegate}
+          {@const w = reachOf(a.name)}
+          {#if w}
+            <label class="mswitch" title={t('settings.agentReachTip')}>
+              <input
+                type="checkbox" checked={w.on && !w.off}
+                disabled={w.off || delegateBusy !== ''}
+                aria-label={t('settings.agentReach')}
+                onchange={() => toggleAgentReach(a.name, w.on)}
+              />
+              <span></span>
+            </label>
+          {/if}
+        {/if}
       </div>
       <div class="d">{a.description || '—'}</div>
       <!-- A file that cannot run says why, where its owner will look — never a
-           silent reinterpretation, never a row that just vanishes (the file is
+           silent reinterpretation, never a card that just vanishes (the file is
            still on the user's disk). -->
       {#if a.invalid}<div class="d ag-invalid">{a.invalid}</div>{/if}
       <!-- Not fatal, and deliberately a different colour: this file runs, it is
            just doing something its author probably did not mean. -->
       {#if a.notice}<div class="d ag-notice">{a.notice}</div>{/if}
-      <div class="d mono-dim">{a.path || 'built-in:' + a.name}</div>
+      <!-- Only the facts that differ between one helper and the next. The steps
+           badge was drawn on every one of them reading "ไม่จำกัดรอบ", which is
+           the same word four times down a column of four. -->
+      <div class="chair-chips">
+        {#if a.model}<span class="chip">{a.model}</span>{/if}
+        {#if a.deny && a.deny.length > 0}<span class="chip deny" title={denyTip(a)}>{t('settings.agentDenyCount', { n: a.deny.length })}</span>{/if}
+        {#if (a.steps ?? 0) > 0}
+          <span class="chip" title={t('settings.agentStepsTip', { n: a.steps ?? 0 })}>{t('settings.agentSteps', { n: a.steps ?? 0 })}</span>
+        {/if}
+        <span class="chip mono-dim">{a.path || 'built-in:' + a.name}</span>
+      </div>
     </div>
   </div>
 {/snippet}
@@ -3435,32 +3614,22 @@
      row it was a fourth line of dim monospace under every entry, answering a
      question nobody asks while scanning. -->
 {#snippet agentRow(a: SubagentRow)}
-  <div class="set-row ag-row">
-    <span class="ag-rowicon" style="--h:{coverHue(a.name)}">
-      <Icon name={workerFace(a.icon, chairNames.has(a.name))} size={16} />
-    </span>
-    <div class="set-txt">
-      <div class="t" title={a.path || 'built-in:' + a.name}>
-        {a.name}
-        {#if a.overrides}<span class="tag ag-override">{t('settings.agentOverrides')}</span>{/if}
-        <span class="tag" title={toolBadgeTip(a)}>{toolBadge(a)}</span>
-        {#if a.deny && a.deny.length > 0}<span class="tag ag-deny" title={denyTip(a)}>{t('settings.agentDenyCount', { n: a.deny.length })}</span>{/if}
-        <!-- 0 is an absent `steps:` and a negative is the keyword; both mean no
-             ceiling (§110). Only a positive number is a cap worth a badge. -->
-        <span class="tag" title={(a.steps ?? 0) > 0 ? t('settings.agentStepsTip', { n: a.steps ?? 0 }) : t('settings.agentStepsNoneTip')}>
-          {(a.steps ?? 0) > 0 ? t('settings.agentSteps', { n: a.steps ?? 0 }) : t('settings.agentStepsNone')}
-        </span>
-      </div>
-      <div class="d">{a.description || '—'}</div>
-      <!-- A file that cannot run says why, where its owner will look — never a
-           silent reinterpretation, never a row that just vanishes (the file is
-           still on the user's disk). -->
-      {#if a.invalid}<div class="d ag-invalid">{a.invalid}</div>{/if}
-      <!-- Not fatal, and deliberately a different colour: this file runs, it is
-           just doing something its author probably did not mean. -->
-      {#if a.notice}<div class="d ag-notice">{a.notice}</div>{/if}
-    </div>
-    <div class="ag-actions">
+  <div class="chair-card agc" class:off={reachOf(a.name) && !(reachOf(a.name)!.on && !reachOf(a.name)!.off)}>
+    <div class="chair-body">
+      <div class="chair-who">
+        <!-- The เอเจน page draws the same face the roster does, at the same
+             size, because it is the same person seen from a different act
+             (§85). The ซับเอเจน page one snippet up keeps the glyph mark on
+             purpose: a helper is the assistant's own hands, and a face would
+             invite the question of how to hire one. -->
+        <AgentFace
+          name={a.name}
+          icon={a.icon}
+          size={38}
+          off={!!reachOf(a.name) && !(reachOf(a.name)!.on && !reachOf(a.name)!.off)}
+        />
+        <span class="chair-name" title={a.path || 'built-in:' + a.name}>{a.name}</span>
+        <div class="ag-actions">
       <!-- Whether the MAIN assistant may hand this one work. Not whether the
            agent exists: the user still opens a chat with it from the composer
            and still writes @name, and no switch on this page reaches those. That
@@ -3476,39 +3645,66 @@
            A chip that is on and a chip that is merely hoverable look the same
            until you learn the colour; a switch does not have to be learned.
 
-           Disabled, not hidden, while this kind is switched off entirely. A row
+           Disabled, not hidden, while this kind is switched off entirely. A card
            that vanished would leave somebody wondering where their agent went; a
-           row that is greyed out under the switch above it explains itself. -->
-      {#if delegate}
-        {@const w = reachOf(a.name)}
-        {#if w}
-          <label class="mswitch" title={t('settings.agentReachTip')}>
-            <input
-              type="checkbox" checked={w.on && !w.off}
-              disabled={w.off || delegateBusy !== ''}
-              aria-label={t('settings.agentReach')}
-              onchange={() => toggleAgentReach(a.name, w.on)}
-            />
-            <span></span>
-          </label>
+           card that is cooled under the switch above it explains itself. -->
+          {#if delegate}
+            {@const w = reachOf(a.name)}
+            {#if w}
+              <label class="mswitch" title={t('settings.agentReachTip')}>
+                <input
+                  type="checkbox" checked={w.on && !w.off}
+                  disabled={w.off || delegateBusy !== ''}
+                  aria-label={t('settings.agentReach')}
+                  onchange={() => toggleAgentReach(a.name, w.on)}
+                />
+                <span></span>
+              </label>
+            {/if}
+          {/if}
+          <!-- A cog, not a labelled bar across the foot. On the roster the
+               equivalent control says "คุยกับ doc" in words, and it earns the
+               row because walking in to talk is what that page is FOR (owner,
+               30 ส.ค.). Here the errand is configuring, the page is already the
+               settings page, and a full-width button repeating the word cost
+               every card a row of its own — which is what made the deck too
+               tall to scan (owner, 31 ส.ค.: "ขนาดมันใหญ่ไป"). -->
+          <button
+            class="icobtn tiny tip-l" disabled={agentBusy !== ''}
+            aria-label={t('settings.agentConfigure')} data-tip={t('settings.agentConfigure')}
+            onclick={() => openAgent(a, 'agent')}
+          >
+            <Icon name="settings" size={14} />
+          </button>
+        </div>
+      </div>
+      <div class="d">{a.description || '—'}</div>
+      <!-- A file that cannot run says why, where its owner will look — never a
+           silent reinterpretation, never a card that just vanishes (the file is
+           still on the user's disk). -->
+      {#if a.invalid}<div class="d ag-invalid">{a.invalid}</div>{/if}
+      <!-- Not fatal, and deliberately a different colour: this file runs, it is
+           just doing something its author probably did not mean. -->
+      {#if a.notice}<div class="d ag-notice">{a.notice}</div>{/if}
+      <!-- Only what DIFFERS from the ordinary. The steps badge used to be drawn
+           on every card — "ไม่จำกัดรอบ" seven times down a list of seven — which
+           is a badge in the best slot on the card saying nothing at all. It is
+           drawn now only when there is a real ceiling (§110: 0 is an absent
+           `steps:` and a negative is the keyword; both mean no ceiling).
+           The pinned model joins it for the same reason: inherit is the rule, a
+           pin is the exception, and only the exception is worth a slot. The pin
+           itself moved into the editor behind the gear, where the rest of what
+           this agent thinks with already lives — a dropdown repeated down the
+           column made the seven that inherit look exactly like the one that
+           does not. -->
+      <div class="chair-chips">
+        {#if a.overrides}<span class="chip mine">{t('settings.agentOverrides')}</span>{/if}
+        {#if a.deny && a.deny.length > 0}<span class="chip deny" title={denyTip(a)}>{t('settings.agentDenyCount', { n: a.deny.length })}</span>{/if}
+        {#if (a.steps ?? 0) > 0}
+          <span class="chip" title={t('settings.agentStepsTip', { n: a.steps ?? 0 })}>{t('settings.agentSteps', { n: a.steps ?? 0 })}</span>
         {/if}
-      {/if}
-      <select
-        class="ctrl ag-model" value={a.model ?? ''} disabled={agentBusy !== ''}
-        aria-label={t('settings.agentModelPick')}
-        onchange={(e) => pinModel(a.name, e.currentTarget.value)}
-      >
-        <option value="">{t('settings.agentModelInherit')}</option>
-        {#each agentModels as m}<option value={m}>{m}</option>{/each}
-        {#if a.model && !agentModels.includes(a.model)}<option value={a.model}>{a.model}</option>{/if}
-      </select>
-      <button
-        class="icobtn tiny tip-l" disabled={agentBusy !== ''}
-        aria-label={t('settings.agentConfigure')} data-tip={t('settings.agentConfigure')}
-        onclick={() => openAgent(a, 'agent')}
-      >
-        <Icon name="settings" size={13} />
-      </button>
+        {#if a.model}<span class="chip">{a.model}</span>{/if}
+      </div>
     </div>
   </div>
 {/snippet}
@@ -3625,25 +3821,30 @@
         <span class="group-count">{group.rows.length}</span>
         <span class="group-hint">{group.hint}</span>
       </div>
-      <div class="settings-card">
+      <!-- A deck, not a card holding rows. The card wrapping the list was the
+           one boundary the group heading above it was already drawing, and a
+           box around boxes is what made the borderless card impossible to read
+           the first two times it was tried. -->
+      <div class="office-grid">
         {#each group.rows as a (a.name)}{@render agentRow(a)}{/each}
-        {#if group.rows.length === 0}
-          <div class="set-row ag-row empty"><div class="set-txt"><div class="d">
-            {agentQuery.trim() ? t('settings.agentNoMatches') : t('settings.teamNoneOfMine')}
-          </div></div></div>
-        {/if}
       </div>
+      {#if group.rows.length === 0}
+        <p class="muted set-sub ag-empty">
+          {agentQuery.trim() ? t('settings.agentNoMatches') : t('settings.teamNoneOfMine')}
+        </p>
+      {/if}
     {/each}
     <p class="muted set-sub">{t('settings.agentsHint')}</p>
   {:else}
     <!-- The helpers are part of the system (owner's call, 2026-08-06): the
-         bundled three are the whole set, so this page reads — no create, no
-         editor, no per-row model pin. One card, because "yours" cannot exist. -->
-    <div class="settings-card">
-      <div class="card-form">
-        <div class="eyebrow">{t('settings.subagentsBuiltin')} <span class="ag-count">{rows.builtin.length}</span></div>
-        <div class="d muted">{t('settings.helpersFixedHint')}</div>
-      </div>
+         bundled set is the whole set, so this page reads — no create, no
+         editor, no model pin. One group, because "yours" cannot exist. -->
+    <div class="group-head">
+      <span class="group-title">{t('settings.subagentsBuiltin')}</span>
+      <span class="group-count">{rows.builtin.length}</span>
+      <span class="group-hint">{t('settings.helpersFixedHint')}</span>
+    </div>
+    <div class="office-grid">
       {#each rows.builtin as a (a.name)}{@render profileRow(a)}{/each}
     </div>
   {/if}
@@ -3799,35 +4000,16 @@
       </div>
     {/if}
 
-    <div class="settings-card">
-      <div class="card-form pp-edit">
-        <!-- A summary and a way in, not seventy chips. What each tool ends up
-             as is one question, so it is answered one row at a time in the
-             picker rather than across two grids the reader has to join
-             themselves. -->
-        <div class="pp-field">
-          <span class="eyebrow">{t('settings.agentTools')}</span>
-          <div class="ag-toolsum">
-            <div class="ag-toolsum-txt">
-              <div class="t">{agentToolSummary}</div>
-              <div class="d muted">{t('settings.agentToolsRule')}</div>
-              <!-- The names behind the roster's count. Here and not on the card
-                   because this is the row that can act on them: what is missing
-                   is a line in `tools:`, and `tools:` is edited through the
-                   button beside this text. -->
-              {#if chairMissing[agentDraftName]?.length}
-                <div class="d ag-toolsum-missing">
-                  {t('office.missingTools', { list: chairMissing[agentDraftName].join(', ') })}
-                </div>
-              {/if}
-            </div>
-            <button type="button" class="ctrl" onclick={() => (toolPickerOpen = true)}>
-              {t('settings.agentToolsConfigure')} <Icon name="chevronRight" size={13} />
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- The tools card stood here and is gone (31 ส.ค.). It summarised a kit
+         every agent now holds identically — "ใช้ได้ทุกตัว" on every card, a
+         sentence that can no longer be false — and behind it sat a seventy-row
+         picker whose only remaining state was `deny`. Owner: "ห้ามใช้
+         เครื่องมือ ทำไมไม่เอาออกด้วย".
+
+         `deny:` still works in the engine and is still written back untouched
+         by this editor, the same rule `desk:` and `needs:` are kept by, and the
+         row badge still reports it. What went is the control, not the
+         capability. -->
 
     {#if agentEditKind === 'agent'}
       {@render agentMCPBox()}
@@ -4023,9 +4205,18 @@
         <div class="t">{t('settings.agentMemoryTitle')} <span class="tag">{t('settings.itemCount', { n: agentMemory.length })}</span></div>
         <div class="d">{agentMemory.length > 0 ? agentMemory[0] : t('settings.agentMemoryNone')}</div>
       </div>
-      <button class="ctrl" onclick={() => openSection('learning')}>
-        {t('settings.learning')} <Icon name="arrowRight" size={13} />
-      </button>
+      <!-- A door only when there is something behind it. The button was
+           unconditional and went to the learning page with no scope, so an
+           agent showing "0 รายการ" sent the reader to the MAIN agent's memory
+           and looked like it had opened the wrong file. Reported 31 ส.ค.:
+           "ความจำของเอเจนคนนี้ 0 รายการ ทำไมมันยังพาไปความจำของตัวเมนหลัก".
+           An agent with nothing learned has no group on that page at all, so
+           there was never anywhere for this to land. -->
+      {#if agentMemory.length > 0}
+        <button class="ctrl" onclick={() => openMemoryScope(agentDraftName)}>
+          {t('settings.learning')} <Icon name="arrowRight" size={13} />
+        </button>
+      {/if}
     </div>
   </div>
 {/snippet}
@@ -4713,75 +4904,174 @@
                 </div>
               </button>
               {#if s.name === SPEECH_TOOL}
-                <!-- A dropdown, not an expanding section: picking a model must
-                     not shove the rest of the tool list down the page. -->
-                <div class="tool-setting">
-                  <button class="ctrl" disabled={speechBusy} onclick={() => (speechOpen = !speechOpen)}>
-                    {activeSpeechLabel} <Icon name={speechOpen ? 'chevronUp' : 'chevronDown'} size={13} />
-                  </button>
-                  {#if speechOpen}
-                    <button
-                      class="drop-backdrop"
-                      aria-label={t('settings.close')}
-                      onclick={() => (speechOpen = false)}
-                    ></button>
-                    <div class="rowdrop-list">
-                      {#if speechStatus}<div class="rowdrop-note mset-error">{speechStatus}</div>{/if}
-                      {#if speechModels.length === 0}
-                        <div class="rowdrop-note muted">{t('settings.speechNoModels')}</div>
-                      {:else}
-                        <button
-                          class="rowdrop-opt"
-                          class:selected={speechModels.every((m) => !m.active)}
-                          onclick={() => pickSpeechModel('')}
-                        >
-                          <div class="t">{t('settings.speechAuto')}</div>
-                          <div class="sub">{t('settings.speechAutoDesc')}</div>
-                        </button>
-                        {#each speechModels as m (m.path)}
-                          <div class="rowdrop-row">
-                            <button
-                              class="rowdrop-opt"
-                              class:selected={m.active}
-                              onclick={() => pickSpeechModel(m.path)}
-                            >
-                              <div class="t">{m.name}</div>
-                              <div class="sub">{m.sizeMB} MB · {m.store}</div>
-                            </button>
-                            <!-- data-tip, not title: the app has its own tooltip
-                                 and the native one is slow and unstyleable. The
-                                 path is what the tip is for — `m.where` was
-                                 never a field on this row, so it showed
-                                 nothing. -->
-                            <button
-                              class="rowdrop-reveal"
-                              data-tip={m.path}
-                              aria-label={t('settings.speechOpenFolder')}
-                              onclick={() => RevealSpeechModel(m.path)}
-                            ><Icon name="folderOpen" size={14} /></button>
-                          </div>
-                        {/each}
-                      {/if}
-                      {#if speechError}<div class="rowdrop-note mset-error">{speechError}</div>{/if}
-
-                      <!-- Where the scan looks. Without it a missing model is a
-                           dead end; with it, it is "put the file in one of
-                           these". -->
-                      <div class="rowdrop-sep"></div>
-                      <div class="rowdrop-note muted">{t('settings.speechScanned')}</div>
-                      {#each speechDirs as d (d.path)}
-                        <button class="rowdrop-opt rowdrop-dir" onclick={() => OpenSpeechModelDir(d.path)}>
-                          <Icon name="folderOpen" size={13} /> {d.label}
-                        </button>
-                      {/each}
-                    </div>
-                  {/if}
-                </div>
+                <!-- The model picker hung off this row while this tool was the
+                     only thing speech served. The composer's mic made it two
+                     users, so the setting moved to its own page — and this row
+                     keeps a door there rather than a second copy of it. -->
+                <button class="ctrl" onclick={() => openSection('voice')}>
+                  <Icon name="mic" size={13} /> {t('settings.voiceFromTool')}
+                </button>
               {/if}
             </div>
           {/each}
         </div>
       {/each}
+    {:else if active === 'voice'}
+      <h2>{t('settings.voice')}</h2>
+      <p class="muted set-sub">{t('settings.voiceDesc')}</p>
+
+      {#if voicePageError}<div class="mset-error">{voicePageError}</div>{/if}
+
+      <div class="group-head"><span class="group-title">{t('settings.sttHeading')}</span></div>
+      <div class="settings-card">
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.sttEngine')}</div>
+            <div class="d">{t('settings.sttEngineDesc')}</div>
+            {#if speechStatus && voiceInstallBusy !== 'stt'}
+              <!-- The engine's own sentence — it already names the missing
+                   piece and how to get it. Hidden while the install it asks
+                   for is running: "missing" and "installing" cannot both be
+                   true on one screen. -->
+              <div class="d mset-error">{speechStatus}</div>
+            {/if}
+            {@render voiceInstall('stt', activeSttEngine, speechStatus)}
+          </div>
+          <select class="ctrl" disabled={voicePageBusy} value={activeSttEngine?.id ?? ''} onchange={(e) => pickSttEngine(e.currentTarget.value)}>
+            {#each sttEngines as eng (eng.id)}<option value={eng.id}>{eng.label}</option>{/each}
+          </select>
+        </div>
+        <!-- Hidden for a vendor that stores its own weights by name
+             (hasModels=false): a file picker over no files is a control over
+             nothing. Shown while the list is still loading, so the page does
+             not jump when the answer arrives. -->
+        {#if activeSttEngine?.hasModels !== false}
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.speechModel')}</div>
+            <div class="d">{t('settings.speechModelDesc')}</div>
+          </div>
+          <!-- A dropdown, not an expanding section: picking a model must not
+               shove the rest of the page down. -->
+          <div class="tool-setting">
+            <button class="ctrl" disabled={speechBusy} onclick={() => (speechOpen = !speechOpen)}>
+              {activeSpeechLabel} <Icon name={speechOpen ? 'chevronUp' : 'chevronDown'} size={13} />
+            </button>
+            {#if speechOpen}
+              <button
+                class="drop-backdrop"
+                aria-label={t('settings.close')}
+                onclick={() => (speechOpen = false)}
+              ></button>
+              <div class="rowdrop-list">
+                {#if speechModels.length === 0}
+                  <div class="rowdrop-note muted">{t('settings.speechNoModels')}</div>
+                {:else}
+                  <button
+                    class="rowdrop-opt"
+                    class:selected={speechModels.every((m) => !m.active)}
+                    onclick={() => pickSpeechModel('')}
+                  >
+                    <div class="t">{t('settings.speechAuto')}</div>
+                    <div class="sub">{t('settings.speechAutoDesc')}</div>
+                  </button>
+                  {#each speechModels as m (m.path)}
+                    <div class="rowdrop-row">
+                      <button
+                        class="rowdrop-opt"
+                        class:selected={m.active}
+                        onclick={() => pickSpeechModel(m.path)}
+                      >
+                        <div class="t">{m.name}</div>
+                        <div class="sub">{m.sizeMB} MB · {m.store}</div>
+                      </button>
+                      <!-- data-tip, not title: the app has its own tooltip and
+                           the native one is slow and unstyleable. The path is
+                           what the tip is for. -->
+                      <button
+                        class="rowdrop-reveal"
+                        data-tip={m.path}
+                        aria-label={t('settings.speechOpenFolder')}
+                        onclick={() => RevealSpeechModel(m.path)}
+                      ><Icon name="folderOpen" size={14} /></button>
+                    </div>
+                  {/each}
+                {/if}
+                {#if speechError}<div class="rowdrop-note mset-error">{speechError}</div>{/if}
+
+                <!-- Where the scan looks. Without it a missing model is a dead
+                     end; with it, it is "put the file in one of these". -->
+                <div class="rowdrop-sep"></div>
+                <div class="rowdrop-note muted">{t('settings.speechScanned')}</div>
+                {#each speechDirs as d (d.path)}
+                  <button class="rowdrop-opt rowdrop-dir" onclick={() => OpenSpeechModelDir(d.path)}>
+                    <Icon name="folderOpen" size={13} /> {d.label}
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        </div>
+        {/if}
+        <!-- The NAMED-model pick, for vendors whose models are API names
+             rather than files (whisper-1 vs gpt-4o-transcribe). Drawn only
+             when the vendor really offers more than one — a picker with a
+             single entry is not a choice. -->
+        {#if (activeSttEngine?.models?.length ?? 0) > 1}
+          <div class="set-row">
+            <div class="set-txt">
+              <div class="t">{t('settings.voiceModel')}</div>
+              <div class="d">{t('settings.voiceModelDesc')}</div>
+            </div>
+            <select class="ctrl" disabled={voicePageBusy} value={activeSttEngine?.activeModel ?? ''} onchange={(e) => pickSttModelName(e.currentTarget.value)}>
+              {#each activeSttEngine?.models ?? [] as m (m)}<option value={m}>{m}</option>{/each}
+            </select>
+          </div>
+        {/if}
+      </div>
+
+      <div class="group-head"><span class="group-title">{t('settings.ttsHeading')}</span></div>
+      <div class="settings-card">
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.ttsEngine')}</div>
+            <div class="d">{t('settings.ttsEngineDesc')}</div>
+            {#if ttsStatus && voiceInstallBusy !== 'tts'}<div class="d mset-error">{ttsStatus}</div>{/if}
+            {@render voiceInstall('tts', activeTtsEngine, ttsStatus)}
+          </div>
+          <select class="ctrl" disabled={voicePageBusy} value={activeTtsEngine?.id ?? ''} onchange={(e) => pickTtsEngine(e.currentTarget.value)}>
+            {#each ttsEngines as eng (eng.id)}<option value={eng.id}>{eng.label}</option>{/each}
+          </select>
+        </div>
+        <!-- Same rule as the STT side: only vendors with a real choice of
+             named models get this row. -->
+        {#if (activeTtsEngine?.models?.length ?? 0) > 1}
+          <div class="set-row">
+            <div class="set-txt">
+              <div class="t">{t('settings.voiceModel')}</div>
+              <div class="d">{t('settings.voiceModelDesc')}</div>
+            </div>
+            <select class="ctrl" disabled={voicePageBusy} value={activeTtsEngine?.activeModel ?? ''} onchange={(e) => pickTtsModelName(e.currentTarget.value)}>
+              {#each activeTtsEngine?.models ?? [] as m (m)}<option value={m}>{m}</option>{/each}
+            </select>
+          </div>
+        {/if}
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.ttsVoice')}</div>
+            <div class="d">{t('settings.ttsVoiceDesc')}</div>
+          </div>
+          <!-- ลองฟัง runs the exact path the chat's ฟัง button takes, so what
+               it proves is what the user will get. -->
+          <button class="ctrl" disabled={voicePageBusy || !!ttsStatus} onclick={previewTts}>
+            {ttsPreviewing ? t('settings.ttsPreviewStop') : t('settings.ttsPreview')}
+          </button>
+          <select class="ctrl" disabled={voicePageBusy || ttsVoicesList.length === 0} value={ttsVoicesList.find((v) => v.active)?.id ?? ''} onchange={(e) => pickTtsVoice(e.currentTarget.value)}>
+            <option value="">{t('settings.ttsVoiceAuto')}</option>
+            {#each ttsVoicesList as v (v.id)}<option value={v.id}>{v.name}{v.lang ? ` (${v.lang})` : ''}</option>{/each}
+          </select>
+        </div>
+      </div>
     {:else if active === 'skills'}
       <h2>{t('settings.skills')}</h2>
       <p class="muted set-sub">{t('settings.skillsDesc')}</p>
@@ -5093,7 +5383,7 @@
                "ผู้ช่วยหลัก" is stated rather than assumed: once a line can land
                in a desk's or a project's file instead, an unlabelled list is a
                list you cannot act on. -->
-          <div class="mem-scope">
+          <div class="mem-scope" data-mem-scope={group.scope} class:mem-focus={group.scope === memoryFocus}>
             {scopeLabel(group.scope)}
             {#if group.orphan}
               <!-- The folder this file is keyed to moved or was deleted, so no
@@ -6334,84 +6624,6 @@
     </div>
   </div>
 </div>
-
-{#if toolPickerOpen}
-  <!-- Edits land straight on the draft — there is no OK/Cancel here, because
-       the editor behind it already has a Save and a discard guard, and a second
-       layer of "are you sure" over the same draft is one too many. -->
-  <div class="tp-overlay" role="dialog" aria-modal="true" aria-labelledby="tp-title">
-    <button class="confirm-backdrop" aria-label={t('settings.close')} onclick={() => (toolPickerOpen = false)}></button>
-    <div class="tp-card">
-      <div class="tp-head">
-        <div>
-          <h3 id="tp-title" class="tp-title">{t('settings.agentToolsTitle', { name: agentDraftName || '—' })}</h3>
-          <div class="d muted">{t('settings.agentToolsRule')}</div>
-        </div>
-        <button class="icobtn" aria-label={t('settings.close')} onclick={() => (toolPickerOpen = false)}>
-          <Icon name="x" size={15} />
-        </button>
-      </div>
-
-      <input
-        class="ctrl tp-search" placeholder={t('settings.agentToolsSearch')}
-        bind:value={toolQuery}
-      />
-
-      <div class="tp-body">
-        {#if toolMatchCount === 0}
-          <!-- Two different nothings: the registry has not arrived yet, or it
-               has and the search excluded everything. Saying "no matches" while
-               the list is still loading is the wrong answer to both. -->
-          <div class="muted tp-empty">
-            {#if tools.length === 0}{t('settings.loading')}
-            {:else}{t('settings.searchNoResults', { q: toolQuery.trim() })}{/if}
-          </div>
-        {/if}
-        {#each agentToolGroups as g (g.key)}
-          <div class="group-head tp-group">
-            <span class="group-title">{t(`settings.toolGroup_${g.key}`)}</span>
-            <span class="group-count">{t('settings.itemCount', { n: g.items.length })}</span>
-          </div>
-          {#each g.items as item (item.name)}
-            <div class="tp-row" class:forced={item.forced}>
-              <span class="tp-name">{item.name}</span>
-              {#if item.forced}
-                <!-- Listing these as choosable was a lie the user only found out
-                     about after saving — see subagent.forcedDenials. -->
-                <span class="tp-forced">{t('settings.agentToolsForced')}</span>
-              {:else}
-                {@const state = toolStateOf(item.name)}
-                <div class="seg-ctrl tp-seg">
-                  {#each [
-                    { id: 'default', label: t('settings.agentToolDefault') },
-                    { id: 'allow', label: t('settings.agentToolAllow') },
-                    { id: 'deny', label: t('settings.agentToolDeny') },
-                  ] as opt (opt.id)}
-                    <button
-                      type="button" class="seg-btn tp-{opt.id}"
-                      class:selected={state === opt.id}
-                      aria-pressed={state === opt.id}
-                      onclick={() => setToolState(item.name, opt.id as ToolState)}
-                    >{opt.label}</button>
-                  {/each}
-                </div>
-              {/if}
-            </div>
-          {/each}
-        {/each}
-      </div>
-
-      <div class="tp-foot">
-        <span class="muted">{agentToolSummary}</span>
-        <div class="pp-bar-gap"></div>
-        <button class="ctrl" onclick={resetAgentTools} disabled={agentDraftTools.length === 0 && agentDraftDeny.length === 0}>
-          {t('settings.agentToolsReset')}
-        </button>
-        <button class="ctrl ctrl-primary" onclick={() => (toolPickerOpen = false)}>{t('settings.done')}</button>
-      </div>
-    </div>
-  </div>
-{/if}
 
 {#if pendingConfirm}
   {@const req = pendingConfirm}

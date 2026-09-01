@@ -46,6 +46,7 @@ import (
 	"github.com/Mikedev115/Aetox/internal/skill"
 	"github.com/Mikedev115/Aetox/internal/snapshot"
 	"github.com/Mikedev115/Aetox/internal/subagent"
+	"github.com/Mikedev115/Aetox/internal/tts"
 	"github.com/Mikedev115/Aetox/internal/turn"
 	"github.com/Mikedev115/Aetox/internal/update"
 	"github.com/Mikedev115/Aetox/internal/version"
@@ -90,6 +91,16 @@ type App struct {
 	terminalsMu sync.Mutex
 	terminals   map[string]*TerminalSession
 	browsers    *browserHost
+
+	// ttsVoiceMu guards ttsVoiceCache — the settings page enumerates voices
+	// while a SpeakText on another goroutine resolves its default from the
+	// same list.
+	ttsVoiceMu sync.Mutex
+	// ttsVoiceCache is the installed-voices list per TTS engine id, cached for
+	// the process: enumerating costs a PowerShell run (~1s), and the set only
+	// changes when the user installs a voice into Windows — a restart after
+	// that is acceptable, a second of extra latency on every ฟัง press is not.
+	ttsVoiceCache map[string][]tts.Voice
 
 	// quotasMu guards quotas, which the model clients write from whatever
 	// goroutine a turn is running on.
@@ -4157,6 +4168,21 @@ func resolveConfig(opts config.ConfigOptions) config.Config {
 		if v := strings.TrimSpace(pref.SpeechModelPath); v != "" {
 			cfg.SpeechModelPath = v
 		}
+		if v := strings.TrimSpace(pref.SpeechEngine); v != "" {
+			cfg.SpeechEngine = v
+		}
+		if v := strings.TrimSpace(pref.TTSEngine); v != "" {
+			cfg.TTSEngine = v
+		}
+		if v := strings.TrimSpace(pref.TTSVoice); v != "" {
+			cfg.TTSVoice = v
+		}
+		if v := strings.TrimSpace(pref.SpeechModelName); v != "" {
+			cfg.SpeechModelName = v
+		}
+		if v := strings.TrimSpace(pref.TTSModelName); v != "" {
+			cfg.TTSModelName = v
+		}
 		// All positive, all read straight through: an install that has never
 		// touched a switch stored nothing, which is off, which is what a zero
 		// Config already means. A file written before the switch was split says
@@ -4263,6 +4289,13 @@ func persistModelPreference(cfg config.Config) {
 	// "go back to picking whatever is on disk" is expressed — so it is written
 	// through rather than treated as "nothing to say".
 	pref.SpeechModelPath = strings.TrimSpace(cfg.SpeechModelPath)
+	// The voice page's three picks ride the same rule: empty is the real
+	// choice "back to the default", so all are written through.
+	pref.SpeechEngine = strings.TrimSpace(cfg.SpeechEngine)
+	pref.TTSEngine = strings.TrimSpace(cfg.TTSEngine)
+	pref.TTSVoice = strings.TrimSpace(cfg.TTSVoice)
+	pref.SpeechModelName = strings.TrimSpace(cfg.SpeechModelName)
+	pref.TTSModelName = strings.TrimSpace(cfg.TTSModelName)
 	// Written through unconditionally, unlike the delegation block below: these
 	// four carry no "has anybody answered" flag and need none, because each
 	// one's zero value is its shipped default. Writing false for a switch

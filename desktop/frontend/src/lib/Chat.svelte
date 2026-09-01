@@ -10,15 +10,17 @@
   import Palette from './Palette.svelte'
   import Logo from './Logo.svelte'
   import { onMount } from 'svelte'
-  import { workerFace } from './workerFace'
+  import AgentFace from './AgentFace.svelte'
   import { shell } from './shell.svelte'
   import {
     EnabledProviders, SupportedThinkLevels,
     ListModelsForProvider, PriceModels, ModelPriceSource, RequiresAPIKey, AcceptsAPIKey, HasAPIKey, PickAttachments,
     GetContextBreakdown, GuideTopics, RunChatCommand, RunChatScript, ListChairs, ChairStarters, CurrentSessionID,
+    AgentBlocked,
     DelegateSwitches, SetDelegateOff, SetAgentOff,
     Shells, CurrentShell, SetShell, EnginesFor, UseEngine, VerifyConnection,
     GitBranches, GitSwitchBranch, GitCreateBranch, GetProjectStatus,
+    TranscribeMicAudio, SpeakText,
   } from '../../wailsjs/go/main/App'
   import type { main, connect, subagent } from '../../wailsjs/go/models'
   import { t, i18n, type TKey } from './i18n.svelte'
@@ -582,6 +584,19 @@
   // simply absent for that instant rather than drawn in a guessed state.
   let delegate = $state<main.DelegateSettings | null>(null)
   let delegateBusy = $state(false)
+  // Which teammates cannot work yet, by the same answer the roster's veil reads
+  // (AgentLock.svelte). It is here because this menu is the OTHER door into a
+  // chair session: the card in เอเจนเฉพาะทาง and this row both call
+  // newChairSession, so a lock on one and not the other is not a stricter door,
+  // it is two doors disagreeing about the same agent — and the one nobody
+  // guarded is the one every user finds.
+  //
+  // Read when the menu opens rather than kept fresh: the answer can only change
+  // by installing or connecting something, which is a trip to another page and
+  // back, and this list is rebuilt on the way back anyway.
+  let chairBlocked = $state<Record<string, boolean>>({})
+  const chairLocked = (name: string) => chairBlocked[name] ?? false
+
   async function toggleAgentMenu() {
     agentMenuOpen = !agentMenuOpen
     if (agentMenuOpen) {
@@ -589,6 +604,12 @@
         officeChairs = await ListChairs()
       } catch {
         officeChairs = []
+      }
+      try {
+        const veils = await Promise.all(officeChairs.map((c) => AgentBlocked(c.name)))
+        chairBlocked = Object.fromEntries(officeChairs.map((c, i) => [c.name, veils[i] ?? false]))
+      } catch {
+        chairBlocked = {}
       }
       try {
         delegate = await DelegateSwitches()
@@ -946,6 +967,26 @@
     el.style.height = el.scrollHeight + 'px'
   })
 
+  // One open menu at a time on the composer.
+  //
+  // Every trigger down there stops its click reaching closeMenusOnOutside, or
+  // the click that opens a menu would immediately close it again. The cost was
+  // that opening one left the last one standing, and the + menu and the
+  // โหมดทำงาน menu are neighbours wide enough to be drawn on top of each other
+  // (owner, 31 ส.ค.). Each trigger now clears the row before setting its own.
+  function closeComposerMenus() {
+    attachMenuOpen = false
+    stanceMenuOpen = false
+    modelMenuOpen = false
+    branchMenuOpen = false
+    rewindMenuOpen = false
+    ctxMenuOpen = false
+    focusMenuOpen = false
+    folderError = ''
+    openDropdown = ''
+    palette = ''
+  }
+
   function closeMenusOnOutside(e: MouseEvent) {
     const el = e.target as HTMLElement
     if (modelMenuOpen && !el.closest('.model-pick')) { modelMenuOpen = false; openDropdown = '' }
@@ -953,9 +994,133 @@
     if (rewindMenuOpen && !el.closest('.rewind-pick')) { rewindMenuOpen = false }
     if (ctxMenuOpen && !el.closest('.ctx-pick')) ctxMenuOpen = false
     if (stanceMenuOpen && !el.closest('.stance-pick')) stanceMenuOpen = false
+    if (attachMenuOpen && !el.closest('.attach-pick')) attachMenuOpen = false
     if (branchMenuOpen && !el.closest('.branch-pick')) branchMenuOpen = false
     if (openDropdown && !el.closest('.updrop')) openDropdown = ''
     if (palette && !el.closest('.pal-pick')) palette = ''
+  }
+
+  // ---------- Voice: the composer's mic, and the reply's ฟัง button ----------
+  // The mic produces text into the draft and never sends it: dictation is
+  // typing by other means, and the send button stays the user's. Engines and
+  // voices are picked in ตั้งค่า > เสียง; both buttons here just use whatever
+  // is configured and show the engine's own reason when it cannot run.
+  let micState = $state<'' | 'rec' | 'busy'>('')
+  let micSecs = $state(0)
+  let micTimer = 0
+  let micRecorder: MediaRecorder | null = null
+  let micChunks: Blob[] = []
+  let voiceError = $state('')
+
+  async function toggleMic() {
+    voiceError = ''
+    if (micState === 'busy') return
+    if (micState === 'rec') {
+      micRecorder?.stop() // onstop owns the rest
+      return
+    }
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch {
+      voiceError = t('chat.micDenied')
+      return
+    }
+    micChunks = []
+    const rec = new MediaRecorder(stream)
+    micRecorder = rec
+    rec.ondataavailable = (e) => { if (e.data.size > 0) micChunks.push(e.data) }
+    rec.onstop = async () => {
+      stream.getTracks().forEach((track) => track.stop())
+      clearInterval(micTimer)
+      micState = 'busy'
+      try {
+        const blob = new Blob(micChunks, { type: rec.mimeType || 'audio/webm' })
+        const text = (await TranscribeMicAudio(await blobToDataURL(blob))).trim()
+        if (text) {
+          // Appended, not replaced: half a typed sentence plus a dictated
+          // half is one sentence, and wiping the typed half loses work.
+          draft = draft.trim() ? draft.replace(/\s*$/, ' ') + text : text
+          inputEl?.focus()
+        }
+      } catch (err) {
+        voiceError = String(err)
+      } finally {
+        micState = ''
+      }
+    }
+    micState = 'rec'
+    micSecs = 0
+    micTimer = window.setInterval(() => { micSecs += 1 }, 1000)
+    rec.start()
+  }
+
+  function blobToDataURL(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(reader.error)
+      reader.readAsDataURL(blob)
+    })
+  }
+
+  // Reading a reply aloud: one at a time — pressing ฟัง on a second message
+  // stops the first, pressing it on the playing one stops it.
+  let speakingId = $state('')  // message being read; '' = silent
+  let speakBusyId = $state('') // message waiting on synthesis
+  let speakAudio: HTMLAudioElement | null = null
+
+  function speakKey(m: ChatMessage): string {
+    return m.id ? String(m.id) : m.text
+  }
+
+  function stopSpeaking() {
+    speakAudio?.pause()
+    speakAudio = null
+    speakingId = ''
+  }
+
+  async function toggleSpeak(m: ChatMessage) {
+    voiceError = ''
+    const key = speakKey(m)
+    if (speakingId === key) {
+      stopSpeaking()
+      return
+    }
+    if (speakBusyId) return
+    stopSpeaking()
+    speakBusyId = key
+    try {
+      const url = await SpeakText(speechText(m.text))
+      const audio = new Audio(url)
+      speakAudio = audio
+      speakingId = key
+      audio.onended = () => { if (speakingId === key) stopSpeaking() }
+      audio.onerror = () => { if (speakingId === key) stopSpeaking() }
+      await audio.play()
+    } catch (err) {
+      voiceError = String(err)
+      stopSpeaking()
+    } finally {
+      speakBusyId = ''
+    }
+  }
+
+  // What gets spoken: the reply without its markdown scaffolding. The text on
+  // screen renders those marks away; a voice that reads "ดอกจัน" out loud is
+  // reading the source, not the answer.
+  function speechText(md: string): string {
+    return md
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/`([^`]*)`/g, '$1')
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/^[-*+]\s+/gm, '')
+      .replace(/^>\s?/gm, '')
+      .replace(/[*_~|]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
   }
 
   // Context meter: how full the model's context window is and what fills it.
@@ -1578,12 +1743,26 @@
   // clip or document is copied into the sandbox and handed over as a path the
   // tools can open. Splitting this across two buttons was the duplication the
   // owner spotted (ARCHITECTURE.md §38).
-  async function attachViaDialog() {
+  // The menu the + button opens, and the one thing each row decides: which
+  // filter the native dialog starts on. It stays a menu rather than going
+  // straight to the dialog because the list of types this app accepts lived
+  // only inside that dialog's collapsed dropdown, where a missing type looked
+  // exactly like a type the app cannot take (owner, 31 ส.ค.).
+  let attachMenuOpen = $state(false)
+  const attachGroups = [
+    { group: 'image', icon: 'image', label: 'chat.attachImages', hint: 'chat.attachImagesHint' },
+    { group: 'document', icon: 'fileText', label: 'chat.attachDocs', hint: 'chat.attachDocsHint' },
+    { group: 'media', icon: 'clapperboard', label: 'chat.attachMedia', hint: 'chat.attachMediaHint' },
+    { group: '', icon: 'paperclip', label: 'chat.attachAny', hint: 'chat.attachAnyHint' },
+  ] as const
+
+  async function attachViaDialog(group: string) {
+    attachMenuOpen = false
     // Several at once: the dialog is multi-select and the composer stages a
     // list, so picking twenty files gives twenty cards rather than the last one
     // winning. Sequential on purpose — each copy into the sandbox names itself
     // off a shared counter, and the cards should come out in the order picked.
-    for (const path of await PickAttachments()) {
+    for (const path of await PickAttachments(group)) {
       if (fileKind(path) === 'image') await attachImageFromPath(path)
       else await attachFileFromPath(path)
     }
@@ -1913,7 +2092,7 @@
      too. The branch picker needed the listener; ctx and stance were already
      relying on a neighbour being open, which is why they sometimes stayed put. -->
 <svelte:window
-  onclick={modelMenuOpen || focusMenuOpen || palette || ctxMenuOpen || stanceMenuOpen || branchMenuOpen
+  onclick={modelMenuOpen || focusMenuOpen || palette || ctxMenuOpen || stanceMenuOpen || branchMenuOpen || attachMenuOpen || rewindMenuOpen
     ? closeMenusOnOutside
     : undefined}
   onkeydown={(e) => {
@@ -2699,6 +2878,25 @@
                 ><Icon name="rotateCw" size={13} /></button>
               {/if}
               <span class="msg-time">{m.time}</span>
+              {#if m.role === 'agent' && m.text && !m.failed}
+                <!-- ฟัง closes the row, behind the timestamp (owner, 1 ก.ย.).
+                     While a reply is being read the icon becomes stop; one
+                     message plays at a time, and starting another stops it. -->
+                <button
+                  type="button" class="msg-copy msg-speak icobtn tiny"
+                  class:speaking={speakingId === speakKey(m)}
+                  aria-label={speakingId === speakKey(m) ? t('chat.speakStop') : t('chat.speak')}
+                  data-tip={speakingId === speakKey(m) ? t('chat.speakStop') : t('chat.speak')}
+                  aria-pressed={speakingId === speakKey(m)}
+                  onclick={() => toggleSpeak(m)}
+                >
+                  {#if speakBusyId === speakKey(m)}
+                    <span class="mic-busy"><Icon name="loaderCircle" size={16} /></span>
+                  {:else}
+                    <Icon name={speakingId === speakKey(m) ? 'square' : 'volume2'} size={16} />
+                  {/if}
+                </button>
+              {/if}
             </div>
           </div>
         </div>
@@ -3013,18 +3211,30 @@
             {#if officeChairs.length > 0}<div class="menu-sep"></div>{/if}
             {#each officeChairs as c (c.name)}
               {@const reach = agentReach(c.name)}
+              {@const locked = chairLocked(c.name)}
               <!-- `on` sits on the ROW, not on the button inside it: the row is what
                    lights up, so it is also what has to know it is the current one, and
                    the same fact written in two places is the one that drifts. -->
               <div class="agent-row" class:on={cockpit.chair === c.name}>
-                <button type="button" class="focus-item"
-                  title={c.description}
-                  onclick={() => { agentMenuOpen = false; if (cockpit.chair !== c.name) newChairSession(c.name) }}>
-                  <!-- The chair's own mark, not a constant: github wears
-                       `gitBranch` and research wears `search` in their own files,
-                       and both showed as `bot` here, which is the ซับเอเจน glyph
-                       on a list of เอเจน. -->
-                  <span class="ic"><Icon name={workerFace(c.icon, true)} size={14} /></span><span class="t">{c.name}</span>
+                <!-- A locked teammate opens the roster instead of a session
+                     they cannot use. Not disabled: a dead row says "no" and
+                     nothing else, where the card over there says which tool is
+                     missing and offers to fetch it. -->
+                <button type="button" class="focus-item" class:locked
+                  title={locked ? t('lock.body') : c.description}
+                  onclick={() => {
+                    agentMenuOpen = false
+                    if (locked) { setActiveView('office'); return }
+                    if (cockpit.chair !== c.name) newChairSession(c.name)
+                  }}>
+                  <!-- The same face the roster draws, not a glyph: this list and
+                       the office page are the same people, and one agent drawn
+                       two ways on two surfaces is two people to whoever is
+                       reading. Small enough that the prop is dropped on its own
+                       (agentFace.ts, PROP_MIN_PX) — at this size the name is
+                       doing the work and a held object is four pixels of noise. -->
+                  <AgentFace name={c.name} icon={c.icon} size={20} /><span class="t">{c.name}</span>
+                  {#if locked}<span class="focus-locked"><Icon name="wrench" size={12} /></span>{/if}
                 </button>
                 <!-- The same pill the settings rows wear, and the same two
                      strings, because it is the same fact: whether the assistant
@@ -3187,7 +3397,7 @@
           <button
             type="button" class="focus-chip branch-chip"
             title={t('branch.title')} aria-label={t('branch.title')}
-            onclick={(e) => { e.stopPropagation(); toggleBranchMenu() }}
+            onclick={(e) => { e.stopPropagation(); const open = !branchMenuOpen; closeComposerMenus(); if (open) toggleBranchMenu() }}
           >
             <Icon name="gitBranch" size={11} />
             <span class="nm">{cockpit.project.branch}</span>
@@ -3455,14 +3665,65 @@
         onkeydown={onKeydown}
         onpaste={onComposerPaste}
       ></textarea>
+      {#if voiceError}
+        <!-- The engine's own sentence, verbatim — it already says what is
+             missing and where to fix it (internal/stt, internal/tts). -->
+        <div class="voice-error" role="alert">
+          <span class="t">{voiceError}</span>
+          <button class="attach-remove" aria-label={t('chat.voiceErrorClose')} onclick={() => (voiceError = '')}><Icon name="x" size={12} /></button>
+        </div>
+      {/if}
       <div class="tools">
         <!-- Attach stays leftmost (owner, 2026-08-14). It is the button that
              belongs to the text being written, so it sits against the text;
              everything after it is about how the turn will be run. -->
+        <div class="attach-pick">
+          {#if attachMenuOpen}
+            <div class="attach-menu">
+              {#each attachGroups as row (row.label)}
+                <button
+                  type="button" class="stance-item"
+                  onclick={() => attachViaDialog(row.group)}
+                >
+                  <span class="ic"><Icon name={row.icon} size={14} /></span>
+                  <span class="t">
+                    <span class="nm">{t(row.label)}</span>
+                    <span class="d">{t(row.hint)}</span>
+                  </span>
+                </button>
+              {/each}
+              <div class="folder-note">{t('chat.attachNote')}</div>
+            </div>
+          {/if}
+          <button
+            class="icobtn" class:active={attachMenuOpen}
+            aria-label={t('chat.attachFile')} data-tip={t('chat.attachFile')}
+            aria-expanded={attachMenuOpen}
+            onclick={(e) => { e.stopPropagation(); const open = !attachMenuOpen; closeComposerMenus(); attachMenuOpen = open }}
+          >+</button>
+        </div>
+        <!-- The mic sits with attach on the text side of the row (owner's
+             2026-08-14 split: left is what is being written, right is how the
+             turn runs) because what it produces IS text — into the draft,
+             never sent. It never hides when the engine is missing: pressing
+             it then surfaces the engine's own reason and where to fix it,
+             which a hidden button cannot say. -->
         <button
-          class="icobtn" aria-label={t('chat.attachFile')} data-tip={t('chat.attachFile')}
-          onclick={attachViaDialog}
-        >+</button>
+          class="icobtn mic" class:rec={micState === 'rec'}
+          aria-label={micState === 'rec' ? t('chat.micStop') : t('chat.micStart')}
+          data-tip={micState === 'rec' ? t('chat.micStop') : t('chat.micStart')}
+          disabled={micState === 'busy'}
+          onclick={(e) => { e.stopPropagation(); toggleMic() }}
+        >
+          {#if micState === 'busy'}
+            <span class="mic-busy"><Icon name="loaderCircle" size={14} /></span>
+          {:else if micState === 'rec'}
+            <Icon name="square" size={11} />
+            <span class="mic-secs">{Math.floor(micSecs / 60)}:{String(micSecs % 60).padStart(2, '0')}</span>
+          {:else}
+            <Icon name="mic" size={14} />
+          {/if}
+        </button>
         <!-- โหมดทำงาน (§106) — how this turn runs, as against what is on the
              desk. On the input row rather than in the chip strip above, which
              is deliberate: every chip up there is a door to a NEW session
@@ -3505,7 +3766,7 @@
           <button
             type="button" class="stance-chip" class:on={!!cockpit.stance}
             title={t('stance.title')} aria-label={t('stance.title')}
-            onclick={(e) => { e.stopPropagation(); stanceMenuOpen = !stanceMenuOpen }}
+            onclick={(e) => { e.stopPropagation(); const open = !stanceMenuOpen; closeComposerMenus(); stanceMenuOpen = open }}
           >
             <Icon name={activeStance.icon} size={13} />
             <span class="nm">{t(activeStance.label)}</span>
@@ -3525,7 +3786,7 @@
           <button
             class="icobtn slash" class:active={palette !== ''}
             aria-label={t('palette.promptsTitle')} data-tip={t('palette.promptsTitle')}
-            onclick={(e) => { e.stopPropagation(); palette = palette ? '' : 'prompts' }}
+            onclick={(e) => { e.stopPropagation(); const open = !palette; closeComposerMenus(); palette = open ? 'prompts' : '' }}
           >/</button>
         </div>
         {#if ctx && ctx.usedTokens > 0}
@@ -3768,7 +4029,7 @@
             <button
               type="button" class="model-chip"
               title={model.modelName || model.provider}
-              onclick={(e) => { e.stopPropagation(); modelMenuOpen = !modelMenuOpen; if (modelMenuOpen) { refreshThinkLevels(); EnabledProviders().then((p) => (providers = p)) } }}
+              onclick={(e) => { e.stopPropagation(); const open = !modelMenuOpen; closeComposerMenus(); modelMenuOpen = open; if (open) { refreshThinkLevels(); EnabledProviders().then((p) => (providers = p)) } }}
             >
               <span class="pv"><ProviderMark name={model.provider} size={14} /></span>
               {#if model.modelName}<span class="t">{shortModelName(model.modelName)}</span>{/if}

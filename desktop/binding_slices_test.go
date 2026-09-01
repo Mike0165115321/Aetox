@@ -40,6 +40,10 @@ func TestBindingsNeverReturnNilSlices(t *testing.T) {
 		"ListSkills",
 		"SupportedProviders",
 		"EnabledProviders",
+		// The voice page's two vendor pickers. Pure catalog reads — safe with
+		// no engine, no DB, and no PowerShell.
+		"ListSpeechEngines",
+		"ListTTSEngines",
 		"SupportedThinkLevels",
 		"TerminalShells",
 		"CommandHistory",

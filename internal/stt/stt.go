@@ -13,13 +13,16 @@ package stt
 // on it and hands back one interface, and callers never name a concrete engine.
 // Adding an engine is a Descriptor plus a file — no caller changes.
 //
-// Deliberately absent: any cloud transcription service. Not a technical limit —
-// a product one (ARCHITECTURE.md §31). The interface would accept one; the
-// catalog will not ship one.
+// Cloud rows exist since 2026-09-01 (owner's amendment to §31, recorded in
+// §216): the LOCAL engines stay the default and recordings still never leave
+// the machine unless the user picks a cloud vendor by name — every cloud row's
+// Install text says outright that the audio goes out. What §31 still forbids
+// is Aetox sending audio anywhere on its own judgement.
 
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -64,6 +67,18 @@ type Descriptor struct {
 	// Install is a ready-to-follow Thai instruction for getting the engine
 	// itself (not its model) onto this machine.
 	Install string
+	// Models are the NAMED models this vendor accepts, first = the default —
+	// for vendors whose models are API names rather than files on disk. One
+	// entry means there is no real choice, and the page draws no picker
+	// (a picker with a single entry is not a choice). Empty means models are
+	// files (ModelGlob) or the engine has no model concept.
+	Models []string
+	// InstallCommand is the exact argv the settings page's ติดตั้ง button
+	// runs, and also the command it displays — one value serving both, so the
+	// command on screen can never differ from the command that runs. Empty for
+	// an engine that has no runnable install (needs an API key, or is a manual
+	// download).
+	InstallCommand []string
 	// Default marks the engine chosen when config says nothing.
 	Default bool
 }
@@ -74,6 +89,9 @@ type Descriptor struct {
 type Options struct {
 	// Engine is a Descriptor.ID. Empty picks the catalog default.
 	Engine string
+	// Model pins one of the engine's NAMED models (Descriptor.Models). Empty
+	// takes the first. Ignored by file-based engines, which read ModelPath.
+	Model string
 	// ModelPath pins an exact model file. Empty auto-discovers inside ModelDir.
 	ModelPath string
 	// ModelDir is the Aetox-managed model directory — the one place Aetox
@@ -95,6 +113,13 @@ type InstalledModel struct {
 	Managed bool   // Aetox downloaded it and may remove it
 }
 
+// whisperCPPInstall is whisper-cpp's runnable install for THIS machine, or
+// nil where there is none.
+var whisperCPPInstall = map[string][]string{
+	"windows": {"scoop", "install", "whisper-cpp"},
+	"darwin":  {"brew", "install", "whisper-cpp"},
+}[runtime.GOOS]
+
 // catalog is the single list of engines Aetox knows how to speak to. A new
 // engine is an entry here plus its constructor in newEngine.
 var catalog = []Descriptor{
@@ -104,7 +129,55 @@ var catalog = []Descriptor{
 		Binaries:  []string{"whisper-cli", "whisper-cpp"},
 		ModelGlob: "ggml-*.bin",
 		Install:   "ติดตั้งด้วย: scoop install whisper-cpp (Windows) · brew install whisper-cpp (macOS) · หรือ build จาก https://github.com/ggml-org/whisper.cpp",
-		Default:   true,
+		// Per-OS: the package manager differs, and a Linux machine builds from
+		// source, which is not a button.
+		InstallCommand: whisperCPPInstall,
+		Default:        true,
+	},
+	{
+		ID:       "faster-whisper",
+		Label:    "faster-whisper (CTranslate2)",
+		Binaries: []string{"whisper-ctranslate2"},
+		// No ModelGlob: this runtime fetches and stores its own weights by
+		// name — there is no file for the picker to point at.
+		Install:        "ติดตั้งด้วย: pip install whisper-ctranslate2 (ต้องมี Python) — ครั้งแรกที่ถอด โปรแกรมจะโหลดโมเดล " + fasterWhisperModel + " (~150 MB) ให้ตัวเอง",
+		InstallCommand: []string{"pip", "install", "whisper-ctranslate2"},
+		// Size names, not files: the runtime fetches whichever is asked for.
+		Models: []string{fasterWhisperModel, "tiny", "small", "medium", "large-v3"},
+	},
+	{
+		ID:      "openai",
+		Label:   "OpenAI Whisper (คลาวด์, ใช้ API key)",
+		Install: "ใช้ API key ของ OpenAI จาก ตั้งค่า > โมเดล > OpenAI — เสียงที่อัดจะถูกส่งไปถอดบนคลาวด์ เปลี่ยน Base URL ได้เพื่อชี้เซิร์ฟเวอร์อื่นที่พูด API เดียวกัน",
+		Models:  []string{"whisper-1", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"},
+	},
+	{
+		ID:      "groq",
+		Label:   "Groq Whisper (คลาวด์, ใช้ API key)",
+		Install: "ใช้ API key ของ Groq จาก ตั้งค่า > โมเดล > Groq — Whisper บนคลาวด์ เร็วมาก และเสียงที่อัดจะถูกส่งขึ้นไปถอด",
+		// distil-whisper is deliberately absent: English-only, and a Thai
+		// machine picking it from a bare name would find out the hard way.
+		Models: []string{"whisper-large-v3", "whisper-large-v3-turbo"},
+	},
+	{
+		ID:      "mistral",
+		Label:   "Mistral Voxtral (คลาวด์, ใช้ API key)",
+		Install: "ใช้ API key ของ Mistral จาก ตั้งค่า > โมเดล > Mistral — voxtral-mini บนคลาวด์ และเสียงที่อัดจะถูกส่งขึ้นไปถอด",
+		// One entry: the transcription endpoint serves exactly one model, and
+		// a single-entry picker is not drawn.
+		Models: []string{"voxtral-mini-latest"},
+	},
+	{
+		ID:      "gemini",
+		Label:   "Gemini (คลาวด์, ใช้ API key)",
+		Install: "ใช้ API key ของ Gemini จาก ตั้งค่า > โมเดล > Gemini — ให้ Gemini ฟังแล้วถอดเป็นข้อความ และเสียงที่อัดจะถูกส่งขึ้นคลาวด์ของ Google",
+		Models:  []string{"gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"},
+	},
+	{
+		ID:      "elevenlabs",
+		Label:   "ElevenLabs Scribe (คลาวด์, ใช้ API key)",
+		Install: "ตั้ง environment variable ELEVENLABS_API_KEY (สมัครที่ elevenlabs.io) — Scribe ถอดได้ 90+ ภาษา และเสียงที่อัดจะถูกส่งขึ้นคลาวด์",
+		Models:  []string{"scribe_v1", "scribe_v2"},
 	},
 }
 
@@ -152,9 +225,35 @@ func newEngine(desc Descriptor, opts Options) (Engine, error) {
 	switch desc.ID {
 	case "whisper-cpp":
 		return newWhisperCPP(desc, opts)
+	case "faster-whisper":
+		return newFasterWhisper(desc, opts)
+	case "openai", "groq", "mistral", "elevenlabs":
+		return newAPITranscriber(desc, opts)
+	case "gemini":
+		return newGeminiTranscriber(desc, opts)
 	default:
 		return nil, fmt.Errorf("engine %q อยู่ในรายการแต่ยังไม่มีตัวรัน", desc.ID)
 	}
+}
+
+// resolveNamedModel picks the named model an engine runs: the pinned one when
+// the roster knows it, the roster's first when nothing is pinned. An unknown
+// pin is a loud error, not a silent fallback — a setting that quietly stops
+// applying is a setting that lies.
+func resolveNamedModel(desc Descriptor, pinned string) (string, error) {
+	pinned = strings.TrimSpace(pinned)
+	if len(desc.Models) == 0 {
+		return pinned, nil
+	}
+	if pinned == "" {
+		return desc.Models[0], nil
+	}
+	for _, m := range desc.Models {
+		if strings.EqualFold(m, pinned) {
+			return m, nil
+		}
+	}
+	return "", fmt.Errorf("engine %s ไม่มีโมเดลชื่อ %q — ที่มี: %s", desc.ID, pinned, strings.Join(desc.Models, ", "))
 }
 
 func engineIDs() []string {

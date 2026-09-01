@@ -441,7 +441,7 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		AskWorkspace: opts.AskWorkspace,
 		// Empty ModelPath keeps the original behaviour — auto-discover — so a
 		// user who never opens the picker sees no change.
-		Speech: stt.Options{ModelPath: cfg.SpeechModelPath},
+		Speech: stt.Options{Engine: cfg.SpeechEngine, Model: cfg.SpeechModelName, ModelPath: cfg.SpeechModelPath},
 		// The same question visionAttachments asks of a user's attachment,
 		// asked once here for the files the model finds on its own. Re-asked on
 		// every re-bootstrap, which is what happens when the model changes.

@@ -10,9 +10,10 @@ import {
   SkillsDir, SkillScanIssues, OpenSkillsFolder, InstallSkillFromZip,
   MCPConfigPath, OpenMCPFolder, SaveMCPServer, AppVersion, CheckForUpdate, ListChairs, SaveAgentProfile,
   AgentSkills, AgentNeeds, PlacementTargets, SetMCPServerTargets,
-  ChairStarters, SaveChairStarters,
+  ChairStarters, SaveChairStarters, DelegateSwitches, SetAgentOff,
   Connections, ConnectAccount, SetConnectionTargets, VerifyConnection, DisconnectAccount,
   AcceptsAPIKey, APIKeyHint, HasAPIKey, ProviderAPIKeyURL, ProviderReady, PriceModels, TestProviderConnection,
+  ListSpeechEngines, ListTTSEngines, SetSpeechEngine, SetSpeechModelName,
 } from './mocks/wailsApp'
 import { BrowserOpenURL } from './mocks/wailsRuntime'
 import { applyTypeScale } from '../lib/typeScale.svelte'
@@ -28,6 +29,11 @@ const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-$
 
 beforeEach(() => {
   cockpit.settingsIntent = null
+  // Said here rather than left to the module fixture: clearAllMocks resets
+  // calls, not implementations, so the resolved value the agent-switch test
+  // sets would stay in place and every later test would render a page that had
+  // loaded delegation switches it was never written for.
+  vi.mocked(DelegateSwitches).mockRejectedValue(new Error('unavailable'))
   vi.mocked(ListMCPServers).mockResolvedValue([
     // `allowed` is the trim: the server offers more than this and only these
     // are taken (§97.3). Kept on a row that already exists so the counts the
@@ -330,19 +336,27 @@ describe('Settings pages', () => {
     expect(container.querySelector('.settings-card .group-head')).toBeNull()
   })
 
-  // The picker hangs off audio_transcribe's own row: a tool's setting sitting in
-  // a card somewhere else is a setting nobody ties back to the tool.
-  it('the speech model is picked from audio_transcribe’s own row', async () => {
+  // The picker lived on audio_transcribe's own row while that tool was the only
+  // thing speech served. The composer's mic made it two users (1 ก.ย.), so the
+  // setting moved to its own page — and the tool row keeps a door there, not a
+  // second copy of the picker.
+  it('the speech model is picked from the voice page, and the tool row doors to it', async () => {
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'เครื่องมือ')
 
     await waitFor(() => expect(screen.getByText('audio_transcribe')).toBeTruthy())
-    // Closed until asked — the tool list stays one row per tool.
-    expect(screen.queryByText('ggml-tiny-q5_1.bin')).toBeNull()
-
     const toolRow = Array.from(container.querySelectorAll('.set-row'))
       .find((r) => r.textContent?.includes('audio_transcribe'))!
-    await fireEvent.click(toolRow.querySelector('.ctrl')!)
+    expect(toolRow.textContent).toContain('ตั้งค่าที่หน้า เสียง')
+
+    await openSection(container, 'เสียง')
+    await waitFor(() => expect(screen.getByText('โมเดลถอดเสียง')).toBeTruthy())
+    // Closed until asked — the page stays one row per setting.
+    expect(screen.queryByText('ggml-tiny-q5_1.bin')).toBeNull()
+
+    const modelRow = Array.from(container.querySelectorAll('.set-row'))
+      .find((r) => r.textContent?.includes('โมเดลถอดเสียง'))!
+    await fireEvent.click(modelRow.querySelector('.tool-setting .ctrl')!)
 
     await waitFor(() => expect(screen.getByText('ggml-tiny-q5_1.bin')).toBeTruthy())
     expect(screen.getByText('31 MB · Aetox')).toBeTruthy()
@@ -364,7 +378,7 @@ describe('Settings pages', () => {
     await waitFor(() => expect(container.querySelector('.rowdrop-list')).toBeNull())
 
     // And clicking away closes it without choosing anything.
-    await fireEvent.click(toolRow.querySelector('.ctrl')!)
+    await fireEvent.click(modelRow.querySelector('.tool-setting .ctrl')!)
     await waitFor(() => expect(container.querySelector('.rowdrop-list')).toBeTruthy())
     await fireEvent.click(container.querySelector('.drop-backdrop')!)
     expect(container.querySelector('.rowdrop-list')).toBeNull()
@@ -374,12 +388,12 @@ describe('Settings pages', () => {
   // clicking, not by reading a path out of a tooltip and pasting it somewhere.
   it('the speech picker opens the folder a model lives in, and the scanned ones', async () => {
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'เครื่องมือ')
-    await waitFor(() => expect(screen.getByText('audio_transcribe')).toBeTruthy())
+    await openSection(container, 'เสียง')
+    await waitFor(() => expect(screen.getByText('โมเดลถอดเสียง')).toBeTruthy())
 
-    const toolRow = Array.from(container.querySelectorAll('.set-row'))
-      .find((r) => r.textContent?.includes('audio_transcribe'))!
-    await fireEvent.click(toolRow.querySelector('.ctrl')!)
+    const modelRow = Array.from(container.querySelectorAll('.set-row'))
+      .find((r) => r.textContent?.includes('โมเดลถอดเสียง'))!
+    await fireEvent.click(modelRow.querySelector('.tool-setting .ctrl')!)
     await waitFor(() => expect(screen.getByText('ggml-tiny-q5_1.bin')).toBeTruthy())
 
     const tinyRow = Array.from(container.querySelectorAll('.rowdrop-row'))
@@ -395,6 +409,47 @@ describe('Settings pages', () => {
     expect(dirs.some((d) => d?.includes('~/.ollama/models'))).toBe(true)
     // No account name anywhere on screen.
     expect(dirs.every((d) => !d?.includes('Users'))).toBe(true)
+  })
+
+  // Named models (§216): a vendor with a real roster gets the โมเดล row and a
+  // pick reaches the engine; a single-entry roster draws nothing — a picker
+  // with one option is not a choice — and the file-model picker stays hidden
+  // for vendors whose models are names, not files.
+  it('the voice page offers named models only where the vendor has a real choice', async () => {
+    const engineRow = (over: any) => ({
+      id: '', label: '', install: '', active: false, hasModels: false,
+      installCommand: [], models: [], activeModel: '', ...over,
+    })
+    vi.mocked(ListSpeechEngines).mockResolvedValue([
+      engineRow({ id: 'whisper-cpp', label: 'whisper.cpp (ggml)', hasModels: true }),
+      engineRow({
+        id: 'openai', label: 'OpenAI Whisper (คลาวด์)', active: true,
+        models: ['whisper-1', 'gpt-4o-transcribe'], activeModel: 'whisper-1',
+      }),
+    ] as any)
+    vi.mocked(ListTTSEngines).mockResolvedValue([
+      engineRow({ id: 'groq', label: 'Groq PlayAI', active: true, models: ['playai-tts'], activeModel: 'playai-tts' }),
+    ] as any)
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'เสียง')
+    await waitFor(() => expect(screen.getByText('เจ้าที่ใช้ถอดเสียง')).toBeTruthy())
+
+    // The STT vendor has two models: the โมเดล row is there, pre-selected on
+    // the active one, and picking the other lands on the binding.
+    const modelRow = Array.from(container.querySelectorAll('.set-row'))
+      .find((r) => r.textContent?.includes('เจ้านี้มีหลายโมเดล'))!
+    expect(modelRow).toBeTruthy()
+    const select = modelRow.querySelector('select') as HTMLSelectElement
+    expect(select.value).toBe('whisper-1')
+    await fireEvent.change(select, { target: { value: 'gpt-4o-transcribe' } })
+    await waitFor(() => expect(vi.mocked(SetSpeechModelName)).toHaveBeenCalledWith('gpt-4o-transcribe'))
+
+    // A names-vendor hides the file-model picker; the TTS card's single-entry
+    // roster draws exactly one โมเดล row on the whole page (the STT one).
+    expect(screen.queryByText('โมเดลถอดเสียง')).toBeNull()
+    const modelRows = Array.from(container.querySelectorAll('.set-row'))
+      .filter((r) => r.textContent?.includes('เจ้านี้มีหลายโมเดล'))
+    expect(modelRows).toHaveLength(1)
   })
 
   it('Usage page shows per-model aggregates', async () => {
@@ -645,6 +700,35 @@ describe('Settings pages', () => {
     expect(cockpit.activeView).not.toBe('office')
   })
 
+  // Moved here from the office page on 31 ส.ค. On a card the switch read as
+  // "this agent is disabled" beside an agent whose chat opens normally, so the
+  // roster kept the state (as a band heading) and gave up the control. This is
+  // the page the gear on every card already opens, and now the only place the
+  // per-agent switch is drawn — so this is where its wiring is pinned.
+  it('hands the agent switch straight to the delegation setting', async () => {
+    vi.mocked(ListSubagentProfiles).mockResolvedValue([
+      { name: 'deck', description: 'ทำสไลด์', prompt: 'role', builtin: true, desk: 'specialized' },
+    ] as any)
+    vi.mocked(ListChairs).mockResolvedValue([{ name: 'deck' }] as any)
+    // `tokens` is what the page's header sentence counts; a fixture without it
+    // renders the roster fine and then throws on the line above it.
+    const switches = (on: boolean) => ({
+      agents: { off: false, tokens: 0, workers: [{ name: 'deck', on }] },
+      helpers: { off: false, tokens: 0, workers: [] },
+      tokens: 0,
+    })
+    vi.mocked(DelegateSwitches).mockResolvedValue(switches(true) as any)
+    vi.mocked(SetAgentOff).mockResolvedValue(switches(false) as any)
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'เอเจน')
+
+    const sw = await screen.findByLabelText('มอบงานให้')
+    await fireEvent.change(sw, { target: { checked: false } })
+
+    await waitFor(() => expect(vi.mocked(SetAgentOff)).toHaveBeenCalledWith('deck', true))
+  })
+
   // The handshake with the team page. Both halves were tested apart — Office
   // sets cockpit.settingsIntent, Settings consumes it — and a handshake tested
   // only at its two ends is one nobody has actually shaken.
@@ -754,16 +838,20 @@ describe('Settings pages', () => {
     await openSection(container, 'ซับเอเจน')
 
     await waitFor(() => expect(screen.getByText('ค้นไฟล์')).toBeTruthy())
-    const cards = container.querySelectorAll('.settings-card')
-    expect(cards.length).toBe(1)
-    expect(cards[0].textContent).toContain('explore')
-    expect(cards[0].textContent).toContain('general')
-    expect(cards[0].textContent).not.toContain('deck')
-    expect(cards[0].textContent).toContain('เพิ่มหรือแก้ไขไม่ได้')
+    // One deck since 31 ส.ค., not a card holding rows: the group heading above
+    // it already draws the only boundary the list needs, and a box around a
+    // grid of borderless cards is the frame coming back one level up.
+    const deck = container.querySelector('.office-grid')!
+    expect(deck).toBeTruthy()
+    expect(deck.textContent).toContain('explore')
+    expect(deck.textContent).toContain('general')
+    expect(deck.textContent).not.toContain('deck')
+    expect(container.textContent).toContain('เพิ่มหรือแก้ไขไม่ได้')
 
     // Badges are still read off the profile — the roster informs, it just
-    // does not edit.
-    expect(screen.getByText('เครื่องมือ 4 ตัว')).toBeTruthy()
+    // does not edit. The tool-count badge went away on 31 ส.ค. with the thing
+    // it counted: every worker holds its desk's kit, so the number was the
+    // same word down the column.
     expect(screen.getByText('built-in:explore')).toBeTruthy()
 
     // No doors: nothing to create, configure, or pin. (The description may
@@ -775,15 +863,20 @@ describe('Settings pages', () => {
     expect(container.querySelectorAll('.set-row select.ctrl').length).toBe(0)
   })
 
-  it('the model dropdown pins a model per agent', async () => {
+  // A pinned model is a fact about the agent on the list, and a control only in
+  // the editor. It was a dropdown on every entry until 31 ส.ค., which put the
+  // same 172px of grey down the whole column and made the one agent that IS
+  // pinned indistinguishable from the ones that merely inherit — the exception
+  // and the rule drawn identically. Inheriting says nothing now; a pin says its
+  // own name.
+  it('names a pinned model on the card and pins nothing from the list', async () => {
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'เอเจน')
-    await waitFor(() => expect(container.querySelectorAll('.ag-row select.ctrl').length).toBe(3))
 
-    const selects = Array.from(container.querySelectorAll('.ag-row select.ctrl')) as HTMLSelectElement[]
-    expect(selects[0].value).toBe('deepseek-v4') // backend is pinned
-    await fireEvent.change(selects[0], { target: { value: '' } })
-    await waitFor(() => expect(vi.mocked(SetSubagentModel)).toHaveBeenCalledWith('backend', ''))
+    await waitFor(() => expect(container.querySelectorAll('.chair-card.agc').length).toBe(3))
+    expect(screen.getByText('deepseek-v4')).toBeTruthy() // backend is pinned
+    // One chip on one card, not a control on all three.
+    expect(container.querySelectorAll('.chair-card.agc select').length).toBe(0)
   })
 
   // The tool-picker chips are drawn from the live registry (ListTools), not
@@ -806,7 +899,7 @@ describe('Settings pages', () => {
 
     // The built-in group's first row (deck) — index 2 overall: yours come first.
     await fireEvent.click(screen.getAllByLabelText('ตั้งค่า')[2])
-    await waitFor(() => expect(container.querySelector('.ag-toolsum')).toBeTruthy())
+    await waitFor(() => expect(container.querySelector('.ag-body')).toBeTruthy())
 
     // ReadSubagentProfile's mock is '---\ndescription: ค้นไฟล์\ntools: grep, read\n---\nYou search files.'
     // — the frontmatter must land in its own fields, not sit in the role box
@@ -816,81 +909,17 @@ describe('Settings pages', () => {
     const description = container.querySelector('.pp-field input.ctrl:not([disabled])') as HTMLInputElement
     expect(description.value).toBe('ค้นไฟล์')
 
-    // The summary says what the profile does. "2 selected" would be the same
-    // number whether or not a deny list existed, which is the reading the old
-    // two-grid layout forced.
-    expect(container.querySelector('.ag-toolsum-txt .t')?.textContent).toContain('2')
-
-    // The allow-list itself is one state per tool, in the panel.
-    await fireEvent.click(screen.getByText('ตั้งค่า', { selector: '.ag-toolsum button' }))
-    await waitFor(() => expect(document.querySelector('.tp-card')).toBeTruthy())
-    const allowed = Array.from(document.querySelectorAll('.tp-row'))
-      .filter((r) => r.querySelector('.tp-allow.selected'))
-      .map((r) => r.querySelector('.tp-name')?.textContent?.trim())
-    expect(allowed.sort()).toEqual(['grep', 'read'])
-    await fireEvent.click(screen.getByText('เสร็จแล้ว'))
+    // No tools field and no picker. Both went on 31 ส.ค.: every agent holds
+    // the same kit, so the summary was one sentence repeated on every card, and
+    // `deny:` alone did not earn a seventy-row panel to reach it.
+    expect(container.querySelector('.ag-toolsum')).toBeNull()
+    expect(document.querySelector('.tp-card')).toBeNull()
 
     // Editable where ZCode is not — but honest about creating your own copy.
     expect(screen.getByText(/สร้างเป็นของคุณทับไว้/)).toBeTruthy()
     // A built-in has no delete button; there is nothing of yours to remove yet.
     expect(screen.queryByText('ลบ')).toBeNull()
     expect(screen.queryByText('คืนค่าของแอป')).toBeNull()
-  })
-
-  // Setting a tool's state and saving must produce a file the backend can read
-  // back exactly the way it was shown — the field split is a display choice,
-  // not a new file format.
-  const openToolPicker = async (container: HTMLElement, rowIndex: number) => {
-    await openSection(container, 'เอเจน')
-    await waitFor(() => expect(screen.getAllByLabelText('ตั้งค่า').length).toBe(3))
-    await fireEvent.click(screen.getAllByLabelText('ตั้งค่า')[rowIndex])
-    await waitFor(() => expect(container.querySelector('.ag-toolsum')).toBeTruthy())
-    await fireEvent.click(screen.getByText('ตั้งค่า', { selector: '.ag-toolsum button' }))
-    await waitFor(() => expect(document.querySelector('.tp-card')).toBeTruthy())
-  }
-
-  const toolRow = (name: string) =>
-    Array.from(document.querySelectorAll('.tp-row'))
-      .find((r) => r.querySelector('.tp-name')?.textContent?.trim() === name)
-
-  it('allowing a tool in the picker round-trips through the saved file', async () => {
-    withPickableTools()
-    const { container } = render(Settings, { onClose: () => {} })
-    await openToolPicker(container, 2) // built-in deck
-
-    await fireEvent.click(toolRow('glob')!.querySelector('.tp-allow')!)
-    await fireEvent.click(screen.getByText('เสร็จแล้ว'))
-    await fireEvent.click(screen.getByText('บันทึก'))
-
-    // An agent's edit goes out through the agents' door.
-    await waitFor(() => expect(vi.mocked(SaveAgentProfile)).toHaveBeenCalled())
-    const [name, saved] = vi.mocked(SaveAgentProfile).mock.calls.at(-1)!
-    expect(name).toBe('deck')
-    expect(saved).toContain('tools: grep, read, glob')
-    expect(saved.trim().endsWith('You search files.')).toBe(true)
-  })
-
-  // The old two-grid layout let the same tool be ticked in both lists at once —
-  // a state the engine silently resolves as denied while the UI showed it green
-  // above and red below. One state per tool makes it unrepresentable.
-  it('a tool cannot be allowed and denied at the same time', async () => {
-    withPickableTools()
-    const { container } = render(Settings, { onClose: () => {} })
-    await openToolPicker(container, 2)
-
-    // grep arrives allowed (the profile's tools list); denying it must remove
-    // it from allow rather than adding a second, contradictory entry.
-    await fireEvent.click(toolRow('grep')!.querySelector('.tp-deny')!)
-    expect(toolRow('grep')!.querySelector('.tp-allow.selected')).toBeNull()
-    expect(toolRow('grep')!.querySelector('.tp-deny.selected')).toBeTruthy()
-
-    await fireEvent.click(screen.getByText('เสร็จแล้ว'))
-    await fireEvent.click(screen.getByText('บันทึก'))
-    await waitFor(() => expect(vi.mocked(SaveAgentProfile)).toHaveBeenCalled())
-    const saved = vi.mocked(SaveAgentProfile).mock.calls.at(-1)![1]
-    expect(saved).toContain('tools: read')
-    expect(saved).toContain('deny: grep')
-    expect(saved).not.toContain('tools: grep')
   })
 
   // The editor draws neither `desk:` nor `needs:` — and used to delete both on
@@ -907,13 +936,16 @@ describe('Settings pages', () => {
     await openSection(container, 'เอเจน')
     await waitFor(() => expect(screen.getAllByLabelText('ตั้งค่า').length).toBe(3))
     await fireEvent.click(screen.getAllByLabelText('ตั้งค่า')[2])
-    await waitFor(() => expect(container.querySelector('.ag-toolsum')).toBeTruthy())
+    await waitFor(() => expect(container.querySelector('.ag-body')).toBeTruthy())
 
     await fireEvent.click(screen.getByText('บันทึก'))
     await waitFor(() => expect(vi.mocked(SaveAgentProfile)).toHaveBeenCalled())
     const saved = vi.mocked(SaveAgentProfile).mock.calls.at(-1)![1]
     expect(saved).toContain('needs: connection:github, mcp:github')
     expect(saved).toContain('desk: specialized')
+    // `tools:` joined them on 31 ส.ค. when the field and its picker were
+    // removed. Same rule: an editor must not delete what it does not draw.
+    expect(saved).toContain('tools: read')
   })
 
   // Three boxes, because the engine has three mechanisms: tools subtract from
@@ -1178,32 +1210,6 @@ describe('Settings pages', () => {
       await fireEvent.click(container.querySelectorAll('.ag-starter-drop')[0])
     }
     expect(container.querySelectorAll('.ag-starter').length).toBe(4)
-  })
-
-  // subagent.forcedDenials never reach a sub-agent whatever the file says.
-  // Offering them was a lie the user only discovered after saving.
-  it('tools a sub-agent can never get are shown as unavailable, not as choices', async () => {
-    vi.mocked(ListTools).mockResolvedValue([
-      { name: 'read', description: 'read a file', source: 'builtin' },
-      { name: 'ask_user', description: 'ask the human', source: 'builtin' },
-    ] as any)
-    const { container } = render(Settings, { onClose: () => {} })
-    await openToolPicker(container, 2)
-
-    expect(toolRow('read')!.querySelector('.tp-seg')).toBeTruthy()
-    expect(toolRow('ask_user')!.querySelector('.tp-seg')).toBeNull()
-    expect(toolRow('ask_user')!.querySelector('.tp-forced')).toBeTruthy()
-  })
-
-  it('the picker searches the list rather than making the user scan 35 rows', async () => {
-    withPickableTools()
-    const { container } = render(Settings, { onClose: () => {} })
-    await openToolPicker(container, 2)
-    expect(document.querySelectorAll('.tp-row').length).toBeGreaterThan(3)
-
-    await fireEvent.input(document.querySelector('.tp-search')!, { target: { value: 'glo' } })
-    const names = Array.from(document.querySelectorAll('.tp-name')).map((n) => n.textContent?.trim())
-    expect(names).toEqual(['glob'])
   })
 
   // A profile with no `steps:` line has no ceiling (§110), so that is what the

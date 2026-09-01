@@ -40,6 +40,21 @@ type Config struct {
 	// machine has more than one, and no way at all to trade accuracy for size
 	// (ggml-tiny ~31MB against ggml-base ~141MB) without moving files by hand.
 	SpeechModelPath string
+	// SpeechEngine picks the STT vendor by internal/stt Descriptor.ID, and
+	// TTSEngine / TTSVoice pick the read-aloud vendor and voice the same way
+	// (internal/tts). Empty means the catalog default — for the voice, the
+	// engine's own default. All three exist so วางไว้ที่หน้าตั้งค่า > เสียง can
+	// switch vendors as data, never as UI changes.
+	SpeechEngine string
+	TTSEngine    string
+	TTSVoice     string
+	// SpeechModelName / TTSModelName pin a NAMED model on the picked vendor
+	// (whisper-1 vs gpt-4o-transcribe, tts-1 vs tts-1-hd) — a different thing
+	// from SpeechModelPath, which is a file on disk. Empty means the vendor's
+	// first, and both clear on a vendor switch: a model name is one vendor's
+	// private vocabulary.
+	SpeechModelName string
+	TTSModelName    string
 	// UILocale is the language the desktop UI is showing ("th", "en"). The
 	// engine has no business with language — the one exception is Aetox's own
 	// built-in provider, which is an onboarding surface wearing a Provider
@@ -166,6 +181,17 @@ type ModelPreference struct {
 	// (Ollama's and LM Studio's stores are scanned too, see internal/stt), and
 	// a bare filename could not tell two of those apart.
 	SpeechModelPath string `json:"speech_model_path,omitempty"`
+	// SpeechEngine / TTSEngine / TTSVoice are the voice page's three picks:
+	// STT vendor, TTS vendor, TTS voice. Stored by catalog id (and the voice by
+	// the engine's own stable id) so the pick survives an app update that
+	// reorders a list.
+	SpeechEngine string `json:"speech_engine,omitempty"`
+	TTSEngine    string `json:"tts_engine,omitempty"`
+	TTSVoice     string `json:"tts_voice,omitempty"`
+	// The named-model picks on each side, for vendors whose models are API
+	// names rather than files (see Config.SpeechModelName).
+	SpeechModelName string `json:"speech_model_name,omitempty"`
+	TTSModelName    string `json:"tts_model_name,omitempty"`
 	// UserName is what the user calls themselves in the sidebar footer. It
 	// lives here rather than in the webview's localStorage because that store
 	// is keyed by origin — a name typed under `wails dev` (…:34115) was a
@@ -984,6 +1010,35 @@ func LoadModelPreference() (ModelPreference, bool, error) {
 		pref.ModelAPIKeys = creds.ModelAPIKeys
 	}
 	return pref, true, nil
+}
+
+// ProviderAPIKey is how the speech engines (internal/stt, internal/tts) read
+// the same credential store the model layer does: the key the user entered on
+// the models page serves their voice too, with the provider's usual
+// environment variables as the fallback. Empty means the user has genuinely
+// not provided one — the engines turn that into their own actionable error.
+func ProviderAPIKey(provider string, envVars ...string) string {
+	if pref, ok, _ := LoadModelPreference(); ok {
+		if key := strings.TrimSpace(pref.APIKeyForProvider(provider)); key != "" {
+			return key
+		}
+	}
+	for _, name := range envVars {
+		if key := strings.TrimSpace(os.Getenv(name)); key != "" {
+			return key
+		}
+	}
+	return ""
+}
+
+// ProviderBaseURL is the per-provider endpoint override from the same store.
+// Empty means the vendor's own default — and it is what lets one catalog row
+// ("OpenAI") serve every local server that speaks the same API.
+func ProviderBaseURL(provider string) string {
+	if pref, ok, _ := LoadModelPreference(); ok {
+		return strings.TrimSpace(pref.BaseURLForProvider(provider))
+	}
+	return ""
 }
 
 func sanitizePreference(pref ModelPreference) ModelPreference {
