@@ -1513,12 +1513,25 @@ type pendingCall struct {
 	err     error
 }
 
+// notExposed is the refusal for a tool nothing answered under this caller's
+// exposure — the name is unknown, or held back from this agent or stance.
+//
+// It says what to do next, because the bare sentence taught the wrong lesson:
+// an agent told only "not exposed" went detective (31 ส.ค., session 192150 —
+// ~40 calls listing DataRoot, reading the renderer's package.json and this
+// repo's source, hunting a way to run the tool by hand). The blocked step is
+// the user's to unblock, and one question reaches them in one call.
+func notExposed(name string) error {
+	return fmt.Errorf("tool %q is not exposed to agent here — either no such tool, or this seat does not hold it. "+
+		"Do not hunt for another way to run it; name the blocked step and ask in one call (ask_user, or ask_main from a subagent), or finish what the tools you do hold can do", name)
+}
+
 func (e *Executor) dispatchWithDeadline(ctx context.Context, name string, args map[string]any) (skill.Output, bool, error) {
 	// Interactive tools wait on a human — no deadline, ctx cancel is the brake.
 	if noDeadlineTools[strings.ToLower(name)] {
 		output, handled, err := e.dispatcher.ExecuteTool(ctx, name, args)
 		if !handled {
-			return output, false, fmt.Errorf("tool %q is not exposed to agent", name)
+			return output, false, notExposed(name)
 		}
 		return output, true, err
 	}
@@ -1544,7 +1557,7 @@ func (e *Executor) dispatchWithDeadline(ctx context.Context, name string, args m
 	case <-call.done:
 		e.forget(key)
 		if !call.handled {
-			return call.output, false, fmt.Errorf("tool %q is not exposed to agent", name)
+			return call.output, false, notExposed(name)
 		}
 		return call.output, true, call.err
 	case <-ctx.Done():
