@@ -68,6 +68,46 @@ func TestSkillsListReportsNameAndDescription(t *testing.T) {
 	}
 }
 
+// The list is what every session and every delegate pays before any work, so
+// an entry's description is capped: the identity clause survives, the full
+// pitch stays behind skill_view. Measured 31 ส.ค.: 20,284 bytes of listing
+// read on arrival by the main chat AND by each delegate it spawned.
+func TestSkillsListClipsParagraphDescriptions(t *testing.T) {
+	root := t.TempDir()
+	long := strings.Repeat("คำอธิบายยาวมาก ", 40) + "ท้ายที่หายไป"
+	writeSkillFixture(t, root, "wordy", "---\nname: wordy\ndescription: "+long+"\n---\nbody\n")
+
+	list := &skillsListSkill{paths: []string{root}}
+	out, err := list.ExecuteTool(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("skills_list: %v", err)
+	}
+	var line string
+	for _, l := range strings.Split(out.Content, "\n") {
+		if strings.HasPrefix(l, "wordy: ") {
+			line = l
+		}
+	}
+	if line == "" {
+		t.Fatalf("wordy is not in the listing: %q", out.Content)
+	}
+	if got := len([]rune(line)); got > skillsListEntryCap+40 {
+		t.Errorf("the wordy line is %d runes — the cap did not hold", got)
+	}
+	if !strings.HasSuffix(line, "…") {
+		t.Errorf("a clipped line must say so with …: %q", line)
+	}
+	if strings.Contains(out.Content, "ท้ายที่หายไป") {
+		t.Error("the tail of a long description leaked past the cap")
+	}
+	// And a short one is untouched — no … on a line that was never cut.
+	writeSkillFixture(t, root, "brief", "---\nname: brief\ndescription: สั้นพอดี\n---\nbody\n")
+	out, _ = list.ExecuteTool(context.Background(), nil)
+	if !strings.Contains(out.Content, "brief: สั้นพอดี\n") {
+		t.Errorf("a short description was altered: %q", out.Content)
+	}
+}
+
 // This used to assert "No skills installed" on a fresh machine, and that is no
 // longer reachable: the bundled skills (bundled_skills.go) ship inside the
 // binary, so the library is never empty. What is worth pinning instead is that

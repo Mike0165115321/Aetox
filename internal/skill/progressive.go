@@ -126,6 +126,29 @@ func (s *skillsListSkill) ToolDefinition() model.ToolDefinition {
 	}
 }
 
+// skillsListEntryCap bounds one entry's description in the listing.
+//
+// The list is L0 and every session pays it whole — the main chat at its first
+// orientation and every delegate on arrival (measured 31 ส.ค.: 20,284 bytes,
+// read before any work, by each). Frontmatter descriptions grew into
+// paragraphs because skill authors write them as the full pitch; the pitch
+// belongs to skill_view, the list only has to say enough to know WHICH one to
+// open. 220 runes keeps the identity clause and the first "use when" of every
+// bundled skill; the cut lands at a word so a clipped line still reads.
+const skillsListEntryCap = 220
+
+func clipSkillLine(desc string) string {
+	runes := []rune(desc)
+	if len(runes) <= skillsListEntryCap {
+		return desc
+	}
+	cut := string(runes[:skillsListEntryCap])
+	if i := strings.LastIndexAny(cut, " ,;"); i > skillsListEntryCap/2 {
+		cut = cut[:i]
+	}
+	return cut + "…"
+}
+
 func (s *skillsListSkill) ExecuteTool(_ context.Context, _ map[string]any) (Output, error) {
 	start := time.Now()
 	discovered := s.shelf()
@@ -144,11 +167,11 @@ func (s *skillsListSkill) ExecuteTool(_ context.Context, _ map[string]any) (Outp
 			// (owner, 26 ส.ค.). The separator still has a job, so it gets the
 			// punctuation that does that job without the tell.
 			b.WriteString(": ")
-			b.WriteString(d.Description)
+			b.WriteString(clipSkillLine(d.Description))
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString("\nRead one with skill_view {\"name\": \"...\"} before doing a task it covers.")
+	b.WriteString("\nRead one with skill_view {\"name\": \"...\"} before doing a task it covers; a line ending … is clipped and the body has the rest.")
 	return newToolOutput(s.Name(), s.Name(), b.String(), start, false, nil), nil
 }
 
