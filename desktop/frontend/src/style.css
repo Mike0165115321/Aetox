@@ -1998,6 +1998,13 @@ button.phase-head:hover { color:var(--text-muted); }
    on hover. */
 .msg-rate.rated { color:var(--accent); }
 
+/* ฟัง — reading the reply aloud. Drawn one step bigger and darker than its
+   row-mates (owner, 1 ก.ย.: "ลำโพงเล็กไป ไม่ชัด") — a 13px dim glyph after the
+   timestamp read as decoration, not as a control. While playing it keeps the
+   accent for the same reason .rated does: state, not an offer. */
+.msg-speak { width:28px; height:28px; color:var(--text-secondary); }
+.msg-speak.speaking { color:var(--accent); }
+
 /* Re-running a turn, in the same row and on the same terms. Retry keeps its
    danger colour: a turn that failed has nothing else to offer. */
 .msg-act { flex:none; color:var(--text-dim); transition:color .12s, background .12s; }
@@ -2351,6 +2358,21 @@ button.phase-head:hover { color:var(--text-muted); }
 .composer input.ctrl { cursor:text; width:120px; }
 .composer .send { width:36px; height:36px; border-radius:var(--r-md); background:var(--surface-raised); border:1px solid var(--border-default); display:grid; place-items:center; color:var(--text-muted); }
 
+/* The composer's mic. Idle it weighs the same as attach beside it; recording
+   it turns red and carries the elapsed seconds, because a live mic must never
+   look idle; transcribing it spins. Width grows for the timer and nothing
+   else moves — the row already wraps. */
+.composer .tools .mic { width:auto; min-width:30px; padding:0 7px; display:inline-flex; align-items:center; justify-content:center; gap:5px; }
+.composer .tools .mic.rec { color:var(--status-danger); background:var(--surface-hover); }
+.composer .tools .mic:disabled { cursor:default; }
+.mic-secs { font-size:var(--fs-2xs); font-variant-numeric:tabular-nums; }
+.mic-busy { display:inline-flex; animation:tool-spin 1.2s linear infinite; }
+
+/* A voice step that failed — the mic or ฟัง — in the engine's own words,
+   dismissible, above the row that caused it. */
+.voice-error { display:flex; align-items:flex-start; gap:8px; margin:0 0 8px; padding:7px 10px; border:1px solid var(--status-danger); border-radius:var(--r-sm); background:var(--surface-panel); color:var(--text-secondary); font-size:var(--fs-xs); line-height:1.5; }
+.voice-error .t { flex:1; min-width:0; white-space:pre-wrap; }
+
 /* โหมดทำงาน picker (§106) — how this turn runs, next to the model picker
    because the two are read together: which brain, which way of working.
 
@@ -2380,6 +2402,19 @@ button.phase-head:hover { color:var(--text-muted); }
   border-color:color-mix(in srgb, var(--accent, #6ea8fe) 40%, transparent);
 }
 .stance-chip.on .caret { color:inherit; opacity:.7; }
+/* ---------- attach menu ----------
+   The + button's own menu, sharing .stance-item with the one beside it: two
+   menus on the same row that answer "pick one of these" should not be two
+   different objects. Only the box differs, and only because this one is wider
+   — its rows carry file extensions, which do not shorten. */
+.attach-pick { position:relative; }
+.attach-menu {
+  position:absolute; bottom:calc(100% + 10px); left:0; z-index:50; min-width:296px;
+  display:flex; flex-direction:column; gap:2px; padding:6px;
+  background:var(--surface-panel); border:1px solid var(--border-subtle); border-radius:var(--r-lg);
+  box-shadow:var(--shadow-menu);
+}
+
 .stance-menu {
   position:absolute; bottom:calc(100% + 10px); left:0; z-index:50; min-width:250px;
   display:flex; flex-direction:column; gap:2px; padding:6px;
@@ -2960,6 +2995,14 @@ button.phase-head:hover { color:var(--text-muted); }
 .plus-menu-item .ic { font-size:var(--fs-lg); width:16px; text-align:center; }
 .plus-menu-item .kbd { margin-left:auto; padding-left:16px; color:var(--text-dim); font-size:var(--fs-sm); }
 .plus-menu-item:disabled { opacity:.4; cursor:default; }
+/* The one group heading in this menu, in the shape the sidebar already uses
+   for the same job (.side-sub-head): a rule, then a small bold label. Borrowed
+   rather than invented, so two lists that group things do not group them two
+   different ways. */
+.plus-menu-head {
+  margin:10px 10px 2px; padding-top:8px; border-top:1px solid var(--border-subtle);
+  font-size:var(--fs-xs); font-weight:600; color:var(--text-secondary);
+}
 .insp-addr { display:flex; align-items:center; gap:4px; padding:8px 14px; border-bottom:1px solid var(--border-default); }
 /* Point these tooltips up into the tab strip: below them is the browser pane,
    a native window that composites above the DOM, so a downward tooltip is
@@ -3000,6 +3043,10 @@ button.phase-head:hover { color:var(--text-muted); }
 .insp-slot.term-host { overflow:hidden; }
 .insp-start { height:100%; display:flex; flex-direction:column; justify-content:center; gap:6px; padding:24px; }
 .insp-start .plus-menu-item { padding:14px 16px; font-size:var(--fs-lg); border:1px solid var(--border-subtle); border-radius:var(--r-md); }
+/* Same heading, other surface. Here the rows carry their own borders, so the
+   heading's rule would be a second line where there is already one; the label
+   just lines up with the row text above it. */
+.insp-start .plus-menu-head { margin:12px 0 2px 17px; padding-top:0; border-top:0; }
 /* .insp-blank* lived here for the browser tab's two-line empty state, which
    BrowserStart.svelte replaced (ARCHITECTURE.md §81) and which owns its own
    scoped styles. Nothing else ever used them. */
@@ -3283,6 +3330,17 @@ button.phase-head:hover { color:var(--text-muted); }
 .page-title { max-width:var(--content-max, 760px); margin:18px auto 0; }
 .page-title h2 { margin:0 0 6px; font-size:var(--fs-3xl); }
 .page-title p { margin:0; color:var(--text-muted); font-size:var(--fs-sm); line-height:1.5; max-width:60ch; }
+/* "รุ่นทดลอง" beside a page's heading. The system's own amber, quiet on
+   purpose: it marks "usable but not settled", not danger - a red chip would
+   warn people off a room that works. One word here; what it means is a
+   sentence in that page's footer note, where the reading happens. */
+.page-title .beta-chip {
+  display:inline-block; vertical-align:3px; margin-left:8px;
+  font-size:var(--fs-xs); font-weight:400; color:var(--status-warn);
+  border:1px solid color-mix(in srgb, var(--status-warn) 35%, transparent);
+  background:color-mix(in srgb, var(--status-warn) 10%, transparent);
+  border-radius:999px; padding:2px 9px; white-space:nowrap;
+}
 .page-body { flex:1; overflow-y:auto; padding:28px 64px 56px; }
 /* The wide column is declared on the whole page, not on the body's inner box.
    Declared inside the body, only the body knew about it: the header kept
@@ -3388,6 +3446,149 @@ button.phase-head:hover { color:var(--text-muted); }
   display:grid; gap:12px; margin-bottom:12px;
   grid-template-columns:repeat(auto-fill, minmax(min(240px, 100%), 1fr));
 }
+
+/* ═══ The เอเจน card, rebuilt 2026-08-31 ═══════════════════════════════════
+   A modifier on .chair-card rather than a class family of its own, because
+   VideoWork draws the same card for its own doors and must not move when this
+   page does. Everything below is `.agc …`, which outranks the bare `.chair-…`
+   rules underneath it without either side having to know about the other.
+
+   **No border anywhere, and that is the whole idea.** The owner asked three
+   times for cards and sent back two attempts; what was wrong both times was
+   not the card, it was the frame. In a dark theme a 1px border is a fragile
+   signal — at low opacity it disappears, at high opacity it reads as heavy
+   chrome — and a frame running around a card is a second rectangle competing
+   with the agent's own mark inside it. So the card is a SURFACE one step up
+   from the page, not a box drawn on it, and the elevation does the work the
+   border was failing to do.
+
+   **Every card stands on the same step, and that is a correction.** For one
+   afternoon the surface WAS the state — raised when the assistant could reach
+   the agent, --surface-panel when it could not — and the owner sent back a
+   screenshot of a deck whose off cards had vanished: "มันจางไปกับพื้นหลังเลยอ่ะ".
+   He was right, and the arithmetic says so. Against the page's own
+   --surface-app (#0f0f11), panel (#16161a) is seven units of lightness, about
+   2.7% — under the 3-6% step a dark surface scale needs to read at all, and a
+   quarter of the sixteen that raised (#1f1f23) clears it by. The idea needed a
+   step this palette does not have, and inventing a token to hold one card's
+   mood is not a trade worth making.
+
+   So state is carried by what was already carrying it and can afford to: the
+   mark cools, the name drops a shade, the switch is right there, and on the
+   roster the agent sits under a heading that names its side. Four signals, none
+   of which can fade into the ground.
+
+   Off is drawn cool rather than grey either way: every word on the card stays
+   legible and the chat button still works, because "the assistant may not hand
+   this one work" is not "this one is gone" — the misreading the wording has
+   been built to avoid since the switch first shipped.
+
+   Radius is --r-md, not the --r-lg every other card wears. A wide corner reads
+   as a box; a tight one reads as a plane, which is what this now is. */
+.chair-card.agc {
+  border:none; border-radius:var(--r-md); overflow:visible;
+  background:var(--surface-raised);
+  display:flex; flex-direction:column; gap:8px; padding:12px;
+  transition:background .15s ease;
+}
+.chair-card.agc:hover { background:var(--surface-hover); border-color:transparent; }
+
+.agc .chair-body { flex:1; display:flex; flex-direction:column; gap:7px; padding:0; }
+.agc .chair-who { gap:9px; }
+
+/* The mark is the agent's logo, not an icon in the corner — the owner's own
+   framing, and the reason it went from 28px to 48px and took the top-left slot
+   the eye lands on first. Hue comes from the name (coverHue), so a .md file
+   dropped in tomorrow has a colour of its own with nobody choosing one, and
+   the same colour every time the app opens.
+   The inner hairline is `inset` box-shadow rather than a border so it costs no
+   layout box — a real border here would put the frame back one level down. */
+.agc .chair-face {
+  width:38px; height:38px; border-radius:26%;
+  background:linear-gradient(158deg, hsl(var(--h) 44% 26%), hsl(var(--h) 40% 17%));
+  color:hsl(var(--h) 78% 72%);
+  box-shadow:inset 0 0 0 1px hsl(var(--h) 40% 38% / .55), inset 0 1px 0 hsl(var(--h) 60% 62% / .18);
+}
+/* The mark is what carries "off" now that the surface cannot. Pushed further
+   than it was when the background was helping: a logo drained of its colour
+   reads as out of service at a glance, and it is the one thing on the card
+   whose whole job is being recognised. */
+.agc.off .chair-face { filter:saturate(.2) brightness(.72); }
+.agc .chair-name { font-size:var(--fs-lg); letter-spacing:-.01em; flex:1; }
+.agc.off .chair-name { color:var(--text-secondary); }
+.agc .chair-desc { font-size:var(--fs-sm); -webkit-line-clamp:2; }
+
+/* Facts about the agent, as chips. Only what differs from the ordinary is ever
+   drawn: a badge every card carries is a badge that says nothing, which is
+   what "ไม่จำกัดรอบ" on all seven rows was. The job count is the exception —
+   it is the one fact that is about this agent having been used at all. */
+.agc .chair-chips { display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+.agc .chip {
+  display:inline-flex; align-items:center; gap:5px; white-space:nowrap;
+  font-size:var(--fs-2xs); line-height:18px; padding:0 8px; border-radius:999px;
+  background:var(--surface-sunken); color:var(--text-muted);
+}
+.agc .chip.mine { color:var(--accent-bright); background:#0f2b30; }
+.agc .chip.deny { color:var(--c-red-200, #ffb3ae); background:#2a1614; }
+.agc .chair-stat {
+  margin-top:0; display:inline-flex; align-items:center; white-space:nowrap;
+  font-size:var(--fs-2xs); line-height:18px; padding:0 8px; border-radius:999px;
+  background:var(--surface-sunken); color:var(--text-secondary);
+  font-variant-numeric:tabular-nums;
+}
+.agc .chair-stat.idle { color:var(--text-dim); }
+
+/* The foot loses its rule too. A divider inside a borderless card is the frame
+   coming back in through the middle; the gap and the button's own recessed
+   surface already say where the actions start. */
+.agc .chair-foot { border-top:none; margin-top:auto; padding:0; gap:8px; }
+.agc .chair-talk {
+  flex:1; min-width:0; display:inline-flex; align-items:center; justify-content:center; gap:7px;
+  border:none; border-radius:var(--r-sm); padding:6px 10px;
+  background:var(--surface-sunken); color:var(--text-secondary);
+  font:inherit; font-size:var(--fs-sm); cursor:pointer;
+  transition:background .15s, color .15s;
+}
+.agc .chair-talk:hover { background:var(--surface-hover); color:var(--text-primary); }
+.agc .chair-talk .t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* The lock veil was cut to sit below an 8px identity band that this card no
+   longer has, so it starts at the top edge and follows the tighter corner. */
+.agc .chair-lock { inset:0; border-radius:var(--r-md); }
+
+/* The two bands the roster is split into — whether the main assistant may hand
+   this agent work. A heading and a hairline on the page's own background, not
+   a card wrapping the deck: a box around boxes says nothing the gap between
+   two groups was not already saying.
+   The group an agent sits in IS its delegation state, which is why no card
+   carries a badge for it: flip the switch and the card moves, and the sentence
+   at the top of the page counts differently. */
+.ag-band { display:flex; align-items:center; gap:10px; margin:2px 0 10px; }
+.ag-band .lab { font-size:var(--fs-2xs); letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); font-weight:600; }
+.ag-band .n { font-size:var(--fs-2xs); color:var(--text-dim); font-variant-numeric:tabular-nums; }
+.ag-band .rule { flex:1; height:1px; background:var(--border-subtle); }
+.ag-band .say { font-size:var(--fs-2xs); color:var(--text-dim); }
+
+/* The one sentence this page exists to change, written as a sentence. It sat
+   as a bare switch over the list before, which left the reader to work out
+   what the switch reached. */
+.ag-reach { flex:1; min-width:0; font-size:var(--fs-sm); color:var(--text-muted); font-variant-numeric:tabular-nums; }
+
+/* The เอเจน and ซับเอเจน decks on the settings page wear the same card, one
+   weight lighter for a helper: a smaller mark, no foot, and the path where a
+   teammate's job count sits. What separates the two levels of the company is
+   the weight of the card, not a sentence saying which is which. */
+.agc.helper { padding:11px; gap:7px; }
+.agc.helper .chair-face { width:30px; height:30px; }
+.agc.helper .chair-name { font-size:var(--fs-md); }
+.agc .chip.mono-dim { font-family:var(--mono); color:var(--text-dim); background:none; padding:0; }
+/* The settings deck's own text lines — .set-txt is gone from these cards, so
+   the description and the two file notices carry their sizes here. */
+.agc .d { color:var(--text-muted); font-size:var(--fs-sm); line-height:1.45; }
+.agc .d.ag-invalid, .agc .d.ag-notice { font-size:var(--fs-xs); }
+/* An empty group says so on the page, not inside a card drawn to hold nothing:
+   an empty bordered box was furniture standing in for an answer. */
+.ag-empty { margin:-4px 0 24px; }
 /* A teammate's card: a thin band of their own colour, then who they are. The
    band is 8px rather than the gallery's 104px cover because this is a face,
    not a thumbnail — a cover that size ate the card and repeated the name
@@ -3399,6 +3600,67 @@ button.phase-head:hover { color:var(--text-muted); }
   background:var(--surface-raised); transition:border-color .15s;
 }
 .chair-card:hover { border-color:var(--border-strong); }
+
+/* The veil over an agent that cannot work yet (AgentLock.svelte), and the
+   report that opens from it (ToolInstallReport.svelte).
+   Over the card rather than beside it, because the sentence is about the whole
+   card: a warning row under a live button says "there is a problem and you may
+   proceed", and this says "there is nothing to proceed to". The card stays
+   legible through the veil so the reader still sees which teammate they are
+   being told about. */
+.chair-card { position:relative; }
+.chair-card.locked > .chair-body { visibility:hidden; }
+/* Below the 8px band, which is the card's identity colour and the one thing
+   worth keeping. Opaque rather than a wash: a translucent veil left the card's
+   own title and description legible underneath its message and the two
+   collided. */
+/* `safe center` and a scroll, not plain centring. A lock naming two missing
+   pieces instead of one grew taller than the card, and a centred flex column
+   that overflows spills out of BOTH ends — so the teammate's name went off the
+   top and the install button off the bottom, leaving a veil that said what was
+   wrong without saying whose card it was or offering the fix. `safe` stops
+   centring at the start edge once the content no longer fits. */
+.chair-lock { position:absolute; inset:8px 0 0; z-index:1; display:flex; flex-direction:column; align-items:center; justify-content:safe center; gap:9px; padding:16px 14px; text-align:center; background:var(--surface-raised); overflow-y:auto; }
+.chair-lock > * { flex:none; }
+.chair-lock > svg { color:var(--text-muted); }
+.chair-lock-who { font-size:var(--fs-lg); font-weight:600; color:var(--text-primary); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.chair-lock-say { margin:0; font-size:var(--fs-xs); line-height:1.5; color:var(--text-secondary); max-width:22ch; }
+.chair-lock-what { margin:-4px 0 0; font-size:var(--fs-xs); color:var(--text-muted); font-family:var(--mono); max-width:24ch; overflow-wrap:anywhere; }
+.focus-item.locked .t { color:var(--text-muted); }
+.focus-locked { flex:none; margin-left:auto; display:inline-flex; color:var(--status-warn); }
+.tool-plan { border:1px solid var(--border-subtle); border-radius:var(--r-md); background:var(--surface-sunken); }
+.tool-plan-row { display:flex; align-items:center; gap:10px; padding:9px 12px; font-size:var(--fs-sm); }
+.tool-plan-row + .tool-plan-row { border-top:1px solid var(--border-subtle); }
+.tool-plan-row .k { flex:none; color:var(--text-primary); }
+.tool-plan-row.dest .k { color:var(--text-muted); }
+.tool-plan-row { align-items:flex-start; }
+.tool-plan-row .k { padding-top:1px; width:74px; }
+.tool-plan-row .v { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; color:var(--text-primary); }
+.tool-plan-row .v.links { flex-direction:row; flex-wrap:wrap; gap:12px; }
+.tool-plan-row .v .one { display:flex; flex-direction:column; }
+.tool-plan-row .v .also { color:var(--text-muted); font-size:var(--fs-xs); }
+.tool-plan-row .lic { font-size:var(--fs-xs); }
+.tool-plan-row .sz { flex:none; color:var(--text-secondary); }
+.tool-plan-row .path { flex:1; min-width:0; font-family:var(--mono); font-size:var(--fs-xs); color:var(--text-secondary); word-break:break-all; }
+.tool-safe { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+.tool-safe li { display:flex; align-items:flex-start; gap:8px; font-size:var(--fs-sm); line-height:1.5; color:var(--text-secondary); }
+.tool-safe li svg { flex:none; margin-top:2px; color:var(--status-success); }
+/* The readiness panel (VideoReady.svelte): one row per thing the machine either
+   has or does not, drawn whole rather than as a list of faults. */
+.ready-card { width:min(500px, calc(100vw - 48px)); }
+.ready-list { display:flex; flex-direction:column; border:1px solid var(--border-subtle); border-radius:var(--r-md); background:var(--surface-sunken); }
+.ready-row { display:flex; align-items:center; gap:10px; padding:9px 12px; font-size:var(--fs-sm); color:var(--status-success); }
+.ready-row + .ready-row { border-top:1px solid var(--border-subtle); }
+.ready-row.miss { color:var(--status-danger); }
+.ready-row.warn { color:var(--status-warn); }
+.ready-row > svg { flex:none; }
+.ready-row .k { flex:none; width:132px; color:var(--text-primary); }
+.ready-row .d { flex:1; min-width:0; color:var(--text-muted); font-size:var(--fs-xs); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ready-row .sz { flex:none; color:var(--text-secondary); font-size:var(--fs-xs); }
+.ready-actions { align-items:center; }
+.ready-sum { flex:1; text-align:left; font-size:var(--fs-sm); color:var(--text-secondary); }
+
+
 .chair-band {
   display:block; height:8px; flex:none;
   background:linear-gradient(90deg, hsl(var(--h) 55% 46%), hsl(calc(var(--h) + 40) 50% 38%));
@@ -3513,37 +3775,21 @@ button.phase-head:hover { color:var(--text-muted); }
    reads only names, and the sentence is there for whoever wants it. */
 .group-hint { margin-left:auto; font-size:var(--fs-xs); color:var(--text-dim); text-align:right; }
 
-/* The เอเจน list (settings). A row, not a card — owner's call, 12 ส.ค., and it
-   reverses the 10 ส.ค. one two lines up in agentCard's comment. What that
-   decision was right about is that a name buried under five grey tags is not a
-   face you can pick out; what a grid of 240px cards then cost was that eight
-   teammates no longer fit on a screen, and every card had to carry its own
-   border, band and foot to say what a row says with a divider.
-   So this is not the row that was replaced. The name leads at --fs-lg and the
-   tags follow it, the description gets its own line, and the two controls sit
-   on the right where the eye is not scanning. It is profileRow's shape — the
-   same vocabulary a helper is drawn with — plus the two things only a teammate
-   has: a model of their own, and a door to the rest of their settings. */
-.ag-row:hover { background:var(--surface-raised); }
-.ag-row .ag-rowicon { width:30px; height:30px; }
-.ag-row .set-txt .t { font-size:var(--fs-lg); line-height:1.35; }
+/* The เอเจน list (settings) was a row from 12 ส.ค. to 31 ส.ค. — the owner's
+   call, reversing the card of 10 ส.ค. What each decision was right about is
+   worth keeping, because the card that stands here now is not either of them:
+   the row was right that a name buried under five grey tags is not a face you
+   can pick out, and the 10 ส.ค. card was right that a teammate is somebody, not
+   a line item. What the 10 ส.ค. card actually cost was never "card" — it was
+   the border, the colour band and the foot rule each one carried, three frames
+   drawn around one object.
+   So the third answer keeps the card and drops the frames (.agc, up beside
+   .office-grid). Same shape on the settings deck as on the roster, because it
+   is the same seven agents, and one vocabulary is the only way two pages
+   showing the same people can stay in agreement. */
 .ag-actions { flex:none; display:flex; align-items:center; gap:4px; }
-/* Wide enough for a model id, fixed so the names above each other line up and
-   the gear never moves as you scan down. No height of its own: that is what
-   put the card's foot in a fight with `.settings-page .ctrl` and sliced the
-   text in half — the control is allowed to be the size the page says it is. */
-.ag-actions .ag-model { width:172px; }
-/* Whether the main assistant may hand this agent work — a chip rather than a
-   slider, because every other on/off on this page is a chip and a second idiom
-   for one act is a second thing to learn. Off is the resting state, so it wears
-   the ordinary control colours and only "on" takes the accent: delegation ships
-   off, and a page full of lit chips on a fresh install would say the opposite.
-
-   Greyed rather than removed when delegation is off entirely. A row that
-   vanished would leave somebody hunting for an agent that never went anywhere,
-   which is precisely the misreading the wording is built to avoid. */
 /* The master switch and what it costs, above the roster it governs. Its own
-   card so the eye reads it as the parent of the two grids below rather than as
+   card so the eye reads it as the parent of the decks below rather than as
    the first row of the first one. */
 .reach-card { margin-bottom:14px; }
 /* The delegation switch in the composer's agent menu, one row under the names.
@@ -3551,7 +3797,6 @@ button.phase-head:hover { color:var(--text-muted); }
    so it never takes the accent that marks "you are here". */
 .focus-item.delegate-row.on { color:var(--text-primary); }
 .focus-item.delegate-row:disabled { opacity:.5; cursor:progress; }
-.ag-row.empty { color:var(--text-muted); }
 
 /* The agent editor's five section headings. Louder than an eyebrow inside a
    card and quieter than an h2: the page has one title already, and these are
@@ -3802,6 +4047,9 @@ button.phase-head:hover { color:var(--text-muted); }
   background:color-mix(in srgb, var(--accent) 14%, transparent);
 }
 .art-count { margin-left:auto; font-size:var(--fs-xs); color:var(--text-dim); }
+/* The seam between the two chip groups on one row (kind, then time): a hair of
+   border, not a second row - the axes belong to the same shelf. */
+.art-kindsep { width:1px; height:16px; background:var(--border-default); margin:0 4px; }
 /* A day heading breaks the grid across its full width, so the cards under it
    read as that day's work instead of as a continuous wall of tiles. */
 .art-day {
@@ -4237,6 +4485,12 @@ button.phase-head:hover { color:var(--text-muted); }
    housekeeping, not an emergency, so the mark borrows the file-status weight
    rather than the danger red. */
 .mem-scope { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+/* The scope somebody arrived asking about, from an agent's own card. A mark on
+   the label rather than a filter over the page: the reader is owed the row they
+   came for, and the rest of the page is still the answer to "who learned
+   what". */
+.mem-focus { color:var(--text-primary); }
+.mem-focus::before { content:''; display:inline-block; width:3px; height:11px; margin-right:6px; border-radius:2px; background:var(--accent, currentColor); vertical-align:-1px; }
 .mem-orphan {
   text-transform:none; letter-spacing:normal; font-weight:500; opacity:1;
   color:var(--status-warn); border:1px solid currentColor;
@@ -4294,6 +4548,15 @@ button.phase-head:hover { color:var(--text-muted); }
 .mrow { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--border-subtle); border-radius:var(--r-md); }
 .mrow .mname { flex:1; font-family:var(--mono); font-size:var(--fs-lg); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mset-error { color:var(--status-danger); font-size:var(--fs-lg); }
+
+/* ตั้งค่า > เสียง — the ติดตั้ง row. The command sits in a code chip so it
+   reads as the exact thing the button will run; the tail is one line tall on
+   purpose, so a chatty pip never moves the page. */
+.voice-install-row { display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap; }
+.voice-install-cmd { padding:4px 9px; border:1px solid var(--border-default); border-radius:var(--r-sm); background:var(--surface-code); font-family:var(--mono); font-size:var(--fs-sm); color:var(--text-code); user-select:text; overflow-x:auto; white-space:nowrap; max-width:100%; }
+.set-txt .d.voice-install-tail { font-family:var(--mono); font-size:var(--fs-xs); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.set-txt .d.voice-install-ok { color:var(--status-success); }
+.set-txt .d.voice-install-fail { color:var(--status-danger); }
 
 /* Sign-in (OAuth). The device code is the one thing on this screen the user
    has to read character by character and retype, so it gets monospace, wide
@@ -4531,8 +4794,10 @@ button.phase-head:hover { color:var(--text-muted); }
 
 /* Text-size preview. Three steps of the live scale stacked, because what the
    setting changes is the relationship between them, not any single size. */
-/* tsp-, not tp-: the tool picker owns tp-*, and its .tp-body — flex:1 with its
-   own scrolling and padding — was landing on this preview's body line. */
+/* tsp-, not tp-: named around a tool picker that owned tp-* and whose .tp-body
+   — flex:1 with its own scrolling and padding — was landing on this preview's
+   body line. That picker was removed on 31 ส.ค.; the prefix stays because the
+   class names are what a person greps for and renaming them buys nothing. */
 .type-preview { flex-direction:column; align-items:flex-start; gap:4px; }
 .tsp-heading { font-size:var(--fs-2xl); font-weight:700; color:var(--text-primary); line-height:1.25; }
 .tsp-body { font-size:var(--fs-lg); color:var(--text-secondary); line-height:1.5; }
@@ -4959,7 +5224,11 @@ button.phase-head:hover { color:var(--text-muted); }
    chose.
 
    The prefers-reduced-motion rule below turns all of this off with
-   animation:none !important, so nothing here needs a guard of its own. */
+   animation:none !important, so nothing here needs a guard of its own.
+
+   A new popover has to join one of the two selectors below or it is the one
+   surface in the app that snaps into place. The + menu did exactly that on
+   31 ส.ค., and it read as stiff next to the menu sitting beside it. */
 @keyframes pop-up {
   from { opacity:0; transform:translateY(4px); }
   to   { opacity:1; transform:translateY(0); }
@@ -4971,7 +5240,7 @@ button.phase-head:hover { color:var(--text-muted); }
 /* Rising: anchored to the composer at the bottom of the window, so each one
    grows upward out of the control that opened it. */
 .stance-menu, .model-menu, .ctx-menu, .focus-menu, .updrop-list, .mention-menu,
-.branch-menu, .pal-list, .task-chip {
+.branch-menu, .pal-list, .attach-menu, .task-chip {
   animation:pop-up .12s ease-out;
 }
 /* Falling: anchored under something near the top of the window. */
@@ -5081,26 +5350,9 @@ button.phase-head:hover { color:var(--text-muted); }
    here was somebody else's work" without a mark on every row. */
 .bgw-card.err { border-color:var(--status-danger); }
 .bgw-card > .tool-err { margin-left:23px; font-size:var(--fs-xs); color:var(--status-danger); }
-.tag.ag-override { background:var(--badge-think-bg); color:var(--badge-think-text); border-color:var(--badge-think-border); }
 /* Why a file cannot run — the loud half of "refused loudly". */
 .ag-invalid { color:var(--status-danger); }
 .ag-notice { color:var(--text-muted); border-left:3px solid var(--status-warning, #d29922); padding-left:8px; }
-/* The missing names, in the one place they can be acted on. Warning-coloured
-   and small: it explains a summary, it is not the summary. */
-.ag-toolsum-missing { margin-top:6px; color:var(--status-warning, #d29922); }
-/* One row on the card, above the footer and reading as part of it: a count and
-   a way to the place that can fix it. It was a bordered paragraph of tool names
-   until 30 ส.ค. — see Office.svelte for why the names left. */
-.chair-missing {
-  display:flex; align-items:center; gap:7px; width:100%;
-  padding:8px 14px; border-top:1px solid var(--border-subtle);
-  font-size:var(--fs-xs); color:var(--status-warning, #d29922); cursor:pointer; text-align:left;
-}
-.chair-missing .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-muted); }
-.chair-missing .go { flex:none; color:var(--text-dim); text-decoration:underline; text-underline-offset:2px; }
-.chair-missing:hover { background:var(--surface-row-hover); }
-.chair-missing:hover .go { color:var(--text-primary); }
-.tag.ag-deny { background:var(--diff-del-bg); color:var(--status-danger); border-color:var(--status-danger); }
 /* min-height is the floor a short file sits at — the size this field always
    had — while the height itself is set to the content by `autogrow`, so a long
    role is read in the page's own scroll rather than in a window inside it.
@@ -5147,12 +5399,6 @@ button.phase-head:hover { color:var(--text-muted); }
    Replaces two 35-chip grids stacked on each other. The engine asks one
    question per tool (subagent.AllowsTool), so the editor shows the answer —
    a summary and a way in — and the panel below answers it one row at a time. */
-.ag-toolsum {
-  display:flex; align-items:center; gap:16px; padding:10px 14px;
-  border:1px solid var(--border-subtle); border-radius:var(--r-md); background:var(--surface-sunken);
-}
-.ag-toolsum-txt { flex:1; min-width:0; }
-.ag-toolsum-txt .t { font-weight:600; font-size:var(--fs-md); }
 .ag-steprow { display:flex; align-items:center; gap:14px; }
 .ag-steps { max-width:110px; }
 .ag-steps:disabled { opacity:.45; }
@@ -5162,47 +5408,14 @@ button.phase-head:hover { color:var(--text-muted); }
 /* The panel. Taller than the confirm dialog and scrolls its own body, because
    the list is the content — the head, the search and the footer stay put so the
    running summary is readable while scrolling. */
-.tp-overlay { position:fixed; inset:0; z-index:70; display:grid; place-items:center; }
-.tp-card {
-  position:relative; width:min(620px, calc(100vw - 48px)); max-height:min(78vh, 720px);
-  display:flex; flex-direction:column;
-  border:1px solid var(--border-default); border-radius:var(--r-xl); background:var(--surface-panel);
-  box-shadow:0 20px 48px -12px rgba(0,0,0,.6);
-}
-.tp-head { display:flex; align-items:flex-start; gap:12px; padding:18px 20px 10px; }
-.tp-head > div:first-child { flex:1; min-width:0; }
-.tp-title { margin:0 0 3px; font-size:var(--fs-xl); font-weight:700; }
-.tp-search { margin:0 20px 10px; }
-.tp-body { flex:1; min-height:0; overflow-y:auto; padding:0 20px 8px; }
-.tp-empty { padding:24px 0; }
 /* Sticky, because the built-in group alone runs to 33 rows: scroll past the
    header and every row looks the same, with nothing saying which source you are
    still inside. The panel body is the scroll container, so it sticks to that. */
-.tp-group {
-  position:sticky; top:0; z-index:1; margin-top:14px;
-  padding:6px 0 4px; background:var(--surface-panel);
-}
-.tp-group:first-child { margin-top:0; }
-.tp-row { display:flex; align-items:center; gap:14px; padding:6px 0; }
-.tp-row + .tp-row { border-top:1px solid var(--border-subtle); }
-.tp-name { flex:1; min-width:0; font-family:var(--mono); font-size:var(--fs-sm); color:var(--text-secondary);
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.tp-row.forced .tp-name { color:var(--text-dim); }
-.tp-forced { flex:none; font-size:var(--fs-xs); color:var(--text-dim); }
-.tp-seg { flex:none; }
-.tp-seg .seg-btn { font-size:var(--fs-xs); padding:3px 9px; }
 /* Selected allow reads green and selected deny reads red, but only when chosen:
    an unselected control must not colour-code a state the tool is not in.
    Default stays neutral even when it is the selected one — it is the absence of
    a decision, and the shared .seg-btn.selected blue gave it the same weight as
    the two real choices, so a list nobody had touched looked fully configured. */
-.tp-seg .tp-default.selected { background:var(--surface-hover); color:var(--text-secondary); }
-.tp-seg .tp-allow.selected { background:var(--diff-add-bg); color:var(--status-success); }
-.tp-seg .tp-deny.selected { background:var(--diff-del-bg); color:var(--status-danger); }
-.tp-foot {
-  display:flex; align-items:center; gap:8px; padding:12px 20px 16px;
-  border-top:1px solid var(--border-subtle); font-size:var(--fs-sm);
-}
 .pp-textarea::placeholder { color:var(--text-dim); opacity:.75; line-height:1.7; }
 .ctrl.tiny { font-size:var(--fs-xs); padding:3px 8px; }
 
@@ -5260,8 +5473,6 @@ button.ctrl, label.ctrl { display:inline-flex; align-items:center; justify-conte
 
 /* Tools panel secondary text — was two inline font-size:12px, which is a value
    that had left the scale and would not follow the text-size setting. */
-.tp-sub { font-size:var(--fs-xs); }
-
 /* SKILL.md files found but unreadable. Bordered like the boot banner because
    it is the same class of message: something is wrong and nothing else on the
    page would say so. */

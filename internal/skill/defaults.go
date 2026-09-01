@@ -168,6 +168,10 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&mediaReadSkill{root: opts.SandboxRoot, speech: opts.Speech},
 		&pdfReadSkill{root: opts.SandboxRoot},
 		&webFetchSkill{},
+		// The download step of the picture-and-sound recipe, owned by the
+		// system (media_fetch.go): web_fetch lists a page's file URLs, this
+		// saves one and refuses a body that is not the media it claims.
+		&mediaFetchSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, files: opts.Files},
 		&webSearchSkill{},
 		// One name, four actions: search, repo_summary, list_files, read_file
 		// (github_pack.go). `plugin_install` above is not one of them — it

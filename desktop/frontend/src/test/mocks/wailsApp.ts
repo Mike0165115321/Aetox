@@ -43,6 +43,14 @@ export const BrowserBack = noop()
 export const BrowserCapturePNG = str()
 export const BrowserClickRef = noop()
 export const BrowserClose = noop()
+// The device menu builds itself from Go's list, so a menu with no rows is what
+// a test sees unless this answers with some. Two is enough to prove the menu
+// renders what it was handed rather than what it used to hardcode.
+export const BrowserDevices = vi.fn(async (..._args: any[]) => [
+  { name: 'iPhone SE', w: 375, h: 667, dpr: 2, mobile: true },
+  { name: 'Desktop', w: 1280, h: 800, dpr: 1, mobile: false },
+])
+export const BrowserSetDevice = noop()
 export const BrowserForward = noop()
 export const BrowserGetText = str()
 export const BrowserNavigate = noop()
@@ -97,7 +105,7 @@ export const DeleteIdentityFile = noop()
 export const DeleteSession = noop()
 export const EnabledProviders = arr()
 export const GetContextBreakdown = vi.fn(async () => ({}))
-export const GetRepoMapGraph = vi.fn(async () => ({ focused: false, nodes: [], edges: [], totalFiles: 0 }))
+export const GetRepoMapGraph = vi.fn(async (_maxNodes: number) => ({ focused: false, nodes: [], edges: [], totalFiles: 0 }))
 const modelInfo = () => ({
   provider: 'aetox', modelName: 'test', thinkLevel: '', approval: 'ask',
   providers: [], models: [], thinkLevels: [], hasKey: true, status: '', wireFormat: '',
@@ -152,10 +160,39 @@ export const ReadSubagentProfile = str()
 export const SaveSubagentProfile = noop()
 export const DeleteSubagentProfile = noop()
 export const SetSubagentModel = noop()
+// The delegation switches, absent by default — the one mock here that rejects.
+//
+// Both pages that read them (Settings, and the roster since 31 ส.ค.) treat a
+// failure as "there are no switches" and draw themselves without, which is the
+// state every existing test in this repo was written against. Resolving a real
+// shape here instead would silently add a card and a control to pages whose
+// tests count them, so the fixture keeps the old answer and the tests that
+// actually exercise delegation hand back their own.
+const rejects = () => vi.fn(async (..._args: any[]): Promise<any> => {
+  throw new Error('no delegate switches in this fixture')
+})
+export const DelegateSwitches = rejects()
+export const SetAgentOff = rejects()
+export const SetDelegateOff = rejects()
 // The agent editor's เอื้อมถึงอะไร / ความรู้ / เปิดบทสนทนา panels. Empty by
 // default: a test that cares about one of them says so itself.
 export const AgentSkills = arr()
 export const AgentNeeds = arr()
+// The veil over a teammate that cannot work (AgentLock.svelte). False by
+// default so every roster renders as a working one: a test that wants the
+// lock says so itself.
+export const AgentBlocked = boolFn(false)
+export const AgentGate = vi.fn(async (..._args: any[]) => ({ blocked: false, kind: '', capability: '', missing: [] }))
+export const VideoReadiness = vi.fn(async (..._args: any[]) => ({ rows: [], capability: '', missingBytes: 0, ready: true }))
+export const VideoCheckSeen = boolFn(true)
+export const MarkVideoCheckSeen = noop()
+export const VideoToolingStatus = vi.fn(async (..._args: any[]) => ({ installed: true, missingRequired: [] }))
+export const VideoEditorCommand = arr()
+export const VideoEditorEnvironment = vi.fn(async (..._args: any[]) => ({}))
+export const VideoEditorTools = arr()
+export const VideoEditorHelpURL = str()
+export const CapabilityForServer = strFn('')
+export const ToolInstallPlan = vi.fn(async (..._args: any[]) => ({ capability: '', parts: [], totalBytes: 0, dest: '' }))
 export const OpenAgentSkillsFolder = noop()
 export const ListAllSessions = arr()
 export const ListSessionsForDoor = arr()
@@ -214,6 +251,21 @@ export const SpeechStatus = str()
 export const RevealSpeechModel = noop()
 export const SpeechModelDirs = arr()
 export const OpenSpeechModelDir = noop()
+// The voice page (ตั้งค่า > เสียง): two vendor catalogs, the TTS voice list,
+// and the two chat-side calls. Empty lists and a ready status are the shape of
+// a machine with the defaults and nothing installed.
+export const ListSpeechEngines = arr()
+export const SetSpeechEngine = noop()
+export const ListTTSEngines = arr()
+export const SetTTSEngine = noop()
+export const ListTTSVoices = arr()
+export const SetTTSVoice = noop()
+export const TTSStatus = str()
+export const InstallVoiceEngine = noop()
+export const SetSpeechModelName = noop()
+export const SetTTSModelName = noop()
+export const SpeakText = str()
+export const TranscribeMicAudio = str()
 export const LoadSession = noop()
 export const LoadSessionAnyProject = noop()
 export const ModelStatus = str()

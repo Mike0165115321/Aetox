@@ -82,10 +82,11 @@ func TestSubagentProfileBindings(t *testing.T) {
 	// it was never reached for in practice. Seven until 2026-08-29, when the
 	// owner asked for the two the โค้ด door's direction document had named since
 	// it was written — reviewer and tester, both of which read and neither of
-	// which writes.
+	// which writes. Eleven since 2026-08-30, when งานวิดีโอ arrived with a chair
+	// on each of its two doors: video makes one, editor cuts one that exists.
 	list := a.ListSubagentProfiles()
-	if len(list) != 9 {
-		t.Fatalf("ListSubagentProfiles() = %d, want 9 bundled", len(list))
+	if len(list) != 11 {
+		t.Fatalf("ListSubagentProfiles() = %d, want 11 bundled", len(list))
 	}
 
 	raw, err := a.ReadSubagentProfile("explore")

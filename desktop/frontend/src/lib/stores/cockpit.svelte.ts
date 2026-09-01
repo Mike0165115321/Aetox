@@ -2640,10 +2640,6 @@ export async function attachTabContext(kind: 'file' | 'browser', ref: string, la
   // as `no browser tab "web-2"` — an internal id, in a sentence about
   // attaching an image, for something the user cannot act on.
   if (kind === 'browser') {
-    // A browser tab only has a native window once it has loaded a URL, so a tab
-    // still showing its start page has no text to read. Asking anyway came back
-    // as `no browser tab "web-2"` — an internal id, in a sentence about
-    // attaching an image, for something the user cannot act on.
     if (!workbench.tabs.find((t) => t.id === ref)?.url) {
       cockpit.chat.push({ role: 'agent', text: t('cockpit.attachEmptyPage'), time: nowLabel() })
       return
@@ -2651,7 +2647,17 @@ export async function attachTabContext(kind: 'file' | 'browser', ref: string, la
     try {
       cockpit.pendingContexts.push({ kind, label, content: await BrowserGetText(ref) })
     } catch (err) {
-      cockpit.chat.push({ role: 'agent', text: t('cockpit.attachError', { err: String(err) }), time: nowLabel() })
+      // Carrying a URL and being open are two different facts, and the strip
+      // shows the first. A restored layout brings its browser tabs back as
+      // addresses only: the page loads when the tab is looked at, so one never
+      // clicked since the app started has no window behind it and the read
+      // comes back as `no browser tab "web-1"` (owner, 31 ส.ค.). Same answer
+      // for a window lost any other way, because the fix is the same one.
+      const missing = String(err).includes('no browser tab')
+      cockpit.chat.push({
+        role: 'agent', time: nowLabel(),
+        text: missing ? t('cockpit.attachPageNotOpen') : t('cockpit.attachError', { err: String(err) }),
+      })
     }
     return
   }
@@ -2771,7 +2777,7 @@ export const activeViewStorageKey = 'aetox.activeView'
 // two places — โปรเจกต์ was missed when it opened, and ระบบออโตเมชั่น the day
 // after. File tabs are deliberately absent: they do not persist, so a stored
 // path would point at nothing.
-export const RESTORABLE_VIEWS = ['chat', 'settings', 'office', 'artifacts', 'projects', 'lines']
+export const RESTORABLE_VIEWS = ['chat', 'settings', 'office', 'videowork', 'artifacts', 'projects', 'lines']
 
 /** Where each door lands, as a set. `chat` for the two doors you talk to,
  *  `lines` for the one you do not (§158.3).

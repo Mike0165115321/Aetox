@@ -302,6 +302,7 @@ export namespace main {
 	}
 	export class Address {
 	    url: string;
+	    fallback: string;
 	    query: string;
 	    searchUrl: string;
 	
@@ -312,8 +313,27 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.url = source["url"];
+	        this.fallback = source["fallback"];
 	        this.query = source["query"];
 	        this.searchUrl = source["searchUrl"];
+	    }
+	}
+	export class AgentGate {
+	    blocked: boolean;
+	    kind?: string;
+	    capability?: string;
+	    missing: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new AgentGate(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.blocked = source["blocked"];
+	        this.kind = source["kind"];
+	        this.capability = source["capability"];
+	        this.missing = source["missing"];
 	    }
 	}
 	export class AgentPage {
@@ -564,7 +584,6 @@ export namespace main {
 	    jobs: number;
 	    lastUsed?: string;
 	    icon: string;
-	    missing?: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Chair(source);
@@ -581,7 +600,6 @@ export namespace main {
 	        this.jobs = source["jobs"];
 	        this.lastUsed = source["lastUsed"];
 	        this.icon = source["icon"];
-	        this.missing = source["missing"];
 	    }
 	}
 	export class ChangedFile {
@@ -1293,6 +1311,24 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class ReadyRow {
+	    id: string;
+	    state: string;
+	    where?: string;
+	    bytes: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReadyRow(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.state = source["state"];
+	        this.where = source["where"];
+	        this.bytes = source["bytes"];
+	    }
+	}
 	export class ReceivedJob {
 	    id: number;
 	    chair: string;
@@ -1791,6 +1827,26 @@ export namespace main {
 	        this.where = source["where"];
 	    }
 	}
+	export class TTSVoiceInfo {
+	    id: string;
+	    name: string;
+	    lang: string;
+	    gender: string;
+	    active: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new TTSVoiceInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.lang = source["lang"];
+	        this.gender = source["gender"];
+	        this.active = source["active"];
+	    }
+	}
 	export class TaskChip {
 	    id: string;
 	    title: string;
@@ -1829,6 +1885,65 @@ export namespace main {
 	        this.skill = source["skill"];
 	    }
 	}
+	export class ToolPart {
+	    id: string;
+	    title?: string;
+	    includes?: string;
+	    license?: string;
+	    homepage?: string;
+	    approxBytes: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ToolPart(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.includes = source["includes"];
+	        this.license = source["license"];
+	        this.homepage = source["homepage"];
+	        this.approxBytes = source["approxBytes"];
+	    }
+	}
+	export class ToolInstallPlan {
+	    capability: string;
+	    parts: ToolPart[];
+	    totalBytes: number;
+	    dest: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ToolInstallPlan(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.capability = source["capability"];
+	        this.parts = this.convertValues(source["parts"], ToolPart);
+	        this.totalBytes = source["totalBytes"];
+	        this.dest = source["dest"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class TreeNode {
 	    label: string;
 	    path: string;
@@ -2028,6 +2143,82 @@ export namespace main {
 		}
 	}
 	
+	export class VideoReadiness {
+	    rows: ReadyRow[];
+	    capabilities: string[];
+	    missingBytes: number;
+	    ready: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new VideoReadiness(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.rows = this.convertValues(source["rows"], ReadyRow);
+	        this.capabilities = source["capabilities"];
+	        this.missingBytes = source["missingBytes"];
+	        this.ready = source["ready"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class VideoToolingStatus {
+	    installed: boolean;
+	    missingRequired: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new VideoToolingStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.installed = source["installed"];
+	        this.missingRequired = source["missingRequired"];
+	    }
+	}
+	export class VoiceEngineInfo {
+	    id: string;
+	    label: string;
+	    install: string;
+	    active: boolean;
+	    hasModels: boolean;
+	    installCommand: string[];
+	    models: string[];
+	    activeModel: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VoiceEngineInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.label = source["label"];
+	        this.install = source["install"];
+	        this.active = source["active"];
+	        this.hasModels = source["hasModels"];
+	        this.installCommand = source["installCommand"];
+	        this.models = source["models"];
+	        this.activeModel = source["activeModel"];
+	    }
+	}
 	export class WorkspaceFolder {
 	    path: string;
 	    name: string;
@@ -2042,6 +2233,26 @@ export namespace main {
 	        this.path = source["path"];
 	        this.name = source["name"];
 	        this.missing = source["missing"];
+	    }
+	}
+	export class deviceProfile {
+	    name: string;
+	    w: number;
+	    h: number;
+	    dpr: number;
+	    mobile: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new deviceProfile(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.w = source["w"];
+	        this.h = source["h"];
+	        this.dpr = source["dpr"];
+	        this.mobile = source["mobile"];
 	    }
 	}
 

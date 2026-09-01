@@ -83,6 +83,17 @@ var toolCategories = map[string]string{
 	"doc_write":   CategoryDeliverables,
 	"sheet_write": CategoryDeliverables,
 	"deck_export": CategoryDeliverables,
+	// The tool the model is offered, and the three action names it gates on
+	// inside (packed.go) — both spellings, same reason as shell's.
+	//
+	// Deliverables rather than media, and the line is worth stating: media is
+	// the group of senses a model does not have, and every tool in it reads
+	// something. This one produces a file somebody watches, which is the same
+	// kind of act as writing a document.
+	"video":        CategoryDeliverables,
+	"video_new":    CategoryDeliverables,
+	"video_check":  CategoryDeliverables,
+	"video_render": CategoryDeliverables,
 
 	// Senses a model does not have on its own — the group Aetox exists for.
 	// The tool the model is offered, and the three action names it gates on
@@ -121,8 +132,9 @@ var toolCategories = map[string]string{
 	"windmill_flow_update":    CategoryWeb,
 	"windmill_server_start":   CategoryWeb,
 
-	"web_search": CategoryWeb,
-	"web_fetch":  CategoryWeb,
+	"web_search":  CategoryWeb,
+	"web_fetch":   CategoryWeb,
+	"media_fetch": CategoryWeb,
 	// The tool the model is offered, and the four action names it gates on
 	// inside (desktop/browser_tool.go). The actions are listed too because a
 	// desk or a profile narrows with them, and an unlisted name would fall to

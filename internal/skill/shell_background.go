@@ -147,7 +147,11 @@ func (b *backgroundShells) start(backend proc.Backend, workDir, commandLine stri
 	b.mu.Unlock()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := backend.Command(ctx, commandLine, workDir)
+	// Same PATH as the foreground shell (shell_toolpath.go). A dev server the
+	// agent starts here and a command it runs there are the same shell as far
+	// as the model is concerned, and a tool that resolves a name in one and not
+	// the other is worse than one that resolves it in neither.
+	cmd := withToolPATH(backend, backend.Command(ctx, commandLine, workDir))
 
 	job := &backgroundJob{id: id, command: commandLine, cancel: cancel, started: time.Now()}
 	cmd.Stdout = job

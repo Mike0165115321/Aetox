@@ -18,6 +18,7 @@
   import { inlineDrawing } from '../markdown'
   import { t } from '../i18n.svelte'
   import Icon from '../Icon.svelte'
+  import MediaOriginLine from './MediaOriginLine.svelte'
 
   let { src, name, path }: { src: string; name: string; path: string } = $props()
 
@@ -116,6 +117,10 @@
       {/if}
     </button>
   </div>
+
+  <!-- A storyboard grid is as much the result of a cut as the clip is, so the
+       same strip sits under it — see MediaOriginLine. -->
+  <MediaOriginLine {path} />
 </div>
 
 <style>

@@ -43,6 +43,23 @@
   // a row of metadata and nothing else.
   const PAGE = 60
   let shown = $state(PAGE)
+
+  // ไฟล์ / วิดีโอ (owner, 1 ก.ย.): a rendered clip is the deliverable somebody
+  // came back for, and it drowns between the screenshots and working files of
+  // the session that made it. Same chip row grammar as the time ranges — a
+  // second axis on the same shelf, not a second page. Judged by extension on
+  // the client because everything in range is already here (see refresh).
+  const KINDS = ['files', 'video'] as const
+  type Kind = (typeof KINDS)[number]
+  let kind = $state<Kind>('files')
+  const isVideo = (f: main.Artifact) => /\.(mp4|webm|mov|mkv|avi)$/i.test(f.name)
+  const inKind = $derived(kind === 'video' ? files.filter(isVideo) : files)
+
+  function pickKind(next: Kind) {
+    if (kind === next) return
+    kind = next
+    shown = PAGE
+  }
   // Two-step delete, the same gesture the session list uses: the first click
   // arms the row, the second one does it. These are the user's files.
   let confirmPath = $state('')
@@ -93,7 +110,7 @@
   // its own comment says why it lives outside all three, and this is the third
   // caller of the same question. A heading is emitted only when the bucket
   // changes, so the grid reads as a timeline rather than a wall.
-  const visible = $derived(files.slice(0, shown))
+  const visible = $derived(inKind.slice(0, shown))
 
   // A subfolder under a session is one thing, so it gets one card.
   //
@@ -247,13 +264,16 @@
       range = span.needs
       await refresh()
     }
-    for (const f of files) {
+    // inKind, not files: selection acts on what the row is showing, and with
+    // the วิดีโอ chip on, "เลือกทั้งหมด" over hidden work files would arm a
+    // delete over things the person cannot see.
+    for (const f of inKind) {
       if (span.within(daysAgo(f.modified))) picked[f.path] = true
     }
   }
 
   function pickAll() {
-    for (const f of files) picked[f.path] = true
+    for (const f of inKind) picked[f.path] = true
   }
 
   function clearPicked() {
@@ -541,12 +561,18 @@
            has to say what you are actually looking at. -->
       {#if loaded && (files.length > 0 || served !== 'week')}
         <div class="art-ranges">
+          {#each KINDS as k (k)}
+            <button type="button" class="art-range" class:on={kind === k} onclick={() => pickKind(k)}>
+              {t(`artifacts.kind.${k}`)}
+            </button>
+          {/each}
+          <span class="art-kindsep" aria-hidden="true"></span>
           {#each RANGES as r (r)}
             <button type="button" class="art-range" class:on={served === r} onclick={() => pick(r)}>
               {t(`artifacts.range.${r}`)}
             </button>
           {/each}
-          <span class="art-count">{t('artifacts.count', { n: String(total) })}</span>
+          <span class="art-count">{t('artifacts.count', { n: String(kind === 'video' ? inKind.length : total) })}</span>
           <!-- Right-hand end of the same row the ranges live on, because these
                act on what that row is showing. Two buttons at rest: take all of
                it, or drag a box over the part you meant. -->
@@ -705,10 +731,16 @@
       <!-- Everything in range is already here; this only decides how much is
            drawn. The count is the point — "แสดงเพิ่ม" alone does not say whether
            it is hiding four files or four hundred. -->
-      {#if files.length > shown}
+      {#if loaded && inKind.length === 0 && files.length > 0}
+        <div class="page-empty">
+          <Icon name="clapperboard" size={22} />
+          <p>{t('artifacts.kindVideoEmpty')}</p>
+        </div>
+      {/if}
+      {#if inKind.length > shown}
         <button type="button" class="art-more" onclick={() => (shown += PAGE)}>
           <Icon name="chevronDown" size={13} />
-          {t('artifacts.more', { n: String(files.length - shown) })}
+          {t('artifacts.more', { n: String(inKind.length - shown) })}
         </button>
       {/if}
     </div>

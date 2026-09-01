@@ -38,28 +38,25 @@ one you took:
 
 Never road 3 by default. It is the one that hands the work back to the user.
 
-## Getting a picture
+## Getting a picture, or a sound
 
 Three tools, in this order. This recipe is the canonical one; other skills point
-here rather than repeating it.
+here rather than repeating it. It is the same recipe for music and sound
+effects, from the same kind of source (Pixabay Audio, Freesound, Wikimedia
+Commons carry sound the way Unsplash carries photos).
 
 1. **`web_search`**, find the page, not the file. Name the source in the query
    when the licence matters: `unsplash dark server room`, `wikimedia commons
-   <subject>`.
+   <subject>`, `pixabay whoosh sound effect`.
 2. **`web_fetch`** on that page, it reads the HTML and lists every image URL it
    found, with alt text. That listing is where the actual file URL comes from.
    Fetching an image URL directly is not useful: `web_fetch` reads bytes as
    text, so it returns garbage for a JPEG.
-3. **`shell`** to download the bytes, into the folder the document will live in:
-
-```powershell
-Invoke-WebRequest -Uri "<image url>" -OutFile "hero.jpg"
-```
-
-Then check what actually landed. `read` on a picture reports its real format and
-size, and refuses a file that is not the picture its name claims, a saved HTML
-error page named `.jpg` is the ordinary way this goes wrong, and it goes wrong
-silently until an export.
+3. **`media_fetch`** with that file URL and a destination path. It downloads,
+   checks the bytes really are an image or a sound (a saved HTML error page
+   named `.jpg` is the ordinary way this goes wrong, and it refuses that with
+   the page named), and reports the format, size, pixels or seconds in the
+   same receipt — no shell, no separate verify step.
 
 **Licence, every time.** A picture in a user's deck or brochure is a picture
 they are publishing. Prefer sources that say "free to use" on the page

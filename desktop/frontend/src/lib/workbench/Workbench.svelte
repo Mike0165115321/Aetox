@@ -11,6 +11,7 @@
   import PdfPane from './PdfPane.svelte'
   import SlidesPane from './SlidesPane.svelte'
   import DeckRoom from './DeckRoom.svelte'
+  import CuttingRoom from './CuttingRoom.svelte'
   import GitPane from './GitPane.svelte'
   import PRPane from './PRPane.svelte'
   import RepoMapPane from './RepoMapPane.svelte'
@@ -18,7 +19,7 @@
   import { cockpit } from '../stores/cockpit.svelte'
   import {
     workbench, activateTab, closeTab, removeTab,
-    openFilesTab, openBrowserTab, openTerminalTab, openDecksTab, openGitTab, openPRTab, openRepoMapTab, openFileTab, routeDeskEvent,
+    openFilesTab, openBrowserTab, openTerminalTab, openDecksTab, openGitTab, openPRTab, openRepoMapTab, openCuttingRoomTab, openFileTab, routeDeskEvent,
     reportDeskTabs,
     openUrlInWorkbench, saveWorkbenchSnapshot, resolveAddressBarInput, labelForUrl,
     deviceList, loadDevices,
@@ -34,7 +35,7 @@
   import Icon from '../Icon.svelte'
   import type { IconName } from '../icons'
 
-  const tabIcon: Record<string, IconName> = { terminal: 'keyboard', browser: 'globe', files: 'copy', file: 'fileText', decks: 'layoutList' }
+  const tabIcon: Record<string, IconName> = { terminal: 'keyboard', browser: 'globe', files: 'copy', file: 'fileText', decks: 'layoutList', cutroom: 'scissors' }
 
   // Chrome DevTools' default device presets. CSS viewport sizes — BrowserPane
   // turns one into a real window of that aspect + a matching page zoom.
@@ -131,7 +132,7 @@
     // that decides live desk vs a background chat's saved one. A new desk
     // surface subscribes here and answers "whose desk" in the router's switch,
     // or it draws nothing — never a policy improvised per handler again.
-    const offs = ['open-browser', 'close-browser', 'open-file', 'close-file', 'open-terminal'].map((kind) =>
+    const offs = ['open-browser', 'close-browser', 'open-file', 'close-file', 'open-terminal', 'open-media', 'open-cutroom'].map((kind) =>
       EventsOn(`workbench:${kind}`, (payload: Record<string, unknown>) => routeDeskEvent(kind, payload)),
     )
     return () => offs.forEach((off) => off())
@@ -326,6 +327,46 @@
   ondragover={onWindowDragOver} ondrop={endDrag} ondragend={endDrag}
 />
 
+<!-- Every way to open a tab, written once.
+     
+     This list existed twice: in the + menu, and again in the panel an empty
+     desk shows. The two were the same seven rows with the same desk gate, and
+     they drifted the moment one of them was edited — a group heading added to
+     the menu on 31 ส.ค. simply was not there on the empty desk, which is the
+     copy the owner happened to be looking at.
+
+     `pick` closes the menu before opening; on the empty desk there is no menu
+     open, so the same call does the same thing in both places.
+
+     โค้ด desk only for the last three: a working tree is what that desk is
+     held inside, and the storefront has no project to report on (§161.4). The
+     heading sits INSIDE that gate rather than above it, so it leaves with the
+     rows it names. It exists because the gate was invisible: on another desk
+     the list was simply shorter, with nothing saying which three had gone or
+     why. The four above get no heading of their own — they have nothing to
+     explain, and a label reading "ทั่วไป" is a line you read and get nothing
+     back from. -->
+{#snippet tabChoices()}
+  <button class="plus-menu-item" disabled={shells.length === 0} onclick={openDefaultTerminal}><span class="ic"><Icon name="keyboard" size={14} /></span> {t('workbench.terminalMenu')}</button>
+  <button class="plus-menu-item" onclick={() => pick(openBrowserTab)}><span class="ic"><Icon name="globe" size={14} /></span> {t('workbench.browserMenu')} <span class="kbd">{shortcutLabel('browserTab')}</span></button>
+  <button class="plus-menu-item" onclick={() => pick(openFilesTab)}><span class="ic"><Icon name="copy" size={14} /></span> {t('workbench.filesTab')} <span class="kbd">{shortcutLabel('filesTab')}</span></button>
+  <button class="plus-menu-item" onclick={() => pick(openDecksTab)}><span class="ic"><Icon name="layoutList" size={14} /></span> {t('workbench.decksTab')}</button>
+  {#if cockpit.desk === 'coding'}
+    <div class="plus-menu-head">{t('workbench.codeGroup')}</div>
+    <button class="plus-menu-item" onclick={() => pick(openGitTab)}><span class="ic"><Icon name="gitBranch" size={14} /></span> {t('workbench.gitTab')}</button>
+    <button class="plus-menu-item" onclick={() => pick(openPRTab)}><span class="ic"><Icon name="gitBranch" size={14} /></span> {t('workbench.prTab')}</button>
+    <button class="plus-menu-item" onclick={() => pick(openRepoMapTab)}><span class="ic"><Icon name="graph" size={14} /></span> {t('workbench.repoMapTab')}</button>
+  {/if}
+  <!-- Same gate the code group draws with, one coordinate over: the room is
+       the editor's, so its row exists where that chair is sat (§85). The
+       heading is inside the gate for the code group's own reason - it leaves
+       with the row it names. -->
+  {#if cockpit.chair === 'editor'}
+    <div class="plus-menu-head">{t('workbench.videoGroup')}</div>
+    <button class="plus-menu-item" onclick={() => pick(openCuttingRoomTab)}><span class="ic"><Icon name="scissors" size={14} /></span> {t('workbench.cutroomTab')}</button>
+  {/if}
+{/snippet}
+
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- Drop target for the whole panel; the tabs and panes inside stay the real
      interactive elements. Keyboard users reach every one of these by the +
@@ -364,19 +405,7 @@
     <div class="plus-menu-wrap">
       <button class="icobtn tiny plus-btn" aria-label={t('workbench.addTab')} data-tip={t('workbench.addTab')} onclick={() => (menuOpen = !menuOpen)}><Icon name="plus" size={14} /></button>
       {#if menuOpen}
-        <div class="plus-menu">
-          <button class="plus-menu-item" disabled={shells.length === 0} onclick={openDefaultTerminal}><span class="ic"><Icon name="keyboard" size={14} /></span> {t('workbench.terminalMenu')}</button>
-          <button class="plus-menu-item" onclick={() => pick(openBrowserTab)}><span class="ic"><Icon name="globe" size={14} /></span> {t('workbench.browserMenu')} <span class="kbd">{shortcutLabel('browserTab')}</span></button>
-          <button class="plus-menu-item" onclick={() => pick(openFilesTab)}><span class="ic"><Icon name="copy" size={14} /></span> {t('workbench.filesTab')} <span class="kbd">{shortcutLabel('filesTab')}</span></button>
-          <button class="plus-menu-item" onclick={() => pick(openDecksTab)}><span class="ic"><Icon name="layoutList" size={14} /></span> {t('workbench.decksTab')}</button>
-          <!-- โค้ด desk only: a working tree is what that desk is held inside,
-               and the storefront has no project to report on (§161.4). -->
-          {#if cockpit.desk === 'coding'}
-            <button class="plus-menu-item" onclick={() => pick(openGitTab)}><span class="ic"><Icon name="gitBranch" size={14} /></span> {t('workbench.gitTab')}</button>
-            <button class="plus-menu-item" onclick={() => pick(openPRTab)}><span class="ic"><Icon name="gitBranch" size={14} /></span> {t('workbench.prTab')}</button>
-            <button class="plus-menu-item" onclick={() => pick(openRepoMapTab)}><span class="ic"><Icon name="graph" size={14} /></span> {t('workbench.repoMapTab')}</button>
-          {/if}
-        </div>
+        <div class="plus-menu">{@render tabChoices()}</div>
       {/if}
     </div>
   </div>
@@ -468,17 +497,7 @@
 
   <div class="insp-body">
     {#if workbench.tabs.length === 0}
-      <div class="insp-start">
-        <button class="plus-menu-item" disabled={shells.length === 0} onclick={openDefaultTerminal}><span class="ic"><Icon name="keyboard" size={14} /></span> {t('workbench.terminalMenu')}</button>
-        <button class="plus-menu-item" onclick={() => openBrowserTab()}><span class="ic"><Icon name="globe" size={14} /></span> {t('workbench.browserMenu')} <span class="kbd">{shortcutLabel('browserTab')}</span></button>
-        <button class="plus-menu-item" onclick={openFilesTab}><span class="ic"><Icon name="copy" size={14} /></span> {t('workbench.filesTab')} <span class="kbd">{shortcutLabel('filesTab')}</span></button>
-        <button class="plus-menu-item" onclick={openDecksTab}><span class="ic"><Icon name="layoutList" size={14} /></span> {t('workbench.decksTab')}</button>
-        {#if cockpit.desk === 'coding'}
-          <button class="plus-menu-item" onclick={openGitTab}><span class="ic"><Icon name="gitBranch" size={14} /></span> {t('workbench.gitTab')}</button>
-          <button class="plus-menu-item" onclick={openPRTab}><span class="ic"><Icon name="gitBranch" size={14} /></span> {t('workbench.prTab')}</button>
-          <button class="plus-menu-item" onclick={openRepoMapTab}><span class="ic"><Icon name="graph" size={14} /></span> {t('workbench.repoMapTab')}</button>
-        {/if}
-      </div>
+      <div class="insp-start">{@render tabChoices()}</div>
     {/if}
     {#each workbench.tabs as tab (tab.id)}
       <!-- A terminal's slot must never scroll (.term-host): xterm scrolls its
@@ -504,6 +523,8 @@
           <GitPane />
         {:else if tab.kind === 'repomap'}
           <RepoMapPane />
+        {:else if tab.kind === 'cutroom'}
+          <CuttingRoom />
         {:else if tab.kind === 'file'}
           <!-- Keyed on rev so a re-read actually lands on screen: FileEditor
                copies `content` into its own state once and this pane never

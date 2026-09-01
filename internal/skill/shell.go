@@ -354,7 +354,7 @@ func (s *shellSkill) Execute(ctx context.Context, input Input) (Output, error) {
 		}
 	}
 
-	cmd := backend.Command(ctx, execLine, workDir)
+	cmd := withToolPATH(backend, backend.Command(ctx, execLine, workDir))
 	buffer := &cappedWriter{}
 	cmd.Stdout = buffer
 	cmd.Stderr = buffer

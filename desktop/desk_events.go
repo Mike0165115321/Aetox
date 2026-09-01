@@ -40,3 +40,18 @@ func (a *App) deskFilesChanged(conv *conversation, paths []string) {
 	a.emitEvent("workbench:files-changed", sessionEvent[[]string]{SessionID: conv.id, Data: paths})
 }
 
+// deskMediaOpened is the third door, for a file the editor produced that opens
+// itself (video_desk.go).
+//
+// It carries a struct rather than strings for the same reason the one above
+// does — the origin line under the player is a handful of numbers, not a path —
+// and it is one event rather than two because opening the tab and saying where
+// the file came from are one act. Two events would be two answers to "what just
+// arrived", and the day they disagree the line would describe a different clip
+// from the one on screen.
+//
+// Session-stamped like everything else here: an editor working in a background
+// chat parks its clip on that chat's desk, and the user finds it there.
+func (a *App) deskMediaOpened(conv *conversation, origin MediaOrigin) {
+	a.emitEvent("workbench:open-media", sessionEvent[MediaOrigin]{SessionID: conv.id, Data: origin})
+}

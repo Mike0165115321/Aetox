@@ -44,8 +44,27 @@ on:
         description: python.org embeddable Windows build to bundle it with
         default: 3.13.14
       hyperframes_version:
-        description: hyperframes version on npm to bundle
+        # No longer where the bytes come from — the fork is — but still
+        # what the build asserts against packages/cli/package.json, what
+        # the release is tagged with, and what the marker in Manifest() is
+        # named after. A fork that has moved past this number fails the
+        # build rather than publishing a tag that lies about its contents.
+        description: hyperframes version the fork is on, for the tag and the check
         default: 0.8.20
+      hyperframes_repo:
+        # Ours, and the point of the exercise. Upstream is heygen-com/
+        # hyperframes and this is a fork of it under the same Apache-2.0;
+        # pointing this back at upstream builds upstream, which is the
+        # escape hatch if the fork ever stops being worth its three patches.
+        description: repository to build the CLI from
+        default: Mikedev115/hyperframes
+      hyperframes_ref:
+        # A branch by default because that is what a patch lands on. Pass a
+        # commit SHA to build something immutable — which is what a release
+        # worth pinning in Manifest() should be built from, since a branch's
+        # bytes move and a pinned checksum's cannot.
+        description: branch, tag or commit in that repository
+        default: aetox
       node_version:
         # No default, for the same reason tessdata_commit has none: this one
         # moves. Read the current LTS off nodejs.org. Below 22 there is nothing
@@ -479,12 +498,38 @@ jobs:
   # bundled for the same reason kinocut is, one language sideways: it is an npm
   # package, and Aetox has no Node.
   #
-  # **Nothing here is pre-installed with the app.** This job produces the zip
-  # that the งานวิดีโอ room offers to fetch when somebody presses the button on
-  # it — one pinned, checksummed archive into DataRoot, no installer, no
-  # elevation, nothing written to PATH, and no package manager run on the user's
-  # machine. Owner, 30 ส.ค.: *"ผมเปลี่ยนใจแล้วจะไม่ฝังอะไรเข้าไปในระบบ ถ้าเขาจะ
-  # ใช้งานโหมดนี้ให้กด เราทำให้เขาติดตั้งง่ายก็พอ"*.
+  # **Built from our own fork since 31 ส.ค. 2569, not installed from npm.**
+  # docs/HYPERFRAMES-FORK.md is how to live with that: landing a patch, pulling
+  # upstream in, what to read first when this job fails, and the one dispatch
+  # that goes back to building upstream. The
+  # fork is `Mikedev115/hyperframes`, Apache-2.0 like its upstream, and the
+  # branch this job builds is `aetox` — cut from upstream's v0.8.20 and meant to
+  # stay a handful of commits ahead of it, never a rewrite. Owner's call, and the
+  # reason is that three defects found on 31 ส.ค. all have their real fix inside
+  # the engine rather than around it:
+  #
+  #   1. `fetchGoogleFont` asks fonts.googleapis.com on every render, subsetted
+  #      to the characters on the page, and caches only the font binaries it
+  #      names. There is no local-first path, so no amount of pre-seeding makes
+  #      a render work offline. This is the one that matters.
+  #   2. The experimental fast capture path engages off a GPU probe, so the same
+  #      scene renders on one Windows machine and dies on the next. Aetox pins it
+  #      off in hyperframesEnvironment; a switch would be better than a probe.
+  #   3. `check` exits non-zero for "I found something" and for "I could not
+  #      run", which desktop/video_tool.go has to tell apart by hand.
+  #
+  # **Forking is not embedding.** The bundle is 374MB because it carries Node and
+  # the whole dependency tree, and none of that shrinks by owning the source. It
+  # is still fetched when somebody presses the button in งานวิดีโอ, never shipped
+  # inside the installer. Owner, 30 ส.ค.: *"ผมเปลี่ยนใจแล้วจะไม่ฝังอะไรเข้าไปใน
+  # ระบบ ถ้าเขาจะใช้งานโหมดนี้ให้กด เราทำให้เขาติดตั้งง่ายก็พอ"*.
+  #
+  # **What changed in this job, and what did not.** It builds the monorepo with
+  # bun and assembles `node_modules/hyperframes` out of `packages/cli` instead of
+  # asking npm for a published tarball. Everything after that is what it was: the
+  # same node.exe from nodejs.org, the same proof with PATH cut to system32, the
+  # same zip, the same release tag. The npm route is recoverable in one commit if
+  # the fork ever becomes more trouble than the three patches are worth.
   #
   # **npm has no partial form to ask for**, so the whole dependency tree travels.
   # onnxruntime-node is 218MB of the 374MB by itself, and every reference to it
@@ -518,6 +563,50 @@ jobs:
             throw 'node_version is empty — read the current LTS off nodejs.org and pass it'
           }
 
+      # The monorepo's own toolchain. Its lockfile is bun.lock and its build
+      # script is a chain of `bun run --filter`, so this is not a preference.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Take the fork at the pinned ref
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.hyperframes_repo }}
+          ref: ${{ inputs.hyperframes_ref }}
+          path: src
+          # One commit of a 400MB repository. Nothing here reads history.
+          fetch-depth: 1
+
+      - name: Say exactly what is being built
+        id: source
+        shell: pwsh
+        run: |
+          Push-Location src
+          $sha = (git rev-parse HEAD).Trim()
+          Pop-Location
+          "sha=$sha" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          # The version in the package is the version the proof below asserts and
+          # the version the release is tagged with. If the branch has drifted off
+          # the pin, this is where it is visible rather than three steps later.
+          $pkg = Get-Content src/packages/cli/package.json -Raw | ConvertFrom-Json
+          Write-Host "building ${{ inputs.hyperframes_repo }}@$sha — packages/cli says $($pkg.version)"
+          if ($pkg.version -ne "${{ inputs.hyperframes_version }}") {
+            throw "packages/cli is $($pkg.version) and hyperframes_version says ${{ inputs.hyperframes_version }} — bump one of them"
+          }
+
+      - name: Build the workspace
+        shell: pwsh
+        working-directory: src
+        run: |
+          bun install --frozen-lockfile
+          # The root script, not a filter on the CLI alone: packages/cli is built
+          # by tsup from sources that other workspace packages have to have built
+          # first, and the root build is where that order is written down.
+          bun run build
+          if (-not (Test-Path packages/cli/dist/cli.js)) { throw 'the build produced no packages/cli/dist/cli.js' }
+          if (-not (Test-Path packages/cli/bin/hyperframes.mjs)) { throw 'the build produced no packages/cli/bin/hyperframes.mjs' }
+
       - name: Take nodejs.org's Windows build
         shell: pwsh
         run: |
@@ -533,16 +622,39 @@ jobs:
           # one entry point with one interpreter and never installs anything.
           Copy-Item "$dir/node.exe" out/node/
 
-      - name: Install hyperframes into it
+      - name: Assemble the bundle around what was built
         shell: pwsh
         run: |
-          Set-Content out/package.json '{ "name": "aetox-hyperframes-bundle", "private": true, "version": "0.0.0" }'
+          # The runtime dependencies first and the package second, in that order
+          # and for a reason: npm prunes anything under node_modules that no
+          # dependency asks for, so a hyperframes copied in before the install
+          # gets deleted by it.
+          $cli = Get-Content src/packages/cli/package.json -Raw | ConvertFrom-Json
+          $deps = [ordered]@{}
+          foreach ($p in $cli.dependencies.PSObject.Properties) { $deps[$p.Name] = $p.Value }
+          @{
+            name         = 'aetox-hyperframes-bundle'
+            private      = $true
+            version      = '0.0.0'
+            dependencies = $deps
+          } | ConvertTo-Json -Depth 5 | Set-Content out/package.json
           Push-Location out
-          npm install --omit=dev --no-audit --no-fund "hyperframes@${{ inputs.hyperframes_version }}"
+          npm install --omit=dev --no-audit --no-fund
           Pop-Location
+
+          # `files` in packages/cli/package.json is ["bin","dist"] — the whole of
+          # what upstream publishes — so copying those two plus the manifest
+          # produces the same tree npm would have installed.
+          New-Item -ItemType Directory out/node_modules/hyperframes -Force | Out-Null
+          Copy-Item src/packages/cli/bin  -Destination out/node_modules/hyperframes/bin  -Recurse
+          Copy-Item src/packages/cli/dist -Destination out/node_modules/hyperframes/dist -Recurse
+          Copy-Item src/packages/cli/package.json -Destination out/node_modules/hyperframes/package.json
           if (-not (Test-Path out/node_modules/hyperframes/bin/hyperframes.mjs)) {
-            throw 'the package layout changed — videotooling.go points at bin/hyperframes.mjs'
+            throw 'the bundle layout is wrong — videotooling.go points at node_modules/hyperframes/bin/hyperframes.mjs'
           }
+          # Upstream's LICENSE travels with the bytes. Apache-2.0 asks for it and
+          # the fork does not change that.
+          Copy-Item src/LICENSE -Destination out/node_modules/hyperframes/LICENSE
           "{0:N1} MB kept" -f ((Get-ChildItem out -Recurse -File | Measure-Object Length -Sum).Sum / 1MB)
 
       - name: Prove it runs with no Node on the machine
@@ -552,14 +664,16 @@ jobs:
           # tested: a user who has never installed Node still gets a working
           # renderer. The kinocut job makes the same claim about Python.
           $env:PATH = "$env:SystemRoot\system32;$env:SystemRoot"
-          # The three switches Aetox sets at runtime are set here too, so the
+          # The four switches Aetox sets at runtime are set here too, so the
           # thing that is proved is the thing that ships: no telemetry back to
-          # HeyGen, no update check of its own, and nothing installed behind our
-          # back — the last one matters most, because a tool that fetches its own
-          # dependencies is a second install mechanism next to internal/capability.
+          # HeyGen, no update check of its own, nothing installed behind our
+          # back, and the fast capture path off. The third matters most, because
+          # a tool that fetches its own dependencies is a second install
+          # mechanism next to internal/capability.
           $env:HYPERFRAMES_NO_TELEMETRY = '1'
           $env:HYPERFRAMES_NO_UPDATE_CHECK = '1'
           $env:HYPERFRAMES_NO_AUTO_INSTALL = '1'
+          $env:PRODUCER_EXPERIMENTAL_FAST_CAPTURE = 'false'
           $cli = 'out/node_modules/hyperframes/bin/hyperframes.mjs'
           $reported = (& ./out/node/node.exe $cli --version) -join ''
           if ($reported -notmatch [regex]::Escape('${{ inputs.hyperframes_version }}')) {
@@ -592,6 +706,8 @@ jobs:
             Marker: "hyperframes-${{ inputs.hyperframes_version }}.ok",
             ApproxBytes: $((Get-Item hyperframes-win64.zip).Length),
 
+          built from ${{ inputs.hyperframes_repo }}@${{ steps.source.outputs.sha }}
+
           "@ | Write-Host
 
       - name: Publish it as its own release
@@ -600,8 +716,12 @@ jobs:
           tag_name: ${{ steps.pack.outputs.tag }}
           name: ${{ steps.pack.outputs.tag }}
           body: |
-            hyperframes ${{ inputs.hyperframes_version }} (Apache-2.0, HeyGen)
-            bundled with nodejs.org's ${{ inputs.node_version }} Windows build,
+            hyperframes ${{ inputs.hyperframes_version }} (Apache-2.0, HeyGen),
+            built from ${{ inputs.hyperframes_repo }}@${{ steps.source.outputs.sha }}
+            rather than installed from npm, so the patches Aetox needs live in a
+            fork we own instead of in workarounds around it.
+
+            Bundled with nodejs.org's ${{ inputs.node_version }} Windows build,
             so Aetox can install it the way it installs every other tool: one
             pinned zip, no installer, no elevation, no PATH, no package manager
             on the user's machine.

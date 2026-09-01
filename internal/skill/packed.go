@@ -65,6 +65,28 @@ type pack struct {
 }
 
 var packs = map[string]*pack{
+	// Making a video, in the three moves the job actually has. Declared here
+	// rather than beside the tool for the same reason the browser's is: this
+	// table is the one place that knows a packed tool's vocabulary.
+	//
+	// No fallback. `shell` has one because a bare `shell` call has meant "run
+	// this" since before it was packed; nothing here carries that history, and
+	// the three moves are far enough apart that guessing between them would be
+	// guessing whether to spend minutes of somebody's machine.
+	"video": {
+		tool:    "video",
+		actions: []string{"new", "check", "render"},
+		names: map[string]string{
+			// Three permissions rather than one, because they are three
+			// different grants. `new` writes a folder into the project, `check`
+			// opens a browser and reads a page, and `render` runs a program for
+			// minutes and produces a file. A user who wants scenes drafted but
+			// never an hour of their machine spent has somewhere to say so.
+			"new":    "video_new",
+			"check":  "video_check",
+			"render": "video_render",
+		},
+	},
 	// The first pack, born in desktop/browser_tool.go a day before this file
 	// existed. Declared here even though its implementation lives in the
 	// desktop, because this table is the one place that knows a packed tool's

@@ -17,8 +17,9 @@ on the web. A layout that is correct for one is wrong for the next.
 So this skill holds slides and nothing else. If web pages or documents ever earn
 templates, they earn a skill of their own rather than a folder in here, because
 a template nobody can tell the medium of is a template that gets pasted into the
-wrong file. (Video is not on the list at all: Aetox reads video with `video_ocr`
-and produces none.)
+wrong file. (Video already went that way: its scenes are HTML as well, and they
+live in the `video` agent's own `video-templates` rather than in here, because a
+scene is rendered frame by frame and a slide is printed once.)
 
 ## Why this is its own skill
 

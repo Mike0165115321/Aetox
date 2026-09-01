@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Infographic Template</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Epilogue:wght@500&family=Inter:wght@900&display=swap');
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    .slide {
+      width: 1200px;
+      height: 1581px;
+      background: #ffffff;
+      position: relative;
+      font-family: sans-serif;
+    }
+
+    /* Top-left tech icon */
+    .tech-icon {
+      position: absolute;
+      top: 30px;
+      left: 50px;
+    }
+
+    .tech-icon img {
+      width: 80px;
+      height: 80px;
+      object-fit: contain;
+    }
+
+    /* Top-right title */
+    .title {
+      position: absolute;
+      top: 32px;
+      right: 50px;
+      padding: 16.5px 0;
+      font-family: 'Inter', sans-serif;
+      font-weight: 900;
+      font-size: 54px;
+      color: #181D2F;
+      text-transform: uppercase;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    /* Bottom bar */
+    .bottom-bar {
+      position: absolute;
+      bottom: 24px;
+      left: 0;
+      right: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .bottom-url {
+      position: absolute;
+      left: 50px;
+      font-family: 'Epilogue', sans-serif;
+      font-weight: 500;
+      font-size: 20px;
+      color: #181D2F;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-wordmark {
+      height: 38px;
+      width: auto;
+    }
+
+    /* Content image */
+    .content {
+      position: absolute;
+      top: 110px;
+      left: 48px;
+      right: 0;
+      bottom: 80px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .content img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+  </style>
+</head>
+<body>
+
+<!--
+  This template is filled in per run. Replace these placeholders:
+    {{TITLE}}        - topic title, ALL CAPS, kept short to fit beside the icon
+                       (e.g. "HOW DOCKER WORKS", or "VIRTUAL THREADS" for a long
+                       topic). See SKILL.md Step 4 title rules.
+    {{DIAGRAM_SRC}}  - path/filename of the generated raw diagram image
+    {{DIAGRAM_ALT}}  - alt text (the topic name)
+    {{ICON_PATH}}    - tech icon: a CO-LOCATED local filename ("icon.svg") that
+                       Step 4 downloaded into this folder. NEVER a raw remote URL
+                       or a guessed filename. If no real tech icon is available,
+                       DELETE the whole .tech-icon div below (empty fallback, no
+                       brand logo).
+    {{LOGO_PATH}}    - brand wordmark, from config.logoPath
+    {{FOOTER_TEXT}}  - footer URL/text, from config.footerText
+-->
+<div class="slide">
+  <div class="tech-icon">
+    <img src="{{ICON_PATH}}" alt="icon" />
+  </div>
+
+  <div class="title">{{TITLE}}</div>
+
+  <div class="content">
+    <img src="{{DIAGRAM_SRC}}" alt="{{DIAGRAM_ALT}}" />
+  </div>
+
+  <div class="bottom-bar">
+    <span class="bottom-url">{{FOOTER_TEXT}}</span>
+    <div class="logo">
+      <img class="logo-wordmark" src="{{LOGO_PATH}}" alt="logo" />
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -13,6 +13,7 @@
   import { fileURL } from '../fileUrl'
   import { t } from '../i18n.svelte'
   import Icon from '../Icon.svelte'
+  import MediaOriginLine from './MediaOriginLine.svelte'
 
   let { path, name, kind }: { path: string; name: string; kind: 'video' | 'audio' } = $props()
 
@@ -63,6 +64,10 @@
       </div>
     {/if}
   </div>
+
+  <!-- Under the player rather than in the header: it describes what is in the
+       frame, and it is only there at all when a tool put this file here. -->
+  <MediaOriginLine {path} />
 </div>
 
 <style>

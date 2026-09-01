@@ -3848,11 +3848,33 @@ func (a *App) chairProfile() *subagent.Profile {
 // proposal ever made in a project against the previous one — the exact failure
 // the per-project scope exists to prevent (§116). A parameter cannot go stale.
 func (a *App) workbenchSkills(conv *conversation, sandboxRoot string) []skill.Skill {
+	skills := a.everySessionSkills(conv, sandboxRoot)
+	// The cutting room's door, and the one conditional tool here. Registered
+	// only where the editor's own server is placed (video_desk.go says why:
+	// the room means nothing without the tools that fill it, and a line every
+	// session pays for is the desk pack's budget rule broken one tool over).
+	if conversationHasEditor(conv) {
+		skills = append(skills, &cuttingRoomSkill{app: a, conv: conv})
+	}
+	return skills
+}
+
+// everySessionSkills is the unconditional set every chat gets.
+func (a *App) everySessionSkills(conv *conversation, sandboxRoot string) []skill.Skill {
 	return []skill.Skill{
 		// One tool for the browser, four actions inside it (browser_tool.go).
 		// The four old names are still what `tools:` and `categories:` speak —
 		// they moved from being tools to being the actions' permission keys.
-		&browserSkill{app: a},
+		&browserSkill{app: a, conv: conv},
+		// One tool for making a video, three actions inside it (video_tool.go).
+		// Here rather than in defaults.go because it needs the app: the project
+		// root, and the same DataRoot lookups the readiness panel uses.
+		//
+		// No desk carries it. Its category is deliverables, which appears on no
+		// desk's `categories:` line, so it reaches exactly one place — the
+		// `tools:` line of the agent that makes videos — the same way doc_write
+		// reaches the document writer and nobody else.
+		&videoToolSkill{app: a},
 		// One tool for the desk, three actions inside it (workbench_desk.go).
 		// The terminal is deliberately NOT one of them: the desk pack is the
 		// surface, and a terminal is a thing that lives on it with a back and
@@ -4015,11 +4037,13 @@ func (a *App) applyConfig(conv *conversation, cfg config.Config) {
 		// rather than on the next restart.
 		Shell:        a.shellBackend,
 		OnToolAction: func(ev turn.ToolEvent) { a.recordToolAction(conv, ev) },
-		// Two jobs, deliberately named apart: one writes the call down, the
-		// other tells the window a file it is showing has moved on.
+		// Three jobs, deliberately named apart: one writes the call down, one
+		// tells the window a file it is showing has moved on, and one puts the
+		// editor's own clips on the desk without being asked (video_desk.go).
 		OnToolRun: func(run turn.ToolRun) {
 			a.recordToolRun(conv, run)
 			a.notifyFilesChanged(conv, run)
+			a.autoOpenMedia(conv, run)
 		},
 		Proposer:         appProposer{app: a},
 		OnStatus:         func(status string) { a.emitAgentStatus(conv, status) },

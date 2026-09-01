@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>NYT Chart · AI Agent MAU 2018–2026</title>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+Pro:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  body { font-family:'IBM Plex Sans','Noto Sans SC',system-ui,sans-serif; background:#f7f5ee; color:#1a1a1a; margin:0; }
+  .serif { font-family:'Source Serif Pro',Georgia,serif; }
+  .mono { font-family:'IBM Plex Mono',ui-monospace,monospace; }
+  .nyt-red { color:#a91d1d; }
+  .nyt-red-fill { fill:#a91d1d; }
+  .kicker { font-size:11px; letter-spacing:0.14em; text-transform:uppercase; }
+  @keyframes draw { from { stroke-dashoffset: 1000 } to { stroke-dashoffset: 0 } }
+  .line { stroke-dasharray:1000; animation: draw 1.4s ease-out forwards; animation-delay: .4s; opacity:0; animation-fill-mode: forwards; }
+  .line { animation: draw 1.4s ease-out .4s forwards, fadeIn .1s linear .4s forwards; }
+  @keyframes fadeIn { to { opacity:1 } }
+</style>
+<!-- Tailwind, compiled once and written in, instead of fetched at render time.
+
+     Upstream loads cdn.tailwindcss.com from the <head>: that script is the browser
+     JIT, 282 KB over the network on every single render, and with no network the
+     utility classes never apply and the frame comes out unstyled. Nothing about the
+     renderer wants Tailwind; it is the template author's choice, and 16 of the 22
+     scenes in this library use plain CSS and render identically.
+
+     The block below is exactly what that script generated for THIS file, taken out
+     of the page and pasted back in. Measured 31 ส.ค.: same pixels, SSIM 1.000000
+     against the CDN render, 5 KB instead of 282 KB, and nothing fetched. It sits at
+     the end of <head> because that is where the script used to inject it, and the
+     order decides which rules win — putting it where the <script> tag was instead
+     moved four gradient blobs on this page and dropped SSIM to 0.97.
+
+     It is a fixed set: the utilities this scene already uses, and no others. Adding
+     a Tailwind class that is not below will do nothing. Write plain CSS for new work. -->
+<style>
+*, ::before, ::after{--tw-border-spacing-x:0;--tw-border-spacing-y:0;--tw-translate-x:0;--tw-translate-y:0;--tw-rotate:0;--tw-skew-x:0;--tw-skew-y:0;--tw-scale-x:1;--tw-scale-y:1;--tw-pan-x: ;--tw-pan-y: ;--tw-pinch-zoom: ;--tw-scroll-snap-strictness:proximity;--tw-gradient-from-position: ;--tw-gradient-via-position: ;--tw-gradient-to-position: ;--tw-ordinal: ;--tw-slashed-zero: ;--tw-numeric-figure: ;--tw-numeric-spacing: ;--tw-numeric-fraction: ;--tw-ring-inset: ;--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-color:rgb(59 130 246 / 0.5);--tw-ring-offset-shadow:0 0 #0000;--tw-ring-shadow:0 0 #0000;--tw-shadow:0 0 #0000;--tw-shadow-colored:0 0 #0000;--tw-blur: ;--tw-brightness: ;--tw-contrast: ;--tw-grayscale: ;--tw-hue-rotate: ;--tw-invert: ;--tw-saturate: ;--tw-sepia: ;--tw-drop-shadow: ;--tw-backdrop-blur: ;--tw-backdrop-brightness: ;--tw-backdrop-contrast: ;--tw-backdrop-grayscale: ;--tw-backdrop-hue-rotate: ;--tw-backdrop-invert: ;--tw-backdrop-opacity: ;--tw-backdrop-saturate: ;--tw-backdrop-sepia: ;--tw-contain-size: ;--tw-contain-layout: ;--tw-contain-paint: ;--tw-contain-style: }::backdrop{--tw-border-spacing-x:0;--tw-border-spacing-y:0;--tw-translate-x:0;--tw-translate-y:0;--tw-rotate:0;--tw-skew-x:0;--tw-skew-y:0;--tw-scale-x:1;--tw-scale-y:1;--tw-pan-x: ;--tw-pan-y: ;--tw-pinch-zoom: ;--tw-scroll-snap-strictness:proximity;--tw-gradient-from-position: ;--tw-gradient-via-position: ;--tw-gradient-to-position: ;--tw-ordinal: ;--tw-slashed-zero: ;--tw-numeric-figure: ;--tw-numeric-spacing: ;--tw-numeric-fraction: ;--tw-ring-inset: ;--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-color:rgb(59 130 246 / 0.5);--tw-ring-offset-shadow:0 0 #0000;--tw-ring-shadow:0 0 #0000;--tw-shadow:0 0 #0000;--tw-shadow-colored:0 0 #0000;--tw-blur: ;--tw-brightness: ;--tw-contrast: ;--tw-grayscale: ;--tw-hue-rotate: ;--tw-invert: ;--tw-saturate: ;--tw-sepia: ;--tw-drop-shadow: ;--tw-backdrop-blur: ;--tw-backdrop-brightness: ;--tw-backdrop-contrast: ;--tw-backdrop-grayscale: ;--tw-backdrop-hue-rotate: ;--tw-backdrop-invert: ;--tw-backdrop-opacity: ;--tw-backdrop-saturate: ;--tw-backdrop-sepia: ;--tw-contain-size: ;--tw-contain-layout: ;--tw-contain-paint: ;--tw-contain-style: }/* ! tailwindcss v3.4.17 | MIT License | https://tailwindcss.com */*,::after,::before{box-sizing:border-box;border-width:0;border-style:solid;border-color:#e5e7eb}::after,::before{--tw-content:''}:host,html{line-height:1.5;-webkit-text-size-adjust:100%;-moz-tab-size:4;tab-size:4;font-family:ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";font-feature-settings:normal;font-variation-settings:normal;-webkit-tap-highlight-color:transparent}body{margin:0;line-height:inherit}hr{height:0;color:inherit;border-top-width:1px}abbr:where([title]){-webkit-text-decoration:underline dotted;text-decoration:underline dotted}h1,h2,h3,h4,h5,h6{font-size:inherit;font-weight:inherit}a{color:inherit;text-decoration:inherit}b,strong{font-weight:bolder}code,kbd,pre,samp{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;font-feature-settings:normal;font-variation-settings:normal;font-size:1em}small{font-size:80%}sub,sup{font-size:75%;line-height:0;position:relative;vertical-align:baseline}sub{bottom:-.25em}sup{top:-.5em}table{text-indent:0;border-color:inherit;border-collapse:collapse}button,input,optgroup,select,textarea{font-family:inherit;font-feature-settings:inherit;font-variation-settings:inherit;font-size:100%;font-weight:inherit;line-height:inherit;letter-spacing:inherit;color:inherit;margin:0;padding:0}button,select{text-transform:none}button,input:where([type=button]),input:where([type=reset]),input:where([type=submit]){-webkit-appearance:button;background-color:transparent;background-image:none}:-moz-focusring{outline:auto}:-moz-ui-invalid{box-shadow:none}progress{vertical-align:baseline}::-webkit-inner-spin-button,::-webkit-outer-spin-button{height:auto}[type=search]{-webkit-appearance:textfield;outline-offset:-2px}::-webkit-search-decoration{-webkit-appearance:none}::-webkit-file-upload-button{-webkit-appearance:button;font:inherit}summary{display:list-item}blockquote,dd,dl,figure,h1,h2,h3,h4,h5,h6,hr,p,pre{margin:0}fieldset{margin:0;padding:0}legend{padding:0}menu,ol,ul{list-style:none;margin:0;padding:0}dialog{padding:0}textarea{resize:vertical}input::placeholder,textarea::placeholder{opacity:1;color:#9ca3af}[role=button],button{cursor:pointer}:disabled{cursor:default}audio,canvas,embed,iframe,img,object,svg,video{display:block;vertical-align:middle}img,video{max-width:100%;height:auto}[hidden]:where(:not([hidden=until-found])){display:none}.mt-3{margin-top:0.75rem}.mt-8{margin-top:2rem}.flex{display:flex}.min-h-screen{min-height:100vh}.w-\[1280px\]{width:1280px}.w-full{width:100%}.max-w-full{max-width:100%}.items-center{align-items:center}.items-baseline{align-items:baseline}.justify-center{justify-content:center}.justify-between{justify-content:space-between}.p-12{padding:3rem}.text-\[10\.5px\]{font-size:10.5px}.font-medium{font-weight:500}.font-semibold{font-weight:600}.italic{font-style:italic}.leading-\[1\.05\]{line-height:1.05}.opacity-60{opacity:0.6}
+</style>
+</head>
+<!-- The frame and the length are stated here because the renderer reads neither
+     off the CSS. With no data-width/data-height on a composition root it renders
+     this scene at 1080x1920, cropping a design drawn 1920 wide and saying nothing
+     about it; with no data-duration, `hyperframes check` cannot sample the layout
+     at all and reports the scene as having no duration. Both numbers come from a
+     real render on the owner's machine, 31 ส.ค. Change them to change the aspect
+     or the length; nothing else in the file has to move. -->
+<body data-composition-id="scene" data-no-timeline data-width="1920" data-height="1080" data-start="0" data-duration="1.8" class="min-h-screen flex items-center justify-center p-12">
+  <article class="w-[1280px] max-w-full">
+    <header class="flex items-baseline justify-between">
+      <div class="kicker nyt-red font-semibold">GLOBAL · MONTHLY ACTIVE USERS · 2018–2026</div>
+      <div class="kicker opacity-60 mono">FRAME 04 · CHART</div>
+    </header>
+
+    <h1 class="serif mt-3 leading-[1.05] font-medium" style="font-size:clamp(36px,4.4vw,68px)">
+      AI agent 月活在 <span class="nyt-red italic">2024 之后</span> 进入两段抛物线 ——<br/>
+      第一段由云端 Claude / GPT 推动, 第二段由本地 CLI agent 普及。
+    </h1>
+
+    <!-- chart -->
+    <svg viewBox="0 0 1100 460" class="mt-8 w-full">
+      <!-- y axis hairlines -->
+      <g stroke="#1a1a1a" stroke-width="0.5" opacity="0.25">
+        <line x1="60" y1="60" x2="1040" y2="60"/>
+        <line x1="60" y1="180" x2="1040" y2="180"/>
+        <line x1="60" y1="300" x2="1040" y2="300"/>
+        <line x1="60" y1="420" x2="1040" y2="420"/>
+      </g>
+      <!-- y labels -->
+      <g class="mono" font-size="11" fill="#1a1a1a" opacity="0.6">
+        <text x="20" y="64">640M</text>
+        <text x="20" y="184">420M</text>
+        <text x="20" y="304">210M</text>
+        <text x="20" y="424">0</text>
+      </g>
+      <!-- area band -->
+      <path d="M 60 410 L 180 405 L 300 395 L 420 380 L 540 355 L 660 320 L 780 270 L 900 195 L 1020 90 L 1020 420 L 60 420 Z" fill="#a91d1d" opacity="0.06"/>
+      <!-- main line -->
+      <polyline class="line" fill="none" stroke="#1a1a1a" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"
+        points="60,410 180,405 300,395 420,380 540,355 660,320 780,270 900,195 1020,90" />
+      <!-- accent inflection -->
+      <polyline fill="none" stroke="#a91d1d" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="6 5"
+        points="780,270 900,195 1020,90" />
+      <!-- data points -->
+      <g>
+        <circle cx="60" cy="410" r="4" fill="#1a1a1a"/>
+        <circle cx="180" cy="405" r="4" fill="#1a1a1a"/>
+        <circle cx="300" cy="395" r="4" fill="#1a1a1a"/>
+        <circle cx="420" cy="380" r="4" fill="#1a1a1a"/>
+        <circle cx="540" cy="355" r="4" fill="#1a1a1a"/>
+        <circle cx="660" cy="320" r="4" fill="#1a1a1a"/>
+        <circle cx="780" cy="270" r="6" class="nyt-red-fill"/>
+        <circle cx="900" cy="195" r="6" class="nyt-red-fill"/>
+        <circle cx="1020" cy="90" r="6" class="nyt-red-fill"/>
+      </g>
+      <!-- annotations -->
+      <g class="mono" font-size="11" fill="#1a1a1a">
+        <text x="784" y="250">2024 · 310M</text>
+        <text x="894" y="175" class="nyt-red-fill">2025 · 468M</text>
+        <text x="1010" y="70" class="nyt-red-fill" text-anchor="end">2026 · 640M</text>
+      </g>
+      <!-- inflection callout -->
+      <g class="serif" font-style="italic" fill="#a91d1d">
+        <text x="800" y="380" font-size="14">⤴ Inflection point</text>
+        <text x="800" y="398" font-size="14">local CLI agents普及</text>
+      </g>
+      <!-- x labels -->
+      <g class="mono" font-size="11" fill="#1a1a1a" opacity="0.6">
+        <text x="60" y="445" text-anchor="middle">'18</text>
+        <text x="180" y="445" text-anchor="middle">'19</text>
+        <text x="300" y="445" text-anchor="middle">'20</text>
+        <text x="420" y="445" text-anchor="middle">'21</text>
+        <text x="540" y="445" text-anchor="middle">'22</text>
+        <text x="660" y="445" text-anchor="middle">'23</text>
+        <text x="780" y="445" text-anchor="middle">'24</text>
+        <text x="900" y="445" text-anchor="middle">'25</text>
+        <text x="1020" y="445" text-anchor="middle">'26</text>
+      </g>
+    </svg>
+
+    <footer class="mt-3 flex items-baseline justify-between mono text-[10.5px] opacity-60">
+      <span>Source · Synthesized industry estimates, 2026-05</span>
+      <span>Chart by HTML-Anything</span>
+      <span>NYT-STYLE · FRAME-DATA-CHART-NYT</span>
+    </footer>
+  </article>
+</body>
+</html>

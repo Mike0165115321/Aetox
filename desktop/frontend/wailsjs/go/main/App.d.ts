@@ -33,6 +33,10 @@ export function AddWorkspaceFolder():Promise<Array<main.WorkspaceFolder>>;
 
 export function AdoptMemoryScope(arg1:string,arg2:string):Promise<void>;
 
+export function AgentBlocked(arg1:string):Promise<boolean>;
+
+export function AgentGate(arg1:string):Promise<main.AgentGate>;
+
 export function AgentNeeds(arg1:string):Promise<Array<subagent.Requirement>>;
 
 export function AgentSkills(arg1:string):Promise<Array<main.AgentSkillInfo>>;
@@ -63,19 +67,23 @@ export function BrowserClose(arg1:string):Promise<void>;
 
 export function BrowserCloseForTeardown(arg1:string):Promise<void>;
 
+export function BrowserDevices():Promise<Array<main.deviceProfile>>;
+
 export function BrowserForward(arg1:string):Promise<void>;
 
 export function BrowserGetText(arg1:string):Promise<string>;
 
-export function BrowserNavigate(arg1:string,arg2:string):Promise<void>;
+export function BrowserNavigate(arg1:string,arg2:string,arg3:string):Promise<void>;
 
-export function BrowserOpen(arg1:string,arg2:string,arg3:number,arg4:number,arg5:number,arg6:number):Promise<void>;
+export function BrowserOpen(arg1:string,arg2:string,arg3:string,arg4:number,arg5:number,arg6:number,arg7:number):Promise<void>;
 
 export function BrowserOpenDevTools(arg1:string):Promise<void>;
 
 export function BrowserReload(arg1:string):Promise<void>;
 
 export function BrowserSetBounds(arg1:string,arg2:number,arg3:number,arg4:number,arg5:number):Promise<void>;
+
+export function BrowserSetDevice(arg1:string,arg2:string):Promise<void>;
 
 export function BrowserSetVisible(arg1:string,arg2:boolean):Promise<void>;
 
@@ -96,6 +104,8 @@ export function CancelSignIn(arg1:string):Promise<void>;
 export function CancelTurn():Promise<void>;
 
 export function CapabilitiesInstalling():Promise<boolean>;
+
+export function CapabilityForServer(arg1:string):Promise<string>;
 
 export function CapabilityStatuses():Promise<Array<capability.Status>>;
 
@@ -179,7 +189,7 @@ export function GetModelInfo():Promise<main.ModelInfo>;
 
 export function GetProjectStatus():Promise<main.ProjectStatus>;
 
-export function GetRepoMapGraph():Promise<main.RepoMapGraph>;
+export function GetRepoMapGraph(arg1:number):Promise<main.RepoMapGraph>;
 
 export function GitBranches():Promise<Array<main.GitBranch>>;
 
@@ -208,6 +218,8 @@ export function InstallCapabilities(arg1:Array<string>):Promise<boolean>;
 export function InstallSkillFromGitHub(arg1:string):Promise<string>;
 
 export function InstallSkillFromZip():Promise<string>;
+
+export function InstallVoiceEngine(arg1:string,arg2:string):Promise<void>;
 
 export function Interject(arg1:string):Promise<void>;
 
@@ -265,11 +277,17 @@ export function ListSkillProposals():Promise<Array<main.PendingChange>>;
 
 export function ListSkills():Promise<Array<main.SkillInfo>>;
 
+export function ListSpeechEngines():Promise<Array<main.VoiceEngineInfo>>;
+
 export function ListSpeechModels():Promise<Array<main.SpeechModelInfo>>;
 
 export function ListSubagentProfiles():Promise<Array<subagent.Profile>>;
 
 export function ListSystemIssues():Promise<Array<main.PendingChange>>;
+
+export function ListTTSEngines():Promise<Array<main.VoiceEngineInfo>>;
+
+export function ListTTSVoices():Promise<Array<main.TTSVoiceInfo>>;
 
 export function ListTaskChips():Promise<Array<main.TaskChip>>;
 
@@ -282,6 +300,8 @@ export function LoadSessionAnyProject(arg1:string):Promise<Array<main.SessionMes
 export function MCPConfigPath():Promise<string>;
 
 export function MarkIssueReported(arg1:number):Promise<void>;
+
+export function MarkVideoCheckSeen():Promise<void>;
 
 export function MobileRemoteQR():Promise<string>;
 
@@ -343,7 +363,7 @@ export function PendingUndo():Promise<Array<string>>;
 
 export function PickAttachmentImage():Promise<string>;
 
-export function PickAttachments():Promise<Array<string>>;
+export function PickAttachments(arg1:string):Promise<Array<string>>;
 
 export function PickPresetImage(arg1:string):Promise<string>;
 
@@ -507,11 +527,21 @@ export function SetShell(arg1:string):Promise<void>;
 
 export function SetSkillTuneAuto(arg1:boolean):Promise<void>;
 
+export function SetSpeechEngine(arg1:string):Promise<void>;
+
 export function SetSpeechModel(arg1:string):Promise<void>;
+
+export function SetSpeechModelName(arg1:string):Promise<void>;
 
 export function SetStance(arg1:string):Promise<string>;
 
 export function SetSubagentModel(arg1:string,arg2:string):Promise<void>;
+
+export function SetTTSEngine(arg1:string):Promise<void>;
+
+export function SetTTSModelName(arg1:string):Promise<void>;
+
+export function SetTTSVoice(arg1:string):Promise<void>;
 
 export function SetUILocale(arg1:string):Promise<void>;
 
@@ -532,6 +562,8 @@ export function SkillTuneAuto():Promise<boolean>;
 export function SkillsDir():Promise<string>;
 
 export function Spaces():Promise<Array<main.Space>>;
+
+export function SpeakText(arg1:string):Promise<string>;
 
 export function SpeechModelDirs():Promise<Array<main.SpeechDirInfo>>;
 
@@ -575,6 +607,8 @@ export function SwitchThinkLevel(arg1:string):Promise<main.ModelInfo>;
 
 export function SwitchVariant(arg1:number):Promise<main.RegenerateResult>;
 
+export function TTSStatus():Promise<string>;
+
 export function TerminalAttach(arg1:string):Promise<string>;
 
 export function TerminalClose(arg1:string):Promise<void>;
@@ -597,6 +631,10 @@ export function ToolBlockTokens():Promise<number>;
 
 export function ToolCounts():Promise<main.ToolCounts>;
 
+export function ToolInstallPlan(arg1:string):Promise<main.ToolInstallPlan>;
+
+export function TranscribeMicAudio(arg1:string):Promise<string>;
+
 export function TurnInFlight():Promise<main.TurnStatus>;
 
 export function TurnRating(arg1:number):Promise<string>;
@@ -610,6 +648,20 @@ export function UseEngine(arg1:string,arg2:string,arg3:string):Promise<void>;
 export function UserName():Promise<string>;
 
 export function VerifyConnection(arg1:string):Promise<connect.Account>;
+
+export function VideoCheckSeen():Promise<boolean>;
+
+export function VideoEditorCommand():Promise<Array<string>>;
+
+export function VideoEditorEnvironment():Promise<Record<string, string>>;
+
+export function VideoEditorHelpURL(arg1:string):Promise<string>;
+
+export function VideoEditorTools():Promise<Array<string>>;
+
+export function VideoReadiness(arg1:string):Promise<main.VideoReadiness>;
+
+export function VideoToolingStatus():Promise<main.VideoToolingStatus>;
 
 export function WorkbenchTabsChanged(arg1:string,arg2:Array<main.DeskTab>):Promise<void>;
 

@@ -297,7 +297,16 @@
   function navActive(entry: NavEntry): boolean {
     const inChat = cockpit.activeView === 'chat'
     if (inChat && cockpit.space) return entry.id === 'projects'
-    if (entry.kind === 'page') return cockpit.activeView === entry.id
+    // A page is lit while it is open, and also while the conversation it sent
+    // you into is the one on screen. งานวิดีโอ is the case that needed the second
+    // half: it asks which of the two jobs this is, opens that agent's chat, and
+    // closes — so without it the column went blank the moment the room did its
+    // job, leaving somebody talking to `video` with no row saying where they
+    // were standing.
+    if (entry.kind === 'page') {
+      if (cockpit.activeView === entry.id) return true
+      return inChat && !!cockpit.chair && (entry.chairs ?? []).includes(cockpit.chair)
+    }
     // A room whose conversation is with an agent is lit by who you are talking
     // to, not by the desk. A chair chat runs at the office desk — reading the
     // desk here would light ทีมเอเจน while the user is standing in ระบบออโตเมชั่น.

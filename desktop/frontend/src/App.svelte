@@ -6,6 +6,7 @@
   import Settings from './lib/Settings.svelte'
   import Office from './lib/Office.svelte'
   import Workroom from './lib/Workroom.svelte'
+  import VideoWork from './lib/VideoWork.svelte'
   import Artifacts from './lib/Artifacts.svelte'
   import Projects from './lib/Projects.svelte'
   import Onboarding from './lib/Onboarding.svelte'
@@ -510,6 +511,10 @@
 {:else if cockpit.activeView === 'office'}
   <div class="settings-overlay">
     <Office onClose={closeOverlay} />
+  </div>
+{:else if cockpit.activeView === 'videowork'}
+  <div class="settings-overlay">
+    <VideoWork onClose={closeOverlay} />
   </div>
 {:else if cockpit.activeView === 'artifacts'}
   <div class="settings-overlay">

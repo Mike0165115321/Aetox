@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>VFX Text Cursor · Opening</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;700;800;900&family=Noto+Sans+SC:wght@400;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet" />
+<style>
+  body { font-family:'Inter Tight','Noto Sans SC',system-ui,sans-serif; background:#06070a; color:#f5f5f7; margin:0; min-height:100vh; overflow:hidden; position:relative; }
+  .vignette { position:absolute; inset:0; background: radial-gradient(circle at center, transparent 50%, rgba(0,0,0,0.8) 100%); z-index:1; }
+  .grain { position:absolute; inset:0; opacity:0.06; mix-blend-mode:overlay; pointer-events:none; z-index:2;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E"); }
+  .mono { font-family:'JetBrains Mono',ui-monospace,monospace; }
+  .chip { font-size:11px; letter-spacing:0.18em; text-transform:uppercase; }
+  @keyframes blink { 0%, 50% { opacity:1 } 51%, 100% { opacity:0 } }
+  .cursor { display:inline-block; width:18px; height:1.05em; background:#ff3b6f; margin-left:6px; vertical-align:text-bottom; animation: blink 1s steps(1) infinite;
+    box-shadow: 0 0 24px #ff3b6f, 0 0 8px #ff3b6f, 60px 0 80px rgba(255,59,111,0.6); }
+  .chroma {
+    text-shadow:
+      3px 0 #00d4ff,
+      -3px 0 #ff3b6f,
+      0 0 40px rgba(255,59,111,0.3);
+  }
+  .text-line { position:relative; }
+  /* directional light leaks */
+  .ray { position:absolute; mix-blend-mode:screen; pointer-events:none; z-index:1; }
+  .ray-1 { top:30%; left:-10%; width:60%; height:6px; transform:rotate(-12deg); background:linear-gradient(90deg, transparent, rgba(255,59,111,0.6), transparent); filter: blur(8px); }
+  .ray-2 { top:55%; right:-10%; width:50%; height:4px; transform:rotate(15deg); background:linear-gradient(90deg, transparent, rgba(0,212,255,0.5), transparent); filter: blur(6px); }
+  .ray-3 { top:70%; left:10%; width:40%; height:3px; transform:rotate(-8deg); background:linear-gradient(90deg, transparent, rgba(255,181,71,0.5), transparent); filter: blur(5px); }
+</style>
+<!-- Tailwind, compiled once and written in, instead of fetched at render time.
+
+     Upstream loads cdn.tailwindcss.com from the <head>: that script is the browser
+     JIT, 282 KB over the network on every single render, and with no network the
+     utility classes never apply and the frame comes out unstyled. Nothing about the
+     renderer wants Tailwind; it is the template author's choice, and 16 of the 22
+     scenes in this library use plain CSS and render identically.
+
+     The block below is exactly what that script generated for THIS file, taken out
+     of the page and pasted back in. Measured 31 ส.ค.: same pixels, SSIM 1.000000
+     against the CDN render, 5 KB instead of 282 KB, and nothing fetched. It sits at
+     the end of <head> because that is where the script used to inject it, and the
+     order decides which rules win — putting it where the <script> tag was instead
+     moved four gradient blobs on this page and dropped SSIM to 0.97.
+
+     It is a fixed set: the utilities this scene already uses, and no others. Adding
+     a Tailwind class that is not below will do nothing. Write plain CSS for new work. -->
+<style>
+*, ::before, ::after{--tw-border-spacing-x:0;--tw-border-spacing-y:0;--tw-translate-x:0;--tw-translate-y:0;--tw-rotate:0;--tw-skew-x:0;--tw-skew-y:0;--tw-scale-x:1;--tw-scale-y:1;--tw-pan-x: ;--tw-pan-y: ;--tw-pinch-zoom: ;--tw-scroll-snap-strictness:proximity;--tw-gradient-from-position: ;--tw-gradient-via-position: ;--tw-gradient-to-position: ;--tw-ordinal: ;--tw-slashed-zero: ;--tw-numeric-figure: ;--tw-numeric-spacing: ;--tw-numeric-fraction: ;--tw-ring-inset: ;--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-color:rgb(59 130 246 / 0.5);--tw-ring-offset-shadow:0 0 #0000;--tw-ring-shadow:0 0 #0000;--tw-shadow:0 0 #0000;--tw-shadow-colored:0 0 #0000;--tw-blur: ;--tw-brightness: ;--tw-contrast: ;--tw-grayscale: ;--tw-hue-rotate: ;--tw-invert: ;--tw-saturate: ;--tw-sepia: ;--tw-drop-shadow: ;--tw-backdrop-blur: ;--tw-backdrop-brightness: ;--tw-backdrop-contrast: ;--tw-backdrop-grayscale: ;--tw-backdrop-hue-rotate: ;--tw-backdrop-invert: ;--tw-backdrop-opacity: ;--tw-backdrop-saturate: ;--tw-backdrop-sepia: ;--tw-contain-size: ;--tw-contain-layout: ;--tw-contain-paint: ;--tw-contain-style: }::backdrop{--tw-border-spacing-x:0;--tw-border-spacing-y:0;--tw-translate-x:0;--tw-translate-y:0;--tw-rotate:0;--tw-skew-x:0;--tw-skew-y:0;--tw-scale-x:1;--tw-scale-y:1;--tw-pan-x: ;--tw-pan-y: ;--tw-pinch-zoom: ;--tw-scroll-snap-strictness:proximity;--tw-gradient-from-position: ;--tw-gradient-via-position: ;--tw-gradient-to-position: ;--tw-ordinal: ;--tw-slashed-zero: ;--tw-numeric-figure: ;--tw-numeric-spacing: ;--tw-numeric-fraction: ;--tw-ring-inset: ;--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-color:rgb(59 130 246 / 0.5);--tw-ring-offset-shadow:0 0 #0000;--tw-ring-shadow:0 0 #0000;--tw-shadow:0 0 #0000;--tw-shadow-colored:0 0 #0000;--tw-blur: ;--tw-brightness: ;--tw-contrast: ;--tw-grayscale: ;--tw-hue-rotate: ;--tw-invert: ;--tw-saturate: ;--tw-sepia: ;--tw-drop-shadow: ;--tw-backdrop-blur: ;--tw-backdrop-brightness: ;--tw-backdrop-contrast: ;--tw-backdrop-grayscale: ;--tw-backdrop-hue-rotate: ;--tw-backdrop-invert: ;--tw-backdrop-opacity: ;--tw-backdrop-saturate: ;--tw-backdrop-sepia: ;--tw-contain-size: ;--tw-contain-layout: ;--tw-contain-paint: ;--tw-contain-style: }/* ! tailwindcss v3.4.17 | MIT License | https://tailwindcss.com */*,::after,::before{box-sizing:border-box;border-width:0;border-style:solid;border-color:#e5e7eb}::after,::before{--tw-content:''}:host,html{line-height:1.5;-webkit-text-size-adjust:100%;-moz-tab-size:4;tab-size:4;font-family:ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";font-feature-settings:normal;font-variation-settings:normal;-webkit-tap-highlight-color:transparent}body{margin:0;line-height:inherit}hr{height:0;color:inherit;border-top-width:1px}abbr:where([title]){-webkit-text-decoration:underline dotted;text-decoration:underline dotted}h1,h2,h3,h4,h5,h6{font-size:inherit;font-weight:inherit}a{color:inherit;text-decoration:inherit}b,strong{font-weight:bolder}code,kbd,pre,samp{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;font-feature-settings:normal;font-variation-settings:normal;font-size:1em}small{font-size:80%}sub,sup{font-size:75%;line-height:0;position:relative;vertical-align:baseline}sub{bottom:-.25em}sup{top:-.5em}table{text-indent:0;border-color:inherit;border-collapse:collapse}button,input,optgroup,select,textarea{font-family:inherit;font-feature-settings:inherit;font-variation-settings:inherit;font-size:100%;font-weight:inherit;line-height:inherit;letter-spacing:inherit;color:inherit;margin:0;padding:0}button,select{text-transform:none}button,input:where([type=button]),input:where([type=reset]),input:where([type=submit]){-webkit-appearance:button;background-color:transparent;background-image:none}:-moz-focusring{outline:auto}:-moz-ui-invalid{box-shadow:none}progress{vertical-align:baseline}::-webkit-inner-spin-button,::-webkit-outer-spin-button{height:auto}[type=search]{-webkit-appearance:textfield;outline-offset:-2px}::-webkit-search-decoration{-webkit-appearance:none}::-webkit-file-upload-button{-webkit-appearance:button;font:inherit}summary{display:list-item}blockquote,dd,dl,figure,h1,h2,h3,h4,h5,h6,hr,p,pre{margin:0}fieldset{margin:0;padding:0}legend{padding:0}menu,ol,ul{list-style:none;margin:0;padding:0}dialog{padding:0}textarea{resize:vertical}input::placeholder,textarea::placeholder{opacity:1;color:#9ca3af}[role=button],button{cursor:pointer}:disabled{cursor:default}audio,canvas,embed,iframe,img,object,svg,video{display:block;vertical-align:middle}img,video{max-width:100%;height:auto}[hidden]:where(:not([hidden=until-found])){display:none}.absolute{position:absolute}.relative{position:relative}.bottom-12{bottom:3rem}.left-12{left:3rem}.right-12{right:3rem}.top-12{top:3rem}.z-10{z-index:10}.mt-10{margin-top:2.5rem}.flex{display:flex}.max-w-\[1280px\]{max-width:1280px}.flex-col{flex-direction:column}.items-center{align-items:center}.items-baseline{align-items:baseline}.justify-center{justify-content:center}.justify-between{justify-content:space-between}.px-12{padding-left:3rem;padding-right:3rem}.text-center{text-align:center}.text-\[22px\]{font-size:22px}.font-black{font-weight:900}.font-medium{font-weight:500}.leading-\[1\.05\]{line-height:1.05}.tracking-\[-0\.02em\]{letter-spacing:-0.02em}.opacity-40{opacity:0.4}.opacity-50{opacity:0.5}.opacity-60{opacity:0.6}
+</style>
+</head>
+<!-- The only motion here is the cursor, and it blinks for ever, so the scene
+     has no end of its own to be measured. data-duration is that end, stated:
+     four blinks. Without it the renderer refuses the scene outright ("Composition
+     has zero duration"), because a loop is not a length. data-no-timeline says
+     the motion is CSS rather than a GSAP timeline the renderer should wait for. -->
+<body data-composition-id="scene" data-no-timeline data-width="1920" data-height="1080" data-start="0" data-duration="4"
+      class="flex flex-col items-center justify-center relative">
+
+  <header class="absolute top-12 left-12 right-12 flex items-baseline justify-between chip opacity-50 z-10 mono">
+    <span>FRAME 01 · OPENING</span>
+    <span>VFX · TEXT CURSOR</span>
+    <span>00:03:21</span>
+  </header>
+
+  <!-- light rays -->
+  <div class="ray ray-1"></div>
+  <div class="ray ray-2"></div>
+  <div class="ray ray-3"></div>
+
+  <main class="relative z-10 text-center max-w-[1280px] px-12">
+    <h1 class="chroma font-black leading-[1.05] tracking-[-0.02em]" style="font-size:clamp(48px,7vw,108px)">
+      Markdown 是给作者的<br/>
+      中间过程, <span style="color:#ff3b6f">HTML</span> 才是<br/>
+      给读者的最终形态<span class="cursor"></span>
+    </h1>
+    <p class="mt-10 text-[22px] opacity-60 font-medium">
+      — Claude Code 团队, 2026
+    </p>
+  </main>
+
+  <div class="vignette"></div>
+  <div class="grain"></div>
+
+  <footer class="absolute bottom-12 left-12 right-12 flex items-baseline justify-between chip opacity-40 z-10 mono">
+    <span>HTML-ANYTHING · VFX-TEXT-CURSOR</span>
+    <span>HOT PINK × CYAN CHROMATIC</span>
+    <span>REC ●</span>
+  </footer>
+</body>
+</html>

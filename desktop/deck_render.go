@@ -75,7 +75,7 @@ func (a *App) withExportTab(ctx context.Context, fileURL string, work func(call 
 	// says, so no child window can be both composited and unseen. Being
 	// composited is not optional; a window that produces no frames photographs
 	// as a blank rectangle (browser_capture.go, WebView2Feedback #1077, #2983).
-	host.open(exportTabID, fileURL, 0, 0, deckSlideWidthPx, deckSlideHeightPx)
+	host.open(exportTabID, fileURL, "", 0, 0, deckSlideWidthPx, deckSlideHeightPx)
 	defer a.closeTab(exportTabID, closedByApp)
 
 	if err := a.waitForDeckLoad(ctx, host, exportTabID); err != nil {

@@ -502,6 +502,30 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 			available: haveBinary("tesseract"),
 			why:       "no tesseract",
 		},
+		// Making a video, one case per act (video_tool.go).
+		//
+		// `new` runs for real and must succeed: it copies a scene out of the
+		// library that ships inside this binary, so there is nothing on the
+		// machine for it to be missing. `statement-title` is the one to drive —
+		// a single self-contained file, which exercises the flat half of the
+		// library, where a folder scene would only prove the copy walks a tree.
+		"video.new": {
+			args: map[string]any{"template": "statement-title", "path": "scenes/first"},
+		},
+		// The other two run somebody else's program, and it arrives by download
+		// rather than inside the binary. Same shape as video_ocr's below:
+		// skipped with a stated reason on a machine that has not installed it,
+		// never silently.
+		"video.check": {
+			args:      map[string]any{"path": "scenes/first"},
+			available: haveSceneRenderer,
+			why:       "no scene renderer installed",
+		},
+		"video.render": {
+			args:      map[string]any{"path": "scenes/first", "quality": "draft"},
+			available: haveSceneRenderer,
+			why:       "no scene renderer installed",
+		},
 		"video_ocr": {
 			// interval_seconds is explicit: the default sampling interval is
 			// longer than a fixture clip, and "no frames extracted" would read
@@ -547,6 +571,12 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 			available: online,
 			why:       "offline",
 			check:     outputContains("Example Domain"),
+		},
+		"media_fetch": {
+			args:      map[string]any{"url": "https://github.com/github.png", "path": "cover-github.png"},
+			available: online,
+			why:       "offline",
+			check:     outputContains("png"),
 		},
 		"web_search":          {args: map[string]any{"query": "golang"}, available: online, why: "offline"},
 		"github_repo_summary": {args: map[string]any{"repo_url": "https://github.com/golang/example"}, available: githubUsable, why: "offline, or out of GitHub API quota"},
@@ -705,6 +735,17 @@ func haveBinary(name string) func() bool {
 		_, err := exec.LookPath(name)
 		return err == nil
 	}
+}
+
+// haveSceneRenderer asks the same question scene_tool.go asks before it runs
+// anything, through the same function.
+//
+// Not haveBinary: the renderer is never on PATH, deliberately (nothing Aetox
+// downloads is), so looking for it there would report "missing" on a machine
+// that has it and skip the case forever.
+func haveSceneRenderer() bool {
+	node, _ := hyperframesParts()
+	return node != ""
 }
 
 func fileExists(path string) func() bool {

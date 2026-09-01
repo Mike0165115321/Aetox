@@ -196,6 +196,13 @@ type conversation struct {
 	// the chat on screen — someone else's desk, described as its own.
 	openTabs deskState
 
+	// video is what this chat has learned watching its own editor work — how
+	// long the clips it has touched are, which of them it has already put on
+	// the desk. Per conversation for openTabs' reason: two chats editing at
+	// once must not answer each other's questions about "how long is that
+	// file". See video_desk.go.
+	video videoDesk
+
 	// taskChips is the side work THIS chat flagged with suggest_task and the
 	// user has not started or dismissed.
 	//

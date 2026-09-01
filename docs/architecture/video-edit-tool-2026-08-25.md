@@ -122,9 +122,9 @@ Checked `internal/mode` (ARCHITECTURE.md §83) and `internal/subagent` in full:
   which is why `video_ocr`/`audio_transcribe` sit in the main desk's tool
   block today.
 - A tool a desk doesn't carry directly can still be *in the room for its
-  agents* — `specialized.md`'s
-  `chairs: doc_write, sheet_write, edit, grep, edits, delete, shell,
-  git, desk_terminal` is exactly that list, and it's the reason the main
+  agents* — `specialized.md`'s `chairs:` is exactly that list (it named those
+  nine tools when this was written and names three category words since §212:
+  `files, shell, deliverables`), and it's the reason the main
   assistant can never call `doc_write` itself but can hire the `doc` agent to
   do it (owner's call, 2026-08-06, recorded in `mode.go`'s own comment: *"the
   assistant must not carry the document, workbook and deck writers — that is
@@ -350,6 +350,12 @@ constrains either way. Kept here rather than deleted because it's exactly
 the trap the first draft of this doc would have walked into; worth a
 sentence saying so on every path, not a silent removal.
 
+**Corrected 2026-08-30 — see §10.7.** The last clause above is measurably
+wrong. kinocut writes `-c:v libx264` into 38 call sites, so the user's own
+ffmpeg is not free to be any build: it has to be one carrying libx264. That
+also closes the shortcut this section left open, of handing kinocut Aetox's
+pinned copy to save the user an install.
+
 ## 6. Scope — what Aetox actually builds
 
 Almost nothing, and that's the point of §4.3-4.4, not a gap in this plan:
@@ -436,3 +442,257 @@ Aetox writes* is gone entirely. What remains is `video` as a *chair that
 hires an external program over MCP*, which is a smaller, cheaper, and — per
 §4.4's owner quote — more familiar shape than anything the first two drafts
 proposed.
+
+---
+
+## 10. What actually shipped (2026-08-30), and where it differs from the plan above
+
+Everything from §6 is built. Five things came out different, and each one is a
+correction to a line above rather than an addition to it — read this section as
+the current state and the earlier ones as how it was reasoned.
+
+### 10.1 Two agents, not one
+
+§3.2 chose a single `video` chair holding both reading and editing. The owner
+split it on 30 ส.ค.: **`video` makes a video that does not exist yet, `editor`
+cuts one that does.** They are separate packages under
+`internal/subagent/profiles/agents/`, both `needs: mcp:kinocut`, and the roster
+is eleven profiles now rather than nine.
+
+The split is not a filing preference. The two jobs share a connected program and
+nothing else: one starts from material and decides what to lose, the other
+starts from nothing and decides what to put on screen. A single agent holding
+both would have carried a prompt that spends half its length saying which half
+of itself applies.
+
+The cost §4.6 flagged is now doubled and still unmeasured: 196 tool schemas land
+in **two** agents' contexts rather than one. Neither carries them until kinocut
+is connected, so nothing is paid on a machine that has not set it up — but the
+measurement §8.1 asks for is still owed, and is now the first thing to do when
+somebody has kinocut installed to measure against.
+
+### 10.2 A room, งานวิดีโอ, which the automation rule had to be re-read for
+
+The owner asked for a room in the nav whose inside offers the choice between the
+two. On the same day, ระบบออโตเมชั่น was removed from the nav with the rule that
+an agent does not earn a row for being important.
+
+Both stand, and the comment in [`desks.ts`](../../desktop/frontend/src/lib/desks.ts)
+now says why: the automation button called `newChairSession('automation')`, the
+identical line the roster's own button calls, so it was a shortcut wearing a
+room's clothes. งานวิดีโอ opens no chat. It asks the question the work starts
+with and routes to one of two agents, which a roster card cannot do — it can
+only print two names and leave the reader to work out which is theirs.
+
+The test for the next one is written down there too: not "is this important" but
+"does walking in decide something".
+
+### 10.3 `assistant.md` keeps `image_ocr` and `pdf_read`
+
+§3.3 point 1 said to drop `media` from the desk's `categories:`, which would
+have taken `image_ocr` and `pdf_read` with it — the main assistant would have
+stopped being able to read a screenshot or a PDF. That is not what the
+instruction it came from asked for (*"เราจะดึง TOOL ที่อ่านเสียงและวิดีโอ"* named
+audio and video).
+
+What shipped: `categories:` loses `media`, and `tools: image_ocr, pdf_read`
+grants those two back by name. `Mode.AllowsTool` checks `Tools` before
+`Categories`, and `Carries` keeps a packed tool when any of its actions is
+allowed, so `media_read` stays on the desk offering `image` alone. Video and
+audio left; nothing else did.
+
+### 10.4 `doc` keeps `audio_transcribe`
+
+§3.3 point 3 said all five existing chairs lose both tools. Four of them did.
+`doc` kept `audio_transcribe`, because its own AGENT.md names it and it ships a
+starter card in both languages for writing meeting minutes out of a recording —
+removing the tool would have left a shipped card promising work the agent could
+no longer do, and an agent cannot hire another agent to get it back.
+
+All five lost `video_ocr`, and `doc`'s prose was updated to stop naming it.
+
+### 10.5 Only `missingFFmpegError` moved
+
+§2 decided to move both `missingFFmpegError()` and `extractFrames()` into
+`bundled.go`. Only the first did.
+
+The seam §2 identified is `audio_transcribe.go` calling a function that lives in
+`video_ocr.go`, and that is what moved. `extractFrames` has one caller inside
+its own file and takes its frame cap from `videoOCRMaxFrames`, a video-OCR
+constant: moving it would put frame sampling for OCR inside a file whose subject
+is resolving the path of a bundled program, to fix an ownership problem it does
+not have. §2's own later paragraph already said what survived the §4 pivot was
+"the seam itself", and the seam is the error message.
+
+### 10.6 Where the templates went
+
+`docs/video-edit-study/` is gitignored, so the 46 scenes the study gathered
+shipped nowhere until they were copied to
+`profiles/agents/video/skills/video-templates/` — an agent-local skill, embedded
+with the profile, `CREDITS.md` travelling with it.
+
+Agent-local rather than a shared `aetox-video-templates` on the global shelf,
+because the library is this agent's inventory and no other desk renders a scene.
+Two facts about the files that the SKILL.md records and nothing else would have:
+the motion is CSS `@keyframes` (**not** GSAP, whatever a general knowledge of
+"HTML video" suggests), and the frame size differs per file — 15 scenes pinned to
+1920×1080, one (`bold-portrait-title`) built at 1080×1920, six fluid. That last
+column is what a request for a vertical cut actually costs, per template, and the
+SKILL.md prints it beside every name rather than leaving it to be guessed.
+
+The user-facing setup instructions §6 point 4 owed are
+[docs/VIDEO-EDITOR.md](../VIDEO-EDITOR.md).
+
+### 10.7 Installed and measured (2026-08-30) — §8's open questions, answered
+
+kinocut 1.15.0 was installed from PyPI on the owner's machine (Python 3.13.14,
+Windows 11) and probed. Four numbers came out of it, and three of them changed a
+decision.
+
+**196 tools, ~37,600 tokens, no pagination.** §4.6 and §8.1 flagged this as the
+real open cost and it is worse than the guess: the schemas total 150,487
+characters, `tools/list` returns them in one page with a null cursor, and every
+one lands in the context of any agent holding the server, on every request. The
+whole fresh-install tool block is ~10,100 tokens
+([tool_budget_test.go](../../desktop/tool_budget_test.go)) — this is over three
+times that, on one agent.
+
+`config.MCPServerConfig.Tools` already existed as a per-server allowlist and is
+what answers it: the shelf preset ships **54 tools, ~12,400 tokens**, chosen as
+the two agents' actual job. `search_tools` is deliberately in the list so the
+trim is not silent — the agent can find what was left out and say so, and the
+field is one edit away in Settings for anyone who wants all 196.
+
+**kinocut hardcodes `libx264` in 38 places.** This closes a shortcut §5 left
+open: Aetox already ships an ffmpeg with ffprobe, and handing kinocut its path
+would have removed a whole install step for free. It cannot, because that copy
+is the LGPL build and has no libx264. The user needs their own full build, and
+the install step points at one that has it.
+
+**`kino doctor` answers readiness in JSON**, so nothing in Aetox keeps a list of
+kinocut's dependencies. `VideoToolingStatus`
+([desktop/videotooling.go](../../desktop/videotooling.go)) runs
+`kino --format json doctor` and reports what it says. The version of kinocut
+that grows a dependency reports it without Aetox being edited.
+
+**Hyperframes is a separate Node package**, not part of `pip install kinocut`.
+The doctor lists `hyperframes` and `@hyperframes/core` as optional-missing on a
+machine that has kinocut and Node. Cutting works without it; rendering an HTML
+scene does not. §10.6's SKILL.md is written against Hyperframes because that is
+what the templates declare, and this is the install step that makes it real.
+
+### 10.8 The install button was built wrong, and is out
+
+First attempt: a button that opened a terminal on the desk and typed
+`python -m pip install kinocut` into it. Owner, immediately: *"ปุ่มติดตั้งทำทำเหี้ยไร
+แบบนี้ทำไมไม่ดูมาตรฐานเดิมของเรา"*.
+
+Correct. Aetox has one way to install a program it needs and it is
+[`internal/capability`](../../internal/capability/capability.go): a pinned,
+SHA256-checked archive fetched into `DataRoot`, a progress strip, no elevation,
+no package manager, no PATH. It exists because the alternative got the NSIS
+installer classified as `Program:Win32/Wacapew.C!ml` (§capability-install-2026-08-21),
+and a second mechanism beside it is the whole shape of that mistake returning.
+
+The terminal button is removed. What is left in
+[desktop/videotooling.go](../../desktop/videotooling.go) is the part that was
+never in dispute: reading `kino --format json doctor` and reporting it. The room
+shows the command and links to the instructions rather than pressing anything.
+
+### 10.9 The decision this leaves open
+
+**kinocut cannot go through `internal/capability` as it stands.** It is a Python
+package: PyPI only, no standalone build, its v1.15.0 GitHub release carries no
+binary asset at all (checked 30 ส.ค.). The manifest ships four components and
+none of them is a Python.
+
+Two ways out, and they are opposite:
+
+**A — bring it inside the standard.** `.github/workflows/tools.yml` already does
+exactly this shape for Tesseract: take a third party's pinned bytes, unpack them
+once in a script anyone can read, republish as `tools-<name>-<version>`, print
+the manifest snippet to paste into `capability.go`. The kinocut version is a job
+that takes python.org's embeddable Windows zip plus `pip install --target` at a
+pinned version, and ships one archive of ~30-40MB. The room's button then calls
+`InstallCapabilities` like every other tool, and the MCP entry points at
+`<DataRoot>/tools/kinocut/python.exe -m kinocut --mcp`.
+
+This reverses §7's *"never ships Python to make it work"* — which was written on
+25 ส.ค. under the premise that the user installs the editor themselves, and that
+premise is what changed.
+
+**B — leave it outside, and say so.** No button. The room shows the command and
+the instructions, kinocut stays the user's own program exactly as n8n is, and
+§7 stands unedited. Costs the user a real install step on a product being
+shipped to people who did not read this document.
+
+Not decided. The code today is B, because B is what removing the wrong thing
+leaves behind, not because it won.
+
+**Decided 1 ก.ย. 2569: A won — see §13.**
+
+## §12 เราถือฟอร์กของ Hyperframes เอง (31 ส.ค. 2569)
+
+> วิธีดูแลฟอร์ก ลงแพตช์ ดึงต้นทาง บิ้ว และทางกลับ อยู่ที่
+> [../HYPERFRAMES-FORK.md](../HYPERFRAMES-FORK.md) ข้อนี้เก็บเฉพาะว่าทำไม
+
+ตัดสินแล้ว ทำแล้ว ฟอร์กอยู่ที่ `Mikedev115/hyperframes` สาขา `aetox` ตัดจาก
+`v0.8.20` ของอัปสตรีม ใบอนุญาต Apache-2.0 เหมือนเดิม และ job `hyperframes` ใน
+`tools.yml` บิ้วจากฟอร์กนั้นแทนการ `npm install`
+
+**เหตุผลไม่ใช่ "อยากปรับแต่ง" ลอย ๆ** วันเดียวกันนั้นเจอข้อบกพร่องสามข้อที่ทางแก้
+จริงอยู่ข้างในเอนจิน ไม่ใช่ข้างนอก และสองข้อแรกผมแก้อ้อมไปแล้วในโค้ดเรา
+
+1. **ฟอนต์** `fetchGoogleFont` ยิงหา `fonts.googleapis.com` ทุกครั้งที่เรนเดอร์
+   ขอ stylesheet ที่ซับเซ็ตตามตัวอักษรบนหน้านั้น แล้วแคชเฉพาะไฟล์ฟอนต์ที่
+   stylesheet ชี้ ไม่มีทางอ่านจากเครื่องก่อนเลย แปลว่าวางไฟล์ฟอนต์ไว้ล่วงหน้า
+   เท่าไรก็ไม่ช่วย นี่คือข้อที่เหลืออยู่ข้อเดียวที่ทำให้เรนเดอร์ออฟไลน์ไม่ได้
+2. **fast capture** เปิดตัวเองเมื่อโพรบเจอ GPU ฉากเดียวกันจึงเรนเดอร์ผ่านบน
+   เครื่องหนึ่งและตายบนอีกเครื่อง (`HF_DE_COMPOSITION_ROOT_MISSING`) เราพินปิดไว้
+   ที่ `hyperframesEnvironment` ควรเป็นสวิตช์ ไม่ใช่การเดา
+3. **exit code ของ `check`** "เจอปัญหา" กับ "รันไม่ได้" ออกมาเป็นรหัสเดียวกัน
+   `desktop/video_tool.go` ต้องแยกเองด้วยการดู `exec.ExitError` กับว่ามีข้อความ
+   ออกมาไหม
+
+**ฟอร์กไม่ใช่การฝัง** ก้อนที่ลงเครื่องยัง 374MB เพราะแบก Node กับ dependency tree
+ทั้งต้น การเป็นเจ้าของซอร์สไม่ได้ทำให้เล็กลงสักไบต์ มันยังถูกโหลดตอนคนกดปุ่มใน
+ห้องงานวิดีโอ ไม่ได้ไปอยู่ในตัวติดตั้ง ข้อ §5 เรื่อง *"ไม่ฝังอะไรเข้าไปในระบบ"*
+ยังยืนอยู่ทั้งข้อ
+
+**กฎที่ตั้งไว้กับฟอร์กนี้: diff ต้องเล็ก** สามแพตช์ข้างบนคือสิ่งที่ตั้งใจจะมี ไม่ใช่
+จุดเริ่มของการเขียนใหม่ ถ้าวันหนึ่งอัปสตรีมรับข้อไหนไป แพตช์นั้นควรหายไปจากฟอร์ก
+และถ้าฟอร์กเริ่มแพงกว่าที่แพตช์คุ้ม ทางกลับคือส่ง `hyperframes_repo` เป็น
+`heygen-com/hyperframes` ในการดิสแพตช์เดียว job เดิมรับได้อยู่แล้ว
+
+## §13 ทาง A ชนะ และปุ่มเดียวทำครบทั้งสาย (1 ก.ย. 2569)
+
+**เจ้าของ:** *"เราจะทำให้ Aetox ตัดวิดีโอได้ครับตอนนี้ ... ทำยังไงให้มันติดตั้งง่ายด้วย
+อย่าลืมเราจะปล่อยให้คนอื่นใช้ด้วยนะครับ"* — สองครึ่งของประโยคเดียว: ปล่อยของจริง
+และอย่าให้คนอื่นต้องอ่านเอกสารนี้ถึงจะใช้ได้
+
+**ครึ่งแรก: §10.9 จบที่ A** job `kinocut` ใน tools.yml ถูกรันครั้งแรก รีลีส
+`tools-kinocut-1.15.0` ขึ้น GitHub (28.8MB) และแฮชถูกวางใน capability.go
+ความสามารถ video-edit จึงถูกเสนอบนการ์ดจริงเป็นครั้งแรก ประโยค *"never ships
+Python to make it work"* ใน §7 ถูกกลับตามเหตุผลที่ §10.9-A เขียนรอไว้แล้ว
+
+**ครึ่งหลัง: การเชื่อมต่อเลิกเป็นขั้นของผู้ใช้** ก่อนหน้านี้ กดติดตั้งในห้องงานวิดีโอแล้ว
+การ์ดยังถูกม่านคลุม เพราะ `needs: mcp:kinocut` ต้องการรายการใน mcp-servers.json
+ที่มีแต่ชั้นวางใน ตั้งค่า จะเขียนให้ ผู้ใช้ใหม่ไม่มีทางรู้ว่าครึ่งหลังอยู่ห้องไหน สามอย่างแก้มัน:
+
+1. `connectVideoEditor` (desktop/videotooling.go) — ดาวน์โหลด kinocut ลงเสร็จ
+   เมื่อไร รายการ MCP พร้อม allowlist 54 ตัวและการชี้ไป `agent:editor` ถูกเขียนให้
+   ในจังหวะเดียวกัน idempotent และไม่ทับของเดิม: entry ที่ผู้ใช้แต่งเองอยู่ครบทุกช่อง
+   อย่างมากแค่เติมการชี้ กติกาบนชั้นวาง ("a button, not a default") ไม่ถูกข้าม
+   เพราะกติกานั้นกันการผูกเครื่องเข้ากับ endpoint ภายนอกที่ไม่มีใครเลือก ส่วนนี่คือ
+   โปรแกรมในเครื่องที่เพิ่งถูกโหลดเพราะผู้ใช้กดปุ่มบนการ์ดของเอเจนที่ต้องใช้มัน
+   การกดคือคำยินยอม สิ่งที่ถูกตัดคือการจับคู่เอง ไม่ใช่การถาม
+2. allowlist 54 ตัวย้ายไปมีสำเนาเดียวที่ Go (`videoEditorTools`) ชั้นวางใน
+   Settings.svelte อ่านผ่าน `VideoEditorTools()` แบบเดียวกับที่อ่าน command และ
+   environment อยู่แล้ว รายการที่วัดต้นทุนมาแล้ว (§10.7) เลิกมีสองบ้าน
+3. `CapabilityForServer("kinocut")` เปลี่ยนจาก `video` เป็น `video-edit` — ปุ่มบน
+   ม่านของการ์ด editor นอกห้องงานวิดีโอเคยเสนอโหลด ffmpeg 90MB ที่ไม่มีตัว editor
+   อยู่ข้างใน ตอนนี้เสนอตัว editor เอง แล้ว ffmpeg ค่อยโผล่ในเทิร์น "incomplete"
+   ของ gate ตามชื่อจริงของมัน
+
+เส้นทางผู้ใช้ใหม่ทั้งสาย: เข้าห้องงานวิดีโอ กดติดตั้งทั้งหมด รอแถบโหลด จบ ไม่มีขั้นไหน
+ต้องรู้จักคำว่า MCP

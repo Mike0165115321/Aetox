@@ -1,0 +1,37 @@
+spec_version: 1
+id: frame-startup-pitch
+name: Startup Pitch
+description: >
+  84-second pitch deck in motion: cover, problem, product, market with drill-down, ask.
+
+engine: hyperframes
+engine_version: ^0.4.0
+source_entry: index.html
+
+category: motion
+tags: [pitch, deck, startup]
+
+output:
+  formats: [mp4, webm]
+  default_format: mp4
+  resolution:
+    default: { width: 1920, height: 1080 }
+    supported_aspects: ["16:9"]
+  fps:
+    default: 30
+  duration:
+    type: fixed
+    default_sec: 84
+
+license:
+  spdx: Apache-2.0
+  attribution_required: true
+  redistribution_allowed: true
+  commercial_use: true
+  notes: "From heygen-com/hyperframes registry/examples (Apache-2.0), vendored 1 ก.ย. 2569."
+
+author:
+  name: "HeyGen (hyperframes registry)"
+  url: "https://github.com/heygen-com/hyperframes/tree/main/registry/examples/startup-pitch"
+
+version: "0.1.0"

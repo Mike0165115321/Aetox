@@ -24,8 +24,8 @@ func isolate(t *testing.T) string {
 	return dir
 }
 
-// Nine profiles ship, in two kinds, and the split is the thing being asserted:
-// three delegates any desk may run, and six agents that sit in the office
+// Eleven profiles ship, in two kinds, and the split is the thing being asserted:
+// four delegates any desk may run, and seven agents that sit in the office
 // (COMPANY.md §4). The counts are pinned because "one more profile, it's free"
 // is how a bundled set becomes a menu nobody reads — so a number that moves here
 // should be a hire somebody decided on, never a file that arrived.
@@ -41,12 +41,13 @@ func isolate(t *testing.T) string {
 func TestBundledProfilesAreUsable(t *testing.T) {
 	isolate(t)
 	got := List()
-	want := []string{"automation", "doc", "explore", "general", "github", "research", "reviewer", "sheet", "tester"}
+	want := []string{"automation", "doc", "editor", "explore", "general", "github", "research", "reviewer", "sheet", "tester", "video"}
 	if len(got) != len(want) {
 		t.Fatalf("List() = %d profiles, want %d", len(got), len(want))
 	}
 	chairs := map[string]bool{
-		"automation": true, "doc": true, "github": true, "research": true, "sheet": true,
+		"automation": true, "doc": true, "editor": true, "github": true, "research": true,
+		"sheet": true, "video": true,
 	}
 	for i, p := range got {
 		if p.Name != want[i] {
@@ -298,8 +299,8 @@ func TestHelperHomeCannotAddADelegate(t *testing.T) {
 	if _, ok := Load("backend"); ok {
 		t.Fatal("a helper-home user file loaded as a delegate")
 	}
-	if got := len(List()); got != 9 {
-		t.Fatalf("List() = %d, want the 9 bundled only", got)
+	if got := len(List()); got != 11 {
+		t.Fatalf("List() = %d, want the 11 bundled only", got)
 	}
 	if c, ok := findConflict(Conflicts(), "backend"); !ok || c.Reason == "" {
 		t.Fatal("the locked-out file is not reported with a reason")

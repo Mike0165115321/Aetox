@@ -10,7 +10,7 @@ import {
 import type { main, ooxml } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
 
-export type WorkbenchTabKind = 'terminal' | 'browser' | 'files' | 'file' | 'decks' | 'git' | 'repomap' | 'pr'
+export type WorkbenchTabKind = 'terminal' | 'browser' | 'files' | 'file' | 'decks' | 'git' | 'repomap' | 'pr' | 'cutroom'
 
 export type WorkbenchTab = {
   id: string
@@ -164,6 +164,9 @@ export function browserTabClosedByEngine(id: string): void {
 export async function closeTab(tab: WorkbenchTab): Promise<void> {
   if (tab.kind === 'terminal') await TerminalClose(tab.id)
   if (tab.kind === 'browser') BrowserClose(tab.id)
+  // The user's veto on the room, remembered so the editor's next render falls
+  // back to a quiet single tab instead of reopening what was just dismissed.
+  if (tab.kind === 'cutroom') noteCutroomClosed()
   removeTab(tab.id)
 }
 
@@ -224,6 +227,21 @@ export function openRepoMapTab(): void {
     workbench.tabs.push({ id: 'repomap', kind: 'repomap', name: t('workbench.repoMapTab') })
   }
   workbench.activeId = 'repomap'
+}
+
+/** Singleton tab: ห้องตัด — this session's cut as a ledger with a player.
+ *
+ * Editor sessions only, and the gate is drawn where the others are: the menu
+ * entry appears for the editor's chair the way the code group appears for the
+ * coding desk. It answers the question the file tabs cannot — "what has this
+ * cut produced so far, and which of these five renders is which" — asked the
+ * moment a session grows past its second result. The player is not rewritten
+ * here: the room borrows MediaPane whole (DeckRoom's rule about SlidesPane). */
+export function openCuttingRoomTab(): void {
+  if (!workbench.tabs.some((t) => t.kind === 'cutroom')) {
+    workbench.tabs.push({ id: 'cutroom', kind: 'cutroom', name: t('workbench.cutroomTab') })
+  }
+  workbench.activeId = 'cutroom'
 }
 
 // The device rows, loaded once from Go for the picker to draw. The list itself
@@ -448,6 +466,131 @@ export function openAgentBrowserTabFor(sessionId: string, id: string, url: strin
   })
 }
 
+/** One stretch of a clip's timeline, in seconds from its start. */
+export type MediaSpan = { start: number; end: number; label?: string }
+
+/** The cut drawn as a bar: the whole source, and what survived into the file
+ * on screen. Absent whenever Go could not answer it from measurements it was
+ * actually given — see desktop/video_desk.go. */
+export type MediaPlan = { total: number; kept: MediaSpan[]; marks?: MediaSpan[] }
+
+/** Where a file on the desk came from.
+ *
+ * Every field is read out of the editor's own result JSON, never out of what
+ * the agent said about it, which is the whole reason this exists: the sentence
+ * "ตัดให้ 18 วิแล้วครับ" and a 40-second clip look identical until you have
+ * watched all of it, and these numbers cannot disagree with the file. */
+export type MediaOrigin = {
+  path: string
+  name: string
+  role: 'source' | 'result'
+  tool?: string
+  operation?: string
+  duration?: number
+  sizeMB?: number
+  resolution?: string
+  plan?: MediaPlan
+}
+
+// Keyed by path rather than by tab id, so the pane can ask for its own origin
+// without anything having to thread a prop through Workbench's dispatch — and
+// so a result written over a path that is already open keeps its line.
+//
+// In memory only. A tab is restored from localStorage when a chat is reopened;
+// its origin is not, and that is the honest half: this describes what a tool
+// just did, and after a restart nothing just did anything.
+const mediaOrigins = $state<Record<string, MediaOrigin>>({})
+
+function originKey(path: string): string {
+  return path.trim().replace(/\\/g, '/').toLowerCase()
+}
+
+/** What produced the file this pane is showing, if anything here did. */
+export function mediaOrigin(path: string): MediaOrigin | undefined {
+  return mediaOrigins[originKey(path)]
+}
+
+// The cut so far, per session, in arrival order — what the cutting room's
+// ledger draws. In memory only, same honesty as mediaOrigins above: this is a
+// record of what tools just did, and after a restart nothing just did anything.
+const mediaLedgers = $state<Record<string, MediaOrigin[]>>({})
+
+/** ห้องตัด's own state: which ledger row the player is on. */
+export const cutroom = $state<{ pick: string }>({ pick: '' })
+
+/** The bound session's ledger, for the room to draw. */
+export function mediaLedger(): MediaOrigin[] {
+  return mediaLedgers[boundSessionId ?? ''] ?? []
+}
+
+// Sessions whose user closed the room while the editor was still producing.
+// Checked before auto-reopening: a room the user just dismissed coming back on
+// the next render is the desk fighting its user, and the single-tab fallback
+// below is what "still delivered, less loudly" looks like.
+const cutroomClosed = new Set<string>()
+
+/** Called by closeTab when the room's tab goes — the user's veto, remembered
+ * for this session. The + menu and the `cutting_room` tool still reopen it,
+ * because both of those are somebody asking. */
+export function noteCutroomClosed(): void {
+  cutroomClosed.add(boundSessionId ?? '')
+}
+
+function feedLedger(sessionId: string, origin: MediaOrigin): void {
+  const key = sessionId || boundSessionId || ''
+  if (!mediaLedgers[key]) mediaLedgers[key] = []
+  // Read back rather than keeping the literal — the proxy rule openFileTab
+  // documents: what `??=` evaluates to is the raw array, and a push into that
+  // lands nowhere the store can see.
+  const ledger = mediaLedgers[key]
+  const at = ledger.findIndex((row) => originKey(row.path) === originKey(origin.path))
+  // A re-render over the same path replaces its row in place: it is the same
+  // file with a newer origin, not a second entry.
+  if (at >= 0) ledger[at] = origin
+  else ledger.push(origin)
+}
+
+/** A clip the editor produced, opening itself (desktop/video_desk.go).
+ *
+ * Routed by session like every other desk arrival, and the destination is the
+ * cutting room first: the arrival feeds this session's ledger, the room opens
+ * if it is not up (unless the user closed it — their veto holds, and the
+ * single-tab fallback keeps delivering), and a result is selected so the
+ * player is always on the newest thing. A SOURCE never steals focus from a tab
+ * the user moved to — "the agent has started" is not worth the screen. */
+export async function openAgentMediaFor(sessionId: string, origin: MediaOrigin): Promise<void> {
+  if (!origin?.path) return
+  mediaOrigins[originKey(origin.path)] = origin
+  if (sessionId && sessionId !== boundSessionId) {
+    // A background chat's clip parks on that chat's saved desk, exactly as a
+    // desk_open does — and its ledger is fed too, so the room is ready the
+    // moment that chat is opened.
+    feedLedger(sessionId, origin)
+    patchSavedTabs(sessionId, (tabs) => {
+      if (tabs.some((tab) => tab.kind === 'file' && tab.path === origin.path)) return tabs
+      return [...tabs, { kind: 'file', name: origin.name, path: origin.path, mine: true }]
+    })
+    return
+  }
+  feedLedger('', origin)
+  const roomOpen = workbench.tabs.some((tab) => tab.kind === 'cutroom')
+  if (roomOpen || !cutroomClosed.has(boundSessionId ?? '')) {
+    if (origin.role === 'result' || !cutroom.pick) cutroom.pick = origin.path
+    if (roomOpen) {
+      // The room is up: a result fronts it, a source only feeds it.
+      if (origin.role === 'result') workbench.activeId = 'cutroom'
+    } else {
+      openCuttingRoomTab()
+    }
+    return
+  }
+  // The user closed the room: back to one tab per file, source once, result
+  // in front — the shape this had before the room existed.
+  const open = workbench.tabs.some((tab) => tab.id === `file-${origin.path}`)
+  if (open && origin.role === 'source') return
+  await openFileTab(origin.path, origin.name, true)
+}
+
 /** The desk's one door on the window side (§187.3).
  *
  * Every agent-originated desk event arrives here, and every KIND declares in
@@ -472,6 +615,27 @@ export function routeDeskEvent(kind: string, payload: Record<string, unknown>): 
     case 'close-file':
       closeAgentFileTabFor(sessionId, str('path'))
       return
+    // A clip the editor produced. Same two destinations as open-file — it is a
+    // file tab underneath — and it carries a struct rather than strings, so it
+    // reads `data` where the others read flat keys (sessionEvent, the shape
+    // files-changed already uses).
+    case 'open-media':
+      void openAgentMediaFor(sessionId, payload.data as MediaOrigin)
+      return
+    // The `cutting_room` tool: somebody asked for the room, which outranks the
+    // remembered close (the veto was against the automatic beat, not against
+    // being answered). A background chat's room waits for its desk instead —
+    // a singleton pane on a saved layout is just its kind.
+    case 'open-cutroom':
+      if (!sessionId || sessionId === boundSessionId) {
+        cutroomClosed.delete(boundSessionId ?? '')
+        openCuttingRoomTab()
+      } else {
+        patchSavedTabs(sessionId, (tabs) => {
+          if (tabs.some((tab) => tab.kind === 'cutroom')) return tabs
+          return [...tabs, { kind: 'cutroom', name: t('workbench.cutroomTab') }]
+        })
+      }
       return
     // The browser gained its per-session owner (the change desk_events.go
     // promised): the event names whose page this is, and the two destinations
@@ -880,6 +1044,7 @@ async function restoreWorkbench(sessionId: string): Promise<void> {
     else if (s.kind === 'git') openGitTab()
     else if (s.kind === 'pr') openPRTab()
     else if (s.kind === 'repomap') openRepoMapTab()
+    else if (s.kind === 'cutroom') openCuttingRoomTab()
     else if (s.kind === 'file' && s.path) await openFileTab(s.path, s.name, s.mine ?? false)
     else if (s.kind === 'terminal') await restoreTerminalTab(s)
     else if (s.kind === 'browser') {
@@ -943,6 +1108,10 @@ export async function switchWorkbenchSession(sessionId: string): Promise<void> {
   if (!sessionId || sessionId === boundSessionId) return
   saveWorkbenchSnapshot()
   boundSessionId = sessionId
+  // The room's player follows its desk: pointing at the previous session's
+  // clip across a switch would draw one chat's file under another chat's
+  // ledger. The newest entry is what that session was last shown.
+  cutroom.pick = (mediaLedgers[sessionId] ?? []).at(-1)?.path ?? ''
   await restoreWorkbench(sessionId)
 }
 

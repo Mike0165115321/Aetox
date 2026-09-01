@@ -41,6 +41,16 @@ export interface NavEntry {
    *  room that opens a chair session is one line here; a room that is a desk is
    *  a new entry in a vocabulary the whole app reads. */
   chair?: string
+  /** For a `page` room that hands its work to more than one agent: their names.
+   *
+   *  `chair` above says "this room IS a chat with that agent". This says
+   *  something different — "a chat with any of these is still inside this room"
+   *  — and it exists because งานวิดีโอ asks one question, routes to one of two
+   *  agents, and then gets out of the way. Without it the row went dark the
+   *  instant somebody pressed เริ่มเลย: the view becomes a chat, the page is no
+   *  longer open, and nothing in the column said which room the conversation
+   *  had come from. */
+  chairs?: string[]
 }
 
 export const NAV: NavEntry[] = [
@@ -81,6 +91,24 @@ export const NAV: NavEntry[] = [
   //
   // `chair` below stays. It is the one line a room needs to be a chat with a
   // specialist, and nothing uses it today.
+  // งานวิดีโอ (2026-08-30). A room, where ระบบออโตเมชั่น above stopped being
+  // one — and the difference is the rule, not an exception to it.
+  //
+  // That button called `newChairSession('automation')`: one line, one agent,
+  // identical to the roster's own "แชทกับเอเจนนี้". It was a shortcut wearing a
+  // room's clothes, and the cost of keeping it was that every agent could then
+  // argue for a row of its own until the roster had no reason to exist.
+  //
+  // This room does not open a chat. It asks the question the work starts with —
+  // making a video, or cutting one that already exists — and hands the answer
+  // to one of two agents. That question cannot be asked by a roster card, which
+  // can only print two names and leave the reader to work out which is theirs.
+  // A room that routes is a room; a room that forwards is a shortcut.
+  //
+  // So the test to apply to the next one is not "is this important" (everything
+  // on the roster is) but "does walking in decide something". If the answer is
+  // no, it belongs on the roster like everybody else.
+  { id: 'videowork', kind: 'page', labelKey: 'desk.videowork', blurbKey: 'desk.videoworkBlurb', icon: 'clapperboard', shell: 'assistant', chairs: ['video', 'editor'] },
   { id: 'artifacts', kind: 'page', labelKey: 'desk.artifacts', blurbKey: 'desk.artifactsBlurb', icon: 'package', shell: 'assistant' },
   { id: 'coding', kind: 'desk', labelKey: 'desk.coding', blurbKey: 'desk.codingBlurb', icon: 'fileCode', shell: 'code' },
   // ---- Aetox ทีม (§158) ----

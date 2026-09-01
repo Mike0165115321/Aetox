@@ -50,6 +50,7 @@ Check the list before searching:
 | Read a PDF | `pdf_read` |
 | Read a .docx / .pptx / .xlsx | `read` |
 | Search the web, read a page | `web_search`, `web_fetch` |
+| Download an image or sound file | `media_fetch` |
 | Read text out of an image or video | `image_ocr`, `video_ocr` |
 | Transcribe audio | `audio_transcribe` |
 | Browse a repository | the `github` tools (coding desk) |

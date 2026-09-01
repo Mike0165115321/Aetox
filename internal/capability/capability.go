@@ -96,10 +96,35 @@ type Component struct {
 	// identity is already in the file's own name, as it is for model weights.
 	Marker string
 
+
 	// ApproxBytes is for the sentence on the screen, so someone can decide
 	// before they press rather than after. Never used as a progress
 	// denominator — that comes from Content-Length, which is the real number.
 	ApproxBytes int64
+
+	// Title is what to call this on screen — the program's own name and the
+	// pinned version, "kinocut 1.15.0". Includes names anything else riding
+	// inside the same archive that a person would be surprised to receive
+	// without being told, "Python 3.13.14 (embedded)".
+	//
+	// Both are proper nouns and version numbers, which is why they sit here and
+	// not in the locale files: they read the same in every language, and the
+	// version has to be bumped in the same breath as the URL and the checksum.
+	Title    string
+	Includes string
+
+	// License and Homepage are what the install report shows before anybody
+	// presses anything: whose program this is, under what terms, and a page
+	// they can go and read for themselves.
+	//
+	// Here rather than in the locale files, unlike the sentence describing what
+	// a capability buys you. That sentence is ours to write and belongs in the
+	// language the user reads; these two are facts about somebody else's
+	// software and are the same in every language. Putting them beside the URL
+	// and the checksum also means the three things that must move together
+	// when a pin is bumped are three lines apart.
+	License  string
+	Homepage string
 }
 
 // Manifest is every component Aetox knows how to install, in the order a
@@ -122,7 +147,7 @@ func Manifest() []Component {
 	if runtime.GOOS != "windows" {
 		return nil
 	}
-	return []Component{
+	return pinned([]Component{
 		{
 			ID:         "tesseract",
 			Capability: "image",
@@ -146,6 +171,10 @@ func Manifest() []Component {
 			Dest:        filepath.Join("tools", "tesseract"),
 			Probe:       "tesseract.exe",
 			Marker:      "tesseract-5.4.0.20240606.ok",
+			Title:       "Tesseract 5.4.0",
+			Includes:    "ภาษาไทย",
+			License:     "Apache-2.0",
+			Homepage:    "https://tesseract-ocr.github.io/",
 			ApproxBytes: 62 << 20,
 		},
 		{
@@ -159,6 +188,9 @@ func Manifest() []Component {
 			Dest:        filepath.Join("tools", "poppler"),
 			Probe:       filepath.Join("bin", "pdftotext.exe"),
 			Marker:      "poppler-26.02.0.ok",
+			Title:       "Poppler 26.02.0",
+			License:     "GPL-2.0-or-later",
+			Homepage:    "https://poppler.freedesktop.org/",
 			ApproxBytes: 20 << 20,
 		},
 		{
@@ -184,7 +216,202 @@ func Manifest() []Component {
 			Dest:        filepath.Join("tools", "ffmpeg", "bin"),
 			Probe:       "ffmpeg.exe",
 			Marker:      "ffmpeg-n9.0.1.ok",
+			Title:       "FFmpeg 9.0.1",
+			License:     "LGPL-2.1-or-later",
+			Homepage:    "https://ffmpeg.org/",
 			ApproxBytes: 63 << 20,
+		},
+		{
+			ID:         "ffmpeg-gpl",
+			Capability: "video",
+			// A second ffmpeg, and the reason is one line of somebody else's
+			// source: kinocut writes `-c:v libx264` into 38 call sites, and the
+			// LGPL build above does not carry libx264. Pointed at that copy it
+			// fails almost every encode with "Unknown encoder".
+			//
+			// So the editor gets a GPL build of its own, and the two never mix:
+			// the LGPL one stays what `video_ocr` and `audio_transcribe` use for
+			// reading, where no encoder is involved at all, and this one is only
+			// ever named to kinocut through KINOCUT_FFMPEG_EXECUTABLE
+			// (desktop/videotooling.go). Neither is put on the machine's PATH.
+			//
+			// **GPL, fetched rather than shipped**, which is the same shape
+			// poppler above already has: the user's own Aetox downloads it at a
+			// moment they chose, it stays a separate program in its own folder,
+			// and Aetox invokes it rather than linking it.
+			//
+			// Taken from Gyan Doshi's own releases rather than mirrored through
+			// tools.yml, and the difference is that this tag is a version rather
+			// than a dated autobuild: `9.0.1` is not pruned in five days the way
+			// BtbN's are, so the pin resolves without us hosting a copy. The
+			// mirror job exists in tools.yml anyway and would produce a leaner
+			// archive; swapping to it is these three lines.
+			//
+			// The essentials build, which is where libx264 comes from — verified
+			// by running `-encoders` on the downloaded bytes before this pin was
+			// written, because "the name says GPL" is not evidence.
+			URL:         "https://github.com/GyanD/codexffmpeg/releases/download/9.0.1/ffmpeg-9.0.1-essentials_build.zip",
+			SHA256:      "fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9",
+			Kind:        KindZip,
+			SubPath:     "ffmpeg-9.0.1-essentials_build/bin",
+			Strip:       2,
+			Dest:        filepath.Join("tools", "ffmpeg-gpl", "bin"),
+			Probe:       "ffmpeg.exe",
+			Marker:      "ffmpeg-gpl-9.0.1.ok",
+			Title:       "FFmpeg 9.0.1 (GPL)",
+			License:     "GPL-3.0-or-later",
+			Homepage:    "https://www.gyan.dev/ffmpeg/builds/",
+			ApproxBytes: 111 << 20,
+		},
+		{
+			ID:         "hyperframes",
+			Capability: "video-make",
+			// The engine the video agent renders scenes on, and it is an npm
+			// package — so the archive carries node.exe from nodejs.org beside
+			// the whole dependency tree. npm has no partial form to ask for, and
+			// the machine this lands on has no Node of its own.
+			//
+			// Built through tools.yml rather than pinned at a registry, and
+			// since 31 ส.ค. 2569 built from our own fork of it —
+			// Mikedev115/hyperframes, branch `aetox`, Apache-2.0 like upstream.
+			// Two separate reasons, and both still hold. There is no upstream URL
+			// that holds what has to arrive here, because npm publishes the
+			// package and not its installed tree; and the engine has defects whose
+			// real fix is inside it rather than around it, the first being that it
+			// asks Google for a font stylesheet on every render with no local-first
+			// path at all. The job that builds it proves the result runs with PATH
+			// cut down to system32 before it publishes, because a bundle that
+			// quietly used the runner's Node would be a bundle that fails on the
+			// first machine without one.
+			URL:     "https://github.com/Mikedev115/Aetox/releases/download/tools-hyperframes-0.8.20/hyperframes-win64.zip",
+			SHA256:  "b5582d81af074bb445b22432739763d803e374e5232f3f70ea5d0b7968475c7e",
+			Kind:    KindZip,
+			SubPath: ".",
+			Strip:   0,
+			Dest:    filepath.Join("tools", "hyperframes"),
+			// The entry point rather than the interpreter beside it, and the
+			// choice matters: this is the deepest file in the archive and the
+			// one a half-finished extract loses first. A probe that passed on
+			// node.exe alone would write the marker, report the component
+			// installed, and leave the readiness panel red with the install
+			// button hidden — because there would be nothing left to install.
+			// That dead end is the one failure this file must not produce.
+			Probe:       filepath.Join("node_modules", "hyperframes", "bin", "hyperframes.mjs"),
+			Marker:      "hyperframes-0.8.20.ok",
+			Title:       "HyperFrames 0.8.20",
+			License:     "Apache-2.0",
+			Homepage:    "https://github.com/heygen-com/hyperframes",
+			ApproxBytes: 157178044,
+		},
+		{
+			ID:         "gsap",
+			Capability: "video-make",
+			// Nine of the library's scenes drive their motion with a paused GSAP
+			// timeline, which is one of exactly two things the renderer can seek
+			// — CSS keyframes being the other. Upstream fetches it from a CDN on
+			// every render, so those nine produced a frozen picture on a machine
+			// with no network, and said nothing about why.
+			//
+			// **Fetched here rather than shipped inside Aetox, and that is a
+			// licence decision, not a size one.** 73KB would disappear into the
+			// binary. But GSAP's standard licence is free for commercial use
+			// while carving out "tools that allow users to build visual
+			// animations without code", which is close enough to what this app
+			// does that redistributing their file inside a proprietary product
+			// is not a call to make quietly. Downloading it onto the user's own
+			// machine is the same thing every other program here does, and it is
+			// the mechanism this package already is.
+			//
+			// Pinned at a jsdelivr version path, which is immutable: npm forbids
+			// republishing a version's bytes, and jsdelivr serves them from that
+			// pin for ever.
+			URL:    "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js",
+			SHA256: "c174bfce53a729418d57a8ad8625e7247c793a22fef8e2851e3cfa3de9cd8280",
+			Kind:   KindFile,
+			Dest:   filepath.Join("tools", "gsap"),
+			// The version is in the file's own name, so bumping the pin changes
+			// the probe and no marker is needed — the same reasoning the model
+			// weights below are installed by.
+			Probe:       "gsap-3.14.2.min.js",
+			Title:       "GSAP 3.14.2",
+			License:     "GSAP Standard License",
+			Homepage:    "https://gsap.com/community/standard-license/",
+			ApproxBytes: 72779,
+		},
+		{
+			ID:         "chrome-headless-shell",
+			Capability: "video-make",
+			// The browser that renderer draws in, pinned by us so that it never
+			// fetches one itself.
+			//
+			// Left alone, puppeteer downloads this on the first render: no
+			// checksum anybody chose, at a moment nobody pressed anything, over
+			// a network that may not be there. That is a second install
+			// mechanism beside this file, and closing it is the whole reason
+			// this entry exists — HYPERFRAMES_BROWSER_PATH then names this copy
+			// and nothing is ever fetched behind the user's back.
+			//
+			// The build number is read out of hyperframes' own dist/cli.js
+			// rather than chosen, so the browser is the one it was tested with.
+			// Mirrored rather than pinned at Google's bucket for the same reason
+			// the ffmpeg builds are: one address we control, one checksum we
+			// took, and a job that starts the browser and asks its debugging
+			// port who it is before publishing.
+			URL:     "https://github.com/Mikedev115/Aetox/releases/download/tools-chrome-headless-shell-152.0.7977.30/chrome-headless-shell-win64.zip",
+			SHA256:  "e54732c30fcddcd808093326362eb63262d6cd7354beca9ea3cf4d0587ed2349",
+			Kind:    KindZip,
+			SubPath: ".",
+			Strip:   0,
+			Dest:    filepath.Join("tools", "chrome-headless-shell"),
+			Probe:   "chrome-headless-shell.exe",
+			Marker:  "chrome-headless-shell-152.0.7977.30.ok",
+			Title:   "chrome-headless-shell 152.0.7977.30",
+			// The Chromium licence, which is what this build is; its own LICENSE
+			// file travels inside the archive.
+			License:     "BSD-3-Clause",
+			Homepage:    "https://developer.chrome.com/blog/chrome-for-testing",
+			ApproxBytes: 122998797,
+		},
+		{
+			ID: "kinocut",
+			// The cutting job's own download and nobody else's. It sat under
+			// "video" with the shared ffmpeg until 30 ส.ค., which meant the card
+			// that MAKES a video fetched a Python interpreter and an editor for
+			// footage the user had not shot yet. The ids and the reason live in
+			// desktop/videotooling.go.
+			Capability: "video-edit",
+			// The editor the video agents run on, bundled with the interpreter
+			// it needs, because it has no build that runs without one: kinocut
+			// ships to PyPI only and its GitHub release carries no binary asset
+			// (checked 2026-08-30).
+			//
+			// The alternative was telling every user to install Python and run
+			// pip, and that is the shape this package exists to avoid — a
+			// downloader invoking a package manager on somebody's machine is
+			// what got the NSIS installer classified as Wacapew.C!ml. So
+			// .github/workflows/tools.yml puts python.org's embeddable build
+			// and kinocut's wheels into one archive, once, in a script anyone
+			// can read, and this stays what it is everywhere else: one pinned
+			// zip, extracted, run.
+			//
+			// Probe is python.exe rather than anything kinocut owns because
+			// that is what Aetox spawns — `python.exe -m kinocut --mcp`, with
+			// the bundle's own `._pth` deciding sys.path. A tree missing it is
+			// a tree that cannot start the server, whatever else survived.
+			//
+			URL:         "https://github.com/Mikedev115/Aetox/releases/download/tools-kinocut-1.15.0/kinocut-win64.zip",
+			SHA256:      "ccbdd09b972f6be310bdf9a19904a5ca4eb948f9d4233354b5de07e8b223d539",
+			Kind:        KindZip,
+			SubPath:     ".",
+			Strip:       0,
+			Dest:        filepath.Join("tools", "kinocut"),
+			Probe:       "python.exe",
+			Marker:      "kinocut-1.15.0.ok",
+			Title:       "kinocut 1.15.0",
+			Includes:    "Python 3.13.14 (embedded)",
+			License:     "Apache-2.0",
+			Homepage:    "https://kinocut.dev",
+			ApproxBytes: 29 << 20,
 		},
 		{
 			ID:         "whisper",
@@ -208,6 +435,9 @@ func Manifest() []Component {
 			Dest:        filepath.Join("tools", "whisper"),
 			Probe:       "whisper-cli.exe",
 			Marker:      "whisper-b4938.ok",
+			Title:       "whisper.cpp b4938",
+			License:     "MIT",
+			Homepage:    "https://github.com/ggml-org/whisper.cpp",
 			ApproxBytes: 8 << 20,
 		},
 		{
@@ -223,9 +453,32 @@ func Manifest() []Component {
 			// program putting the file there.
 			Dest:        "models",
 			Probe:       "ggml-tiny-q5_1.bin",
+			Title:       "Whisper tiny (q5_1)",
+			License:     "MIT",
+			Homepage:    "https://huggingface.co/ggerganov/whisper.cpp",
 			ApproxBytes: 31 << 20,
 		},
+	})
+}
+
+// pinned drops any component whose SHA256 has not been filled in yet.
+//
+// A half-added entry is a real state here and it has a right answer. The URL
+// of a mirrored archive is predictable and can be written the moment the job
+// that will produce it exists; the checksum cannot be known until that job has
+// run. Left in the manifest, such an entry offers the user a capability whose
+// download fails verification — a red error for a decision nobody made yet.
+// Dropped, the capability is not offered at all, and appears the day the pin
+// is pasted. Nothing else in this package has to know about the gap.
+func pinned(all []Component) []Component {
+	out := make([]Component, 0, len(all))
+	for _, c := range all {
+		if strings.TrimSpace(c.SHA256) == "" {
+			continue
+		}
+		out = append(out, c)
 	}
+	return out
 }
 
 // Status is one row on the screen: a capability, not a download. Speech is two

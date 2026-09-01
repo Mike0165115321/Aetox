@@ -17,7 +17,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,7 +24,6 @@ import (
 
 	"github.com/Mikedev115/Aetox/internal/model"
 	"github.com/Mikedev115/Aetox/internal/proc"
-	"github.com/Mikedev115/Aetox/internal/statereport"
 )
 
 const (
@@ -105,15 +103,28 @@ func (s *videoOCRSkill) ExecuteTool(ctx context.Context, args map[string]any) (O
 
 func (s *videoOCRSkill) run(ctx context.Context, start time.Time, requestPath string, intervalSec int) (Output, error) {
 	command := "video_ocr " + requestPath
-	if intervalSec < 1 {
-		intervalSec = 1
-	} else if intervalSec > 60 {
-		intervalSec = 60
-	}
 
 	targetPath, err := resolveSandboxPath(s.root, requestPath)
 	if err != nil {
 		return newToolOutput("video_ocr", command, "", start, false, err), err
+	}
+	result, err := OCRVideoFile(ctx, targetPath, intervalSec)
+	if err != nil {
+		return newToolOutput("video_ocr", command, "", start, false, err), err
+	}
+	truncated, wasTruncated := limitLines(result, defaultToolOutputLineLimit)
+	return newToolOutput("video_ocr", command, truncated, start, wasTruncated, nil), nil
+}
+
+// OCRVideoFile reads the on-screen text of one video file already resolved to
+// an absolute path. Exported for `video render` to read its own output back in
+// the same reply, so proving a render costs the caller zero extra turns; the
+// video_ocr tool above is the same read for a file the model names itself.
+func OCRVideoFile(ctx context.Context, targetPath string, intervalSec int) (string, error) {
+	if intervalSec < 1 {
+		intervalSec = 1
+	} else if intervalSec > 60 {
+		intervalSec = 60
 	}
 
 	// resolveTesseract, not exec.LookPath: our Windows installer leaves
@@ -121,24 +132,22 @@ func (s *videoOCRSkill) run(ctx context.Context, start time.Time, requestPath st
 	// frame extraction that follows on a machine that can in fact OCR.
 	if !tesseractAvailable() {
 		if !tryAutoInstallTesseract(ctx) {
-			err := missingTesseractError()
-			return newToolOutput("video_ocr", command, "", start, false, err), err
+			return "", missingTesseractError()
 		}
 	}
 
 	tmpDir, err := os.MkdirTemp("", "aetox-video-ocr-*")
 	if err != nil {
-		return newToolOutput("video_ocr", command, "", start, false, err), err
+		return "", err
 	}
 	defer os.RemoveAll(tmpDir)
 
 	frames, err := extractFrames(ctx, targetPath, tmpDir, intervalSec)
 	if err != nil {
-		return newToolOutput("video_ocr", command, "", start, false, err), err
+		return "", err
 	}
 	if len(frames) == 0 {
-		err := errors.New("แตกเฟรมจากวิดีโอไม่ได้, ไฟล์อาจไม่ใช่วิดีโอหรือเสียหาย")
-		return newToolOutput("video_ocr", command, "", start, false, err), err
+		return "", errors.New("แตกเฟรมจากวิดีโอไม่ได้, ไฟล์อาจไม่ใช่วิดีโอหรือเสียหาย")
 	}
 
 	var lines []string
@@ -154,7 +163,7 @@ func (s *videoOCRSkill) run(ctx context.Context, start time.Time, requestPath st
 	for i, frame := range frames {
 		res, ocrErr := runTesseract(ctx, frame)
 		if ocrErr != nil {
-			return newToolOutput("video_ocr", command, "", start, false, ocrErr), ocrErr
+			return "", ocrErr
 		}
 		if res.Words > 0 && res.Confidence >= 0 {
 			confSum += res.Confidence * float64(res.Words)
@@ -177,8 +186,7 @@ func (s *videoOCRSkill) run(ctx context.Context, start time.Time, requestPath st
 	if len(frames) == videoOCRMaxFrames {
 		result += fmt.Sprintf("\n(อ่านถึงเฟรมที่ %d เท่านั้น ≈ วินาทีที่ %d, วิดีโอส่วนท้ายอาจถูกตัด)", videoOCRMaxFrames, videoOCRMaxFrames*intervalSec)
 	}
-	truncated, wasTruncated := limitLines(result, defaultToolOutputLineLimit)
-	return newToolOutput("video_ocr", command, truncated, start, wasTruncated, nil), nil
+	return result, nil
 }
 
 func extractFrames(ctx context.Context, videoPath, outDir string, intervalSec int) ([]string, error) {
@@ -208,17 +216,4 @@ func extractFrames(ctx context.Context, videoPath, outDir string, intervalSec in
 	}
 	sort.Strings(frames)
 	return frames, nil
-}
-
-// A state report, not a lesson: what it says about this machine is true or
-// false regardless of how the tool was called (see missingTesseractError).
-func missingFFmpegError() error {
-	switch runtime.GOOS {
-	case "darwin":
-		return statereport.New("ไม่พบโปรแกรม ffmpeg ในเครื่อง, ติดตั้งด้วย: brew install ffmpeg")
-	case "linux":
-		return statereport.New("ไม่พบโปรแกรม ffmpeg ในเครื่อง, ติดตั้งผ่าน package manager ของดิสโทรคุณ (แพ็กเกจ ffmpeg)")
-	default: // windows and anything else
-		return statereport.New("ไม่พบโปรแกรม ffmpeg ในเครื่อง, ติดตั้งด้วย: winget install ffmpeg (หรือ scoop install ffmpeg) แล้วลองใหม่")
-	}
 }

@@ -26,6 +26,7 @@ import (
 	"runtime"
 
 	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/statereport"
 )
 
 // bundledBinary resolves one of those programs: the copy this Aetox
@@ -72,4 +73,29 @@ func bundledRoots() []string {
 		roots = append(roots, filepath.Dir(exe))
 	}
 	return roots
+}
+
+// missingFFmpegError is what every caller of the bundled ffmpeg says when the
+// binary is not there — the fallback to the bare name in bundledBinary means a
+// genuinely missing program arrives as exec.ErrNotFound, and this is the
+// sentence that turns into.
+//
+// It lives here because both callers are peers. It was written inside
+// video_ocr.go, the first tool that needed it, and audio_transcribe.go then
+// reached across the file boundary to call it — an ownership nobody decided,
+// which made one read tool depend on another read tool's file for a message
+// that says nothing about either. bundledBinary above already had the right
+// answer to the same question, so the message moved to sit beside it.
+//
+// A state report, not a lesson: what it says about this machine is true or
+// false regardless of how the tool was called (see missingTesseractError).
+func missingFFmpegError() error {
+	switch runtime.GOOS {
+	case "darwin":
+		return statereport.New("ไม่พบโปรแกรม ffmpeg ในเครื่อง, ติดตั้งด้วย: brew install ffmpeg")
+	case "linux":
+		return statereport.New("ไม่พบโปรแกรม ffmpeg ในเครื่อง, ติดตั้งผ่าน package manager ของดิสโทรคุณ (แพ็กเกจ ffmpeg)")
+	default: // windows and anything else
+		return statereport.New("ไม่พบโปรแกรม ffmpeg ในเครื่อง, ติดตั้งด้วย: winget install ffmpeg (หรือ scoop install ffmpeg) แล้วลองใหม่")
+	}
 }

@@ -38,6 +38,14 @@ export function AdoptMemoryScope(arg1, arg2) {
   return window['go']['main']['App']['AdoptMemoryScope'](arg1, arg2);
 }
 
+export function AgentBlocked(arg1) {
+  return window['go']['main']['App']['AgentBlocked'](arg1);
+}
+
+export function AgentGate(arg1) {
+  return window['go']['main']['App']['AgentGate'](arg1);
+}
+
 export function AgentNeeds(arg1) {
   return window['go']['main']['App']['AgentNeeds'](arg1);
 }
@@ -98,6 +106,10 @@ export function BrowserCloseForTeardown(arg1) {
   return window['go']['main']['App']['BrowserCloseForTeardown'](arg1);
 }
 
+export function BrowserDevices() {
+  return window['go']['main']['App']['BrowserDevices']();
+}
+
 export function BrowserForward(arg1) {
   return window['go']['main']['App']['BrowserForward'](arg1);
 }
@@ -106,12 +118,12 @@ export function BrowserGetText(arg1) {
   return window['go']['main']['App']['BrowserGetText'](arg1);
 }
 
-export function BrowserNavigate(arg1, arg2) {
-  return window['go']['main']['App']['BrowserNavigate'](arg1, arg2);
+export function BrowserNavigate(arg1, arg2, arg3) {
+  return window['go']['main']['App']['BrowserNavigate'](arg1, arg2, arg3);
 }
 
-export function BrowserOpen(arg1, arg2, arg3, arg4, arg5, arg6) {
-  return window['go']['main']['App']['BrowserOpen'](arg1, arg2, arg3, arg4, arg5, arg6);
+export function BrowserOpen(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
+  return window['go']['main']['App']['BrowserOpen'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
 }
 
 export function BrowserOpenDevTools(arg1) {
@@ -124,6 +136,10 @@ export function BrowserReload(arg1) {
 
 export function BrowserSetBounds(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['BrowserSetBounds'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function BrowserSetDevice(arg1, arg2) {
+  return window['go']['main']['App']['BrowserSetDevice'](arg1, arg2);
 }
 
 export function BrowserSetVisible(arg1, arg2) {
@@ -164,6 +180,10 @@ export function CancelTurn() {
 
 export function CapabilitiesInstalling() {
   return window['go']['main']['App']['CapabilitiesInstalling']();
+}
+
+export function CapabilityForServer(arg1) {
+  return window['go']['main']['App']['CapabilityForServer'](arg1);
 }
 
 export function CapabilityStatuses() {
@@ -330,8 +350,8 @@ export function GetProjectStatus() {
   return window['go']['main']['App']['GetProjectStatus']();
 }
 
-export function GetRepoMapGraph() {
-  return window['go']['main']['App']['GetRepoMapGraph']();
+export function GetRepoMapGraph(arg1) {
+  return window['go']['main']['App']['GetRepoMapGraph'](arg1);
 }
 
 export function GitBranches() {
@@ -388,6 +408,10 @@ export function InstallSkillFromGitHub(arg1) {
 
 export function InstallSkillFromZip() {
   return window['go']['main']['App']['InstallSkillFromZip']();
+}
+
+export function InstallVoiceEngine(arg1, arg2) {
+  return window['go']['main']['App']['InstallVoiceEngine'](arg1, arg2);
 }
 
 export function Interject(arg1) {
@@ -502,6 +526,10 @@ export function ListSkills() {
   return window['go']['main']['App']['ListSkills']();
 }
 
+export function ListSpeechEngines() {
+  return window['go']['main']['App']['ListSpeechEngines']();
+}
+
 export function ListSpeechModels() {
   return window['go']['main']['App']['ListSpeechModels']();
 }
@@ -512,6 +540,14 @@ export function ListSubagentProfiles() {
 
 export function ListSystemIssues() {
   return window['go']['main']['App']['ListSystemIssues']();
+}
+
+export function ListTTSEngines() {
+  return window['go']['main']['App']['ListTTSEngines']();
+}
+
+export function ListTTSVoices() {
+  return window['go']['main']['App']['ListTTSVoices']();
 }
 
 export function ListTaskChips() {
@@ -536,6 +572,10 @@ export function MCPConfigPath() {
 
 export function MarkIssueReported(arg1) {
   return window['go']['main']['App']['MarkIssueReported'](arg1);
+}
+
+export function MarkVideoCheckSeen() {
+  return window['go']['main']['App']['MarkVideoCheckSeen']();
 }
 
 export function MobileRemoteQR() {
@@ -658,8 +698,8 @@ export function PickAttachmentImage() {
   return window['go']['main']['App']['PickAttachmentImage']();
 }
 
-export function PickAttachments() {
-  return window['go']['main']['App']['PickAttachments']();
+export function PickAttachments(arg1) {
+  return window['go']['main']['App']['PickAttachments'](arg1);
 }
 
 export function PickPresetImage(arg1) {
@@ -986,8 +1026,16 @@ export function SetSkillTuneAuto(arg1) {
   return window['go']['main']['App']['SetSkillTuneAuto'](arg1);
 }
 
+export function SetSpeechEngine(arg1) {
+  return window['go']['main']['App']['SetSpeechEngine'](arg1);
+}
+
 export function SetSpeechModel(arg1) {
   return window['go']['main']['App']['SetSpeechModel'](arg1);
+}
+
+export function SetSpeechModelName(arg1) {
+  return window['go']['main']['App']['SetSpeechModelName'](arg1);
 }
 
 export function SetStance(arg1) {
@@ -996,6 +1044,18 @@ export function SetStance(arg1) {
 
 export function SetSubagentModel(arg1, arg2) {
   return window['go']['main']['App']['SetSubagentModel'](arg1, arg2);
+}
+
+export function SetTTSEngine(arg1) {
+  return window['go']['main']['App']['SetTTSEngine'](arg1);
+}
+
+export function SetTTSModelName(arg1) {
+  return window['go']['main']['App']['SetTTSModelName'](arg1);
+}
+
+export function SetTTSVoice(arg1) {
+  return window['go']['main']['App']['SetTTSVoice'](arg1);
 }
 
 export function SetUILocale(arg1) {
@@ -1036,6 +1096,10 @@ export function SkillsDir() {
 
 export function Spaces() {
   return window['go']['main']['App']['Spaces']();
+}
+
+export function SpeakText(arg1) {
+  return window['go']['main']['App']['SpeakText'](arg1);
 }
 
 export function SpeechModelDirs() {
@@ -1122,6 +1186,10 @@ export function SwitchVariant(arg1) {
   return window['go']['main']['App']['SwitchVariant'](arg1);
 }
 
+export function TTSStatus() {
+  return window['go']['main']['App']['TTSStatus']();
+}
+
 export function TerminalAttach(arg1) {
   return window['go']['main']['App']['TerminalAttach'](arg1);
 }
@@ -1166,6 +1234,14 @@ export function ToolCounts() {
   return window['go']['main']['App']['ToolCounts']();
 }
 
+export function ToolInstallPlan(arg1) {
+  return window['go']['main']['App']['ToolInstallPlan'](arg1);
+}
+
+export function TranscribeMicAudio(arg1) {
+  return window['go']['main']['App']['TranscribeMicAudio'](arg1);
+}
+
 export function TurnInFlight() {
   return window['go']['main']['App']['TurnInFlight']();
 }
@@ -1192,6 +1268,34 @@ export function UserName() {
 
 export function VerifyConnection(arg1) {
   return window['go']['main']['App']['VerifyConnection'](arg1);
+}
+
+export function VideoCheckSeen() {
+  return window['go']['main']['App']['VideoCheckSeen']();
+}
+
+export function VideoEditorCommand() {
+  return window['go']['main']['App']['VideoEditorCommand']();
+}
+
+export function VideoEditorEnvironment() {
+  return window['go']['main']['App']['VideoEditorEnvironment']();
+}
+
+export function VideoEditorHelpURL(arg1) {
+  return window['go']['main']['App']['VideoEditorHelpURL'](arg1);
+}
+
+export function VideoEditorTools() {
+  return window['go']['main']['App']['VideoEditorTools']();
+}
+
+export function VideoReadiness(arg1) {
+  return window['go']['main']['App']['VideoReadiness'](arg1);
+}
+
+export function VideoToolingStatus() {
+  return window['go']['main']['App']['VideoToolingStatus']();
 }
 
 export function WorkbenchTabsChanged(arg1, arg2) {
