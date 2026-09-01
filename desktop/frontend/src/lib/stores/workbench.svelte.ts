@@ -5,7 +5,7 @@
 
 import {
   TerminalStart, TerminalShells, TerminalClose, BrowserClose, BrowserCloseForTeardown, ReadFile, ReadWorkbook,
-  RelativizePath, SaveChatFile, WorkbenchTabsChanged, ResolveAddress,
+  RelativizePath, SaveChatFile, WorkbenchTabsChanged, ResolveAddress, BrowserDevices,
 } from '../../../wailsjs/go/main/App'
 import type { main, ooxml } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
@@ -224,6 +224,15 @@ export function openRepoMapTab(): void {
     workbench.tabs.push({ id: 'repomap', kind: 'repomap', name: t('workbench.repoMapTab') })
   }
   workbench.activeId = 'repomap'
+}
+
+// The device rows, loaded once from Go for the picker to draw. The list itself
+// lives in browser_device.go and this is the only copy of it on this side.
+export const deviceList = $state<{ rows: { name: string; w: number; h: number }[] }>({ rows: [] })
+
+export async function loadDevices(): Promise<void> {
+  if (deviceList.rows.length) return
+  deviceList.rows = (await BrowserDevices()) ?? []
 }
 
 export function openBrowserTab(): string {

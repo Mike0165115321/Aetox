@@ -3,7 +3,7 @@
   import { recordVisit, type WorkbenchTab } from '../stores/workbench.svelte'
   import { cockpit, isOverlayView } from '../stores/cockpit.svelte'
   import {
-    BrowserOpen, BrowserNavigate, BrowserSetBounds, BrowserSetVisible, BrowserSetZoom,
+    BrowserOpen, BrowserNavigate, BrowserSetBounds, BrowserSetVisible, BrowserSetZoom, BrowserSetDevice,
   } from '../../../wailsjs/go/main/App'
   import { EventsOn } from '../../../wailsjs/runtime/runtime'
   import { isHostWebview } from '../hostWebview'
@@ -136,6 +136,16 @@
     } else {
       BrowserNavigate(tab.id, url, fallback)
     }
+    // The device travels with every navigation, and that is deliberate rather
+    // than defensive. It covers the tab that was given a phone before it had a
+    // page (nothing to talk to then), and it settles the question of whether
+    // the engine keeps its emulation across a navigation by never depending on
+    // the answer. One call, at the moment we are already talking to Go.
+    //
+    // Not the same caller as the menu's, even though it is the same call: the
+    // menu answers "the user changed the device", this answers "the page
+    // changed, the device did not".
+    BrowserSetDevice(tab.id, untrack(() => tab.viewport?.name ?? ''))
   })
 
   // Switching device preset resizes the window and rescales the page.

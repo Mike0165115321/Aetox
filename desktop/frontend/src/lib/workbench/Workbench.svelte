@@ -21,11 +21,12 @@
     openFilesTab, openBrowserTab, openTerminalTab, openDecksTab, openGitTab, openPRTab, openRepoMapTab, openFileTab, routeDeskEvent,
     reportDeskTabs,
     openUrlInWorkbench, saveWorkbenchSnapshot, resolveAddressBarInput, labelForUrl,
+    deviceList, loadDevices,
     setTabDragPayload, TAB_DRAG_MIME,
     type WorkbenchTab,
   } from '../stores/workbench.svelte'
   import { busy, busyWork, layerOn, loadBusySignal, toggleBusyLayer } from '../stores/busySignal.svelte'
-  import { TerminalShells, BrowserBack, BrowserForward, BrowserReload, BrowserOpenDevTools } from '../../../wailsjs/go/main/App'
+  import { TerminalShells, BrowserBack, BrowserForward, BrowserReload, BrowserOpenDevTools, BrowserSetDevice } from '../../../wailsjs/go/main/App'
   import { pagePick, startPagePick, stopPagePick, type PickMode } from './pagePick.svelte'
   import { EventsOn } from '../../../wailsjs/runtime/runtime'
   import { t, type TKey } from '../i18n.svelte'
@@ -37,16 +38,20 @@
 
   // Chrome DevTools' default device presets. CSS viewport sizes — BrowserPane
   // turns one into a real window of that aspect + a matching page zoom.
-  const DEVICES = [
-    { name: 'Galaxy S8+', w: 360, h: 740 },
-    { name: 'iPhone SE', w: 375, h: 667 },
-    { name: 'iPhone 12 Pro', w: 390, h: 844 },
-    { name: 'Pixel 7', w: 412, h: 915 },
-    { name: 'iPhone 14 Pro Max', w: 430, h: 932 },
-    { name: 'iPad Mini', w: 768, h: 1024 },
-    { name: 'iPad Pro', w: 1024, h: 1366 },
-    { name: 'Desktop', w: 1280, h: 800 },
-  ]
+  // The device list is Go's (desktop/browser_device.go), not ours.
+  //
+  // It was eight literals here until the agent got a `device` action and needed
+  // the same eight. Two lists would have drifted the first time one gained a
+  // phone, and the menu and the agent would have been offering different
+  // machines under the same name.
+  //
+  // Only the sizes come across. What a device IS — its pixel ratio, its user
+  // agent, whether it has a touch screen — is applied by Go through the engine,
+  // and is not something this file should be able to have an opinion about.
+  const DEVICES = $derived(deviceList.rows)
+  $effect(() => {
+    void loadDevices()
+  })
 
   let shells = $state<{ name: string; path: string }[]>([])
   let menuOpen = $state(false)
@@ -144,9 +149,18 @@
     fn()
   }
 
-  /** Device-size preset for the active browser tab; '' = fill the pane. */
+  /** Device-size preset for the active browser tab; '' = fill the pane.
+   *
+   * Two halves, and they are two because they happen in two places. The size is
+   * ours: BrowserPane shrinks the native window to it, which is what makes the
+   * pane look like a phone. Everything else about being a phone — the user
+   * agent, the touch screen, the pixel ratio — only exists inside the engine,
+   * so Go sets it there. Doing only the first half is what made a mobile preset
+   * show the desktop page in a narrow window. */
   function setViewport(name: string) {
-    if (activeTab) activeTab.viewport = DEVICES.find((d) => d.name === name)
+    if (!activeTab) return
+    activeTab.viewport = DEVICES.find((d) => d.name === name)
+    BrowserSetDevice(activeTab.id, name)
   }
 
   async function navigate() {
