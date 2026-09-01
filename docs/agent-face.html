@@ -1,0 +1,828 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>หน้าเอเจน — มาตรฐาน</title>
+<style>
+/* Tier 1 — primitive palette. Raw, theme-agnostic swatches only.
+   Nothing in the app references these directly; theme.css maps them to
+   semantic roles per theme. Add a swatch here, name a role there. */
+
+:root {
+  /* neutral ink scale (dark grounds) — anchors: bg #0f0f11, surface #16161a,
+     elevated #1f1f23, border #2a2a2e; the rest interpolated on the same hue */
+  --c-ink-1000:#0a0a0c;
+  --c-ink-950:#0f0f11;
+  --c-ink-930:#121215;
+  --c-ink-925:#131316;
+  --c-ink-900:#16161a;
+  --c-ink-850:#1f1f23;
+  --c-ink-820:#26262b;
+  --c-ink-810:#1c1c20;
+  --c-ink-800:#222226;
+  --c-ink-750:#2a2a2e;
+  --c-ink-700:#313136;
+  --c-ink-650:#3a3a40;
+  --c-ink-600:#46464e;
+
+  /* neutral text — anchors: primary #f2f2f3, secondary #b0b3b8 */
+  --c-slate-100:#f2f2f3;
+  --c-slate-300:#b0b3b8;
+  --c-slate-400:#a0a3a9;
+  --c-slate-500:#7d8087;
+  --c-slate-600:#56585f;
+
+  /* accent — cyan */
+  --c-cyan-200:#5fd6c9;
+  --c-cyan-300:#7fe9f3;
+  --c-cyan-400:#35d0e0;
+  --c-cyan-700:#1d3f45;
+  --c-cyan-900:#132a2e;
+
+  /* interactive — blue */
+  --c-blue-200:#8fb3ff;
+  --c-blue-300:#7fa8ff;
+  --c-blue-350:#5b8cff;
+  --c-blue-400:#3b78ff;
+  --c-blue-500:#2f6bff;
+  --c-blue-700:#26407a;
+  --c-blue-900:#122344;
+  --c-blue-950:#132033;
+  --c-sky-400:#58a6ff;
+  --c-sky-300:#7fb0ff;
+
+  /* status */
+  --c-green-200:#9ff0ad;
+  --c-green-500:#3fb950;
+  --c-red-200:#ffb3ae;
+  --c-red-500:#f85149;
+  --c-red-600:#e5484d;
+  --c-amber-500:#d29922;
+  --c-amber-600:#b3810f;
+
+  /* violet */
+  --c-violet-200:#b79bf5;
+  --c-violet-400:#a371f7;
+  --c-violet-700:#362b4d;
+  --c-violet-900:#241f33;
+
+  /* chart series — a categorical set, not the status/accent roles reused.
+     Status hues are reserved for good/bad and must never mean "series 4", and
+     the UI accent already means "interactive". Verified with the dataviz
+     validator against every theme surface in theme.css:
+       dark  (#16161a): all checks pass — L inside 0.48–0.67, chroma >= 0.1,
+                        worst adjacent CVD dE 8.9 (protan), contrast >= 3:1
+       light (#ffffff): all checks pass; on the two cream light themes
+                        (gruvbox-light, solarized-light) contrast lands at
+                        ~2.5:1, a WARN whose required relief is the legend and
+                        the per-model table that ship beside every chart.
+     Order is fixed and must not be re-sorted: slot n is an identity, and
+     swapping two entries repaints charts users have already learned. */
+  --c-chart-1:#4599CB;
+  --c-chart-2:#C98100;
+  --c-chart-3:#00946F;
+  --c-chart-4:#9E74DC;
+  --c-chart-5:#D05F55;
+
+  /* heat ramp — one hue, monotone lightness, for the activity heatmap. Two
+     sets because a sequential ramp has to be re-stepped per ground, not
+     flipped: the pale end must still clear its own surface (>= 2:1). */
+  --c-heat-dark-1:#2A4E64;
+  --c-heat-dark-2:#336A8A;
+  --c-heat-dark-3:#3E85AF;
+  --c-heat-dark-4:#4FA3D5;
+  --c-heat-light-1:#8ABDDE;
+  --c-heat-light-2:#5D9CC5;
+  --c-heat-light-3:#3778A2;
+  --c-heat-light-4:#1B5175;
+
+  /* one-off tints */
+  --c-navy-badge:#182234;
+  --c-navy-badge-border:#243347;
+  --c-navy-think:#20283a;
+  --c-navy-think-border:#2a3752;
+  --c-plum-950:#161225;
+}
+
+/* Tier 2 — semantic tokens. Every component and style.css rule references ONLY
+   these roles, never a raw color. Swapping the values under a [data-theme] block
+   re-skins the whole app. theme.svelte.ts sets data-theme on <html>.
+   Bare :root doubles as [data-theme="aetox"] — Aetox's own brand palette,
+   selectable in Settings like any other theme (DEFAULT_DARK in theme.svelte.ts
+   picks which theme fresh installs open with). The bare-:root duplication also
+   means these values still apply pre-hydration, before initTheme() stamps the
+   attribute, so there's no unthemed flash. */
+
+:root, :root[data-theme="aetox"] {
+  /* surfaces */
+  --surface-app:var(--c-ink-950);
+  --surface-sunken:var(--c-ink-925);
+  --surface-panel:var(--c-ink-900);
+  --surface-raised:var(--c-ink-850);
+  --surface-hover:var(--c-ink-820);
+  --surface-row-hover:var(--c-ink-810);
+  --surface-selected:var(--c-blue-950);
+  --surface-code:var(--c-ink-930);
+
+  /* borders */
+  --border-default:var(--c-ink-750);
+  --border-subtle:var(--c-ink-800);
+  --border-strong:var(--c-ink-650);
+  --border-input-focus:#2c3f5e;
+
+  /* text */
+  --text-primary:var(--c-slate-100);
+  --text-secondary:var(--c-slate-300);
+  --text-muted:var(--c-slate-500);
+  --text-dim:var(--c-slate-600);
+  --text-code:var(--c-slate-400);
+  --text-selected:#cfe0ff;
+  --text-on-accent:#08131f;
+  --text-on-interactive:#ffffff;
+
+  /* brand + accent */
+  --accent:var(--c-cyan-400);
+  --accent-bright:var(--c-cyan-300);
+  --brand-from:var(--c-cyan-300);
+  --brand-to:var(--c-cyan-400);
+  --glow-brand:#35d0e055;
+  --focus-ring:var(--c-cyan-400);
+
+  /* interactive */
+  --interactive:var(--c-blue-500);
+  --interactive-bright:var(--c-blue-400);
+  --interactive-hover-border:#20505a;
+  --overlay-focus:#2f6bff1f;
+  --shadow-interactive:#2f6bff88;
+  /* The lift under every popover — menu, picker, dropdown.
+     It was written out as a literal in six places, and a seventh reached for a
+     token named --shadow-lg that was never declared anywhere. That one silently
+     took its own inline fallback (34px/.38 against everyone else's 32px/.4), so
+     one menu in the app sat at a shadow a hair off every other one. A near-miss
+     does not read as a variant, it reads as a mistake, and it is the shape a
+     value takes when it has no home.
+     themeContrast.test.ts has a check for exactly this — "never asks for a
+     token no theme declares" — and it skipped the case, by design: a var() with
+     a fallback is exempt on the reasoning that it cannot vanish. True about
+     rendering, false about intent. It did not vanish; it quietly became a value
+     nobody chose.
+     Not overridden per theme, like the scrim below it — a light theme wants a
+     lighter lift than this and does not have one yet, which is a real flaw and
+     a separate change. */
+  --shadow-menu:0 12px 32px rgba(0,0,0,.4);
+  /* Scrim behind a modal. Declared once here and deliberately not overridden
+     per theme: a scrim's job is to push the page back, which means darkening it
+     — a light-theme scrim tinted to match the theme stops reading as "the page
+     behind is not available" and starts reading as a panel. */
+  --overlay-scrim:rgba(0,0,0,.55);
+
+  /* status */
+  --status-success:var(--c-green-500);
+  --status-success-bg:rgba(63,185,80,.14);
+  --status-success-border:rgba(63,185,80,.25);
+  --status-danger:var(--c-red-500);
+  --status-danger-bg:rgba(248,81,73,.12);
+  --status-danger-strong:var(--c-red-600);
+  --status-modified:var(--c-amber-500);
+  /* Declared once and not per theme, like --shadow-menu: it resolves through
+     --status-modified, which every named theme already overrides with its own
+     amber — so each theme's warn is its own yellow without fourteen more
+     declarations. Referenced by the MCP idle dot and the two rules that were
+     asking for it with a fallback nobody chose. */
+  --status-warn:var(--status-modified);
+  --status-untracked:var(--c-sky-400);
+
+  /* badges */
+  --badge-cyan-bg:var(--c-cyan-900);
+  --badge-cyan-text:var(--c-cyan-200);
+  --badge-cyan-border:var(--c-cyan-700);
+  --badge-blue-bg:var(--c-blue-900);
+  --badge-blue-text:var(--c-blue-300);
+  --badge-blue-border:var(--c-blue-700);
+  --badge-think-bg:var(--c-navy-think);
+  --badge-think-text:var(--c-blue-200);
+  --badge-think-border:var(--c-navy-think-border);
+  --chip-count-bg:var(--c-navy-badge);
+  --chip-count-text:var(--c-sky-300);
+  --chip-count-border:var(--c-navy-badge-border);
+
+  /* timeline active node */
+  --node-active-bg:var(--c-blue-900);
+  --node-active-text:var(--c-blue-350);
+  --node-active-ring:var(--c-blue-700);
+
+  /* diff */
+  --diff-add-bg:var(--status-success-bg);
+  --diff-add-text:var(--c-green-200);
+  --diff-add-rail:var(--status-success);
+  --diff-del-bg:var(--status-danger-bg);
+  --diff-del-text:var(--c-red-200);
+  --diff-del-rail:var(--status-danger);
+  --diff-hunk-bg:var(--c-plum-950);
+  --diff-hunk-text:var(--c-violet-400);
+
+  /* charts — the one family of roles a named theme may leave alone. A theme
+     re-skins the app's chrome; a categorical series palette is validated as a
+     set (CVD separation, lightness band, contrast) and re-picking it per theme
+     would mean re-validating fourteen sets. These are validated once against
+     both the darkest and lightest surfaces in this file, so every theme
+     inherits a set that passes. Only the heat ramp is overridden, by the light
+     themes below, because a sequential ramp must be re-stepped per ground. */
+  --chart-1:var(--c-chart-1);
+  --chart-2:var(--c-chart-2);
+  --chart-3:var(--c-chart-3);
+  --chart-4:var(--c-chart-4);
+  --chart-5:var(--c-chart-5);
+  --chart-other:var(--text-dim); /* the tail past slot 5, deliberately mute */
+  --chart-heat-1:var(--c-heat-dark-1);
+  --chart-heat-2:var(--c-heat-dark-2);
+  --chart-heat-3:var(--c-heat-dark-3);
+  --chart-heat-4:var(--c-heat-dark-4);
+
+  /* chrome */
+  --scrollbar-thumb:#2a2a2e80;
+  --scrollbar-thumb-hover:#3a3a40;
+}
+
+
+/* ---------- named themes — each block is a full, independent override of
+   every semantic token above. Palettes sourced from each project's official
+   repo (see docs/opencode-study-style research, 2026-07-23). ---------- */
+
+:root[data-theme="catppuccin-mocha"] {
+  --surface-app:#11111b; --surface-sunken:#181825; --surface-panel:#1e1e2e; --surface-raised:#313244;
+  --surface-hover:#45475a; --surface-row-hover:#313244; --surface-selected:#332e4d; --surface-code:#181825;
+  --border-default:#45475a; --border-subtle:#313244; --border-strong:#585b70; --border-input-focus:#cba6f7;
+  --text-primary:#cdd6f4; --text-secondary:#bac2de; --text-muted:#a6adc8; --text-dim:#7f849c;
+  --text-code:#bac2de; --text-selected:#b4befe; --text-on-accent:#11111b; --text-on-interactive:#ffffff;
+  --accent:#cba6f7; --accent-bright:#f5c2e7; --brand-from:#cba6f7; --brand-to:#f5c2e7;
+  --glow-brand:#cba6f755; --focus-ring:#cba6f7;
+  --interactive:#89b4fa; --interactive-bright:#74c7ec; --interactive-hover-border:#3c5a8a;
+  --overlay-focus:#89b4fa1f; --shadow-interactive:#89b4fa88;
+  --status-success:#a6e3a1; --status-success-bg:rgba(166,227,161,.14); --status-success-border:rgba(166,227,161,.25);
+  --status-danger:#f38ba8; --status-danger-bg:rgba(243,139,168,.12); --status-danger-strong:#eba0ac;
+  --status-modified:#f9e2af; --status-untracked:#89dceb;
+  --badge-cyan-bg:#16302e; --badge-cyan-text:#94e2d5; --badge-cyan-border:#245048;
+  --badge-blue-bg:#1c2b4a; --badge-blue-text:#89b4fa; --badge-blue-border:#2e4470;
+  --badge-think-bg:#241f3d; --badge-think-text:#b4befe; --badge-think-border:#3a3260;
+  --chip-count-bg:#1c2b4a; --chip-count-text:#74c7ec; --chip-count-border:#2e4470;
+  --node-active-bg:#1c2b4a; --node-active-text:#89b4fa; --node-active-ring:#2e4470;
+  --diff-add-text:#a6e3a1; --diff-del-text:#f38ba8; --diff-hunk-bg:#241f3d; --diff-hunk-text:#cba6f7;
+  --scrollbar-thumb:#45475a80; --scrollbar-thumb-hover:#585b70;
+}
+
+:root[data-theme="catppuccin-latte"] {
+  --surface-app:#eff1f5; --surface-sunken:#e6e9ef; --surface-panel:#ffffff; --surface-raised:#ffffff;
+  --surface-hover:#ccd0da; --surface-row-hover:#ccd0da; --surface-selected:#dde3ff; --surface-code:#e6e9ef;
+  --border-default:#bcc0cc; --border-subtle:#ccd0da; --border-strong:#acb0be; --border-input-focus:#8839ef;
+  --text-primary:#4c4f69; --text-secondary:#5c5f77; --text-muted:#6c6f85; --text-dim:#8c8fa1;
+  --text-code:#5c5f77; --text-selected:#8337e5; --text-on-accent:#ffffff; --text-on-interactive:#ffffff;
+  --accent:#8839ef; --accent-bright:#ea76cb; --brand-from:#8839ef; --brand-to:#6a2fc4;
+  --glow-brand:#8839ef33; --focus-ring:#8839ef;
+  --interactive:#1e66f5; --interactive-bright:#209fb5; --interactive-hover-border:#9fb4ea;
+  --overlay-focus:#1e66f526; --shadow-interactive:#1e66f555;
+  --status-success:#40a02b; --status-success-bg:rgba(64,160,43,.12); --status-success-border:rgba(64,160,43,.28);
+  --status-danger:#d20f39; --status-danger-bg:rgba(210,15,57,.10); --status-danger-strong:#e64553;
+  --status-modified:#df8e1d; --status-untracked:#04a5e5;
+  --badge-cyan-bg:#d9f3f0; --badge-cyan-text:#179299; --badge-cyan-border:#a9dfe0;
+  --badge-blue-bg:#e2ecff; --badge-blue-text:#1e66f5; --badge-blue-border:#c3d6f7;
+  --badge-think-bg:#eae6ff; --badge-think-text:#7287fd; --badge-think-border:#d3ccf5;
+  --chip-count-bg:#e2ecff; --chip-count-text:#1e66f5; --chip-count-border:#c3d6f7;
+  --node-active-bg:#e2ecff; --node-active-text:#1e66f5; --node-active-ring:#b6ccf3;
+  --diff-add-text:#40a02b; --diff-del-text:#d20f39; --diff-hunk-bg:#f0eafb; --diff-hunk-text:#8839ef;
+  --scrollbar-thumb:#ccd0da99; --scrollbar-thumb-hover:#acb0be;
+  /* light ground: the heat ramp is re-stepped, not flipped — the pale end
+     must still clear a pale surface. Series hues need no override. */
+  --chart-heat-1:var(--c-heat-light-1); --chart-heat-2:var(--c-heat-light-2);
+  --chart-heat-3:var(--c-heat-light-3); --chart-heat-4:var(--c-heat-light-4);
+}
+
+:root[data-theme="nord"] {
+  --surface-app:#262b34; --surface-sunken:#2e3440; --surface-panel:#3b4252; --surface-raised:#434c5e;
+  --surface-hover:#434c5e; --surface-row-hover:#3f4859; --surface-selected:#3b5a72; --surface-code:#3b4252;
+  --border-default:#434c5e; --border-subtle:#3b4252; --border-strong:#4c566a; --border-input-focus:#88c0d0;
+  --text-primary:#eceff4; --text-secondary:#d8dee9; --text-muted:#9099ae; --text-dim:#868da0;
+  --text-code:#d8dee9; --text-selected:#b3d7e2; --text-on-accent:#2e3440; --text-on-interactive:#ffffff;
+  --accent:#88c0d0; --accent-bright:#8fbcbb; --brand-from:#8fbcbb; --brand-to:#88c0d0;
+  --glow-brand:#88c0d055; --focus-ring:#88c0d0;
+  --interactive:#81a1c1; --interactive-bright:#88c0d0; --interactive-hover-border:#5e81ac;
+  --overlay-focus:#81a1c11f; --shadow-interactive:#81a1c188;
+  --status-success:#a3be8c; --status-success-bg:rgba(163,190,140,.14); --status-success-border:rgba(163,190,140,.25);
+  --status-danger:#bf616a; --status-danger-bg:rgba(191,97,106,.12); --status-danger-strong:#a54e57;
+  --status-modified:#ebcb8b; --status-untracked:#81a1c1;
+  --badge-cyan-bg:#24343a; --badge-cyan-text:#8fbcbb; --badge-cyan-border:#344a4f;
+  --badge-blue-bg:#2a3644; --badge-blue-text:#81a1c1; --badge-blue-border:#3c4d63;
+  --badge-think-bg:#2b3345; --badge-think-text:#b48ead; --badge-think-border:#3d4760;
+  --chip-count-bg:#2a3644; --chip-count-text:#88c0d0; --chip-count-border:#3c4d63;
+  --node-active-bg:#2a3644; --node-active-text:#81a1c1; --node-active-ring:#3c4d63;
+  --diff-add-text:#a3be8c; --diff-del-text:#bf616a; --diff-hunk-bg:#2b2f45; --diff-hunk-text:#b48ead;
+  --scrollbar-thumb:#4c566a80; --scrollbar-thumb-hover:#5b6579;
+}
+
+:root[data-theme="dracula"] {
+  --surface-app:#1e1f29; --surface-sunken:#21222c; --surface-panel:#282a36; --surface-raised:#343646;
+  --surface-hover:#44475a; --surface-row-hover:#343646; --surface-selected:#44475a; --surface-code:#21222c;
+  --border-default:#44475a; --border-subtle:#343646; --border-strong:#6272a4; --border-input-focus:#bd93f9;
+  --text-primary:#f8f8f2; --text-secondary:#e2e2dc; --text-muted:#a8a8a2; --text-dim:#6272a4;
+  --text-code:#e2e2dc; --text-selected:#ff94d1; --text-on-accent:#1e1f29; --text-on-interactive:#ffffff;
+  --accent:#bd93f9; --accent-bright:#ff79c6; --brand-from:#bd93f9; --brand-to:#ff79c6;
+  --glow-brand:#bd93f955; --focus-ring:#bd93f9;
+  --interactive:#8be9fd; --interactive-bright:#80f0ff; --interactive-hover-border:#4d7d8a;
+  --overlay-focus:#8be9fd1f; --shadow-interactive:#8be9fd88;
+  --status-success:#50fa7b; --status-success-bg:rgba(80,250,123,.14); --status-success-border:rgba(80,250,123,.25);
+  --status-danger:#ff5555; --status-danger-bg:rgba(255,85,85,.12); --status-danger-strong:#e64545;
+  --status-modified:#f1fa8c; --status-untracked:#8be9fd;
+  --badge-cyan-bg:#1f3a3d; --badge-cyan-text:#8be9fd; --badge-cyan-border:#2f5559;
+  --badge-blue-bg:#232a45; --badge-blue-text:#8be9fd; --badge-blue-border:#34406a;
+  --badge-think-bg:#2c2640; --badge-think-text:#bd93f9; --badge-think-border:#443a63;
+  --chip-count-bg:#232a45; --chip-count-text:#8be9fd; --chip-count-border:#34406a;
+  --node-active-bg:#232a45; --node-active-text:#8be9fd; --node-active-ring:#34406a;
+  --diff-add-text:#50fa7b; --diff-del-text:#ff5555; --diff-hunk-bg:#2c2640; --diff-hunk-text:#bd93f9;
+  --scrollbar-thumb:#44475a80; --scrollbar-thumb-hover:#6272a4;
+}
+
+:root[data-theme="rose-pine"] {
+  --surface-app:#191724; --surface-sunken:#1f1d2e; --surface-panel:#211f30; --surface-raised:#26233a;
+  --surface-hover:#2d2a42; --surface-row-hover:#26233a; --surface-selected:#33314e; --surface-code:#1f1d2e;
+  --border-default:#2f2c42; --border-subtle:#1f1d2e; --border-strong:#6e6a86; --border-input-focus:#c4a7e7;
+  --text-primary:#e0def4; --text-secondary:#908caa; --text-muted:#726e8a; --text-dim:#656179;
+  --text-code:#908caa; --text-selected:#c4a7e7; --text-on-accent:#191724; --text-on-interactive:#ffffff;
+  --accent:#c4a7e7; --accent-bright:#ebbcba; --brand-from:#c4a7e7; --brand-to:#9ccfd8;
+  --glow-brand:#c4a7e755; --focus-ring:#c4a7e7;
+  --interactive:#9ccfd8; --interactive-bright:#b3dde3; --interactive-hover-border:#31748f;
+  --overlay-focus:#9ccfd81f; --shadow-interactive:#9ccfd888;
+  --status-success:#8bbd8b; --status-success-bg:rgba(139,189,139,.14); --status-success-border:rgba(139,189,139,.25);
+  --status-danger:#eb6f92; --status-danger-bg:rgba(235,111,146,.12); --status-danger-strong:#d15578;
+  --status-modified:#f6c177; --status-untracked:#9ccfd8;
+  --badge-cyan-bg:#1c3438; --badge-cyan-text:#9ccfd8; --badge-cyan-border:#2c4d52;
+  --badge-blue-bg:#1e3540; --badge-blue-text:#56949f; --badge-blue-border:#2d4d5a;
+  --badge-think-bg:#2a2540; --badge-think-text:#c4a7e7; --badge-think-border:#3e3660;
+  --chip-count-bg:#1e3540; --chip-count-text:#9ccfd8; --chip-count-border:#2d4d5a;
+  --node-active-bg:#1e3540; --node-active-text:#9ccfd8; --node-active-ring:#2d4d5a;
+  --diff-add-text:#8bbd8b; --diff-del-text:#eb6f92; --diff-hunk-bg:#2a2540; --diff-hunk-text:#c4a7e7;
+  --scrollbar-thumb:#26233a80; --scrollbar-thumb-hover:#33314e;
+}
+
+:root[data-theme="rose-pine-dawn"] {
+  --surface-app:#faf4ed; --surface-sunken:#f2e9e1; --surface-panel:#fffaf3; --surface-raised:#fffaf3;
+  --surface-hover:#f2e9e1; --surface-row-hover:#f2e9e1; --surface-selected:#e7ddf5; --surface-code:#f2e9e1;
+  --border-default:#dfd3c6; --border-subtle:#f2e9e1; --border-strong:#9893a5; --border-input-focus:#907aa9;
+  --text-primary:#464261; --text-secondary:#74708d; --text-muted:#898495; --text-dim:#9792a0;
+  --text-code:#74708d; --text-selected:#6d5d80; --text-on-accent:#ffffff; --text-on-interactive:#ffffff;
+  --accent:#907aa9; --accent-bright:#d7827e; --brand-from:#907aa9; --brand-to:#286983;
+  --glow-brand:#907aa933; --focus-ring:#907aa9;
+  --interactive:#286983; --interactive-bright:#56949f; --interactive-hover-border:#a9c7d2;
+  --overlay-focus:#28698326; --shadow-interactive:#28698355;
+  --status-success:#6a9955; --status-success-bg:rgba(106,153,85,.12); --status-success-border:rgba(106,153,85,.28);
+  --status-danger:#b4637a; --status-danger-bg:rgba(180,99,122,.10); --status-danger-strong:#9c4e64;
+  --status-modified:#ea9d34; --status-untracked:#56949f;
+  --badge-cyan-bg:#e1eef0; --badge-cyan-text:#286983; --badge-cyan-border:#bcdbe0;
+  --badge-blue-bg:#e1eef0; --badge-blue-text:#56949f; --badge-blue-border:#bcdbe0;
+  --badge-think-bg:#ece5f5; --badge-think-text:#907aa9; --badge-think-border:#d5c7e8;
+  --chip-count-bg:#e1eef0; --chip-count-text:#286983; --chip-count-border:#bcdbe0;
+  --node-active-bg:#e1eef0; --node-active-text:#286983; --node-active-ring:#bcdbe0;
+  --diff-add-text:#4f7a3d; --diff-del-text:#b4637a; --diff-hunk-bg:#ece5f5; --diff-hunk-text:#907aa9;
+  --scrollbar-thumb:#e4d9cd99; --scrollbar-thumb-hover:#d7cabc;
+  /* light ground: the heat ramp is re-stepped, not flipped — the pale end
+     must still clear a pale surface. Series hues need no override. */
+  --chart-heat-1:var(--c-heat-light-1); --chart-heat-2:var(--c-heat-light-2);
+  --chart-heat-3:var(--c-heat-light-3); --chart-heat-4:var(--c-heat-light-4);
+}
+
+:root[data-theme="gruvbox-dark"] {
+  --surface-app:#1d2021; --surface-sunken:#282828; --surface-panel:#32302f; --surface-raised:#3c3836;
+  --surface-hover:#504945; --surface-row-hover:#3c3836; --surface-selected:#4a4030; --surface-code:#282828;
+  --border-default:#504945; --border-subtle:#3c3836; --border-strong:#665c54; --border-input-focus:#fe8019;
+  --text-primary:#ebdbb2; --text-secondary:#bdae93; --text-muted:#a89984; --text-dim:#928374;
+  --text-code:#d5c4a1; --text-selected:#fabd2f; --text-on-accent:#1d2021; --text-on-interactive:#1d2021;
+  --accent:#fe8019; --accent-bright:#fabd2f; --brand-from:#fe8019; --brand-to:#fabd2f;
+  --glow-brand:#fe801955; --focus-ring:#fe8019;
+  --interactive:#83a598; --interactive-bright:#8ec07c; --interactive-hover-border:#458588;
+  --overlay-focus:#83a5981f; --shadow-interactive:#83a59888;
+  --status-success:#b8bb26; --status-success-bg:rgba(184,187,38,.14); --status-success-border:rgba(184,187,38,.25);
+  --status-danger:#fb4934; --status-danger-bg:rgba(251,73,52,.12); --status-danger-strong:#cc241d;
+  --status-modified:#fabd2f; --status-untracked:#83a598;
+  --badge-cyan-bg:#2a3d2e; --badge-cyan-text:#8ec07c; --badge-cyan-border:#3f5943;
+  --badge-blue-bg:#2a3a3d; --badge-blue-text:#83a598; --badge-blue-border:#3f5559;
+  --badge-think-bg:#3a2d3a; --badge-think-text:#d3869b; --badge-think-border:#56435a;
+  --chip-count-bg:#2a3a3d; --chip-count-text:#83a598; --chip-count-border:#3f5559;
+  --node-active-bg:#2a3a3d; --node-active-text:#83a598; --node-active-ring:#3f5559;
+  --diff-add-text:#b8bb26; --diff-del-text:#fb4934; --diff-hunk-bg:#3a2d3a; --diff-hunk-text:#d3869b;
+  --scrollbar-thumb:#50494580; --scrollbar-thumb-hover:#665c54;
+}
+
+:root[data-theme="gruvbox-light"] {
+  --surface-app:#f9f5d7; --surface-sunken:#fbf1c7; --surface-panel:#f2e5bc; --surface-raised:#ffffff;
+  --surface-hover:#ebdbb2; --surface-row-hover:#ebdbb2; --surface-selected:#f0dfae; --surface-code:#fbf1c7;
+  --border-default:#d5c4a1; --border-subtle:#ebdbb2; --border-strong:#bdae93; --border-input-focus:#d65d0e;
+  --text-primary:#3c3836; --text-secondary:#665c54; --text-muted:#7c6f64; --text-dim:#928374;
+  --text-code:#504945; --text-selected:#af3a03; --text-on-accent:#fbf1c7; --text-on-interactive:#fbf1c7;
+  --accent:#af3a03; --accent-bright:#d65d0e; --brand-from:#af3a03; --brand-to:#d65d0e;
+  --glow-brand:#af3a0333; --focus-ring:#af3a03;
+  --interactive:#076678; --interactive-bright:#0e7f94; --interactive-hover-border:#9fc3cb;
+  --overlay-focus:#07667826; --shadow-interactive:#07667855;
+  --status-success:#79740e; --status-success-bg:rgba(121,116,14,.12); --status-success-border:rgba(121,116,14,.28);
+  --status-danger:#9d0006; --status-danger-bg:rgba(157,0,6,.10); --status-danger-strong:#7a0005;
+  --status-modified:#b57614; --status-untracked:#076678;
+  --badge-cyan-bg:#dde8e0; --badge-cyan-text:#427b58; --badge-cyan-border:#b9d4c2;
+  --badge-blue-bg:#dbe9ec; --badge-blue-text:#076678; --badge-blue-border:#b3d4da;
+  --badge-think-bg:#ece1ec; --badge-think-text:#8f3f71; --badge-think-border:#d7bfd6;
+  --chip-count-bg:#dbe9ec; --chip-count-text:#076678; --chip-count-border:#b3d4da;
+  --node-active-bg:#dbe9ec; --node-active-text:#076678; --node-active-ring:#b3d4da;
+  --diff-add-text:#79740e; --diff-del-text:#9d0006; --diff-hunk-bg:#ece1ec; --diff-hunk-text:#8f3f71;
+  --scrollbar-thumb:#d5c4a199; --scrollbar-thumb-hover:#bdae93;
+  /* light ground: the heat ramp is re-stepped, not flipped — the pale end
+     must still clear a pale surface. Series hues need no override. */
+  --chart-heat-1:var(--c-heat-light-1); --chart-heat-2:var(--c-heat-light-2);
+  --chart-heat-3:var(--c-heat-light-3); --chart-heat-4:var(--c-heat-light-4);
+}
+
+:root[data-theme="one-dark"] {
+  --surface-app:#21252b; --surface-sunken:#23272e; --surface-panel:#282c34; --surface-raised:#2f343e;
+  --surface-hover:#3e4451; --surface-row-hover:#323842; --surface-selected:#2d405e; --surface-code:#23272e;
+  --border-default:#3e4451; --border-subtle:#323842; --border-strong:#4b5263; --border-input-focus:#61afef;
+  --text-primary:#d7dae0; --text-secondary:#abb2bf; --text-muted:#8a919d; --text-dim:#767f8c;
+  --text-code:#abb2bf; --text-selected:#8fc7f7; --text-on-accent:#21252b; --text-on-interactive:#ffffff;
+  --accent:#c678dd; --accent-bright:#de8ff0; --brand-from:#c678dd; --brand-to:#61afef;
+  --glow-brand:#c678dd55; --focus-ring:#61afef;
+  --interactive:#61afef; --interactive-bright:#56b6c2; --interactive-hover-border:#3d5a80;
+  --overlay-focus:#61afef1f; --shadow-interactive:#61afef88;
+  --status-success:#98c379; --status-success-bg:rgba(152,195,121,.14); --status-success-border:rgba(152,195,121,.25);
+  --status-danger:#e06c75; --status-danger-bg:rgba(224,108,117,.12); --status-danger-strong:#be5046;
+  --status-modified:#e5c07b; --status-untracked:#56b6c2;
+  --badge-cyan-bg:#1e3a3d; --badge-cyan-text:#56b6c2; --badge-cyan-border:#2e5559;
+  --badge-blue-bg:#223350; --badge-blue-text:#61afef; --badge-blue-border:#33496e;
+  --badge-think-bg:#322a44; --badge-think-text:#c678dd; --badge-think-border:#4a3e63;
+  --chip-count-bg:#223350; --chip-count-text:#56b6c2; --chip-count-border:#33496e;
+  --node-active-bg:#223350; --node-active-text:#61afef; --node-active-ring:#33496e;
+  --diff-add-text:#98c379; --diff-del-text:#e06c75; --diff-hunk-bg:#322a44; --diff-hunk-text:#c678dd;
+  --scrollbar-thumb:#3e445180; --scrollbar-thumb-hover:#4b5263;
+}
+
+:root[data-theme="everforest-dark"] {
+  --surface-app:#232a2e; --surface-sunken:#2d353b; --surface-panel:#343f44; --surface-raised:#3d484d;
+  --surface-hover:#475258; --surface-row-hover:#3d484d; --surface-selected:#384b55; --surface-code:#2d353b;
+  --border-default:#475258; --border-subtle:#3d484d; --border-strong:#56635f; --border-input-focus:#a7c080;
+  --text-primary:#d3c6aa; --text-secondary:#c0b7a2; --text-muted:#9da9a0; --text-dim:#859289;
+  --text-code:#c0b7a2; --text-selected:#a7c080; --text-on-accent:#2d353b; --text-on-interactive:#2d353b;
+  --accent:#a7c080; --accent-bright:#83c092; --brand-from:#a7c080; --brand-to:#83c092;
+  --glow-brand:#a7c08055; --focus-ring:#a7c080;
+  --interactive:#7fbbb3; --interactive-bright:#83c092; --interactive-hover-border:#4a6e68;
+  --overlay-focus:#7fbbb31f; --shadow-interactive:#7fbbb388;
+  --status-success:#a7c080; --status-success-bg:rgba(167,192,128,.14); --status-success-border:rgba(167,192,128,.25);
+  --status-danger:#e67e80; --status-danger-bg:rgba(230,126,128,.12); --status-danger-strong:#d15f63;
+  --status-modified:#dbbc7f; --status-untracked:#7fbbb3;
+  --badge-cyan-bg:#2b4340; --badge-cyan-text:#83c092; --badge-cyan-border:#3d5a55;
+  --badge-blue-bg:#2b414a; --badge-blue-text:#7fbbb3; --badge-blue-border:#3d5a66;
+  --badge-think-bg:#43363f; --badge-think-text:#d699b6; --badge-think-border:#5a4653;
+  --chip-count-bg:#2b414a; --chip-count-text:#83c092; --chip-count-border:#3d5a66;
+  --node-active-bg:#2b414a; --node-active-text:#7fbbb3; --node-active-ring:#3d5a66;
+  --diff-add-text:#a7c080; --diff-del-text:#e67e80; --diff-hunk-bg:#43363f; --diff-hunk-text:#d699b6;
+  --scrollbar-thumb:#47525880; --scrollbar-thumb-hover:#4f585e;
+}
+
+:root[data-theme="kanagawa-wave"] {
+  --surface-app:#16161d; --surface-sunken:#1a1a22; --surface-panel:#1f1f28; --surface-raised:#2a2a37;
+  --surface-hover:#363646; --surface-row-hover:#2a2a37; --surface-selected:#223249; --surface-code:#1a1a22;
+  --border-default:#363646; --border-subtle:#2a2a37; --border-strong:#54546d; --border-input-focus:#7e9cd8;
+  --text-primary:#dcd7ba; --text-secondary:#c8c093; --text-muted:#918f84; --text-dim:#7c7a70;
+  --text-code:#c8c093; --text-selected:#7fb4ca; --text-on-accent:#16161d; --text-on-interactive:#16161d;
+  --accent:#957fb8; --accent-bright:#9cabca; --brand-from:#957fb8; --brand-to:#7e9cd8;
+  --glow-brand:#957fb855; --focus-ring:#7e9cd8;
+  --interactive:#7e9cd8; --interactive-bright:#7fb4ca; --interactive-hover-border:#49577c;
+  --overlay-focus:#7e9cd81f; --shadow-interactive:#7e9cd888;
+  --status-success:#98bb6c; --status-success-bg:rgba(152,187,108,.14); --status-success-border:rgba(152,187,108,.25);
+  --status-danger:#ff5d62; --status-danger-bg:rgba(255,93,98,.12); --status-danger-strong:#e82424;
+  --status-modified:#e6c384; --status-untracked:#7fb4ca;
+  --badge-cyan-bg:#23383a; --badge-cyan-text:#7aa89f; --badge-cyan-border:#35504d;
+  --badge-blue-bg:#223249; --badge-blue-text:#7e9cd8; --badge-blue-border:#2d4f67;
+  --badge-think-bg:#2e2a40; --badge-think-text:#957fb8; --badge-think-border:#443e5e;
+  --chip-count-bg:#223249; --chip-count-text:#7fb4ca; --chip-count-border:#2d4f67;
+  --node-active-bg:#223249; --node-active-text:#7e9cd8; --node-active-ring:#2d4f67;
+  --diff-add-text:#98bb6c; --diff-del-text:#ff5d62; --diff-hunk-bg:#2e2a40; --diff-hunk-text:#957fb8;
+  --scrollbar-thumb:#36364680; --scrollbar-thumb-hover:#54546d;
+}
+
+:root[data-theme="solarized-light"] {
+  --surface-app:#fdf6e3; --surface-sunken:#eee8d5; --surface-panel:#f7efdc; --surface-raised:#fffcf2;
+  --surface-hover:#eee8d5; --surface-row-hover:#eee8d5; --surface-selected:#d9e8f5; --surface-code:#eee8d5;
+  --border-default:#d9d2c2; --border-subtle:#eee8d5; --border-strong:#b8b09c; --border-input-focus:#268bd2;
+  --text-primary:#073642; --text-secondary:#586e75; --text-muted:#657b83; --text-dim:#839496;
+  --text-code:#586e75; --text-selected:#1b689e; --text-on-accent:#ffffff; --text-on-interactive:#ffffff;
+  --accent:#268bd2; --accent-bright:#2aa198; --brand-from:#268bd2; --brand-to:#2aa198;
+  --glow-brand:#268bd233; --focus-ring:#268bd2;
+  --interactive:#268bd2; --interactive-bright:#2aa198; --interactive-hover-border:#a3cbe8;
+  --overlay-focus:#268bd226; --shadow-interactive:#268bd255;
+  --status-success:#859900; --status-success-bg:rgba(133,153,0,.12); --status-success-border:rgba(133,153,0,.28);
+  --status-danger:#dc322f; --status-danger-bg:rgba(220,50,47,.10); --status-danger-strong:#b02b25;
+  --status-modified:#b58900; --status-untracked:#2aa198;
+  --badge-cyan-bg:#dff1ef; --badge-cyan-text:#1e7d76; --badge-cyan-border:#b5dfdb;
+  --badge-blue-bg:#dcebf7; --badge-blue-text:#268bd2; --badge-blue-border:#b7d8ef;
+  --badge-think-bg:#e6e6f5; --badge-think-text:#6c71c4; --badge-think-border:#c9c9e8;
+  --chip-count-bg:#dcebf7; --chip-count-text:#1e7d76; --chip-count-border:#b7d8ef;
+  --node-active-bg:#dcebf7; --node-active-text:#268bd2; --node-active-ring:#b7d8ef;
+  --diff-add-text:#657b00; --diff-del-text:#dc322f; --diff-hunk-bg:#e6e6f5; --diff-hunk-text:#6c71c4;
+  --scrollbar-thumb:#d9d2c299; --scrollbar-thumb-hover:#b8b09c;
+  /* light ground: the heat ramp is re-stepped, not flipped — the pale end
+     must still clear a pale surface. Series hues need no override. */
+  --chart-heat-1:var(--c-heat-light-1); --chart-heat-2:var(--c-heat-light-2);
+  --chart-heat-3:var(--c-heat-light-3); --chart-heat-4:var(--c-heat-light-4);
+}
+
+:root[data-theme="tokyo-night"] {
+  --surface-app:#0c0e14; --surface-sunken:#16161e; --surface-panel:#1a1b26; --surface-raised:#292e42;
+  --surface-hover:#323852; --surface-row-hover:#292e42; --surface-selected:#2c3454; --surface-code:#16161e;
+  --border-default:#3b4261; --border-subtle:#292e42; --border-strong:#545c7e; --border-input-focus:#7aa2f7;
+  --text-primary:#c0caf5; --text-secondary:#a9b1d6; --text-muted:#737aa2; --text-dim:#626a91;
+  --text-code:#a9b1d6; --text-selected:#89ddff; --text-on-accent:#16161e; --text-on-interactive:#ffffff;
+  --accent:#9d7cd8; --accent-bright:#bb9af7; --brand-from:#9d7cd8; --brand-to:#7aa2f7;
+  --glow-brand:#9d7cd855; --focus-ring:#7aa2f7;
+  --interactive:#7aa2f7; --interactive-bright:#2ac3de; --interactive-hover-border:#3d59a1;
+  --overlay-focus:#7aa2f71f; --shadow-interactive:#7aa2f788;
+  --status-success:#9ece6a; --status-success-bg:rgba(158,206,106,.14); --status-success-border:rgba(158,206,106,.25);
+  --status-danger:#f7768e; --status-danger-bg:rgba(247,118,142,.12); --status-danger-strong:#db4b4b;
+  --status-modified:#e0af68; --status-untracked:#7dcfff;
+  --badge-cyan-bg:#1c3438; --badge-cyan-text:#7dcfff; --badge-cyan-border:#2c4f54;
+  --badge-blue-bg:#1f2a45; --badge-blue-text:#7aa2f7; --badge-blue-border:#30406b;
+  --badge-think-bg:#2a2445; --badge-think-text:#bb9af7; --badge-think-border:#3d3566;
+  --chip-count-bg:#1f2a45; --chip-count-text:#2ac3de; --chip-count-border:#30406b;
+  --node-active-bg:#1f2a45; --node-active-text:#7aa2f7; --node-active-ring:#30406b;
+  --diff-add-text:#9ece6a; --diff-del-text:#f7768e; --diff-hunk-bg:#2a2445; --diff-hunk-text:#bb9af7;
+  --scrollbar-thumb:#3b426180; --scrollbar-thumb-hover:#545c7e;
+}
+
+/* Tier 2 — type + shape scale. Same contract as theme.css: style.css and every
+   component reference ONLY these tokens, never a raw px size.
+
+   Why px and not rem: style.css sizes everything in fixed px (see
+   lib/systemFont.svelte.ts for the full reasoning — the whole-app zoom control
+   exists precisely because a root font-size var would only cascade to the
+   handful of rules that don't set their own size). Keeping the scale in px
+   means these tokens drop into existing rules as a straight substitution.
+
+   --fs-scale is the one knob: typeScale.svelte.ts writes it to the root element
+   and every step follows. It multiplies TEXT only — the whole-UI zoom
+   (padding, icons, controls) stays its own separate control, because "the
+   letters are too small" and "everything is too small" are different
+   complaints with different fixes.
+
+   The steps below absorb the 23 ad-hoc sizes that were in style.css:
+     10 / 10.5 / 11        -> 2xs      15 / 15.5 / 16   -> lg
+     11.5 / 12 / 12.5      -> xs       16.5 / 17 / 18   -> xl
+     13 / 13.5             -> sm       19 / 21.5        -> 2xl
+     14 / 14.5             -> md       23 / 24 / 26 / 26.5 -> 3xl
+                                       30               -> 4xl */
+
+:root {
+  --fs-scale: 1;
+
+  --fs-2xs:  calc(11px   * var(--fs-scale));  /* badge, tag, group eyebrow */
+  --fs-xs:   calc(12px   * var(--fs-scale));  /* caption, chart axis, path */
+  --fs-sm:   calc(13px   * var(--fs-scale));  /* row description, legend */
+  --fs-md:   calc(14px   * var(--fs-scale));  /* control, table cell, row title */
+  --fs-lg:   calc(15.5px * var(--fs-scale));  /* body — must equal SYSTEM_BASE_PX */
+  --fs-xl:   calc(17px   * var(--fs-scale));  /* sub-heading, stat model name */
+  --fs-2xl:  calc(20px   * var(--fs-scale));  /* card title, provider name */
+  --fs-3xl:  calc(24px   * var(--fs-scale));  /* page heading */
+  --fs-4xl:  calc(30px   * var(--fs-scale));  /* stat figure, device code */
+
+  /* Shape. Not scaled: a corner radius is a property of the surface, not of
+     the text on it, and scaling it with the type makes cards look inflated. */
+  --r-2xs:2px;    /* chart segment, share bar */
+  --r-xs:4px;     /* inline chip, heat cell */
+  --r-sm:6px;     /* control, small button */
+  --r-md:8px;     /* row, nav item, input */
+  --r-lg:12px;    /* card */
+  --r-xl:16px;    /* dialog, composer */
+  --r-full:999px; /* pill badge, toggle */
+
+  /* Motion. Durations live here, next to shape, because they are the same kind
+     of value: a property of the surface rather than of the text on it, and
+     equally something two screens must not answer differently.
+     They are here rather than in a document. DESIGN.md names these tokens and
+     never the milliseconds — a written "90ms" is a second place answering
+     "how long is a press", and the day it stops matching this file is the day
+     one of the two starts lying.
+     Motion in Aetox answers two questions and no others: did the press
+     register, and what is happening right now. There is no token for a slow
+     decorative entrance, because there is no such thing here. */
+  --dur-press:90ms;         /* the squash under a finger */
+  --dur-arrive:300ms;       /* a screen or panel coming in */
+  --dur-settle:340ms;       /* a tick landing on what was just chosen */
+  --dur-hold-success:850ms; /* "it worked" is read before the screen moves on */
+  --dur-ground:700ms;       /* the watermark behind an empty room */
+  --dur-hold-done:1600ms;   /* a finished setup stands still before it leaves */
+  /* The working light coming up and going down. Asymmetric on purpose, and
+     the asymmetry is the whole point: work STARTS at a moment, so the light
+     should be there by the time the eye arrives, and it stops between beats
+     that belong to one job, so going down slowly is what makes a sequence of
+     them read as one thing rather than as a light with a fault. Owner,
+     24 ส.ค.: *"เจอปุ๊บทำงาน หยุดปุ๊บหาย ... เผื่อมันทำงานหลายจังหวะจะได้ดูต่อเนื่อง"*. */
+  --beam-in:160ms;          /* the working light arriving */
+  --beam-out:750ms;         /* and leaving, slowly enough to bridge a beat */
+  /* One tool finishing and the next one starting, in the timeline under a
+     reply. Three durations rather than one because three things happen at
+     once and they are not the same size of event: a row arrives, the block
+     that marks the live row travels to it, and the spinner on the row that
+     just finished becomes a tick. Held together so they can be tuned as a
+     set — the owner picked this set (25 ส.ค.) over a softer 180/220/160,
+     which is the other tuning that was on the table and the one to try first
+     if this ever reads as abrupt. */
+  --swap-row-in:120ms;      /* the new row fading in */
+  --swap-block:150ms;       /* the block travelling to it */
+  --swap-glyph:110ms;       /* the ring on the finished row becoming a tick */
+  /* Overshoot is for something arriving that the user caused. Never for
+     something that merely appeared. */
+  --ease-overshoot:cubic-bezier(.2,.9,.3,1.5);
+  --ease-arrive:cubic-bezier(.2,.7,.3,1);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--surface-app); color: var(--text-primary);
+  font-family: var(--sans); font-size: var(--fs-lg); line-height: 1.5;
+  padding: 34px 30px 72px;
+}
+h1 { font-size: var(--fs-xl); font-weight: 600; margin: 0 0 5px; }
+.lede { color: var(--text-muted); font-size: var(--fs-sm); margin: 0 0 8px; max-width: 76ch; }
+.warn { color: var(--text-dim); font-size: var(--fs-2xs); margin: 0 0 30px; }
+.warn code { color: var(--accent); }
+section { margin: 0 0 40px; max-width: 900px; }
+h2 { font-size: var(--fs-sm); font-weight: 600; margin: 0 0 4px; }
+.note { font-size: var(--fs-sm); color: var(--text-muted); margin: 0 0 16px; max-width: 76ch; }
+hr { height: 1px; background: var(--border-subtle); border: 0; margin: 0 0 26px; max-width: 900px; }
+code { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--text-muted); }
+
+/* The face itself, mirroring AgentFace.svelte's own block. It is the one piece
+   of style here that is a copy rather than an import, because it lives inside a
+   Svelte component; if that block changes, change this one. */
+.agent-face {
+  display: block; flex: none; overflow: hidden; border-radius: 26%;
+  background: linear-gradient(158deg, hsl(var(--h) 44% 26%), hsl(var(--h) 40% 17%));
+  box-shadow: inset 0 0 0 1px hsl(var(--h) 40% 38% / .55), inset 0 1px 0 hsl(var(--h) 60% 62% / .18);
+}
+.agent-face svg { display: block; width: 100%; height: 100%; }
+
+.gal { display: flex; flex-wrap: wrap; gap: 20px; }
+.one { width: 118px; text-align: center; }
+.one .agent-face { margin: 0 auto 9px; }
+.one-n { font-size: var(--fs-sm); color: var(--text-primary); }
+.one-r { font-size: var(--fs-2xs); color: var(--text-secondary); }
+.one-i { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--text-dim); }
+
+/* Mirrors style.css .chair-card.agc — the card the roster actually draws. */
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+.chair-card.agc {
+  border: none; border-radius: var(--r-md); background: var(--surface-raised);
+  display: flex; flex-direction: column; gap: 8px; padding: 12px;
+}
+.agc .chair-body { flex: 1; display: flex; flex-direction: column; gap: 7px; }
+.agc .chair-who { display: flex; align-items: center; gap: 10px; }
+.chair-who-t { display: flex; flex-direction: column; }
+.agc .chair-name { font-size: var(--fs-lg); letter-spacing: -.01em; font-weight: 500; }
+.agc .chair-role { font-size: var(--fs-2xs); color: var(--text-dim); }
+.agc .chair-desc {
+  font-size: var(--fs-sm); color: var(--text-secondary); margin: 0;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.agc .chair-chips { display: flex; gap: 5px; }
+.agc .chip {
+  font-size: var(--fs-2xs); line-height: 18px; padding: 0 8px; border-radius: 999px;
+  background: var(--surface-sunken); color: var(--text-muted);
+}
+.agc .chair-foot { display: flex; gap: 8px; margin-top: auto; }
+.agc .chair-talk {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--r-sm); padding: 6px 10px;
+  background: var(--surface-sunken); color: var(--text-secondary); font-size: var(--fs-sm);
+}
+.agc .chair-gear {
+  width: 30px; display: grid; place-items: center; border-radius: var(--r-sm);
+  background: var(--surface-sunken); color: var(--text-muted);
+}
+
+.size-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.size-n { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--text-dim); width: 42px; flex: none; }
+.parts { display: flex; flex-wrap: wrap; gap: 14px; }
+.part { width: 84px; text-align: center; }
+.part .agent-face { margin: 0 auto 6px; }
+.part-l { font-size: var(--fs-2xs); color: var(--text-secondary); }
+.sw { display: inline-flex; align-items: center; gap: 7px; margin: 0 14px 8px 0; }
+.sw span { width: 22px; height: 22px; border-radius: var(--r-sm); display: block; }
+pre {
+  background: var(--surface-sunken); border-radius: var(--r-md); padding: 12px 14px;
+  font-family: var(--mono); font-size: var(--fs-sm); color: var(--text-secondary);
+  overflow-x: auto; margin: 0;
+}
+</style>
+</head>
+<body>
+
+<h1>หน้าเอเจน — มาตรฐาน</h1>
+<p class="lede">เอเจนหนึ่งคนมีหน้าเดียว และหน้านั้นถูกวาดจากชื่อ ไม่ใช่เก็บเป็นไฟล์รูป เอเจนที่ผู้ใช้เขียนเองจึงมีหน้าตั้งแต่วินาทีที่วางไฟล์ โดยไม่มีใครต้องหารูปให้</p>
+<p class="warn">หน้านี้ถูกสร้างจาก <code>src/lib/agentFace.ts</code> กับโทเคนจริงใน <code>src/styles/</code> ห้ามแก้มือ เพิ่มชิ้นส่วนแล้วสั่ง <code>npm run faces</code></p>
+
+<section>
+  <h2>คณะที่มากับแอป</h2>
+  <p class="note">ชื่อที่แสดงกับบทบาทในหน้านี้เป็นตัวอย่าง ยังไม่ได้ลงไฟล์จริง ส่วน id ใต้ชื่อคือชื่อโฟลเดอร์ ซึ่งเป็นสิ่งที่ task เมนู @ ไฟล์ความจำ และประวัติงาน ผูกอยู่ และห้ามเปลี่ยน</p>
+  <div class="gal"><div class="one"><span class="agent-face" style="--h:155; width:88px; height:88px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(155 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(155 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(155 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(155 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(155 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(155 42% 78%)"/><path d="M16 21C16 10 23 6.5 32 6.5S48 10 48 21z" fill="hsl(155 46% 23%)"/><path d="M4 18h13v5H6a2.5 2.5 0 0 1 0-5z" fill="hsl(155 48% 31%)"/><rect x="15" y="19.5" width="34" height="4.5" rx="2.2" fill="hsl(155 48% 31%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(155 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(155 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(155 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><circle cx="50" cy="50" r="8" fill="none" stroke="hsl(155 58% 86%)" stroke-width="3.2"/><path d="M56 56l5.5 5.5" stroke="hsl(155 58% 86%)" stroke-width="3.2" stroke-linecap="round"/></svg></span><div class="one-n">Nova</div><div class="one-r">นักวิจัยข้อมูล</div><div class="one-i">research</div></div><div class="one"><span class="agent-face" style="--h:280; width:88px; height:88px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(280 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(280 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(280 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(280 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(280 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(280 42% 78%)"/><path d="M16 22C16 11 23 7 32 7s16 4 16 15z" fill="hsl(280 46% 23%)"/><rect x="15" y="20.5" width="34" height="5.5" rx="2.7" fill="hsl(280 48% 31%)"/><circle cx="32" cy="5" r="3.2" fill="hsl(280 48% 31%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/><path d="M43 44h11l7 7v13H43z" fill="hsl(280 58% 86%)"/><path d="M54 44v7h7" fill="hsl(280 36% 66%)"/><path d="M47 55h11M47 60h8" stroke="hsl(280 46% 23%)" stroke-width="2.2" stroke-linecap="round"/></svg></span><div class="one-n">Meridian</div><div class="one-r">ผู้ดูแลเอกสาร</div><div class="one-i">doc</div></div><div class="one"><span class="agent-face" style="--h:235; width:88px; height:88px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(235 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(235 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(235 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(235 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(235 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(235 42% 78%)"/><path d="M16 21C16 10 23 6.5 32 6.5S48 10 48 21z" fill="hsl(235 46% 23%)"/><path d="M4 18h13v5H6a2.5 2.5 0 0 1 0-5z" fill="hsl(235 48% 31%)"/><rect x="15" y="19.5" width="34" height="4.5" rx="2.2" fill="hsl(235 48% 31%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(235 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(235 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(235 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><rect x="40" y="47" width="22" height="15" rx="2.5" fill="hsl(235 58% 86%)"/><path d="M40 51.5h22" stroke="hsl(235 46% 23%)" stroke-width="2.6"/><path d="M44 47l3.5 4.5M50 47l3.5 4.5M56 47l3.5 4.5" stroke="hsl(235 46% 23%)" stroke-width="2.2"/></svg></span><div class="one-n">Kino</div><div class="one-r">ช่างทำวิดีโอ</div><div class="one-i">video</div></div><div class="one"><span class="agent-face" style="--h:207; width:88px; height:88px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(207 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(207 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(207 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(207 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(207 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(207 42% 78%)"/><path d="M16.5 25C16.5 12 24 9 32 9s15.5 3 15.5 16c0-7-4-10-12-10-5 0-8 2-11 2-4 0-6.5 3-8 8z" fill="hsl(207 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(207 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(207 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(207 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><rect x="43" y="52" width="5" height="10" rx="2" fill="hsl(207 58% 86%)"/><rect x="50.5" y="46" width="5" height="16" rx="2" fill="hsl(207 58% 86%)"/><rect x="58" y="40" width="5" height="22" rx="2" fill="hsl(207 58% 86%)"/></svg></span><div class="one-n">Tally</div><div class="one-r">ผู้ดูแลตัวเลข</div><div class="one-i">sheet</div></div><div class="one"><span class="agent-face" style="--h:283; width:88px; height:88px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(283 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(283 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(283 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(283 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(283 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(283 42% 78%)"/><path d="M15 30C15 12 23 8.5 32 8.5S49 12 49 30v6h-5V21c-4-4-20-4-24 0v15h-5z" fill="hsl(283 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><circle cx="46" cy="46" r="3.8" fill="hsl(283 58% 86%)"/><circle cx="46" cy="60" r="3.8" fill="hsl(283 58% 86%)"/><circle cx="60" cy="46" r="3.8" fill="hsl(283 58% 86%)"/><path d="M46 49.8v6.4M49.8 46h6.4" stroke="hsl(283 58% 86%)" stroke-width="2.6"/></svg></span><div class="one-n">Hub</div><div class="one-r">ผู้ดูแลรีโป</div><div class="one-i">github</div></div><div class="one"><span class="agent-face" style="--h:159; width:88px; height:88px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(159 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(159 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(159 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(159 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(159 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(159 42% 78%)"/><path d="M15 30C15 12 23 8.5 32 8.5S49 12 49 30v6h-5V21c-4-4-20-4-24 0v15h-5z" fill="hsl(159 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(159 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(159 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(159 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><path d="M53 40l-10 15h7.5l-2.5 11 11-15.5h-7.5z" fill="hsl(159 58% 86%)"/></svg></span><div class="one-n">Cog</div><div class="one-r">ช่างออโตเมชั่น</div><div class="one-i">automation</div></div><div class="one"><span class="agent-face" style="--h:197; width:88px; height:88px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(197 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(197 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(197 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(197 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(197 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(197 42% 78%)"/><path d="M16.5 25C16.5 12 24 9 32 9s15.5 3 15.5 16c0-7-4-10-12-10-5 0-8 2-11 2-4 0-6.5 3-8 8z" fill="hsl(197 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M15 26a17 17 0 0 1 34 0" fill="none" stroke="hsl(197 48% 31%)" stroke-width="3.4"/><rect x="10.5" y="24" width="8" height="12" rx="3.5" fill="hsl(197 48% 31%)"/><rect x="45.5" y="24" width="8" height="12" rx="3.5" fill="hsl(197 48% 31%)"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><path d="M42 50h20M42 60h20" stroke="hsl(197 58% 86%)" stroke-width="2.8" stroke-linecap="round"/><circle cx="51" cy="50" r="3.6" fill="hsl(197 58% 86%)"/><circle cx="56" cy="60" r="3.6" fill="hsl(197 58% 86%)"/></svg></span><div class="one-n">Reel</div><div class="one-r">ช่างตัดต่อ</div><div class="one-i">editor</div></div></div>
+</section>
+<hr>
+
+<section>
+  <h2>การ์ดบนหน้าเอเจน</h2>
+  <p class="note">มาร์ก 48px ชื่อ บทบาท ประโยคเดียวว่าทำอะไร ชิปเฉพาะสิ่งที่ต่างจากคนอื่น แล้วปุ่มคุย ป้ายที่ทุกใบใส่คือป้ายที่ไม่ได้บอกอะไร</p>
+  <div class="grid">
+      <div class="chair-card agc">
+        <div class="chair-body">
+          <div class="chair-who">
+            <span class="agent-face" style="--h:155; width:48px; height:48px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(155 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(155 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(155 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(155 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(155 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(155 42% 78%)"/><path d="M16 21C16 10 23 6.5 32 6.5S48 10 48 21z" fill="hsl(155 46% 23%)"/><path d="M4 18h13v5H6a2.5 2.5 0 0 1 0-5z" fill="hsl(155 48% 31%)"/><rect x="15" y="19.5" width="34" height="4.5" rx="2.2" fill="hsl(155 48% 31%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(155 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(155 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(155 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><circle cx="50" cy="50" r="8" fill="none" stroke="hsl(155 58% 86%)" stroke-width="3.2"/><path d="M56 56l5.5 5.5" stroke="hsl(155 58% 86%)" stroke-width="3.2" stroke-linecap="round"/></svg></span>
+            <span class="chair-who-t"><span class="chair-name">Nova</span><span class="chair-role">นักวิจัยข้อมูล</span></span>
+          </div>
+          <p class="chair-desc">ไล่หลายแหล่งทั้งทางการและคอมมูนิตี้ เทียบคู่แข่ง แล้วส่งข้อค้นพบที่ตามกลับไปหาต้นทางได้</p>
+          <div class="chair-chips"><span class="chip">research</span></div>
+          <div class="chair-foot"><span class="chair-talk">คุยกับ Nova</span><span class="chair-gear">⚙</span></div>
+        </div>
+      </div>
+      <div class="chair-card agc">
+        <div class="chair-body">
+          <div class="chair-who">
+            <span class="agent-face" style="--h:280; width:48px; height:48px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(280 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(280 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(280 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(280 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(280 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(280 42% 78%)"/><path d="M16 22C16 11 23 7 32 7s16 4 16 15z" fill="hsl(280 46% 23%)"/><rect x="15" y="20.5" width="34" height="5.5" rx="2.7" fill="hsl(280 48% 31%)"/><circle cx="32" cy="5" r="3.2" fill="hsl(280 48% 31%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/><path d="M43 44h11l7 7v13H43z" fill="hsl(280 58% 86%)"/><path d="M54 44v7h7" fill="hsl(280 36% 66%)"/><path d="M47 55h11M47 60h8" stroke="hsl(280 46% 23%)" stroke-width="2.2" stroke-linecap="round"/></svg></span>
+            <span class="chair-who-t"><span class="chair-name">Meridian</span><span class="chair-role">ผู้ดูแลเอกสาร</span></span>
+          </div>
+          <p class="chair-desc">ตอบว่าเอกสารแบบไหนต้องมีอะไร ตรวจร่างที่มีอยู่ และร่างขึ้นใหม่เมื่อถึงเวลา</p>
+          <div class="chair-chips"><span class="chip">doc</span></div>
+          <div class="chair-foot"><span class="chair-talk">คุยกับ Meridian</span><span class="chair-gear">⚙</span></div>
+        </div>
+      </div>
+      <div class="chair-card agc">
+        <div class="chair-body">
+          <div class="chair-who">
+            <span class="agent-face" style="--h:235; width:48px; height:48px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(235 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(235 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(235 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(235 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(235 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(235 42% 78%)"/><path d="M16 21C16 10 23 6.5 32 6.5S48 10 48 21z" fill="hsl(235 46% 23%)"/><path d="M4 18h13v5H6a2.5 2.5 0 0 1 0-5z" fill="hsl(235 48% 31%)"/><rect x="15" y="19.5" width="34" height="4.5" rx="2.2" fill="hsl(235 48% 31%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(235 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(235 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(235 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><rect x="40" y="47" width="22" height="15" rx="2.5" fill="hsl(235 58% 86%)"/><path d="M40 51.5h22" stroke="hsl(235 46% 23%)" stroke-width="2.6"/><path d="M44 47l3.5 4.5M50 47l3.5 4.5M56 47l3.5 4.5" stroke="hsl(235 46% 23%)" stroke-width="2.2"/></svg></span>
+            <span class="chair-who-t"><span class="chair-name">Kino</span><span class="chair-role">ช่างทำวิดีโอ</span></span>
+          </div>
+          <p class="chair-desc">ออกแบบฉากขึ้นใหม่เป็น HTML แล้วเรนเดอร์ออกมาเป็นคลิป จากเนื้อหาที่ผู้ใช้มี</p>
+          <div class="chair-chips"><span class="chip">video</span></div>
+          <div class="chair-foot"><span class="chair-talk">คุยกับ Kino</span><span class="chair-gear">⚙</span></div>
+        </div>
+      </div></div>
+</section>
+<hr>
+
+<section>
+  <h2>ทุกขนาดที่ใช้จริง</h2>
+  <p class="note">ต่ำกว่า 32px ของที่ถืออยู่ในมือถูกตัดออกเอง เพราะมันเหลือไม่กี่พิกเซลแล้วไปแย่งความสนใจกับหัว แถวล่างสุดคือเมนู @</p>
+  <div class="size-row"><span class="size-n">88px</span><span class="agent-face" style="--h:155; width:88px; height:88px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(155 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(155 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(155 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(155 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(155 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(155 42% 78%)"/><path d="M16 21C16 10 23 6.5 32 6.5S48 10 48 21z" fill="hsl(155 46% 23%)"/><path d="M4 18h13v5H6a2.5 2.5 0 0 1 0-5z" fill="hsl(155 48% 31%)"/><rect x="15" y="19.5" width="34" height="4.5" rx="2.2" fill="hsl(155 48% 31%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(155 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(155 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(155 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><circle cx="50" cy="50" r="8" fill="none" stroke="hsl(155 58% 86%)" stroke-width="3.2"/><path d="M56 56l5.5 5.5" stroke="hsl(155 58% 86%)" stroke-width="3.2" stroke-linecap="round"/></svg></span><span class="agent-face" style="--h:280; width:88px; height:88px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(280 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(280 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(280 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(280 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(280 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(280 42% 78%)"/><path d="M16 22C16 11 23 7 32 7s16 4 16 15z" fill="hsl(280 46% 23%)"/><rect x="15" y="20.5" width="34" height="5.5" rx="2.7" fill="hsl(280 48% 31%)"/><circle cx="32" cy="5" r="3.2" fill="hsl(280 48% 31%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/><path d="M43 44h11l7 7v13H43z" fill="hsl(280 58% 86%)"/><path d="M54 44v7h7" fill="hsl(280 36% 66%)"/><path d="M47 55h11M47 60h8" stroke="hsl(280 46% 23%)" stroke-width="2.2" stroke-linecap="round"/></svg></span><span class="agent-face" style="--h:235; width:88px; height:88px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(235 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(235 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(235 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(235 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(235 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(235 42% 78%)"/><path d="M16 21C16 10 23 6.5 32 6.5S48 10 48 21z" fill="hsl(235 46% 23%)"/><path d="M4 18h13v5H6a2.5 2.5 0 0 1 0-5z" fill="hsl(235 48% 31%)"/><rect x="15" y="19.5" width="34" height="4.5" rx="2.2" fill="hsl(235 48% 31%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(235 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(235 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(235 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><rect x="40" y="47" width="22" height="15" rx="2.5" fill="hsl(235 58% 86%)"/><path d="M40 51.5h22" stroke="hsl(235 46% 23%)" stroke-width="2.6"/><path d="M44 47l3.5 4.5M50 47l3.5 4.5M56 47l3.5 4.5" stroke="hsl(235 46% 23%)" stroke-width="2.2"/></svg></span><span class="agent-face" style="--h:207; width:88px; height:88px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(207 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(207 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(207 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(207 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(207 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(207 42% 78%)"/><path d="M16.5 25C16.5 12 24 9 32 9s15.5 3 15.5 16c0-7-4-10-12-10-5 0-8 2-11 2-4 0-6.5 3-8 8z" fill="hsl(207 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(207 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(207 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(207 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><rect x="43" y="52" width="5" height="10" rx="2" fill="hsl(207 58% 86%)"/><rect x="50.5" y="46" width="5" height="16" rx="2" fill="hsl(207 58% 86%)"/><rect x="58" y="40" width="5" height="22" rx="2" fill="hsl(207 58% 86%)"/></svg></span><span class="agent-face" style="--h:283; width:88px; height:88px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(283 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(283 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(283 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(283 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(283 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(283 42% 78%)"/><path d="M15 30C15 12 23 8.5 32 8.5S49 12 49 30v6h-5V21c-4-4-20-4-24 0v15h-5z" fill="hsl(283 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><circle cx="46" cy="46" r="3.8" fill="hsl(283 58% 86%)"/><circle cx="46" cy="60" r="3.8" fill="hsl(283 58% 86%)"/><circle cx="60" cy="46" r="3.8" fill="hsl(283 58% 86%)"/><path d="M46 49.8v6.4M49.8 46h6.4" stroke="hsl(283 58% 86%)" stroke-width="2.6"/></svg></span><span class="agent-face" style="--h:159; width:88px; height:88px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(159 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(159 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(159 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(159 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(159 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(159 42% 78%)"/><path d="M15 30C15 12 23 8.5 32 8.5S49 12 49 30v6h-5V21c-4-4-20-4-24 0v15h-5z" fill="hsl(159 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(159 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(159 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(159 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><path d="M53 40l-10 15h7.5l-2.5 11 11-15.5h-7.5z" fill="hsl(159 58% 86%)"/></svg></span><span class="agent-face" style="--h:197; width:88px; height:88px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(197 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(197 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(197 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(197 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(197 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(197 42% 78%)"/><path d="M16.5 25C16.5 12 24 9 32 9s15.5 3 15.5 16c0-7-4-10-12-10-5 0-8 2-11 2-4 0-6.5 3-8 8z" fill="hsl(197 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M15 26a17 17 0 0 1 34 0" fill="none" stroke="hsl(197 48% 31%)" stroke-width="3.4"/><rect x="10.5" y="24" width="8" height="12" rx="3.5" fill="hsl(197 48% 31%)"/><rect x="45.5" y="24" width="8" height="12" rx="3.5" fill="hsl(197 48% 31%)"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><path d="M42 50h20M42 60h20" stroke="hsl(197 58% 86%)" stroke-width="2.8" stroke-linecap="round"/><circle cx="51" cy="50" r="3.6" fill="hsl(197 58% 86%)"/><circle cx="56" cy="60" r="3.6" fill="hsl(197 58% 86%)"/></svg></span></div><div class="size-row"><span class="size-n">48px</span><span class="agent-face" style="--h:155; width:48px; height:48px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(155 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(155 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(155 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(155 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(155 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(155 42% 78%)"/><path d="M16 21C16 10 23 6.5 32 6.5S48 10 48 21z" fill="hsl(155 46% 23%)"/><path d="M4 18h13v5H6a2.5 2.5 0 0 1 0-5z" fill="hsl(155 48% 31%)"/><rect x="15" y="19.5" width="34" height="4.5" rx="2.2" fill="hsl(155 48% 31%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(155 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(155 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(155 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><circle cx="50" cy="50" r="8" fill="none" stroke="hsl(155 58% 86%)" stroke-width="3.2"/><path d="M56 56l5.5 5.5" stroke="hsl(155 58% 86%)" stroke-width="3.2" stroke-linecap="round"/></svg></span><span class="agent-face" style="--h:280; width:48px; height:48px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(280 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(280 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(280 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(280 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(280 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(280 42% 78%)"/><path d="M16 22C16 11 23 7 32 7s16 4 16 15z" fill="hsl(280 46% 23%)"/><rect x="15" y="20.5" width="34" height="5.5" rx="2.7" fill="hsl(280 48% 31%)"/><circle cx="32" cy="5" r="3.2" fill="hsl(280 48% 31%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/><path d="M43 44h11l7 7v13H43z" fill="hsl(280 58% 86%)"/><path d="M54 44v7h7" fill="hsl(280 36% 66%)"/><path d="M47 55h11M47 60h8" stroke="hsl(280 46% 23%)" stroke-width="2.2" stroke-linecap="round"/></svg></span><span class="agent-face" style="--h:235; width:48px; height:48px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(235 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(235 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(235 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(235 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(235 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(235 42% 78%)"/><path d="M16 21C16 10 23 6.5 32 6.5S48 10 48 21z" fill="hsl(235 46% 23%)"/><path d="M4 18h13v5H6a2.5 2.5 0 0 1 0-5z" fill="hsl(235 48% 31%)"/><rect x="15" y="19.5" width="34" height="4.5" rx="2.2" fill="hsl(235 48% 31%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(235 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(235 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(235 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><rect x="40" y="47" width="22" height="15" rx="2.5" fill="hsl(235 58% 86%)"/><path d="M40 51.5h22" stroke="hsl(235 46% 23%)" stroke-width="2.6"/><path d="M44 47l3.5 4.5M50 47l3.5 4.5M56 47l3.5 4.5" stroke="hsl(235 46% 23%)" stroke-width="2.2"/></svg></span><span class="agent-face" style="--h:207; width:48px; height:48px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(207 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(207 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(207 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(207 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(207 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(207 42% 78%)"/><path d="M16.5 25C16.5 12 24 9 32 9s15.5 3 15.5 16c0-7-4-10-12-10-5 0-8 2-11 2-4 0-6.5 3-8 8z" fill="hsl(207 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(207 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(207 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(207 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><rect x="43" y="52" width="5" height="10" rx="2" fill="hsl(207 58% 86%)"/><rect x="50.5" y="46" width="5" height="16" rx="2" fill="hsl(207 58% 86%)"/><rect x="58" y="40" width="5" height="22" rx="2" fill="hsl(207 58% 86%)"/></svg></span><span class="agent-face" style="--h:283; width:48px; height:48px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(283 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(283 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(283 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(283 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(283 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(283 42% 78%)"/><path d="M15 30C15 12 23 8.5 32 8.5S49 12 49 30v6h-5V21c-4-4-20-4-24 0v15h-5z" fill="hsl(283 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><circle cx="46" cy="46" r="3.8" fill="hsl(283 58% 86%)"/><circle cx="46" cy="60" r="3.8" fill="hsl(283 58% 86%)"/><circle cx="60" cy="46" r="3.8" fill="hsl(283 58% 86%)"/><path d="M46 49.8v6.4M49.8 46h6.4" stroke="hsl(283 58% 86%)" stroke-width="2.6"/></svg></span><span class="agent-face" style="--h:159; width:48px; height:48px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(159 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(159 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(159 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(159 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(159 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(159 42% 78%)"/><path d="M15 30C15 12 23 8.5 32 8.5S49 12 49 30v6h-5V21c-4-4-20-4-24 0v15h-5z" fill="hsl(159 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(159 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(159 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(159 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><path d="M53 40l-10 15h7.5l-2.5 11 11-15.5h-7.5z" fill="hsl(159 58% 86%)"/></svg></span><span class="agent-face" style="--h:197; width:48px; height:48px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(197 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(197 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(197 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(197 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(197 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(197 42% 78%)"/><path d="M16.5 25C16.5 12 24 9 32 9s15.5 3 15.5 16c0-7-4-10-12-10-5 0-8 2-11 2-4 0-6.5 3-8 8z" fill="hsl(197 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M15 26a17 17 0 0 1 34 0" fill="none" stroke="hsl(197 48% 31%)" stroke-width="3.4"/><rect x="10.5" y="24" width="8" height="12" rx="3.5" fill="hsl(197 48% 31%)"/><rect x="45.5" y="24" width="8" height="12" rx="3.5" fill="hsl(197 48% 31%)"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><path d="M42 50h20M42 60h20" stroke="hsl(197 58% 86%)" stroke-width="2.8" stroke-linecap="round"/><circle cx="51" cy="50" r="3.6" fill="hsl(197 58% 86%)"/><circle cx="56" cy="60" r="3.6" fill="hsl(197 58% 86%)"/></svg></span></div><div class="size-row"><span class="size-n">38px</span><span class="agent-face" style="--h:155; width:38px; height:38px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(155 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(155 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(155 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(155 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(155 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(155 42% 78%)"/><path d="M16 21C16 10 23 6.5 32 6.5S48 10 48 21z" fill="hsl(155 46% 23%)"/><path d="M4 18h13v5H6a2.5 2.5 0 0 1 0-5z" fill="hsl(155 48% 31%)"/><rect x="15" y="19.5" width="34" height="4.5" rx="2.2" fill="hsl(155 48% 31%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(155 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(155 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(155 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><circle cx="50" cy="50" r="8" fill="none" stroke="hsl(155 58% 86%)" stroke-width="3.2"/><path d="M56 56l5.5 5.5" stroke="hsl(155 58% 86%)" stroke-width="3.2" stroke-linecap="round"/></svg></span><span class="agent-face" style="--h:280; width:38px; height:38px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(280 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(280 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(280 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(280 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(280 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(280 42% 78%)"/><path d="M16 22C16 11 23 7 32 7s16 4 16 15z" fill="hsl(280 46% 23%)"/><rect x="15" y="20.5" width="34" height="5.5" rx="2.7" fill="hsl(280 48% 31%)"/><circle cx="32" cy="5" r="3.2" fill="hsl(280 48% 31%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/><path d="M43 44h11l7 7v13H43z" fill="hsl(280 58% 86%)"/><path d="M54 44v7h7" fill="hsl(280 36% 66%)"/><path d="M47 55h11M47 60h8" stroke="hsl(280 46% 23%)" stroke-width="2.2" stroke-linecap="round"/></svg></span><span class="agent-face" style="--h:235; width:38px; height:38px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(235 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(235 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(235 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(235 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(235 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(235 42% 78%)"/><path d="M16 21C16 10 23 6.5 32 6.5S48 10 48 21z" fill="hsl(235 46% 23%)"/><path d="M4 18h13v5H6a2.5 2.5 0 0 1 0-5z" fill="hsl(235 48% 31%)"/><rect x="15" y="19.5" width="34" height="4.5" rx="2.2" fill="hsl(235 48% 31%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(235 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(235 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(235 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><rect x="40" y="47" width="22" height="15" rx="2.5" fill="hsl(235 58% 86%)"/><path d="M40 51.5h22" stroke="hsl(235 46% 23%)" stroke-width="2.6"/><path d="M44 47l3.5 4.5M50 47l3.5 4.5M56 47l3.5 4.5" stroke="hsl(235 46% 23%)" stroke-width="2.2"/></svg></span><span class="agent-face" style="--h:207; width:38px; height:38px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(207 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(207 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(207 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(207 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(207 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(207 42% 78%)"/><path d="M16.5 25C16.5 12 24 9 32 9s15.5 3 15.5 16c0-7-4-10-12-10-5 0-8 2-11 2-4 0-6.5 3-8 8z" fill="hsl(207 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(207 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(207 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(207 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><rect x="43" y="52" width="5" height="10" rx="2" fill="hsl(207 58% 86%)"/><rect x="50.5" y="46" width="5" height="16" rx="2" fill="hsl(207 58% 86%)"/><rect x="58" y="40" width="5" height="22" rx="2" fill="hsl(207 58% 86%)"/></svg></span><span class="agent-face" style="--h:283; width:38px; height:38px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(283 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(283 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(283 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(283 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(283 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(283 42% 78%)"/><path d="M15 30C15 12 23 8.5 32 8.5S49 12 49 30v6h-5V21c-4-4-20-4-24 0v15h-5z" fill="hsl(283 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><circle cx="46" cy="46" r="3.8" fill="hsl(283 58% 86%)"/><circle cx="46" cy="60" r="3.8" fill="hsl(283 58% 86%)"/><circle cx="60" cy="46" r="3.8" fill="hsl(283 58% 86%)"/><path d="M46 49.8v6.4M49.8 46h6.4" stroke="hsl(283 58% 86%)" stroke-width="2.6"/></svg></span><span class="agent-face" style="--h:159; width:38px; height:38px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(159 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(159 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(159 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(159 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(159 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(159 42% 78%)"/><path d="M15 30C15 12 23 8.5 32 8.5S49 12 49 30v6h-5V21c-4-4-20-4-24 0v15h-5z" fill="hsl(159 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(159 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(159 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(159 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><path d="M53 40l-10 15h7.5l-2.5 11 11-15.5h-7.5z" fill="hsl(159 58% 86%)"/></svg></span><span class="agent-face" style="--h:197; width:38px; height:38px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(197 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(197 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(197 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(197 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(197 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(197 42% 78%)"/><path d="M16.5 25C16.5 12 24 9 32 9s15.5 3 15.5 16c0-7-4-10-12-10-5 0-8 2-11 2-4 0-6.5 3-8 8z" fill="hsl(197 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M15 26a17 17 0 0 1 34 0" fill="none" stroke="hsl(197 48% 31%)" stroke-width="3.4"/><rect x="10.5" y="24" width="8" height="12" rx="3.5" fill="hsl(197 48% 31%)"/><rect x="45.5" y="24" width="8" height="12" rx="3.5" fill="hsl(197 48% 31%)"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/><path d="M42 50h20M42 60h20" stroke="hsl(197 58% 86%)" stroke-width="2.8" stroke-linecap="round"/><circle cx="51" cy="50" r="3.6" fill="hsl(197 58% 86%)"/><circle cx="56" cy="60" r="3.6" fill="hsl(197 58% 86%)"/></svg></span></div><div class="size-row"><span class="size-n">24px</span><span class="agent-face" style="--h:155; width:24px; height:24px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(155 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(155 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(155 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(155 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(155 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(155 42% 78%)"/><path d="M16 21C16 10 23 6.5 32 6.5S48 10 48 21z" fill="hsl(155 46% 23%)"/><path d="M4 18h13v5H6a2.5 2.5 0 0 1 0-5z" fill="hsl(155 48% 31%)"/><rect x="15" y="19.5" width="34" height="4.5" rx="2.2" fill="hsl(155 48% 31%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(155 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(155 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(155 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/></svg></span><span class="agent-face" style="--h:280; width:24px; height:24px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(280 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(280 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(280 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(280 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(280 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(280 42% 78%)"/><path d="M16 22C16 11 23 7 32 7s16 4 16 15z" fill="hsl(280 46% 23%)"/><rect x="15" y="20.5" width="34" height="5.5" rx="2.7" fill="hsl(280 48% 31%)"/><circle cx="32" cy="5" r="3.2" fill="hsl(280 48% 31%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/></svg></span><span class="agent-face" style="--h:235; width:24px; height:24px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(235 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(235 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(235 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(235 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(235 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(235 42% 78%)"/><path d="M16 21C16 10 23 6.5 32 6.5S48 10 48 21z" fill="hsl(235 46% 23%)"/><path d="M4 18h13v5H6a2.5 2.5 0 0 1 0-5z" fill="hsl(235 48% 31%)"/><rect x="15" y="19.5" width="34" height="4.5" rx="2.2" fill="hsl(235 48% 31%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(235 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(235 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(235 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/></svg></span><span class="agent-face" style="--h:207; width:24px; height:24px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(207 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(207 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(207 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(207 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(207 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(207 42% 78%)"/><path d="M16.5 25C16.5 12 24 9 32 9s15.5 3 15.5 16c0-7-4-10-12-10-5 0-8 2-11 2-4 0-6.5 3-8 8z" fill="hsl(207 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(207 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(207 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(207 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/></svg></span><span class="agent-face" style="--h:283; width:24px; height:24px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(283 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(283 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(283 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(283 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(283 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(283 42% 78%)"/><path d="M15 30C15 12 23 8.5 32 8.5S49 12 49 30v6h-5V21c-4-4-20-4-24 0v15h-5z" fill="hsl(283 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/></svg></span><span class="agent-face" style="--h:159; width:24px; height:24px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(159 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(159 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(159 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(159 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(159 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(159 42% 78%)"/><path d="M15 30C15 12 23 8.5 32 8.5S49 12 49 30v6h-5V21c-4-4-20-4-24 0v15h-5z" fill="hsl(159 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(159 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(159 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(159 28% 40%)" stroke-width="2"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/></svg></span><span class="agent-face" style="--h:197; width:24px; height:24px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(197 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(197 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(197 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(197 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(197 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(197 42% 78%)"/><path d="M16.5 25C16.5 12 24 9 32 9s15.5 3 15.5 16c0-7-4-10-12-10-5 0-8 2-11 2-4 0-6.5 3-8 8z" fill="hsl(197 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M15 26a17 17 0 0 1 34 0" fill="none" stroke="hsl(197 48% 31%)" stroke-width="3.4"/><rect x="10.5" y="24" width="8" height="12" rx="3.5" fill="hsl(197 48% 31%)"/><rect x="45.5" y="24" width="8" height="12" rx="3.5" fill="hsl(197 48% 31%)"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/></svg></span></div>
+</section>
+<hr>
+
+<section>
+  <h2>ตู้เสื้อผ้า · ทรงผม</h2>
+  <p class="note">ทรงผมคือสิ่งที่แยกคนออกจากกันตอนย่อเล็ก ไม่ใช่ใบหน้า ทุกทรงวาดบนสีกลางสีเดียวกันในนี้ เพื่อให้เห็นว่าต่างกันที่รูปทรงจริง ๆ 8 ทรง</p>
+  <div class="parts"><div class="part"><span class="agent-face" style="--h:210; width:64px; height:64px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(210 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(210 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(210 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(210 42% 78%)"/><path d="M16.5 25C16.5 12 24 9 32 9s15.5 3 15.5 16c0-7-4-10-12-10-5 0-8 2-11 2-4 0-6.5 3-8 8z" fill="hsl(210 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/></svg></span><div class="part-l">แสกข้าง</div><code>sidePart</code></div><div class="part"><span class="agent-face" style="--h:210; width:64px; height:64px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(210 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(210 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(210 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(210 42% 78%)"/><circle cx="32" cy="7.5" r="5" fill="hsl(210 46% 23%)"/><path d="M17 24C17 12 24 10 32 10s15 2 15 14c0-7-5-10-15-10s-15 3-15 10z" fill="hsl(210 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/></svg></span><div class="part-l">มวย</div><code>bun</code></div><div class="part"><span class="agent-face" style="--h:210; width:64px; height:64px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(210 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(210 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(210 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(210 42% 78%)"/><path d="M15 30C15 12 23 8.5 32 8.5S49 12 49 30v6h-5V21c-4-4-20-4-24 0v15h-5z" fill="hsl(210 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/></svg></span><div class="part-l">บ๊อบ</div><code>bob</code></div><div class="part"><span class="agent-face" style="--h:210; width:64px; height:64px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(210 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(210 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(210 36% 66%)"/><circle cx="20" cy="16" r="7.5" fill="hsl(210 46% 23%)"/><circle cx="32" cy="11" r="8.5" fill="hsl(210 46% 23%)"/><circle cx="44" cy="16" r="7.5" fill="hsl(210 46% 23%)"/><circle cx="17" cy="24" r="5.5" fill="hsl(210 46% 23%)"/><circle cx="47" cy="24" r="5.5" fill="hsl(210 46% 23%)"/><ellipse cx="32" cy="27" rx="14" ry="15" fill="hsl(210 42% 78%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/></svg></span><div class="part-l">หยิก</div><code>curly</code></div><div class="part"><span class="agent-face" style="--h:210; width:64px; height:64px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(210 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(210 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(210 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(210 42% 78%)"/><path d="M16 21C16 10 23 6.5 32 6.5S48 10 48 21z" fill="hsl(210 46% 23%)"/><path d="M4 18h13v5H6a2.5 2.5 0 0 1 0-5z" fill="hsl(210 48% 31%)"/><rect x="15" y="19.5" width="34" height="4.5" rx="2.2" fill="hsl(210 48% 31%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/></svg></span><div class="part-l">หมวกแก๊ป</div><code>cap</code></div><div class="part"><span class="agent-face" style="--h:210; width:64px; height:64px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(210 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(210 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(210 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(210 42% 78%)"/><path d="M16 22C16 11 23 7 32 7s16 4 16 15z" fill="hsl(210 46% 23%)"/><rect x="15" y="20.5" width="34" height="5.5" rx="2.7" fill="hsl(210 48% 31%)"/><circle cx="32" cy="5" r="3.2" fill="hsl(210 48% 31%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/></svg></span><div class="part-l">หมวกไหมพรม</div><code>beanie</code></div><div class="part"><span class="agent-face" style="--h:210; width:64px; height:64px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(210 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(210 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(210 36% 66%)"/><path d="M14 44V26c0-11 8-17 18-17s18 6 18 17v18h-6V26c0-7-5-11-12-11s-12 4-12 11v18z" fill="hsl(210 46% 23%)"/><ellipse cx="32" cy="27" rx="14.5" ry="15.5" fill="hsl(210 42% 78%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/></svg></span><div class="part-l">ผมยาว</div><code>long</code></div><div class="part"><span class="agent-face" style="--h:210; width:64px; height:64px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(210 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(210 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(210 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(210 42% 78%)"/><path d="M17 25C17 12 25 9.5 32 9.5S47 12 47 25c-1-9-7-12-15-12s-14 3-15 12z" fill="hsl(210 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/></svg></span><div class="part-l">เรียบ</div><code>neat</code></div></div>
+</section>
+<hr>
+
+<section>
+  <h2>ตู้เสื้อผ้า · ของบนหน้า</h2>
+  <p class="note">มีสองช่องที่เป็น "ไม่มี" โดยตั้งใจ ครึ่งหนึ่งของคณะที่ไม่ใส่อะไรเลย คือสิ่งที่ทำให้แว่นมีความหมาย</p>
+  <div class="parts"><div class="part"><span class="agent-face" style="--h:210; width:64px; height:64px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(210 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(210 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(210 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(210 42% 78%)"/><path d="M17 25C17 12 25 9.5 32 9.5S47 12 47 25c-1-9-7-12-15-12s-14 3-15 12z" fill="hsl(210 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/></svg></span><div class="part-l">ไม่มี</div><code>none</code></div><div class="part"><span class="agent-face" style="--h:210; width:64px; height:64px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(210 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(210 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(210 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(210 42% 78%)"/><path d="M17 25C17 12 25 9.5 32 9.5S47 12 47 25c-1-9-7-12-15-12s-14 3-15 12z" fill="hsl(210 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(210 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(210 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(210 28% 40%)" stroke-width="2"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/></svg></span><div class="part-l">แว่น</div><code>glasses</code></div><div class="part"><span class="agent-face" style="--h:210; width:64px; height:64px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(210 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(210 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(210 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(210 42% 78%)"/><path d="M17 25C17 12 25 9.5 32 9.5S47 12 47 25c-1-9-7-12-15-12s-14 3-15 12z" fill="hsl(210 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/></svg></span><div class="part-l">ไม่มี</div><code>none2</code></div><div class="part"><span class="agent-face" style="--h:210; width:64px; height:64px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(210 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(210 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(210 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(210 42% 78%)"/><path d="M17 25C17 12 25 9.5 32 9.5S47 12 47 25c-1-9-7-12-15-12s-14 3-15 12z" fill="hsl(210 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M15 26a17 17 0 0 1 34 0" fill="none" stroke="hsl(210 48% 31%)" stroke-width="3.4"/><rect x="10.5" y="24" width="8" height="12" rx="3.5" fill="hsl(210 48% 31%)"/><rect x="45.5" y="24" width="8" height="12" rx="3.5" fill="hsl(210 48% 31%)"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/></svg></span><div class="part-l">หูฟัง</div><code>headphones</code></div></div>
+</section>
+<hr>
+
+<section>
+  <h2>ของที่ถือ</h2>
+  <p class="note">มาจาก <code>icon:</code> ที่โปรไฟล์ประกาศอยู่แล้ว ไม่มีอะไรใหม่ที่คนเขียนไฟล์ต้องกรอก และ icon ที่ไม่มีในรายการนี้แปลว่าไม่ถืออะไร ไม่ใช่ข้อผิดพลาด</p>
+  <div class="parts"><div class="part"><span class="agent-face" style="--h:210; width:64px; height:64px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(210 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(210 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(210 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(210 42% 78%)"/><path d="M17 25C17 12 25 9.5 32 9.5S47 12 47 25c-1-9-7-12-15-12s-14 3-15 12z" fill="hsl(210 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/><circle cx="50" cy="50" r="8" fill="none" stroke="hsl(210 58% 86%)" stroke-width="3.2"/><path d="M56 56l5.5 5.5" stroke="hsl(210 58% 86%)" stroke-width="3.2" stroke-linecap="round"/></svg></span><code>search</code></div><div class="part"><span class="agent-face" style="--h:210; width:64px; height:64px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(210 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(210 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(210 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(210 42% 78%)"/><path d="M17 25C17 12 25 9.5 32 9.5S47 12 47 25c-1-9-7-12-15-12s-14 3-15 12z" fill="hsl(210 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/><path d="M43 44h11l7 7v13H43z" fill="hsl(210 58% 86%)"/><path d="M54 44v7h7" fill="hsl(210 36% 66%)"/><path d="M47 55h11M47 60h8" stroke="hsl(210 46% 23%)" stroke-width="2.2" stroke-linecap="round"/></svg></span><code>fileText</code></div><div class="part"><span class="agent-face" style="--h:210; width:64px; height:64px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(210 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(210 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(210 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(210 42% 78%)"/><path d="M17 25C17 12 25 9.5 32 9.5S47 12 47 25c-1-9-7-12-15-12s-14 3-15 12z" fill="hsl(210 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/><rect x="40" y="47" width="22" height="15" rx="2.5" fill="hsl(210 58% 86%)"/><path d="M40 51.5h22" stroke="hsl(210 46% 23%)" stroke-width="2.6"/><path d="M44 47l3.5 4.5M50 47l3.5 4.5M56 47l3.5 4.5" stroke="hsl(210 46% 23%)" stroke-width="2.2"/></svg></span><code>clapperboard</code></div><div class="part"><span class="agent-face" style="--h:210; width:64px; height:64px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(210 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(210 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(210 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(210 42% 78%)"/><path d="M17 25C17 12 25 9.5 32 9.5S47 12 47 25c-1-9-7-12-15-12s-14 3-15 12z" fill="hsl(210 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/><rect x="43" y="52" width="5" height="10" rx="2" fill="hsl(210 58% 86%)"/><rect x="50.5" y="46" width="5" height="16" rx="2" fill="hsl(210 58% 86%)"/><rect x="58" y="40" width="5" height="22" rx="2" fill="hsl(210 58% 86%)"/></svg></span><code>chartColumn</code></div><div class="part"><span class="agent-face" style="--h:210; width:64px; height:64px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(210 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(210 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(210 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(210 42% 78%)"/><path d="M17 25C17 12 25 9.5 32 9.5S47 12 47 25c-1-9-7-12-15-12s-14 3-15 12z" fill="hsl(210 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/><circle cx="46" cy="46" r="3.8" fill="hsl(210 58% 86%)"/><circle cx="46" cy="60" r="3.8" fill="hsl(210 58% 86%)"/><circle cx="60" cy="46" r="3.8" fill="hsl(210 58% 86%)"/><path d="M46 49.8v6.4M49.8 46h6.4" stroke="hsl(210 58% 86%)" stroke-width="2.6"/></svg></span><code>gitBranch</code></div><div class="part"><span class="agent-face" style="--h:210; width:64px; height:64px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(210 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(210 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(210 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(210 42% 78%)"/><path d="M17 25C17 12 25 9.5 32 9.5S47 12 47 25c-1-9-7-12-15-12s-14 3-15 12z" fill="hsl(210 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/><path d="M53 40l-10 15h7.5l-2.5 11 11-15.5h-7.5z" fill="hsl(210 58% 86%)"/></svg></span><code>zap</code></div><div class="part"><span class="agent-face" style="--h:210; width:64px; height:64px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(210 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(210 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(210 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(210 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(210 42% 78%)"/><path d="M17 25C17 12 25 9.5 32 9.5S47 12 47 25c-1-9-7-12-15-12s-14 3-15 12z" fill="hsl(210 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/><path d="M42 50h20M42 60h20" stroke="hsl(210 58% 86%)" stroke-width="2.8" stroke-linecap="round"/><circle cx="51" cy="50" r="3.6" fill="hsl(210 58% 86%)"/><circle cx="56" cy="60" r="3.6" fill="hsl(210 58% 86%)"/></svg></span><code>slidersHorizontal</code></div></div>
+</section>
+<hr>
+
+<section>
+  <h2>สีที่ทุกชิ้นส่วนวาดจาก</h2>
+  <p class="note">ชิ้นส่วนใหม่เลือกสีเองไม่ได้ มันได้แค่ชุดนี้ ซึ่งคำนวณจากสีประจำตัวของเอเจน ตู้เสื้อผ้าจึงโตได้โดยที่คณะไม่มีวันหลุดโทน</p>
+  <div><div class="sw"><span style="background:hsl(210 42% 78%)"></span><code>skin</code></div><div class="sw"><span style="background:hsl(210 36% 66%)"></span><code>skinShade</code></div><div class="sw"><span style="background:hsl(210 38% 42%)"></span><code>shirt</code></div><div class="sw"><span style="background:hsl(210 46% 23%)"></span><code>dark</code></div><div class="sw"><span style="background:hsl(210 48% 31%)"></span><code>darkUp</code></div><div class="sw"><span style="background:hsl(210 58% 86%)"></span><code>bright</code></div><div class="sw"><span style="background:hsl(210 28% 40%)"></span><code>glass</code></div></div>
+</section>
+<hr>
+
+<section>
+  <h2>เอเจนที่ผู้ใช้เขียนเอง</h2>
+  <p class="note">ไทยหรืออังกฤษก็ได้ ไม่มีใครตั้งค่าอะไรเลย ทุกคนได้หน้าทันทีและได้หน้าเดิมทุกครั้งที่เปิดแอป</p>
+  <div class="gal"><div class="one"><span class="agent-face" style="--h:296; width:76px; height:76px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(296 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(296 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(296 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(296 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(296 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(296 42% 78%)"/><circle cx="32" cy="7.5" r="5" fill="hsl(296 46% 23%)"/><path d="M17 24C17 12 24 10 32 10s15 2 15 14c0-7-5-10-15-10s-15 3-15 10z" fill="hsl(296 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/></svg></span><div class="one-n">ผู้ตรวจสัญญา</div><div class="one-i">hue 296</div></div><div class="one"><span class="agent-face" style="--h:269; width:76px; height:76px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(269 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(269 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(269 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(269 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(269 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(269 42% 78%)"/><path d="M16.5 25C16.5 12 24 9 32 9s15.5 3 15.5 16c0-7-4-10-12-10-5 0-8 2-11 2-4 0-6.5 3-8 8z" fill="hsl(269 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><circle cx="26" cy="27" r="6" fill="none" stroke="hsl(269 28% 40%)" stroke-width="2"/><circle cx="38" cy="27" r="6" fill="none" stroke="hsl(269 28% 40%)" stroke-width="2"/><path d="M31 27h2" stroke="hsl(269 28% 40%)" stroke-width="2"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/></svg></span><div class="one-n">ผู้ช่วยขาย</div><div class="one-i">hue 269</div></div><div class="one"><span class="agent-face" style="--h:281; width:76px; height:76px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(281 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(281 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(281 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(281 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(281 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(281 42% 78%)"/><path d="M15 30C15 12 23 8.5 32 8.5S49 12 49 30v6h-5V21c-4-4-20-4-24 0v15h-5z" fill="hsl(281 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/></svg></span><div class="one-n">บัญชี</div><div class="one-i">hue 281</div></div><div class="one"><span class="agent-face" style="--h:145; width:76px; height:76px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(145 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(145 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(145 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(145 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(145 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(145 42% 78%)"/><path d="M15 30C15 12 23 8.5 32 8.5S49 12 49 30v6h-5V21c-4-4-20-4-24 0v15h-5z" fill="hsl(145 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M15 26a17 17 0 0 1 34 0" fill="none" stroke="hsl(145 48% 31%)" stroke-width="3.4"/><rect x="10.5" y="24" width="8" height="12" rx="3.5" fill="hsl(145 48% 31%)"/><rect x="45.5" y="24" width="8" height="12" rx="3.5" fill="hsl(145 48% 31%)"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/></svg></span><div class="one-n">legal-reviewer</div><div class="one-i">hue 145</div></div><div class="one"><span class="agent-face" style="--h:0; width:76px; height:76px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(0 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(0 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(0 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(0 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(0 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(0 42% 78%)"/><path d="M17 25C17 12 25 9.5 32 9.5S47 12 47 25c-1-9-7-12-15-12s-14 3-15 12z" fill="hsl(0 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M29 35h6" stroke="#14161a" stroke-width="1.9" stroke-linecap="round"/></svg></span><div class="one-n">qa</div><div class="one-i">hue 0</div></div><div class="one"><span class="agent-face" style="--h:357; width:76px; height:76px"><svg viewBox="0 0 64 64"><path d="M3 64c0-13 12-19 29-19s29 6 29 19z" fill="hsl(357 38% 42%)"/><path d="M25 45l7 8 7-8z" fill="hsl(357 42% 78%)"/><rect x="27.5" y="35" width="9" height="11" fill="hsl(357 36% 66%)"/><circle cx="16.5" cy="28" r="3.4" fill="hsl(357 36% 66%)"/><circle cx="47.5" cy="28" r="3.4" fill="hsl(357 36% 66%)"/><ellipse cx="32" cy="26" rx="15.5" ry="16.5" fill="hsl(357 42% 78%)"/><path d="M16.5 25C16.5 12 24 9 32 9s15.5 3 15.5 16c0-7-4-10-12-10-5 0-8 2-11 2-4 0-6.5 3-8 8z" fill="hsl(357 46% 23%)"/><circle cx="26" cy="27" r="2.6" fill="#14161a"/><circle cx="38" cy="27" r="2.6" fill="#14161a"/><path d="M15 26a17 17 0 0 1 34 0" fill="none" stroke="hsl(357 48% 31%)" stroke-width="3.4"/><rect x="10.5" y="24" width="8" height="12" rx="3.5" fill="hsl(357 48% 31%)"/><rect x="45.5" y="24" width="8" height="12" rx="3.5" fill="hsl(357 48% 31%)"/><path d="M29 35q3 2.5 6 0" stroke="#14161a" stroke-width="1.9" fill="none" stroke-linecap="round"/></svg></span><div class="one-n">devops</div><div class="one-i">hue 357</div></div></div>
+</section>
+<hr>
+
+<section>
+  <h2>ถ้าโปรไฟล์อยากเลือกเอง</h2>
+  <p class="note">ฝั่งหน้าจอรองรับแล้ว ยังไม่ได้ต่อถึงไฟล์ ทุกช่องเป็นตัวเลือก เขียนผิดตกกลับไปที่หน้าที่คิดจากชื่อ ไม่ใช่ช่องว่าง และชิ้นส่วนถูกอ้างด้วยชื่อ ไม่ใช่ลำดับ ดังนั้นตู้เสื้อผ้าโตได้โดยไม่มีใครเปลี่ยนหน้า</p>
+  <pre>---
+description: เอเจนหาข้อมูลเชิงลึก …
+icon: search
+hue: 196
+hair: beanie
+accessory: glasses
+---</pre>
+</section>
+
+</body>
+</html>

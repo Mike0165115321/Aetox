@@ -15,15 +15,17 @@
   // The hiring door opens the agents' home. Since the homes split, which
   // folder a file lands in is which kind it is — a chair file dropped into the
   // sub-agents' folder would wake up sick.
-  import { ListChairs, ListReceivedJobs, OpenAgentsFolder } from '../../wailsjs/go/main/App'
-  import { main } from '../../wailsjs/go/models'
+  import {
+    ListChairs, ListReceivedJobs, OpenAgentsFolder, AgentGate,
+    DelegateSwitches, SetDelegateOff,
+  } from '../../wailsjs/go/main/App'
+  import { main, subagent } from '../../wailsjs/go/models'
   import { agoLabel, cockpit, newChairSession, selectGlobalSession, setActiveView } from './stores/cockpit.svelte'
   import { t, type TKey } from './i18n.svelte'
   import { dayBucket } from './dayBucket'
   import Icon from './Icon.svelte'
-  import { coverHue } from './coverHue'
-  import { workerFace } from './workerFace'
-  import type { IconName } from './icons'
+  import AgentLock from './AgentLock.svelte'
+  import AgentFace from './AgentFace.svelte'
 
   let { onClose }: { onClose: () => void } = $props()
 
@@ -34,11 +36,76 @@
   // filter row is only drawn once more than one name is in the feed — a
   // one-choice filter is furniture.
   let who = $state('')
+  // Whether each teammate can work, and why not. Answered in Go
+  // (App.AgentGate) so this page, ห้องงานวิดีโอ and the chat menu all draw the
+  // same verdict on the same agent.
+  let gates = $state<Record<string, main.AgentGate>>({})
+  // The roster waits for the verdicts rather than drawing ahead of them. A card
+  // that appears usable and is veiled a moment later has already told the
+  // reader something untrue; the empty moment is shorter than the wrong one.
+  let gated = $state(false)
+
+  async function loadNeeds(roster: main.Chair[]) {
+    const answers = await Promise.all(roster.map((c) => AgentGate(c.name)))
+    gates = Object.fromEntries(roster.map((c, i) => [c.name, answers[i]]))
+    gated = true
+  }
+
+  // Whether the main assistant may hand each of these agents work. It used to
+  // be answerable only from the settings page, which is why this roster — the
+  // page a person actually opens to look at their team — could not say the one
+  // thing that decides whether anyone gets used.
+  //
+  // Absent rather than fatal when the call fails: the roster's job is to show
+  // who works here, and it can do that whole job without the switches. Then
+  // `banded` is false and the deck is drawn as one group with no switch on any
+  // card, which is exactly the page as it stood before today.
+  let delegate = $state<main.DelegateSettings | null>(null)
+  let delegateBusy = $state('')
+  async function loadDelegate() {
+    try {
+      delegate = await DelegateSwitches()
+    } catch {
+      delegate = null
+    }
+  }
+
+  // One agent's reach, looked up in the agents block alone. Helpers live in the
+  // other block and never appear on this page.
+  function reachOf(name: string): { on: boolean; off: boolean } | null {
+    if (!delegate) return null
+    const w = delegate.agents.workers.find((x) => x.name === name)
+    return w ? { on: w.on, off: delegate.agents.off } : null
+  }
+  function reaches(c: main.Chair): boolean {
+    const w = reachOf(c.name)
+    return !!w && w.on && !w.off
+  }
+
+  async function toggleAll() {
+    if (!delegate || delegateBusy) return
+    delegateBusy = 'all'
+    try {
+      delegate = await SetDelegateOff('agents', delegate.agents.off === false)
+    } finally {
+      delegateBusy = ''
+    }
+  }
+
+  // The split the page is drawn in. Only drawn as two groups when there is a
+  // switch to answer with and both groups have somebody in them — a heading
+  // over an empty deck is a label for nothing, and on a fresh install (where
+  // delegation ships off) it would put every card under "ยังไม่ได้เปิด" with an
+  // empty group above it.
+  let onDuty = $derived(chairs.filter(reaches))
+  let offDuty = $derived(chairs.filter((c) => !reaches(c)))
+  let banded = $derived(!!delegate && onDuty.length > 0 && offDuty.length > 0)
 
   onMount(async () => {
-    const [roster, feed] = await Promise.all([ListChairs(), ListReceivedJobs(30)])
+    const [roster, feed] = await Promise.all([ListChairs(), ListReceivedJobs(30), loadDelegate()])
     chairs = roster
     jobs = feed
+    await loadNeeds(roster)
     loaded = true
   })
 
@@ -62,12 +129,12 @@
   }
 
   // The face a job wears is its author's, resolved off the roster so one agent
-  // cannot show two marks on one page. Every row on this page is a chair, so the
-  // derived mark is เอเจน's (workerFace). A job whose profile has since been
-  // deleted keeps a face rather than leaving a hole, and it is the same one.
-  const faces = $derived(new Map(chairs.map((c) => [c.name, workerFace(c.icon, true)])))
-  function faceOf(name: string): IconName {
-    return faces.get(name) ?? workerFace(undefined, true)
+  // cannot show two faces on one page. Only the PROP needs resolving: the person
+  // is drawn from the name, so a job whose profile has since been deleted keeps
+  // the same face and loses nothing but what they were holding.
+  const icons = $derived(new Map(chairs.map((c) => [c.name, c.icon ?? ''])))
+  function iconOf(name: string): string {
+    return icons.get(name) ?? ''
   }
 
   // Who is in the feed, in the order the roster lists them — so the filter row
@@ -145,6 +212,26 @@
            pushed a real teammate onto a row of their own. -->
       <div class="sec-head">
         <div class="eyebrow section-label">{t('office.roster')}</div>
+        <!-- The one sentence this page exists to change, said as a sentence
+             rather than left for the reader to infer from a row of switches.
+             It counts live: flipping any card's switch moves a card between the
+             two decks below and changes this number in the same frame. -->
+        {#if delegate}
+          <span class="ag-reach">
+            {#if delegate.agents.off}
+              {t('office.reachNone')}
+            {:else}
+              {t('office.reachSome', { n: onDuty.length, total: chairs.length })}
+            {/if}
+          </span>
+          <label class="mswitch" title={t('office.delegateAll')}>
+            <input
+              type="checkbox" checked={!delegate.agents.off} disabled={delegateBusy !== ''}
+              aria-label={t('office.delegateAll')} onchange={toggleAll}
+            />
+            <span></span>
+          </label>
+        {/if}
         <button class="ctrl" onclick={createAgent}><Icon name="plus" size={13} /> {t('office.newAgent')}</button>
       </div>
       <!-- A face, not an inventory. The tool chips were six per card and five
@@ -154,52 +241,46 @@
            is for: who this is, what they make, and whether they have done any
            of it. The tools are one click away behind the gear, which is also
            the only place they can be changed. -->
-      <div class="office-grid">
-        {#each chairs as c (c.name)}
-          <div class="chair-card">
-            <span class="chair-band" style="--h:{coverHue(c.name)}"></span>
+      <!-- One card, drawn twice — once per band. A snippet rather than a copy
+           because the two decks differ in nothing except which agents are in
+           them, and a second copy is a second thing to keep true. -->
+      {#snippet chairCard(c: main.Chair)}
+          {@const locked = gates[c.name]?.blocked ?? false}
+          <!-- No switch, and the card never cools (owner, 31 ส.ค.): *"มันเหมือน
+               ไม่เปิดใช้งาน ทั้งที่มันก็แชทได้ปกติ"*.
+               The switch and the drained card were both answering "may the MAIN
+               assistant hand this one work", and both were read as "this agent
+               is off" — a card that greys beside an off switch says disabled in
+               two ways at once, and the face made it worse: a person with the
+               colour pulled out of them reads as gone, not as undelegated.
+               The band this card sits under already carries that answer, with a
+               count and a line saying the chat still opens, so the state is on
+               screen once instead of three times. Changing it is the gear,
+               which is where the rest of this agent's settings already live. -->
+          <div class="chair-card agc" class:locked>
             <div class="chair-body">
               <div class="chair-who">
-                <span class="chair-face" style="--h:{coverHue(c.name)}">
-                  <Icon name={workerFace(c.icon, true)} size={16} />
-                </span>
+                <AgentFace name={c.name} icon={c.icon} size={38} />
                 <span class="chair-name">{c.name}</span>
-                {#if c.overrides}<span class="badge">{t('office.overrides')}</span>{/if}
               </div>
               <p class="chair-desc">{c.description}</p>
               <!-- What this agent has actually done, as a quiet line inside the
                    card rather than a column of the foot (owner, 30 ส.ค.). It is
                    a fact ABOUT the agent, like the sentence above it; the foot
                    is where the card's actions are, and a number sharing that
-                   row was what kept the chat button down to an icon. -->
-              {#if c.jobs > 0}
-                <div class="chair-stat"><span class="n">{c.jobs}</span> {t('office.jobsDone')} · {agoLabel(c.lastUsed ?? '')}</div>
-              {:else}
-                <div class="chair-stat idle">{t('office.neverUsed')}</div>
-              {/if}
+                   row was what kept the chat button down to an icon.
+                   A chip since 31 ส.ค., beside the one badge that is worth a
+                   slot. Only facts that DIFFER between agents are drawn here —
+                   a badge every card carries is a badge that says nothing. -->
+              <div class="chair-chips">
+                {#if c.overrides}<span class="chip mine">{t('office.overrides')}</span>{/if}
+                {#if c.jobs > 0}
+                  <span class="chair-stat"><span class="n">{c.jobs}</span> {t('office.jobsDone')} · {agoLabel(c.lastUsed ?? '')}</span>
+                {:else}
+                  <span class="chair-stat idle">{t('office.neverUsed')}</span>
+                {/if}
+              </div>
             </div>
-            <!-- Only when there is something to say, and then a count rather
-                 than the names (owner, 30 ส.ค.).
-                 
-                 It printed the names until then, which was wrong twice over.
-                 They were mostly false — the registry hands back a packed
-                 tool's name while a profile names the actions inside it, so
-                 `doc` was reported as missing 14 tools it held 13 of — and even
-                 once true they are internal identifiers: `desk_open`,
-                 `audio_transcribe`. This page answers "who works here and what
-                 for", and six lines of names a reader can do nothing about was
-                 the loudest thing on every card.
-                 
-                 The names live behind the gear instead, which is the only place
-                 they can be changed. Same destination as the gear itself, so
-                 there is one way in rather than two. -->
-            {#if c.missing?.length}
-              <button class="chair-missing" onclick={() => configure(c)}>
-                <Icon name="alertTriangle" size={13} />
-                <span class="t">{t('office.missingCount', { n: c.missing.length })}</span>
-                <span class="go">{t('office.missingOpen')}</span>
-              </button>
-            {/if}
             <!-- The one thing this page is for: walking in and talking to a
                  specialist (COMPANY.md, the reason the roster sits behind the
                  storefront and not in another building). It was a 13px sparkles
@@ -225,12 +306,41 @@
                 <Icon name="settings" size={13} />
               </button>
             </div>
+            <AgentLock agent={c.name} label={c.name} gate={gates[c.name] ?? null}
+              onInstalled={() => loadNeeds(chairs)} />
           </div>
-        {/each}
-        {#if loaded && chairs.length === 0}
-          <div class="chair-card empty"><div class="chair-body"><p class="chair-desc">{t('office.noChairs')}</p></div></div>
-        {/if}
-      </div>
+      {/snippet}
+
+      <!-- Split by the one thing this page can change, not by who wrote the
+           file. Which band an agent sits in IS its delegation state, so no card
+           needs a badge for it: flip a switch and the card moves between the
+           two decks, and the sentence above counts differently.
+           One deck when there is nothing to split on — no switches loaded, or
+           every agent on the same side of the line. -->
+      {#if banded}
+        <div class="ag-band">
+          <span class="lab">{t('office.bandOn')}</span><span class="n">{onDuty.length}</span>
+          <span class="rule"></span>
+        </div>
+        <div class="office-grid">
+          {#each gated ? onDuty : [] as c (c.name)}{@render chairCard(c)}{/each}
+        </div>
+        <div class="ag-band">
+          <span class="lab">{t('office.bandOff')}</span><span class="n">{offDuty.length}</span>
+          <span class="rule"></span>
+          <span class="say">{t('office.bandOffNote')}</span>
+        </div>
+        <div class="office-grid">
+          {#each gated ? offDuty : [] as c (c.name)}{@render chairCard(c)}{/each}
+        </div>
+      {:else}
+        <div class="office-grid">
+          {#each gated ? chairs : [] as c (c.name)}{@render chairCard(c)}{/each}
+          {#if loaded && chairs.length === 0}
+            <div class="chair-card empty"><div class="chair-body"><p class="chair-desc">{t('office.noChairs')}</p></div></div>
+          {/if}
+        </div>
+      {/if}
       <p class="office-note">
         {t('office.hiringNote')}
         <button class="linklike" onclick={() => OpenAgentsFolder()}>{t('office.openAgentsFolder')}</button>
@@ -259,9 +369,10 @@
           {#each g.items as j (j.id)}
             <button class="job-row" disabled={!j.sessionId}
               aria-label={t('office.openSource')} onclick={() => openSource(j)}>
-              <span class="job-face" style="--h:{coverHue(j.chair)}">
-                <Icon name={faceOf(j.chair)} size={13} />
-              </span>
+              <!-- The same face as the card above it. The feed names who did
+                   the work, so drawing them a second way here would make one
+                   agent two people on one page. -->
+              <AgentFace name={j.chair} icon={iconOf(j.chair)} size={22} />
               <!-- The line the caller wrote, not the arguments the tool call
                    carried. `request` is the machine's copy and stays available
                    on hover for anyone who wants it. -->

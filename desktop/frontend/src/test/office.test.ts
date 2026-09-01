@@ -7,7 +7,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/svelte'
 import Office from '../lib/Office.svelte'
-import { ListChairs, ListReceivedJobs, LoadSessionAnyProject, NewChairSession } from './mocks/wailsApp'
+import {
+  ListChairs, ListReceivedJobs, LoadSessionAnyProject, NewChairSession,
+  DelegateSwitches, SetAgentOff,
+} from './mocks/wailsApp'
 import { cockpit } from '../lib/stores/cockpit.svelte'
 
 const chair = (over: Record<string, unknown> = {}) => ({
@@ -56,7 +59,19 @@ describe('the office roster', () => {
     vi.mocked(ListChairs).mockResolvedValue([chair({ icon: 'fileText' })] as any)
     const { container } = render(Office, { onClose: () => {} })
 
-    await waitFor(() => expect(container.querySelector('.chair-face svg')).toBeTruthy())
+    await waitFor(() => expect(container.querySelector('.agent-face svg')).toBeTruthy())
+  })
+
+  // The half of that promise the icon cannot keep. A face is drawn from the
+  // NAME, and the prop the agent holds is the only part `icon:` decides — so a
+  // profile that names none still arrives as somebody rather than an empty
+  // square. This is the case that made a drawn face worth having over a stored
+  // picture: it is the shape of every agent a user writes themselves.
+  it('draws a face for a chair whose profile names no icon', async () => {
+    vi.mocked(ListChairs).mockResolvedValue([chair({ icon: '' })] as any)
+    const { container } = render(Office, { onClose: () => {} })
+
+    await waitFor(() => expect(container.querySelector('.agent-face svg')).toBeTruthy())
   })
 
   it('says plainly when a chair has never been handed anything', async () => {
@@ -124,6 +139,100 @@ describe('the office roster', () => {
     expect(cockpit.activeView).toBe('chat')
     expect(cockpit.chair).toBe('doc')
     expect(cockpit.desk).toBe('specialized')
+  })
+})
+
+// Whether the main assistant may hand each teammate work — the one thing that
+// decides if anyone on this page ever gets used, and until 31 ส.ค. the roster
+// could not say it. It lived on the settings page as a column of switches over
+// a list of rows, which meant the page you open to LOOK at your team and the
+// page that decides whether the team works were two different pages.
+describe('the roster and delegation', () => {
+  const switches = (workers: { name: string; on: boolean }[], off = false) => ({
+    agents: { off, tokens: 0, workers },
+    helpers: { off: false, tokens: 0, workers: [] },
+    tokens: 0,
+  })
+
+  it('splits the roster by whether the assistant can reach each agent', async () => {
+    vi.mocked(ListChairs).mockResolvedValue([chair(), chair({ name: 'sheet' })] as any)
+    vi.mocked(DelegateSwitches).mockResolvedValue(
+      switches([{ name: 'doc', on: true }, { name: 'sheet', on: false }]) as any,
+    )
+    const { container } = render(Office, { onClose: () => {} })
+
+    await waitFor(() => expect(screen.getByText('อยู่ในมือผู้ช่วยหลัก')).toBeTruthy())
+    expect(screen.getByText('ยังไม่ได้เปิด')).toBeTruthy()
+    // Two decks, one agent each, and the band an agent sits in is its state —
+    // which is why no card carries a badge saying the same thing twice.
+    const decks = container.querySelectorAll('.office-grid')
+    expect(decks.length).toBe(2)
+    expect(decks[0].textContent).toContain('doc')
+    expect(decks[1].textContent).toContain('sheet')
+  })
+
+  // An undelegated card looks exactly like a delegated one (owner, 31 ส.ค.):
+  // *"มันเหมือนไม่เปิดใช้งาน ทั้งที่มันก็แชทได้ปกติ"*. The card used to cool and
+  // carry a switch in the off position, which said "disabled" twice about an
+  // agent whose chat opens normally — and the drawn face made it worse, because
+  // a person with the colour pulled out of them reads as gone rather than as
+  // undelegated. The band heading above the card is where that state lives now,
+  // and it is the only place it is drawn.
+  it('draws an undelegated card exactly like a delegated one', async () => {
+    vi.mocked(ListChairs).mockResolvedValue([chair(), chair({ name: 'sheet' })] as any)
+    vi.mocked(DelegateSwitches).mockResolvedValue(
+      switches([{ name: 'doc', on: true }, { name: 'sheet', on: false }]) as any,
+    )
+    const { container } = render(Office, { onClose: () => {} })
+
+    await waitFor(() => expect(container.querySelectorAll('.chair-card.agc').length).toBe(2))
+    expect(container.querySelectorAll('.chair-card.agc.off').length).toBe(0)
+    expect(container.querySelectorAll('.agent-face.off').length).toBe(0)
+    expect(screen.getByText('คุยกับ sheet')).toBeTruthy()
+  })
+
+  // The state left the card but not the page: it is the band, with a count and
+  // a line saying the chat still opens. Losing this while the switch was being
+  // taken out would leave the roster unable to answer the question at all.
+  it('still says which agents the assistant may hand work to', async () => {
+    vi.mocked(ListChairs).mockResolvedValue([chair(), chair({ name: 'sheet' })] as any)
+    vi.mocked(DelegateSwitches).mockResolvedValue(
+      switches([{ name: 'doc', on: true }, { name: 'sheet', on: false }]) as any,
+    )
+    const { container } = render(Office, { onClose: () => {} })
+
+    await waitFor(() => expect(container.querySelectorAll('.office-grid').length).toBe(2))
+    expect(screen.getByText('อยู่ในมือผู้ช่วยหลัก')).toBeTruthy()
+    expect(screen.getByText('ยังไม่ได้เปิด')).toBeTruthy()
+  })
+
+  // The per-agent switch itself moved to Settings › เอเจน, where the gear on
+  // each card already goes. Its wiring is tested there (Settings.test.ts,
+  // "hands the agent switch straight to the delegation setting") — this page no
+  // longer draws one, and that is what is asserted here.
+  it('draws no per-agent switch on a card', async () => {
+    vi.mocked(ListChairs).mockResolvedValue([chair()] as any)
+    vi.mocked(DelegateSwitches).mockResolvedValue(switches([{ name: 'doc', on: true }]) as any)
+    const { container } = render(Office, { onClose: () => {} })
+
+    await waitFor(() => expect(container.querySelector('.chair-card.agc')).toBeTruthy())
+    expect(container.querySelector('.chair-card .mswitch')).toBeNull()
+  })
+
+  // The roster's whole job is showing who works here, and it can do that job
+  // without the switches. When they cannot be read the page is exactly what it
+  // was before today: one deck, no bands, no control it cannot honour.
+  it('still draws the roster when the switches cannot be read', async () => {
+    // Said here rather than left to the fixture: clearAllMocks resets calls,
+    // not implementations, so a resolved value set by the test above would
+    // still be in place and this one would quietly assert nothing.
+    vi.mocked(DelegateSwitches).mockRejectedValue(new Error('unavailable'))
+    const { container } = render(Office, { onClose: () => {} })
+
+    await waitFor(() => expect(screen.getByText('เก้าอี้ร่างเอกสาร')).toBeTruthy())
+    expect(container.querySelectorAll('.office-grid').length).toBe(1)
+    expect(screen.queryByText('อยู่ในมือผู้ช่วยหลัก')).toBeNull()
+    expect(container.querySelector('.mswitch')).toBeNull()
   })
 })
 

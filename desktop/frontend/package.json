@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "faces": "node scripts/agent-face-sheet.mjs",
     "test": "vitest run"
   },
   "devDependencies": {
