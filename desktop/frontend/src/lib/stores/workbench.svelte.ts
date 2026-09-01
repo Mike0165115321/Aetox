@@ -17,6 +17,11 @@ export type WorkbenchTab = {
   kind: WorkbenchTabKind
   name: string
   url?: string // browser tabs
+  // Browser tabs: the other scheme to try if `url` fails, for an address the
+  // user typed without one. Spent by BrowserPane on the navigation it arrived
+  // with — see address.go's `guess` for why a guess without a second try is
+  // the bug this closes.
+  fallback?: string
   viewport?: { name: string; w: number; h: number } // browser tabs: device-size emulation; unset = fill the pane
   path?: string // file tabs
   content?: string // file tabs (initial content; editor keeps its own draft)
@@ -241,9 +246,11 @@ export function openBrowserTab(): string {
 // the policy is the half that is genuinely ours: an address bar SEARCHES. The
 // agent's `open` refuses the same input and names web_search instead, because
 // it already has one. Same question, two callers, two right answers.
-export async function resolveAddressBarInput(u: string): Promise<string> {
+export async function resolveAddressBarInput(u: string): Promise<{ url: string; fallback: string }> {
   const addr = await ResolveAddress(u)
-  return addr.url || addr.searchUrl
+  // A search is a place once it has been turned into one, and nobody falls back
+  // from Google to Google over plain http.
+  return addr.url ? { url: addr.url, fallback: addr.fallback } : { url: addr.searchUrl, fallback: '' }
 }
 
 /** Tab-strip label for a URL: the host, or the last path segment for a file. */
@@ -273,10 +280,13 @@ export function setTabDragPayload(e: DragEvent, kind: 'file' | 'browser', ref: s
 
 /** Open a URL from outside the workbench (a link clicked in chat, a page
  * dragged in from a real browser) in a new browser tab. */
-export function openUrlInWorkbench(url: string): void {
+export function openUrlInWorkbench(url: string, fallback = ''): void {
   const id = openBrowserTab()
   const tab = workbench.tabs.find((t) => t.id === id)
   if (!tab) return
+  // Armed before the URL, because the URL is what the pane's effect watches:
+  // set the other way round, the first navigation goes out unarmed.
+  tab.fallback = fallback
   tab.url = url
   tab.name = labelForUrl(url)
 }

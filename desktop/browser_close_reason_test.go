@@ -92,7 +92,7 @@ func TestAReasonDoesNotOutliveTheReopen(t *testing.T) {
 	// through the real open(), because the clearing of the record is part of
 	// what is under test and doing it by hand here would hide its absence.
 	h := app.browsers
-	h.open("web-agent-2", "https://example.com", 0, 0, 100, 100)
+	h.open("web-agent-2", "https://example.com", "", 0, 0, 100, 100)
 	h.backend.(*fakeBackend).drain()
 
 	if _, err := app.agentTab(); err != nil {
@@ -119,7 +119,7 @@ func TestOpeningAnAgentTabClearsTheRecord(t *testing.T) {
 	app := hostWithTabs(t, "web-agent-1", []string{"web-agent-1"}, "web-agent-1")
 	app.BrowserClose("web-agent-1")
 
-	app.browsers.open("web-agent-2", "https://example.com", 0, 0, 100, 100)
+	app.browsers.open("web-agent-2", "https://example.com", "", 0, 0, 100, 100)
 	app.browsers.backend.(*fakeBackend).drain()
 
 	app.browsers.mu.Lock()

@@ -557,6 +557,16 @@ type browserTab struct {
 	visMu  sync.Mutex
 	hidden bool // BrowserSetVisible(false); nav-completed re-glue must not surface hidden tabs
 
+	// fbMu guards fallback: the other scheme to try, once, if the navigation
+	// this tab was just given fails. Set only from the address bar, and only
+	// for a scheme Aetox chose rather than one the user typed (address.go).
+	//
+	// Taken rather than read, because a fallback is spent the moment it is
+	// used: without that, a page that fails, falls back, and fails again would
+	// bounce between the two schemes for as long as the tab is open.
+	fbMu     sync.Mutex
+	fallback string
+
 	zoomMu sync.Mutex
 	zoom   float64 // device-size emulation (see BrowserSetZoom); 0 = never set
 
@@ -777,6 +787,24 @@ func (t *browserTab) setNavOK(ok bool) {
 	t.metaMu.Unlock()
 }
 
+// setFallback arms the one retry the next navigation is allowed. An empty
+// string disarms it, which is what every navigation with a scheme of its own
+// passes.
+func (t *browserTab) setFallback(url string) {
+	t.fbMu.Lock()
+	defer t.fbMu.Unlock()
+	t.fallback = url
+}
+
+// takeFallback returns the armed retry and disarms it in the same breath.
+func (t *browserTab) takeFallback() string {
+	t.fbMu.Lock()
+	defer t.fbMu.Unlock()
+	url := t.fallback
+	t.fallback = ""
+	return url
+}
+
 func (t *browserTab) navLoaded() bool {
 	t.metaMu.Lock()
 	defer t.metaMu.Unlock()
@@ -895,17 +923,17 @@ func (h *browserHost) tab(id string) *browserTab {
 }
 
 // open creates the webview for a tab, on the thread that owns webviews.
-func (h *browserHost) open(id, url string, x, y, w, hgt int) {
+func (h *browserHost) open(id, url, fallback string, x, y, w, hgt int) {
 	debuglog.Msg("browser.open(%s): queueing (url=%s)", id, url)
 	h.backend.do(func() {
 		debuglog.Msg("browser.open(%s): running on the host thread", id)
 		if h.tab(id) != nil {
 			return
 		}
-		tab := &browserTab{navDone: make(chan struct{}), navOnce: &sync.Once{}}
+		tab := &browserTab{navDone: make(chan struct{}), navOnce: &sync.Once{}, fallback: fallback}
 		view := h.backend.openTab(id, url, x, y, w, hgt, tabCallbacks{
 			onMessage:     func(raw, source string) { h.onMessage(id, tab, raw, source) },
-			onNavDone:     func(v tabView, ok bool) { h.navCompleted(tab, v, ok) },
+			onNavDone:     func(v tabView, ok bool) { h.navCompleted(id, tab, v, ok) },
 			onEngineError: tab.noteEngineError,
 		})
 		if view == nil {
@@ -942,7 +970,26 @@ func isAgentTabID(id string) bool { return strings.HasPrefix(id, agentTabPrefix)
 // navCompleted is the portable half of "a navigation finished". It takes the
 // view rather than reading tab.view because a fast first navigation can land
 // before open() has stored it.
-func (h *browserHost) navCompleted(tab *browserTab, view tabView, ok bool) {
+func (h *browserHost) navCompleted(id string, tab *browserTab, view tabView, ok bool) {
+	// The guess was wrong, and there is another one to try.
+	//
+	// This is the second half of address.go's `guess`, and it is the half that
+	// makes guessing a scheme honest: `localhost:8443` is served over https as
+	// often as `example.com` is still served over plain http, and neither the
+	// address bar nor the person typing into it can know which. Chrome and Edge
+	// both do exactly this, and it is why they appear to always be right.
+	//
+	// Before the latch, before visibility, before meta: nothing downstream
+	// should hear about a navigation that is about to be replaced, or the tab
+	// surfaces the engine's error page for the length of one round trip and the
+	// address bar reads back a URL the user is not going to end up on.
+	if !ok {
+		if fb := tab.takeFallback(); fb != "" {
+			debuglog.Msg("browser.nav(%s): the guessed scheme failed, falling back to %s", id, fb)
+			view.navigate(fb)
+			return
+		}
+	}
 	// Recorded before navDone is closed, so a waiter that wakes on it reads
 	// this navigation's outcome and not the previous one's.
 	tab.setNavOK(ok)
@@ -1139,18 +1186,27 @@ func (h *browserHost) live(id string) bool {
 }
 
 // BrowserOpen creates a native browser tab at the given physical-pixel bounds.
-func (a *App) BrowserOpen(id, url string, x, y, w, h int) error {
+//
+// fallback is the other scheme to try if this URL fails to load, and it is
+// empty for every caller that was handed a scheme rather than choosing one.
+// Only the address bar fills it (Address.Fallback).
+func (a *App) BrowserOpen(id, url, fallback string, x, y, w, h int) error {
 	host, err := a.browserHostLazy()
 	if err != nil {
 		return err
 	}
-	host.open(id, url, x, y, w, h)
+	host.open(id, url, fallback, x, y, w, h)
 	return nil
 }
 
-// BrowserNavigate loads a URL in an existing tab.
-func (a *App) BrowserNavigate(id, url string) {
-	a.onTab(id, func(v tabView, _ *browserTab) { v.navigate(url) })
+// BrowserNavigate loads a URL in an existing tab. See BrowserOpen for fallback.
+func (a *App) BrowserNavigate(id, url, fallback string) {
+	a.onTab(id, func(v tabView, t *browserTab) {
+		// Armed before the navigation starts: nav-completed can fire from the
+		// engine's thread before this call returns.
+		t.setFallback(fallback)
+		v.navigate(url)
+	})
 }
 
 // BrowserSetBounds moves/resizes a tab's view (physical pixels, relative to

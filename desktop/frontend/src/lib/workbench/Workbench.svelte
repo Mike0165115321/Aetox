@@ -155,7 +155,7 @@
     // Async because Go decides whether this is a place or a search — one line
     // of code and one round trip, in exchange for the address bar behaving the
     // way every other address bar does. See resolveAddressBarInput.
-    const url = await resolveAddressBarInput(u)
+    const { url, fallback } = await resolveAddressBarInput(u)
     if (!url) return
     let tab = activeTab
     if (!tab || tab.kind !== 'browser') {
@@ -163,6 +163,9 @@
       tab = workbench.tabs.find((x) => x.id === id)
       if (!tab) return
     }
+    // Before the URL: BrowserPane's effect watches `url` and reads `fallback`
+    // as it fires, so the arming has to already be there when it does.
+    tab.fallback = fallback
     tab.url = url
     tab.name = labelForUrl(url)
   }
@@ -282,7 +285,10 @@
       .split('\n')
       .map((l) => l.trim())
       .find((l) => l && !l.startsWith('#')) // uri-list comments
-    if (url && looksLikeUrl(url)) openUrlInWorkbench(await resolveAddressBarInput(url))
+    if (url && looksLikeUrl(url)) {
+      const addr = await resolveAddressBarInput(url)
+      if (addr.url) openUrlInWorkbench(addr.url, addr.fallback)
+    }
   }
 
   function closeMenuOnOutsideClick(e: MouseEvent) {

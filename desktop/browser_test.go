@@ -289,7 +289,7 @@ func TestNavCompletedRaisesReassertsZoomAndAsksForMeta(t *testing.T) {
 	tab.zoom = 0.5
 	view := &fakeView{}
 
-	h.navCompleted(tab, view, true)
+	h.navCompleted("web-1", tab, view, true)
 
 	if !tab.navLoaded() {
 		t.Error("navOK not recorded")
@@ -317,7 +317,7 @@ func TestNavCompletedLeavesAHiddenTabHidden(t *testing.T) {
 	tab := &browserTab{navDone: make(chan struct{}), hidden: true}
 	view := &fakeView{}
 
-	h.navCompleted(tab, view, true)
+	h.navCompleted("web-1", tab, view, true)
 
 	for _, shown := range view.visible {
 		if shown {
@@ -404,7 +404,7 @@ func TestAReusedTabIsAwaitedAgainRatherThanAnsweringWithTheLastResult(t *testing
 	h := &browserHost{app: &App{}, tabs: map[string]*browserTab{}}
 
 	// First navigation lands, and fails.
-	h.navCompleted(tab, &fakeView{}, false)
+	h.navCompleted("web-1", tab, &fakeView{}, false)
 	if err := tab.awaitNavigation(context.Background(), time.Second); err == nil {
 		t.Fatal("a failed first navigation was reported as loaded")
 	}
@@ -420,7 +420,7 @@ func TestAReusedTabIsAwaitedAgainRatherThanAnsweringWithTheLastResult(t *testing
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	h.navCompleted(tab, &fakeView{}, true)
+	h.navCompleted("web-1", tab, &fakeView{}, true)
 	select {
 	case err := <-done:
 		if err != nil {
@@ -428,5 +428,57 @@ func TestAReusedTabIsAwaitedAgainRatherThanAnsweringWithTheLastResult(t *testing
 		}
 	case <-time.After(2 * time.Second):
 		t.Error("the second wait never woke — a reused tab hangs the turn")
+	}
+}
+
+// A guessed scheme that fails is retried under the other one, exactly once.
+//
+// The case that made this necessary: XAMPP serving plain http on port 80, a
+// user typing `localhost`, and a browser that had stamped https:// on the front
+// showing them an empty pane. Chrome and Edge both guess and then fall back;
+// what looks like always being right is a guess plus a second try.
+func TestAFailedGuessFallsBackToTheOtherScheme(t *testing.T) {
+	h := &browserHost{tabs: map[string]*browserTab{}, views: map[string]tabView{}}
+	tab := &browserTab{navDone: make(chan struct{}), navOnce: &sync.Once{}, fallback: "https://localhost"}
+	view := &fakeView{}
+
+	h.navCompleted("web-1", tab, view, false)
+
+	if view.lastJS != "navigate:https://localhost" {
+		t.Errorf("after a failed guess the view was told %q, want a navigation to the fallback", view.lastJS)
+	}
+	if tab.navLoaded() {
+		t.Error("the failed navigation was recorded as loaded; nothing downstream should hear about a page that is being replaced")
+	}
+
+	// Spent. A second failure is the real answer, and the tab must be allowed
+	// to report it rather than bouncing between the two schemes forever.
+	view.lastJS = ""
+	h.navCompleted("web-1", tab, view, false)
+	if strings.HasPrefix(view.lastJS, "navigate:") {
+		t.Errorf("the fallback was used twice (%q); one retry is the whole allowance", view.lastJS)
+	}
+	if !isClosed(tab.navDone) {
+		t.Error("the second failure never released the navigation latch")
+	}
+}
+
+// The fallback belongs to one navigation. Typing a second address into the bar
+// arms whatever that one needs, and disarms it when it needs nothing — or the
+// http twin of the page before last is what a later failure would load.
+func TestNavigatingAgainReplacesTheArmedFallback(t *testing.T) {
+	tab := &browserTab{navDone: make(chan struct{}), navOnce: &sync.Once{}, fallback: "https://localhost"}
+	tab.setFallback("")
+	if got := tab.takeFallback(); got != "" {
+		t.Errorf("fallback = %q, want it disarmed by a navigation that had a scheme of its own", got)
+	}
+}
+
+func isClosed(ch chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
 	}
 }

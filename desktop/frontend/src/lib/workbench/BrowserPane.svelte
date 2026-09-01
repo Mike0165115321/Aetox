@@ -121,11 +121,20 @@
     const el = host
     if (spectator || !el || !url || url === lastSent) return
     lastSent = url
+    // Read and spent in the same breath. The fallback belongs to the URL that
+    // arrived with it (address.go's `guess`), and one left lying on the tab
+    // would arm the NEXT navigation — a page the user typed a scheme for,
+    // retried under the other one, which is the downgrade this must never do.
+    const fallback = untrack(() => {
+      const fb = tab.fallback ?? ''
+      tab.fallback = ''
+      return fb
+    })
     if (!opened) {
       opened = true
-      BrowserOpen(tab.id, url, ...layout(el).rect)
+      BrowserOpen(tab.id, url, fallback, ...layout(el).rect)
     } else {
-      BrowserNavigate(tab.id, url)
+      BrowserNavigate(tab.id, url, fallback)
     }
   })
 
