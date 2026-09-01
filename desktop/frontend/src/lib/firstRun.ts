@@ -40,6 +40,8 @@ const PREFERENCE_KEYS = [
   'aetox-tree-font-size',
   'aetox-editor-theme-choice',
   'aetox-editor-theme-json',
+  // How much of the project the code map draws, and how much of it it names.
+  'aetox-repomap-display',
   'sidebarCollapsed',
   'inspectorCollapsed',
   'sidebarWidth',

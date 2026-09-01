@@ -12,14 +12,23 @@ package repomap
 
 import (
 	"context"
+	"math"
 	"path/filepath"
 	"sort"
 	"strings"
 )
 
-// DefaultMaxNodes is how many files the graph keeps. Sixty is where a
-// force-laid graph still reads as districts and hubs rather than as felt.
+// DefaultMaxNodes is how many files the graph keeps when the caller has no
+// opinion. Sixty is where a force-laid graph still reads as districts and hubs
+// rather than as felt — the right first sentence, not the only one the reader
+// is allowed to hear.
 const DefaultMaxNodes = 60
+
+// AllNodes, passed as maxNodes, lifts the ceiling entirely: every file the walk
+// mapped becomes a node. There is no number to invent here, because the honest
+// ceiling was always the project's own size — and a caller that wants the whole
+// thing should not have to guess how big the whole thing is to ask for it.
+const AllNodes = -1
 
 // Node is one file the graph kept, ranked the same way the text map ranks.
 type Node struct {
@@ -42,7 +51,10 @@ type Edge struct {
 // edges that run between them, plus how many mapped files exist in total —
 // the number that tells the reader how much of the repository the picture is.
 func Graph(ctx context.Context, opts Options, maxNodes int) ([]Node, []Edge, int, error) {
-	if maxNodes <= 0 {
+	switch {
+	case maxNodes == AllNodes:
+		maxNodes = math.MaxInt
+	case maxNodes <= 0:
 		maxNodes = DefaultMaxNodes
 	}
 	a, err := analyze(ctx, opts)
@@ -55,17 +67,41 @@ func Graph(ctx context.Context, opts Options, maxNodes int) ([]Node, []Edge, int
 	// wiring file) is invisible to the ranking — no symbols, no incoming refs
 	// — and it is exactly the arrow-tail a graph exists to draw. Counted here
 	// so selection can keep it.
-	outDeg := make(map[string]int)
 	spokesperson := goSpokespersons(a)
+
+	// Resolving one import target can cost a scan of every mapped file: when
+	// the target names nothing in the tree — "fmt", "react", any dependency —
+	// resolveTargetFile falls through to a suffix search over the whole map.
+	// That was paid once per EDGE and the whole pass was then run TWICE, once
+	// to count out-degree and again to draw the lines, so a project importing
+	// "context" from fifty files searched all 2,363 of them fifty times over,
+	// twice. Memoised per DISTINCT target and shared by both passes: 2.4s to
+	// under a second on this repository, with the same edges out the far end.
+	resolved := make(map[string]string)
+	resolve := func(target string) string {
+		if to, ok := resolved[target]; ok {
+			return to
+		}
+		to := ""
+		if f, ok := resolveTargetFile(a.byRel, target); ok {
+			to = f.rel
+		} else if rep, ok := spokesperson[target]; ok {
+			to = rep
+		}
+		resolved[target] = to
+		return to
+	}
+
+	outDeg := make(map[string]int)
 	for _, e := range a.edges {
-		if _, ok := resolveTargetFile(a.byRel, e.target); ok {
-			outDeg[e.from]++
-		} else if _, ok := spokesperson[e.target]; ok {
+		if resolve(e.target) != "" {
 			outDeg[e.from]++
 		}
 	}
 
-	nodes := make([]Node, 0, maxNodes)
+	// Reserve for what the tree can actually supply, never for the ceiling:
+	// AllNodes is math.MaxInt, and a slice asked to reserve that much panics.
+	nodes := make([]Node, 0, min(maxNodes, len(a.files)))
 	index := make(map[string]int)
 	for _, f := range a.files {
 		if len(nodes) >= maxNodes {
@@ -83,7 +119,7 @@ func Graph(ctx context.Context, opts Options, maxNodes int) ([]Node, []Edge, int
 		})
 	}
 
-	edges := resolveEdges(a, index, spokesperson)
+	edges := resolveEdges(a, index, resolve)
 	return nodes, edges, a.total, nil
 }
 
@@ -92,16 +128,11 @@ func Graph(ctx context.Context, opts Options, maxNodes int) ([]Node, []Edge, int
 // target names a package directory, and the line lands on that package's
 // fullest file — a spokesperson, chosen deterministically, because fanning one
 // import out to every file of the package would draw edges nobody wrote.
-func resolveEdges(a *analysis, index map[string]int, spokesperson map[string]string) []Edge {
+func resolveEdges(a *analysis, index map[string]int, resolve func(string) string) []Edge {
 	var edges []Edge
 	seen := make(map[[2]int]bool)
 	for _, e := range a.edges {
-		to := ""
-		if f, ok := resolveTargetFile(a.byRel, e.target); ok {
-			to = f.rel
-		} else if rep, ok := spokesperson[e.target]; ok {
-			to = rep
-		}
+		to := resolve(e.target)
 		if to == "" || to == e.from {
 			continue
 		}

@@ -44,7 +44,12 @@ type RepoMapGraph struct {
 	Error      string        `json:"error,omitempty"`
 }
 
-func (a *App) GetRepoMapGraph() RepoMapGraph {
+// GetRepoMapGraph maps the focused project down to maxNodes files. Zero means
+// the default sixty; repomap.AllNodes (-1) means every file that was mapped.
+// The ceiling is the caller's because it is a question about the SCREEN, not
+// about the repository — the walk below costs the same either way, and which
+// slice of its answer is worth drawing is the only part the viewer can judge.
+func (a *App) GetRepoMapGraph(maxNodes int) RepoMapGraph {
 	root := a.cur().cfg.SandboxRoot
 	// Same reading applyConfig gives the engine: no focused project means the
 	// sandbox is open and there is nothing honest to map.
@@ -56,7 +61,7 @@ func (a *App) GetRepoMapGraph() RepoMapGraph {
 	nodes, edges, total, err := repomap.Graph(ctx, repomap.Options{
 		Root:   root,
 		Ignore: skill.RepoMapIgnores(),
-	}, repomap.DefaultMaxNodes)
+	}, maxNodes)
 	if err != nil {
 		return RepoMapGraph{Focused: true, Root: root, Error: err.Error()}
 	}

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Mikedev115/Aetox/internal/config"
+	"github.com/Mikedev115/Aetox/internal/repomap"
 	"github.com/Mikedev115/Aetox/internal/safety"
 )
 
@@ -44,7 +45,7 @@ func TestGetRepoMapGraphServesTheFocusedProject(t *testing.T) {
 		ApprovalMode:  string(safety.ApprovalFullAccess),
 	})
 
-	g := a.GetRepoMapGraph()
+	g := a.GetRepoMapGraph(0)
 	if !g.Focused {
 		t.Fatal("a focused project must map, not refuse")
 	}
@@ -58,8 +59,18 @@ func TestGetRepoMapGraphServesTheFocusedProject(t *testing.T) {
 		t.Errorf("the imported package should lead, got %+v", g.Nodes[0])
 	}
 
+	// The ceiling is the caller's, and it has to bite in both directions: a
+	// small number must actually cut, and AllNodes must actually stop cutting.
+	if one := a.GetRepoMapGraph(1); len(one.Nodes) != 1 {
+		t.Errorf("a ceiling of one must keep one node, got %d", len(one.Nodes))
+	}
+	all := a.GetRepoMapGraph(repomap.AllNodes)
+	if len(all.Nodes) < len(g.Nodes) {
+		t.Errorf("AllNodes must not keep fewer than the default, got %d vs %d", len(all.Nodes), len(g.Nodes))
+	}
+
 	a.projectFocused = false
-	if g := a.GetRepoMapGraph(); g.Focused {
+	if g := a.GetRepoMapGraph(0); g.Focused {
 		t.Fatal("unfocused must be an honest empty, not a map of the machine")
 	}
 }
