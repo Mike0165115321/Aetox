@@ -96,6 +96,11 @@ type Component struct {
 	// identity is already in the file's own name, as it is for model weights.
 	Marker string
 
+	// NoConsoleWindow: Probe is a console-subsystem .exe that must never own a
+	// console window on the user's screen, so its PE subsystem is flipped to
+	// GUI right after unpack. See subsystem.go for the incident and why the
+	// binary is the only reliable layer to do this at.
+	NoConsoleWindow bool
 
 	// ApproxBytes is for the sentence on the screen, so someone can decide
 	// before they press rather than after. Never used as a progress
@@ -366,6 +371,11 @@ func Manifest() []Component {
 			Probe:   "chrome-headless-shell.exe",
 			Marker:  "chrome-headless-shell-152.0.7977.30.ok",
 			Title:   "chrome-headless-shell 152.0.7977.30",
+			// Console-subsystem as Google ships it, and the console reached the
+			// owner's screen on 1 ก.ย. — black terminal windows over the desktop,
+			// popped by a spawn chain two processes away from our HideConsole.
+			// Flipped to GUI at install; subsystem.go carries the whole story.
+			NoConsoleWindow: true,
 			// The Chromium licence, which is what this build is; its own LICENSE
 			// file travels inside the archive.
 			License:     "BSD-3-Clause",
@@ -677,6 +687,13 @@ func (c Component) install(ctx context.Context, report func(done, total int64)) 
 
 	if !isFile(filepath.Join(root, c.Probe)) {
 		return fmt.Errorf("แตกไฟล์แล้วแต่ไม่พบ %s", c.Probe)
+	}
+	// Before the marker, so an interrupted patch reads as an incomplete
+	// install and is done again, never trusted half-way.
+	if c.NoConsoleWindow {
+		if err := EnsureNoConsoleWindow(filepath.Join(root, c.Probe)); err != nil {
+			return err
+		}
 	}
 	if c.Marker != "" {
 		f, err := os.Create(filepath.Join(root, c.Marker))

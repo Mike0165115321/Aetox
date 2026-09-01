@@ -384,6 +384,14 @@ func hyperframesEnvironment(root string, haveRoot bool, lookup func(string) stri
 	browser := filepath.Join(root, "tools", "chrome-headless-shell", "chrome-headless-shell")
 	if runtime.GOOS == "windows" {
 		browser += ".exe"
+		// A copy installed before 1.5.17 is still console-subsystem and pops
+		// terminal windows over the desktop (internal/capability/subsystem.go).
+		// Healed here — the one line every launch already passes through — so
+		// existing installs are fixed without a re-download. Best-effort: a
+		// browser that cannot be patched should still render.
+		if isFile(browser) {
+			_ = capability.EnsureNoConsoleWindow(browser)
+		}
 	}
 	env["HYPERFRAMES_BROWSER_PATH"] = browser
 
