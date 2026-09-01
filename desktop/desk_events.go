@@ -16,11 +16,13 @@ package main
 //
 // sessionID is whose desk — required, and "" is an ANSWER, not an omission:
 // it means this surface has no per-session owner yet. Today that is the
-// browser and the engine-log terminal, both shared at the App level
-// (§187.2); the window draws an ownerless event on the desk on screen,
-// which is the pre-§187 behaviour made explicit instead of accidental.
-// When the browser gains per-session ownership, its call sites change from
-// "" to a real id and nothing else moves.
+// engine-log terminal alone (§187.2); the window draws an ownerless event on
+// the desk on screen, which is the pre-§187 behaviour made explicit instead
+// of accidental. The browser left the "" club on 1 ก.ย.: its three doors
+// (open, tabs select, capture's raise) stamp the conversation that acted, and
+// the window routes a background chat's page to that chat's own desk — the
+// exact move this comment used to promise. close-browser stays "": the window
+// finds the tab by id wherever it lives, so the close needs no owner.
 func (a *App) deskEvent(sessionID, event string, payload map[string]string) {
 	if payload == nil {
 		payload = map[string]string{}
@@ -37,3 +39,4 @@ func (a *App) deskEvent(sessionID, event string, payload map[string]string) {
 func (a *App) deskFilesChanged(conv *conversation, paths []string) {
 	a.emitEvent("workbench:files-changed", sessionEvent[[]string]{SessionID: conv.id, Data: paths})
 }
+

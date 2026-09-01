@@ -56,7 +56,7 @@ func TestTabsListNamesOnlyTheAgentsOwn(t *testing.T) {
 func TestSelectingTheUsersTabIsRefusedAsTheirs(t *testing.T) {
 	app := hostWithTabs(t, "web-agent-1", []string{"web-agent-1"}, "web-agent-1", "web-3")
 
-	err := app.selectAgentTab("web-3")
+	err := app.selectAgentTab("web-3", "")
 	if err == nil {
 		t.Fatal("the agent was given the user's tab")
 	}
@@ -73,7 +73,7 @@ func TestSelectMovesWhichTabTheOtherActionsWork(t *testing.T) {
 		"web-agent-1", "web-agent-2")
 	app.emit = func(string, ...any) {} // selecting raises the tab, which emits
 
-	if err := app.selectAgentTab("web-agent-2"); err != nil {
+	if err := app.selectAgentTab("web-agent-2", ""); err != nil {
 		t.Fatalf("selectAgentTab() = %v", err)
 	}
 	id, err := app.agentTab()
@@ -125,7 +125,7 @@ func TestATabTheUserClosedIsNoLongerOffered(t *testing.T) {
 
 	app.BrowserClose("web-agent-1") // the user pressing × on the tab strip
 
-	if err := app.selectAgentTab("web-agent-1"); err == nil {
+	if err := app.selectAgentTab("web-agent-1", ""); err == nil {
 		t.Fatal("selected a tab that is gone")
 	} else if !strings.Contains(err.Error(), "ปิดไปแล้ว") {
 		t.Errorf("the refusal reads like the tab was never the agent's: %v", err)

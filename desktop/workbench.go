@@ -102,7 +102,12 @@ func unrenderableFile(url string) string {
 //
 // duplicateOf names the tab a `newTab` request was answered with instead of a
 // new one, because that tab was already on this page. Empty every other time.
-func (a *App) workbenchOpenBrowser(ctx context.Context, url string, newTab bool) (title, finalURL, duplicateOf string, err error) {
+//
+// owner is whose conversation is browsing — it rides on the desk event, so a
+// background chat's page parks on its own desk instead of drawing over the one
+// on screen. The window still creates the native view either way (the shadow
+// rack mounts a hidden pane), so the poll below is satisfied for both routes.
+func (a *App) workbenchOpenBrowser(ctx context.Context, url string, newTab bool, owner string) (title, finalURL, duplicateOf string, err error) {
 	if a.ctx == nil {
 		return "", "", "", fmt.Errorf("UI not ready")
 	}
@@ -156,7 +161,7 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string, newTab bool)
 			// whichever tab is current (agentTab), so pointing at a tab without
 			// going to it would answer "here is your page" and then read a
 			// different one — a worse failure than the duplicate it replaces.
-			if selErr := a.selectAgentTab(string(already)); selErr == nil {
+			if selErr := a.selectAgentTab(string(already), owner); selErr == nil {
 				id, reusing, duplicateOf = already, true, string(already)
 			}
 		}
@@ -186,8 +191,10 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string, newTab bool)
 	}
 	// Emitted either way: for a new tab the frontend creates it, and for one
 	// that exists the same handler just raises it — which is what the user
-	// needs to actually see the page the agent moved to.
-	a.deskEvent("", "open-browser", map[string]string{"id": string(id), "url": url})
+	// needs to actually see the page the agent moved to. Stamped with the
+	// owner, so "the user" here means the user of THAT chat: on screen it
+	// raises, in the background it parks on that session's desk.
+	a.deskEvent(owner, "open-browser", map[string]string{"id": string(id), "url": url})
 
 	// The frontend creates the tab, which creates the native webview — poll
 	// until it exists, then wait out its first navigation.
@@ -465,7 +472,11 @@ func toolDef(name, description string, schema map[string]any) model.ToolDefiniti
 	}
 }
 
-type browserOpenSkill struct{ app *App }
+// owner: see browserSkill.owner — the session this open's desk event names.
+type browserOpenSkill struct {
+	app   *App
+	owner string
+}
 
 func (*browserOpenSkill) Name() string { return "browser_open" }
 
@@ -499,7 +510,7 @@ func (s *browserOpenSkill) Execute(ctx context.Context, input skill.Input) (skil
 
 func (s *browserOpenSkill) open(ctx context.Context, url string, newTab bool) (skill.Output, error) {
 	start := time.Now()
-	title, finalURL, duplicateOf, err := s.app.workbenchOpenBrowser(ctx, url, newTab)
+	title, finalURL, duplicateOf, err := s.app.workbenchOpenBrowser(ctx, url, newTab, s.owner)
 	out := skill.Output{
 		Name:       "browser_open",
 		Command:    "browser_open " + url,

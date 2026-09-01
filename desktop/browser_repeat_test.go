@@ -116,7 +116,7 @@ func TestReusingAnOpenPageMovesToThatTab(t *testing.T) {
 	if !ok {
 		t.Fatal("the tab already on that page was not found")
 	}
-	if err := app.selectAgentTab(string(found)); err != nil {
+	if err := app.selectAgentTab(string(found), ""); err != nil {
 		t.Fatalf("selectAgentTab(%q) = %v", found, err)
 	}
 

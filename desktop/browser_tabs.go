@@ -38,7 +38,11 @@ import (
 	"github.com/Mikedev115/Aetox/internal/skill"
 )
 
-type browserTabsSkill struct{ app *App }
+// owner: see browserSkill.owner — the session a select's desk event names.
+type browserTabsSkill struct {
+	app   *App
+	owner string
+}
 
 func (s *browserTabsSkill) run(action, id string) (skill.Output, error) {
 	out := skill.Output{Name: "browser_tabs", Command: strings.TrimSpace("browser tabs " + action + " " + id)}
@@ -49,7 +53,7 @@ func (s *browserTabsSkill) run(action, id string) (skill.Output, error) {
 		out.Content = a.agentTabList()
 		out.Success = true
 	case "select":
-		if err := a.selectAgentTab(id); err != nil {
+		if err := a.selectAgentTab(id, s.owner); err != nil {
 			out.Content, out.Stderr = err.Error(), err.Error()
 			return out, err
 		}
@@ -166,8 +170,10 @@ func (a *App) agentTabList() string {
 
 // selectAgentTab makes one of the agent's own tabs the current one, and raises
 // it so the user sees the page the agent moved to — the same promise `open`
-// makes, for the same reason.
-func (a *App) selectAgentTab(id string) error {
+// makes, for the same reason. owner is whose conversation moved: stamped on
+// the event, so a background chat's select parks on its own desk instead of
+// raising over somebody else's (§187).
+func (a *App) selectAgentTab(id, owner string) error {
 	if err := a.mustOwn(id); err != nil {
 		return err
 	}
@@ -180,7 +186,7 @@ func (a *App) selectAgentTab(id string) error {
 	if t := h.tab(id); t != nil {
 		_, url = t.meta()
 	}
-	a.deskEvent("", "open-browser", map[string]string{"id": id, "url": url})
+	a.deskEvent(owner, "open-browser", map[string]string{"id": id, "url": url})
 	return nil
 }
 

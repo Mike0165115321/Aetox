@@ -513,6 +513,16 @@
         {/if}
       </div>
     {/each}
+    <!-- โต๊ะเงา: background chats' live pages (workbench.foreign). Each pane is
+         mounted so its native window exists — the agent that owns it is still
+         browsing — but never shown here: active={false} keeps the window
+         hidden, and display:none keeps the slot out of this desk's layout.
+         The tab itself is on its own session's saved desk, waiting there. -->
+    {#each workbench.foreign as tab (tab.id)}
+      <div class="foreign-host" aria-hidden="true">
+        <BrowserPane tab={tab} active={false} menuOpen={false} dragging={false} />
+      </div>
+    {/each}
   </div>
 
   {#if hasActiveTask}
@@ -539,6 +549,10 @@
   /* .inspector is the flex column; this fills it and gives the overlay below
      something to be absolute against. */
   .wb { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+
+  /* A shadow host has no box on purpose: BrowserPane reads a zero rect, keeps
+     the native window hidden, and this desk's layout never learns it exists. */
+  .foreign-host { display: none; }
 
   .wb-drop {
     position: absolute;

@@ -50,6 +50,13 @@ export type WorkbenchTab = {
   // may describe, a page the user opened it may not (§81's rule about the
   // user's browsing never becoming agent-readable).
   mine?: boolean
+  // Browser tabs the agent opened: whose conversation this page belongs to.
+  // It is what lets the strip refuse a background chat's page (§187 closed for
+  // files; this closes it for the browser) and what lets that page survive a
+  // switch away — its native window parks in `workbench.foreign` instead of
+  // being torn down under a working agent. Unset = the user's own tab, which
+  // lives and dies with the desk it was opened on, as it always has.
+  sessionId?: string
 }
 
 /** Panes that draw a file straight from its URL, without reading it first. */
@@ -96,9 +103,16 @@ export function isDeck(path: string, content: string): boolean {
   return /<(?:section|div)[^>]*\bclass\s*=\s*("[^"]*\bslide\b|'[^']*\bslide\b)/i.test(content)
 }
 
-export const workbench = $state<{ tabs: WorkbenchTab[]; activeId: string }>({
+// `foreign` is the shadow rack: live browser tabs whose conversation is NOT on
+// screen. Each still gets a (hidden) BrowserPane — the native window has to
+// exist for the background agent to keep browsing it — but none of them is in
+// the strip, so another chat's page can neither appear here, steal focus, nor
+// be snapshotted into this session's layout (the leak of 1 ก.ย.). A tab moves
+// strip↔foreign as its session leaves and returns to the screen.
+export const workbench = $state<{ tabs: WorkbenchTab[]; activeId: string; foreign: WorkbenchTab[] }>({
   tabs: [],
   activeId: '',
+  foreign: [],
 })
 
 let browserSeq = 0
@@ -349,6 +363,72 @@ export function closeAgentFileTabFor(sessionId: string, path: string): void {
   patchSavedTabs(sessionId, (tabs) => tabs.filter((t) => !(t.kind === 'file' && t.path === path && t.mine)))
 }
 
+/** A page the agent opened (or moved to), routed by whose page it is.
+ *
+ * On screen: the tab draws (or fronts) in the strip, as it always did. A
+ * background chat's page parks instead — a live entry on the shadow rack so
+ * its native window exists for the agent still browsing it, plus a chip on
+ * that session's saved desk, found there when its chat opens. It never touches
+ * the strip on screen (the leak of 1 ก.ย.: another chat's page appearing,
+ * fronting itself, and being snapshotted as this session's own).
+ *
+ * The agent tab pool is shared across conversations (browser_tabs.go), so an
+ * open can CLAIM a tab another chat was holding: the tab follows its newest
+ * owner, moving between strip and rack accordingly. */
+export function openAgentBrowserTabFor(sessionId: string, id: string, url: string): void {
+  if (!id) return
+  const live = !sessionId || sessionId === boundSessionId
+  const stripAt = workbench.tabs.findIndex((tab) => tab.id === id)
+  const rackAt = workbench.foreign.findIndex((tab) => tab.id === id)
+  if (live) {
+    if (rackAt >= 0) {
+      // Coming home: the shown chat claimed a parked window. Same object, same
+      // id — the pane remounts onto the existing native window (host.open is
+      // idempotent on a live id), so the page arrives without a reload.
+      const [tab] = workbench.foreign.splice(rackAt, 1)
+      if (sessionId) tab.sessionId = sessionId
+      if (url) tab.url = url
+      workbench.tabs.push(tab)
+    } else if (stripAt < 0) {
+      workbench.tabs.push({
+        id, kind: 'browser', name: t('workbench.newTab'), url, mine: true,
+        sessionId: sessionId || boundSessionId || undefined,
+      })
+    }
+    workbench.activeId = id
+    return
+  }
+  let tab: WorkbenchTab
+  if (stripAt >= 0) {
+    // A background chat claimed a tab sitting on the shown desk: the page is
+    // that chat's now, so it leaves this strip — left in place, its
+    // navigations would keep drawing here, the exact leak this routing closes.
+    ;[tab] = workbench.tabs.splice(stripAt, 1)
+    if (workbench.activeId === id) workbench.activeId = workbench.tabs.at(-1)?.id ?? ''
+    workbench.foreign.push(tab)
+  } else if (rackAt >= 0) {
+    tab = workbench.foreign[rackAt]
+  } else {
+    tab = { id, kind: 'browser', name: t('workbench.newTab'), url, mine: true }
+    workbench.foreign.push(tab)
+  }
+  tab.sessionId = sessionId
+  if (url) {
+    tab.url = url
+    tab.name = labelForUrl(url)
+  }
+  patchSavedTabs(sessionId, (tabs) => {
+    const at = tabs.findIndex((s) => s.kind === 'browser' && s.id === id)
+    const chip: SavedTab = {
+      kind: 'browser', id, mine: true,
+      url: url || tabs[at]?.url || '',
+      name: url ? labelForUrl(url) : tabs[at]?.name ?? t('workbench.newTab'),
+    }
+    if (at >= 0) return tabs.map((s, i) => (i === at ? chip : s))
+    return [...tabs, chip]
+  })
+}
+
 /** The desk's one door on the window side (§187.3).
  *
  * Every agent-originated desk event arrives here, and every KIND declares in
@@ -357,9 +437,10 @@ export function closeAgentFileTabFor(sessionId: string, path: string): void {
  * question was asked nowhere; a kind with no answer here falls to the default,
  * which touches nothing and says so, instead of guessing at a desk.
  *
- * sessionId '' is the Go door's explicit "no per-session owner" (the shared
- * browser host, the engine-log terminal — §187.2) and draws live, which is
- * the pre-§187 behaviour made a stated policy instead of an accident. */
+ * sessionId '' is the Go door's explicit "no per-session owner" (the
+ * engine-log terminal — §187.2; the browser left that club on 1 ก.ย.) and
+ * draws live, which is the pre-§187 behaviour made a stated policy instead
+ * of an accident. */
 export function routeDeskEvent(kind: string, payload: Record<string, unknown>): void {
   const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : ''
   const str = (k: string) => (typeof payload[k] === 'string' ? (payload[k] as string) : '')
@@ -372,20 +453,37 @@ export function routeDeskEvent(kind: string, payload: Record<string, unknown>): 
     case 'close-file':
       closeAgentFileTabFor(sessionId, str('path'))
       return
-    // The browser is one shared host (§187.2): its tabs have native windows a
-    // saved layout cannot represent, so it draws live until it gains a
-    // per-session owner — at which point only the Go door's "" changes.
+      return
+    // The browser gained its per-session owner (the change desk_events.go
+    // promised): the event names whose page this is, and the two destinations
+    // are the same as open-file's. On screen draws live; a background chat's
+    // page goes to the shadow rack — its native window kept alive, hidden,
+    // for the agent still working it — and onto that session's saved desk,
+    // where its user will find it. It never touches the strip on screen, so
+    // it can neither steal focus nor be snapshotted as somebody else's.
+    //
+    // sessionId '' is still honoured as "draw live" for the surfaces that
+    // genuinely have no owner (§187.2).
     case 'open-browser': {
       const id = str('id')
-      if (!workbench.tabs.some((t) => t.id === id)) {
-        workbench.tabs.push({ id, kind: 'browser', name: t('workbench.newTab'), url: str('url'), mine: true })
-      }
-      workbench.activeId = id
+      openAgentBrowserTabFor(sessionId, id, str('url'))
       return
     }
-    case 'close-browser':
-      browserTabClosedByEngine(str('id'))
+    case 'close-browser': {
+      const id = str('id')
+      const foreignAt = workbench.foreign.findIndex((tab) => tab.id === id)
+      if (foreignAt >= 0) {
+        // A parked page closing closes everywhere it is remembered: the shadow
+        // rack, and the owner's saved desk — or its chat would reopen onto a
+        // chip pointing at a window that no longer exists.
+        const owner = workbench.foreign[foreignAt].sessionId ?? ''
+        workbench.foreign.splice(foreignAt, 1)
+        if (owner) patchSavedTabs(owner, (tabs) => tabs.filter((tab) => !(tab.kind === 'browser' && tab.id === id)))
+        return
+      }
+      browserTabClosedByEngine(id)
       return
+    }
     // The PTY already lives on the Go side; this only mounts a pane on it.
     // Live like the browser, because both are native resources that exist
     // before the tab does. The shell it was started from rides along so the
@@ -654,7 +752,12 @@ export function recentVisits(): VisitedPage[] {
 // this here", and desk close's whole safety rule keys on it. Dropped in the
 // save (as it was until §187), an agent-opened tab came back as the user's
 // after one switch away, and the agent could no longer take back its own tab.
-type SavedTab = { kind: WorkbenchTabKind; name: string; url?: string; path?: string; shell?: string; mine?: boolean }
+// `id` is saved for browser tabs only: it is the name of the live native
+// window, and it is what lets a session switch re-adopt a page whose agent
+// kept working in the background (the shadow rack) instead of reloading a
+// copy beside it. A dead id — app restarted, window gone — falls back to the
+// URL, which is what the id-less save always did.
+type SavedTab = { kind: WorkbenchTabKind; name: string; url?: string; path?: string; shell?: string; mine?: boolean; id?: string }
 
 let boundSessionId: string | null = null
 
@@ -698,7 +801,11 @@ export function saveWorkbenchSnapshot(): void {
   const restorable = workbench.tabs.filter((t) => t.kind !== 'file' || !!t.path)
   const activeIdx = restorable.findIndex((t) => t.id === workbench.activeId)
   if (!boundSessionId) return
-  const tabs: SavedTab[] = restorable.map(({ kind, name, url, path, shell, mine }) => ({ kind, name, url, path, shell, mine }))
+  const tabs: SavedTab[] = restorable.map(({ kind, name, url, path, shell, mine, id }) => ({
+    kind, name, url, path, shell, mine,
+    // The window's name, browser tabs only — see SavedTab on why it is saved.
+    ...(kind === 'browser' ? { id } : {}),
+  }))
   localStorage.setItem(wbKey(boundSessionId), JSON.stringify({ tabs, activeIdx }))
 }
 
@@ -719,7 +826,16 @@ async function restoreWorkbench(sessionId: string): Promise<void> {
   // that somebody shut it.
   for (const tab of workbench.tabs) {
     if (tab.kind === 'terminal') TerminalClose(tab.id)
-    else if (tab.kind === 'browser') BrowserCloseForTeardown(tab.id)
+    else if (tab.kind === 'browser') {
+      // An agent's page survives the switch: its chat may still be working it,
+      // and the snapshot above just filed it (by id) on that chat's saved
+      // desk. It parks on the shadow rack — window alive, hidden — and the
+      // restore below re-adopts it the moment its session is back on screen.
+      // The user's own tabs keep their old lifecycle: torn down here, brought
+      // back by URL when this session returns.
+      if (tab.mine && tab.sessionId) workbench.foreign.push(tab)
+      else BrowserCloseForTeardown(tab.id)
+    }
   }
   workbench.tabs = []
   workbench.activeId = ''
@@ -748,9 +864,26 @@ async function restoreWorkbench(sessionId: string): Promise<void> {
     else if (s.kind === 'file' && s.path) await openFileTab(s.path, s.name, s.mine ?? false)
     else if (s.kind === 'terminal') await restoreTerminalTab(s)
     else if (s.kind === 'browser') {
-      const id = openBrowserTab()
-      const tab = workbench.tabs.find((t) => t.id === id)
-      if (tab) { tab.url = s.url ?? ''; tab.name = s.name }
+      // The saved id first: if that window is alive on the shadow rack (its
+      // agent kept browsing while this chat was off screen), adopt it whole —
+      // same object, same native window, current page, no reload. Only a dead
+      // id falls to the URL rebuild below.
+      const rackAt = s.id ? workbench.foreign.findIndex((f) => f.id === s.id) : -1
+      if (rackAt >= 0) {
+        const [tab] = workbench.foreign.splice(rackAt, 1)
+        workbench.tabs.push(tab)
+      } else {
+        const id = openBrowserTab()
+        const tab = workbench.tabs.find((t) => t.id === id)
+        if (tab) {
+          tab.url = s.url ?? ''; tab.name = s.name
+          // `mine` survives for browser tabs now too (§187's rule): the desk
+          // close safety judges by it, and a rebuilt agent page is still the
+          // agent's page.
+          tab.mine = s.mine
+          if (s.mine) tab.sessionId = sessionId
+        }
+      }
     }
   }
   workbench.activeId = workbench.tabs[saved.activeIdx]?.id ?? workbench.tabs.at(-1)?.id ?? ''
@@ -805,7 +938,13 @@ export async function adoptWorkbenchSession(sessionId: string): Promise<void> {
   else saveWorkbenchSnapshot()
 }
 
-/** Drop a deleted session's stored layout. */
+/** Drop a deleted session's stored layout — and its parked pages, whose
+ * windows nothing else would ever close once the session that owned them is
+ * gone. */
 export function removeWorkbenchState(sessionId: string): void {
   localStorage.removeItem(wbKey(sessionId))
+  for (const tab of workbench.foreign.filter((f) => f.sessionId === sessionId)) {
+    BrowserCloseForTeardown(tab.id)
+  }
+  workbench.foreign = workbench.foreign.filter((f) => f.sessionId !== sessionId)
 }

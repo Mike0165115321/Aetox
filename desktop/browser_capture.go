@@ -44,7 +44,11 @@ import (
 	"github.com/Mikedev115/Aetox/internal/skill"
 )
 
-type browserCaptureSkill struct{ app *App }
+// owner: see browserSkill.owner — the session the raise's desk event names.
+type browserCaptureSkill struct {
+	app   *App
+	owner string
+}
 
 // Numbered per run rather than per session, which is enough to keep two shots
 // in one turn from being one file — the session folder already separates chats.
@@ -100,7 +104,7 @@ func (s *browserCaptureSkill) capture(ctx context.Context, full bool) (skill.Out
 	if tab != nil {
 		title, url = tab.meta()
 	}
-	a.deskEvent("", "open-browser", map[string]string{"id": string(id), "url": url})
+	a.deskEvent(s.owner, "open-browser", map[string]string{"id": string(id), "url": url})
 	select {
 	case <-ctx.Done():
 		out.DurationMs = time.Since(start).Milliseconds()
@@ -115,6 +119,14 @@ func (s *browserCaptureSkill) capture(ctx context.Context, full bool) (skill.Out
 	// quietly served by the viewport path, and a deck photographed by a
 	// renderer that is not the one that exports it.
 	var notes []string
+	// The raise above only lands when this conversation is the one on screen:
+	// a background chat's page stays parked on its own desk (§187), and a
+	// hidden native view produces no frames — so the picture below can be the
+	// last thing the page drew before it was hidden. Said out loud, because
+	// from the bytes alone a stale frame looks exactly like a fresh one.
+	if s.owner != "" && s.owner != a.cur().id {
+		notes = append(notes, "แชตนี้ไม่ได้อยู่บนจอ หน้าต่างเบราว์เซอร์จึงถูกซ่อนไว้ ภาพนี้อาจเป็นเฟรมเก่าของหน้า ไม่ใช่สถานะล่าสุด")
+	}
 	var dataURL string
 	if full {
 		var cutAt int

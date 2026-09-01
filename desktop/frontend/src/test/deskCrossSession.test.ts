@@ -30,6 +30,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   workbench.tabs.length = 0
   workbench.activeId = ''
+  workbench.foreign.length = 0
   localStorage.clear()
   vi.mocked(ReadFile).mockResolvedValue('เนื้อไฟล์' as any)
 })
@@ -98,5 +99,77 @@ describe('a desk belongs to one conversation', () => {
   it('mounts an ownerless surface on the desk on screen', () => {
     routeDeskEvent('open-terminal', { sessionId: '', id: 'pty-1', name: 'pwsh' })
     expect(workbench.tabs.map((t) => t.kind)).toEqual(['terminal'])
+  })
+})
+
+// The browser joined §187 on 1 ก.ย., after its page was the last thing still
+// leaking: a background chat opened the Aetox landing page and it drew, fronted
+// itself, and was snapshotted onto the desk the owner was actually reading.
+// A page differs from a file in one way that shapes everything here: the tab is
+// a live native window the background agent is still browsing, so parking it
+// must keep the window alive (the shadow rack) rather than file a dead chip.
+describe('a browser page belongs to one conversation', () => {
+  it('keeps a background chat’s page off the desk on screen, alive on the rack, and on its own desk', async () => {
+    await adoptWorkbenchSession('on-screen')
+    routeDeskEvent('open-browser', { sessionId: 'background', id: 'web-agent-1', url: 'https://a.test/page' })
+
+    // Not on the strip, and not fronted — the user is reading something else.
+    expect(workbench.tabs).toHaveLength(0)
+    expect(workbench.activeId).toBe('')
+    // Alive on the rack, so the agent's window keeps existing…
+    expect(workbench.foreign.map((t) => t.id)).toEqual(['web-agent-1'])
+    // …and waiting on its own session's saved desk, id and all.
+    expect(saved('background').tabs).toEqual([
+      { kind: 'browser', id: 'web-agent-1', name: 'a.test', url: 'https://a.test/page', mine: true },
+    ])
+
+    // Opening that chat adopts the live window — same id, no rebuilt copy.
+    await switchWorkbenchSession('background')
+    expect(workbench.tabs.map((t) => t.id)).toEqual(['web-agent-1'])
+    expect(workbench.foreign).toHaveLength(0)
+  })
+
+  it('still draws live, and fronts, for the chat on screen', async () => {
+    await adoptWorkbenchSession('mine-b')
+    routeDeskEvent('open-browser', { sessionId: 'mine-b', id: 'web-agent-2', url: 'https://b.test' })
+    expect(workbench.tabs.map((t) => t.id)).toEqual(['web-agent-2'])
+    expect(workbench.activeId).toBe('web-agent-2')
+    expect(workbench.tabs[0].mine).toBe(true)
+  })
+
+  it('parks an agent page on the rack across a switch away, and re-adopts it on the way back', async () => {
+    await adoptWorkbenchSession('keep-b')
+    routeDeskEvent('open-browser', { sessionId: 'keep-b', id: 'web-agent-3', url: 'https://keep.test' })
+
+    await switchWorkbenchSession('elsewhere-b')
+    // Not torn down under a possibly-working agent — parked, window alive.
+    expect(workbench.tabs).toHaveLength(0)
+    expect(workbench.foreign.map((t) => t.id)).toEqual(['web-agent-3'])
+
+    await switchWorkbenchSession('keep-b')
+    expect(workbench.tabs.map((t) => t.id)).toEqual(['web-agent-3'])
+    expect(workbench.tabs[0].mine).toBe(true)
+    expect(workbench.foreign).toHaveLength(0)
+  })
+
+  it('lets a background chat claim a tab off the shown desk, and takes it with it', async () => {
+    await adoptWorkbenchSession('front-b')
+    routeDeskEvent('open-browser', { sessionId: 'front-b', id: 'web-agent-4', url: 'https://x.test' })
+    expect(workbench.activeId).toBe('web-agent-4')
+
+    // The shared agent pool lets another chat steer the same tab (§ the tabs
+    // pack): the page is that chat's now, so it leaves this strip too.
+    routeDeskEvent('open-browser', { sessionId: 'claimer-b', id: 'web-agent-4', url: 'https://y.test' })
+    expect(workbench.tabs).toHaveLength(0)
+    expect(workbench.foreign.map((t) => t.sessionId)).toEqual(['claimer-b'])
+    expect(saved('claimer-b').tabs.map((t) => (t as { id?: string }).id)).toEqual(['web-agent-4'])
+  })
+
+  it('a close reaches a parked page everywhere it is remembered', async () => {
+    await adoptWorkbenchSession('front-c')
+    routeDeskEvent('open-browser', { sessionId: 'back-c', id: 'web-agent-5', url: 'https://z.test' })
+    routeDeskEvent('close-browser', { sessionId: '', id: 'web-agent-5' })
+    expect(workbench.foreign).toHaveLength(0)
+    expect(saved('back-c').tabs).toHaveLength(0)
   })
 })

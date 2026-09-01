@@ -52,8 +52,22 @@ import (
 
 type browserSkill struct {
 	app *App
+	// Whose conversation this pack speaks for. Every desk event the pack
+	// raises is stamped with it, so a background chat's page lands on that
+	// chat's own desk instead of whichever one is on screen (§187, closed for
+	// the browser 1 ก.ย.). nil only where tests build the pack bare.
+	conv *conversation
 	// actions this caller may use, nil for all of them. Set only by Narrow.
 	actions []string
+}
+
+// owner is the session id the pack's desk events carry — "" when no
+// conversation is attached, which the window draws live (§187.2).
+func (s *browserSkill) owner() string {
+	if s.conv == nil {
+		return ""
+	}
+	return s.conv.id
 }
 
 func (s *browserSkill) allowedActions() []string {
@@ -233,7 +247,7 @@ var browserNamesItsOwnTab = map[string]bool{
 func (s *browserSkill) dispatch(ctx context.Context, action string, args map[string]any) (skill.Output, error) {
 	switch action {
 	case "open":
-		return (&browserOpenSkill{app: s.app}).open(ctx, str(args["url"]), boolArg(args["newTab"]))
+		return (&browserOpenSkill{app: s.app, owner: s.owner()}).open(ctx, str(args["url"]), boolArg(args["newTab"]))
 	case "read":
 		return (&browserReadSkill{app: s.app}).Execute(ctx, skill.Input{"filter": str(args["filter"])})
 	case "click":
@@ -241,9 +255,9 @@ func (s *browserSkill) dispatch(ctx context.Context, action string, args map[str
 	case "type":
 		return (&browserTypeSkill{app: s.app}).typeText(intArg(args["ref"]), str(args["text"]), boolArg(args["enter"]))
 	case "capture":
-		return (&browserCaptureSkill{app: s.app}).capture(ctx, boolArg(args["full"]))
+		return (&browserCaptureSkill{app: s.app, owner: s.owner()}).capture(ctx, boolArg(args["full"]))
 	case "tabs":
-		return (&browserTabsSkill{app: s.app}).run(str(args["act"]), str(args["id"]))
+		return (&browserTabsSkill{app: s.app, owner: s.owner()}).run(str(args["act"]), str(args["id"]))
 	case "wait":
 		return (&browserWaitSkill{app: s.app}).wait(ctx, str(args["text"]), intArg(args["seconds"]))
 	case "back":
