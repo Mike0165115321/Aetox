@@ -38,6 +38,33 @@ func TestWritePlacesNewFilesInTheSessionOutputFolder(t *testing.T) {
 	}
 }
 
+// Writing to the path a receipt echoed must not be placed AGAIN.
+//
+// Every receipt names the placed path so the model reuses it — and reusing it
+// used to nest a second prefix (output/<s>/output/<s>/…), a folder nobody
+// asked for holding the only copy of the second write. The open bug the
+// memory file write-doubles-output-subdir recorded, closed here.
+func TestWritingTheEchoedPathDoesNotNestTheOutputFolder(t *testing.T) {
+	root := t.TempDir()
+	subdir := func() string { return "output/s1" }
+	s := &writeSkill{root: root, outputSubdir: subdir}
+
+	first, err := s.ExecuteTool(context.Background(), map[string]any{"path": "a.txt", "content": "one"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ExecuteTool(context.Background(), map[string]any{"path": "output/s1/a.txt", "content": "two"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "output", "s1", "output")); err == nil {
+		t.Fatalf("the echoed path was placed again — nested output folder exists (first receipt: %s)", first.Content)
+	}
+	body, err := os.ReadFile(filepath.Join(root, "output", "s1", "a.txt"))
+	if err != nil || string(body) != "two" {
+		t.Errorf("the second write did not land on the first file: %q, %v", body, err)
+	}
+}
+
 func TestWritePlacementLeavesExplicitDestinationsAlone(t *testing.T) {
 	root := t.TempDir()
 	subdir := func() string { return "aetox/output/s1" }

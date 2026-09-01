@@ -37,6 +37,11 @@ func (s *writeSkill) placed(requestPath string) string {
 // skill that creates files — sheet_write produces a .xlsx and has to land it in
 // the same place, or the session output folder holds half of what the chat
 // made. Any future file-producing skill calls this rather than copying it.
+//
+// A path that already names the session folder is left alone. Every receipt
+// echoes the placed path so the model reuses it, and a second write of that
+// echoed path used to be prefixed AGAIN — output/<session>/output/<session>/…,
+// a folder nobody asked for holding the only copy of the file.
 func placedWrite(outputSubdir func() string, requestPath string) string {
 	if outputSubdir == nil || filepath.IsAbs(requestPath) {
 		return requestPath
@@ -45,7 +50,20 @@ func placedWrite(outputSubdir func() string, requestPath string) string {
 	if subdir == "" {
 		return requestPath
 	}
+	if clean := filepath.ToSlash(requestPath); clean == subdir || strings.HasPrefix(clean, subdir+"/") {
+		return requestPath
+	}
 	return filepath.ToSlash(filepath.Join(subdir, requestPath))
+}
+
+// PlacedWrite is placedWrite for the file-producing tools that live outside
+// this package — the desktop's `video new` scaffolds a whole project folder
+// and has to land it under the same rule, or every session's video work piles
+// up at the sandbox root and a test in one chat picks up the renders of
+// another (measured 31 ส.ค.: three aetox-intro variants side by side at the
+// root, none of them in their session's folder).
+func PlacedWrite(outputSubdir func() string, requestPath string) string {
+	return placedWrite(outputSubdir, requestPath)
 }
 
 // PlacedPath is the read side of the same rule, and the single definition of
