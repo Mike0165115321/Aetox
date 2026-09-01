@@ -524,22 +524,23 @@ date-stamped, because the rule above does not have an exception for numbers we w
 
 </details>
 
-## Status — v1.5.16
+## Status — v1.5.17
 
-The core is in place. [Release notes](docs/release-notes/v1.5.16.md) ·
+The core is in place. [Release notes](docs/release-notes/v1.5.17.md) ·
 [roadmap](ROADMAP.md) · [architecture](ARCHITECTURE.md).
 
 Three things it does today that are worth knowing about:
 
-- **Ask for twenty jobs and get twenty.** Four delegates run at once and the rest wait their turn,
-  in the order they were asked, starting on their own the moment a slot frees. Nothing is refused,
-  the waiting line is on screen, and one press cancels all of it without touching the four working.
-- **Addressing a colleague takes a choice, not a word.** `@` opens the roster and the name has to
-  be picked off it, so a pasted document that happens to mention `@reviewer` is an ordinary message
-  and not a job handed to the wrong worker.
-- **A turn is shown the way it happened.** Thinking above the sentence, the work below it and next
-  to the rows it counts — separate stretches with their own clocks. Finished work folds away;
-  anything still running is drawn outside the fold and cannot be hidden by it.
+- **Video editing that finishes on your machine.** The editor agent drives kinocut and a pinned,
+  SHA-checked scene renderer; the cutting room beside the chat shows the cut as a ledger with a
+  player, and every number on it is read from the file itself, never from what the agent said.
+- **Talk to it, and have it read back.** A mic in the composer transcribes into the draft, a
+  listen button under each reply speaks it, and the voice vendors switch from Settings — fifteen
+  of them, local by default, with recordings never leaving the machine until a cloud row is
+  picked by name.
+- **The right-hand desk belongs to its own chat.** A page opened by a background chat's agent no
+  longer appears over what you are reading: it waits on that chat's own desk, its window stays
+  alive for the agent, and switching back adopts the same page without a reload.
 
 **Next** — agents working across turns rather than only inside one; a plan handed from the
 assistant door to the code door; a code-door team with defined roles.
