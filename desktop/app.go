@@ -1119,26 +1119,79 @@ func (a *App) saveChatAttachment(sourcePath string, maxBytes int64) (string, err
 	return relativeToRoot(root, destPath)
 }
 
-// attachFilters is the one list the attach dialog offers. It sits apart from
-// the picker so the multi-select dialog and any future single-file caller
-// cannot drift into offering different file types.
-func attachFilters() []wailsruntime.FileFilter {
-	return []wailsruntime.FileFilter{
-		{DisplayName: "ไฟล์ที่แนบได้ทั้งหมด", Pattern: "*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp;*.mp4;*.mov;*.mkv;*.webm;*.avi;*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.pdf;*.txt;*.md;*.csv;*.json"},
-		{DisplayName: "รูปภาพ", Pattern: "*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp"},
-		{DisplayName: "วิดีโอ / เสียง", Pattern: "*.mp4;*.mov;*.mkv;*.webm;*.avi;*.mp3;*.wav;*.m4a;*.flac;*.ogg"},
-		{DisplayName: "ทุกไฟล์", Pattern: "*.*"},
+// What the attach menu offers, one list per row.
+//
+// Lists rather than ready-made patterns because the rows and the
+// "everything" line have to agree: the bug that started this was a type
+// (.docx) present everywhere in the app except in one hand-written pattern
+// string, which made a file the app could read invisible in the dialog and
+// gave nobody a way to find out why.
+//
+// The legacy Office trio (.doc/.xls/.ppt) is deliberately absent: `read`
+// opens the OOXML three (skill.officeExt) and refuses those, so listing them
+// here would be a promise the reader cannot keep.
+var (
+	imageAttachExt = []string{"png", "jpg", "jpeg", "gif", "webp", "bmp"}
+	mediaAttachExt = []string{"mp4", "mov", "mkv", "webm", "avi", "mp3", "wav", "m4a", "flac", "ogg"}
+	docAttachExt   = []string{"pdf", "docx", "pptx", "xlsx", "txt", "md", "csv", "json"}
+)
+
+// The rows the composer's attach menu can ask for. Anything else, the empty
+// string included, is the "ไฟล์อื่น" row and filters nothing away.
+const (
+	attachGroupImage    = "image"
+	attachGroupMedia    = "media"
+	attachGroupDocument = "document"
+)
+
+func attachPattern(exts ...[]string) string {
+	var parts []string
+	for _, list := range exts {
+		for _, ext := range list {
+			parts = append(parts, "*."+ext)
+		}
 	}
+	return strings.Join(parts, ";")
+}
+
+// attachFilters is the one list the attach dialog offers, narrowed to the row
+// the user picked in the menu. It sits apart from the picker so the
+// multi-select dialog and any future single-file caller cannot drift into
+// offering different file types.
+//
+// Every group still carries the wider two filters under its own: the menu
+// chooses what the dialog opens on, and never what the person is allowed to
+// come back with.
+func attachFilters(group string) []wailsruntime.FileFilter {
+	var (
+		image      = wailsruntime.FileFilter{DisplayName: "รูปภาพ", Pattern: attachPattern(imageAttachExt)}
+		media      = wailsruntime.FileFilter{DisplayName: "วิดีโอ และเสียง", Pattern: attachPattern(mediaAttachExt)}
+		document   = wailsruntime.FileFilter{DisplayName: "เอกสาร", Pattern: attachPattern(docAttachExt)}
+		everything = wailsruntime.FileFilter{DisplayName: "ไฟล์ที่แนบได้ทั้งหมด", Pattern: attachPattern(imageAttachExt, mediaAttachExt, docAttachExt)}
+		any        = wailsruntime.FileFilter{DisplayName: "ทุกไฟล์", Pattern: "*.*"}
+	)
+	switch group {
+	case attachGroupImage:
+		return []wailsruntime.FileFilter{image, everything, any}
+	case attachGroupMedia:
+		return []wailsruntime.FileFilter{media, everything, any}
+	case attachGroupDocument:
+		return []wailsruntime.FileFilter{document, everything, any}
+	}
+	return []wailsruntime.FileFilter{everything, image, media, document, any}
 }
 
 // PickAttachments prompts for files to attach — images, clips, documents —
 // and allows picking several at once. The composer stages a list, so a
 // single-file dialog was the only reason one question could carry one file.
 // The image-only picker stays for the paths that specifically want one.
-func (a *App) PickAttachments() ([]string, error) {
+//
+// `group` is the menu row that was pressed, and it only decides which filter
+// the dialog opens on.
+func (a *App) PickAttachments(group string) ([]string, error) {
 	paths, err := wailsruntime.OpenMultipleFilesDialog(a.ctx, wailsruntime.OpenDialogOptions{
 		Title:   "แนบไฟล์",
-		Filters: attachFilters(),
+		Filters: attachFilters(group),
 	})
 	if err != nil {
 		return []string{}, err

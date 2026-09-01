@@ -5,9 +5,14 @@ import {
 } from '../lib/stores/cockpit.svelte'
 import {
   SaveChatFile, SaveChatImage, SaveChatImageData, SendMessage, LoadSession, ReadImageDataURL, ReadFile,
+  BrowserGetText,
 } from './mocks/wailsApp'
+import { workbench } from '../lib/stores/workbench.svelte'
+import { setLocale } from '../lib/i18n.svelte'
 
 beforeEach(() => {
+  setLocale('en')
+  workbench.tabs = []
   cockpit.pendingFiles = []
   cockpit.pendingImages = []
   cockpit.pendingContexts = []
@@ -236,6 +241,34 @@ describe('attaching a file dragged in from the workbench', () => {
 
     expect(cockpit.pendingContexts).toEqual([{ kind: 'file', label: 'notes.md', content: '# บันทึก' }])
     expect(cockpit.pendingFiles).toEqual([])
+  })
+
+  // A restored layout brings browser tabs back as addresses, and the page
+  // itself loads only when the tab is looked at. Dragging one that has not
+  // been clicked since the app started used to print the engine's own
+  // `no browser tab "web-1"` into the chat: an internal id, for a state the
+  // user can fix in one click, in a sentence that does not say which click.
+  it('says how to fix a page that is listed but not open', async () => {
+    workbench.tabs = [{ id: 'web-1', kind: 'browser', name: 'aetox.app', url: 'https://aetox.app' } as any]
+    vi.mocked(BrowserGetText).mockRejectedValue(new Error('no browser tab "web-1"'))
+
+    await attachTabContext('browser', 'web-1', 'aetox.app')
+
+    expect(cockpit.pendingContexts).toEqual([])
+    const said = cockpit.chat.at(-1)?.text ?? ''
+    expect(said).toContain('Click the tab')
+    expect(said).not.toContain('web-1')
+  })
+
+  // Every other failure still arrives whole. A message this layer cannot
+  // explain is worth more raw than smoothed into the one it can.
+  it('still passes through a failure it has no better sentence for', async () => {
+    workbench.tabs = [{ id: 'web-1', kind: 'browser', name: 'aetox.app', url: 'https://aetox.app' } as any]
+    vi.mocked(BrowserGetText).mockRejectedValue(new Error('page crashed'))
+
+    await attachTabContext('browser', 'web-1', 'aetox.app')
+
+    expect(cockpit.chat.at(-1)?.text).toContain('page crashed')
   })
 
   it('hands over the path when it is not text, instead of failing', async () => {
